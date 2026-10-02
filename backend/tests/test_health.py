@@ -4,11 +4,6 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 
 
-@pytest.fixture
-def anyio_backend() -> str:
-    return "asyncio"
-
-
 @pytest.mark.anyio
 async def test_health_returns_service_status() -> None:
     async with AsyncClient(

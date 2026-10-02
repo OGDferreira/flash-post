@@ -18,4 +18,4 @@ COPY backend/ ./
 COPY --from=frontend-builder /frontend/dist ./app/static
 
 EXPOSE 10000
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]

@@ -1,0 +1,208 @@
+import { useEffect } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+
+import { ErrorState, LoadingState } from "@/components/PageState";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { ApiError, apiRequest, type User, type Workspace } from "@/services/api";
+
+const profileSchema = z.object({
+  full_name: z.string().trim().min(1, "Informe seu nome.").max(160),
+  avatar_url: z.union([z.literal(""), z.string().url("Informe uma URL válida.")]),
+});
+type ProfileValues = z.infer<typeof profileSchema>;
+
+export function ProfilePage() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const profile = useQuery({
+    queryKey: ["profile"],
+    queryFn: () => apiRequest<User>("/api/profile"),
+  });
+  const workspace = useQuery({
+    queryKey: ["workspace"],
+    queryFn: () => apiRequest<Workspace>("/api/workspace"),
+    enabled: user?.role !== "SUPER_ADMIN",
+    retry: false,
+  });
+  const form = useForm<ProfileValues>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: { full_name: "", avatar_url: "" },
+  });
+  useEffect(() => {
+    if (profile.data) {
+      form.reset({
+        full_name: profile.data.full_name,
+        avatar_url: profile.data.avatar_url ?? "",
+      });
+    }
+  }, [profile.data, form]);
+
+  const update = useMutation({
+    mutationFn: (values: ProfileValues) =>
+      apiRequest<User>("/api/profile", {
+        method: "PATCH",
+        body: {
+          full_name: values.full_name,
+          avatar_url: values.avatar_url || null,
+        },
+      }),
+    onSuccess: (user) => {
+      queryClient.setQueryData(["profile"], user);
+      queryClient.setQueryData(["auth", "me"], user);
+    },
+  });
+
+  if (
+    profile.isLoading ||
+    (user?.role !== "SUPER_ADMIN" && workspace.isLoading)
+  ) {
+    return <LoadingState label="Carregando perfil" />;
+  }
+  if (profile.error || !profile.data) {
+    return <ErrorState message="Não foi possível carregar seu perfil." />;
+  }
+  if (user?.role !== "SUPER_ADMIN" && (workspace.error || !workspace.data)) {
+    return <ErrorState message="Não foi possível carregar o workspace do perfil." />;
+  }
+
+  const apiError =
+    update.error instanceof ApiError ? update.error.message : null;
+  const workspaceName =
+    user?.role === "SUPER_ADMIN"
+      ? "Acesso global"
+      : workspace.data?.name ?? "—";
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-8">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+          Conta
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
+          Perfil
+        </h2>
+        <p className="mt-2 text-sm text-[#94a3b8]">
+          Consulte seus dados e atualize o nome e a imagem de perfil.
+        </p>
+      </div>
+
+      <section className="rounded-xl border border-[#202838] bg-[#0d1015] p-5 sm:p-7">
+        <div className="mb-7 flex items-center gap-4 border-b border-[#202838] pb-6">
+          {profile.data.avatar_url ? (
+            <img
+              src={profile.data.avatar_url}
+              alt=""
+              className="size-14 rounded-full border border-[#27334a] object-cover"
+            />
+          ) : (
+            <span className="grid size-14 place-items-center rounded-full bg-[#171e31] text-lg font-semibold text-[#aab7ff]">
+              {profile.data.full_name.slice(0, 1).toUpperCase()}
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="truncate font-medium text-[#f5f7fb]">
+              {profile.data.full_name}
+            </p>
+            <p className="mt-1 truncate text-sm text-[#64748b]">
+              {profile.data.email}
+            </p>
+          </div>
+        </div>
+
+        <form
+          className="space-y-5"
+          onSubmit={form.handleSubmit((values) => update.mutate(values))}
+          noValidate
+        >
+          <div>
+            <label htmlFor="profile-name" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+              Nome
+            </label>
+            <input
+              id="profile-name"
+              autoComplete="name"
+              {...form.register("full_name")}
+              aria-invalid={Boolean(form.formState.errors.full_name)}
+              className="h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+            />
+            {form.formState.errors.full_name && (
+              <p className="mt-1.5 text-xs text-[#f1a3ad]">
+                {form.formState.errors.full_name.message}
+              </p>
+            )}
+          </div>
+          <div>
+            <label htmlFor="profile-email" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+              E-mail
+            </label>
+            <input
+              id="profile-email"
+              value={profile.data.email}
+              readOnly
+              className="h-11 w-full cursor-not-allowed rounded-lg border border-[#202838] bg-[#0a0d11] px-3.5 text-sm text-[#64748b]"
+            />
+          </div>
+          <div>
+            <label htmlFor="profile-avatar" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+              URL do avatar <span className="font-normal text-[#64748b]">(opcional)</span>
+            </label>
+            <input
+              id="profile-avatar"
+              type="url"
+              autoComplete="url"
+              {...form.register("avatar_url")}
+              aria-invalid={Boolean(form.formState.errors.avatar_url)}
+              className="h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+              placeholder="https://"
+            />
+            {form.formState.errors.avatar_url && (
+              <p className="mt-1.5 text-xs text-[#f1a3ad]">
+                {form.formState.errors.avatar_url.message}
+              </p>
+            )}
+          </div>
+          <div className="grid gap-3 border-t border-[#202838] pt-5 sm:grid-cols-2">
+            <Info label="Permissão" value={profile.data.role} />
+            <Info
+              label="Workspace"
+              value={workspaceName}
+            />
+            <Info
+              label="Criado em"
+              value={new Date(profile.data.created_at).toLocaleDateString("pt-BR")}
+            />
+          </div>
+          {apiError && (
+            <p role="alert" className="text-sm text-[#f1a3ad]">
+              {apiError}
+            </p>
+          )}
+          {update.isSuccess && (
+            <p role="status" className="text-sm text-[#2dd4a0]">
+              Perfil atualizado.
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={update.isPending}
+            className="min-h-11 rounded-lg bg-[#536dfe] px-5 text-sm font-semibold text-white transition hover:bg-[#667eea] disabled:opacity-60"
+          >
+            {update.isPending ? "Salvando..." : "Salvar alterações"}
+          </button>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-[0.12em] text-[#64748b]">{label}</p>
+      <p className="mt-1.5 text-sm text-[#c7cfdd]">{value}</p>
+    </div>
+  );
+}

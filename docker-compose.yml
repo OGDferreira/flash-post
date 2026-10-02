@@ -7,3 +7,5 @@ services:
       ENVIRONMENT: development
       PUBLIC_BASE_URL: http://localhost:10000
       ALLOWED_HOSTS: localhost,127.0.0.1
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to a non-production development database}
+      SESSION_SECRET: ${SESSION_SECRET:?Set a local development session secret}

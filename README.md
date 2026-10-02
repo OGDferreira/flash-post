@@ -4,74 +4,98 @@ FlashPost is a new application built independently from the legacy Auto-Insta
 codebase. The legacy repository is a functional reference for business rules
 and integrations, not a source of frontend or backend architecture.
 
-## First deployment
+## Deployment
 
-The first release uses one Docker Web Service: Vite builds the React application
-and FastAPI serves its static files together with the API. This is the smallest
-reliable deployment path for validating GitHub, Render, Docker, FastAPI, and the
-frontend end to end. The frontend and backend remain in separate directories
-and can be deployed as separate services later without changing the product
-architecture.
+The initial release uses one Docker Web Service. Vite builds React and FastAPI
+serves the frontend and API from the same origin. This keeps the first
+production setup simple while preserving separate `frontend/` and `backend/`
+applications for future service separation.
 
-### Render settings
+The Render service uses the repository root, `./Dockerfile`, the `main` branch,
+automatic deploys, and `/health` for its liveness check. Docker builds both
+applications and starts Uvicorn on the `PORT` provided by Render.
 
-- Runtime: Docker
-- Root directory: repository root
-- Dockerfile path: `./Dockerfile`
-- Build command: leave blank (the Dockerfile builds both applications)
-- Start command: leave blank (the Docker image starts Uvicorn)
-- Health check path: `/health`
-- Branch: `main`
-- Auto-deploy: enabled
-- Port: use the `PORT` value provided by Render; the container has a local
-  fallback of `10000` for development.
+### Production environment
 
-No database or integration credentials are required for this initial health
-check deployment.
+Configure these environment variables directly in Render:
 
-### Environment variables to set now
+- `ENVIRONMENT=production`
+- `PUBLIC_BASE_URL=https://flashpost.onrender.com`
+- `ALLOWED_HOSTS=flashpost.onrender.com`
+- `DATABASE_URL`: the FlashPost Supabase PostgreSQL Session Pooler URL
+- `SESSION_SECRET`: session signing secret
+- `MASTER_ENCRYPTION_KEY`: Fernet-compatible encryption key
 
-These are public application settings, not secrets:
+Secret values must remain in Render and must never be copied into this
+repository. PostgreSQL URLs are normalized for `asyncpg`; PostgreSQL
+connections require TLS. The application does not print credentials or
+connection strings. Production startup requires `SESSION_SECRET`, and Docker
+startup requires `DATABASE_URL`. `MASTER_ENCRYPTION_KEY` is checked when
+encryption is used.
 
-| Name | Value |
-| --- | --- |
-| `ENVIRONMENT` | `production` |
-| `PUBLIC_BASE_URL` | `https://flashpost.onrender.com` |
-| `ALLOWED_HOSTS` | `flashpost.onrender.com` |
+### Bootstrap accounts
 
-The application also has safe defaults for local development. Setting these
-values explicitly in Render makes the intended deployment configuration clear.
-
-### Add later, with their respective feature
-
-Do not add placeholders or invent values for these settings. They are not read
-or required by the initial application:
-
-- PostgreSQL: `DATABASE_URL`
-- Session signing: `SESSION_SECRET` (**GERAR ESTA CHAVE**)
-- Application encryption: `MASTER_ENCRYPTION_KEY` (**GERAR ESTA CHAVE**)
-- Supabase Storage credentials and bucket
-- Meta OAuth credentials and callback settings
-- Google OAuth credentials
-- Shark webhook configuration
-- VAPID push-notification keys
-- Redis connection URL
-
-Generate a session secret when authentication is implemented:
+After a deployment has applied its migrations, use the Render service shell to
+create the platform administrator and initial customer owner:
 
 ```powershell
-python -c "import secrets; print(secrets.token_urlsafe(48))"
+python -m app.cli create-super-admin
+python -m app.cli create-owner
 ```
 
-Generate a Fernet-compatible encryption key when the encryption module is
-implemented:
+The CLI prompts for names, email addresses, and passwords; passwords are typed
+without echo and are never printed. It requests confirmation before creating
+an additional `SUPER_ADMIN`. These commands are administrative bootstrap
+operations and are not public HTTP endpoints.
 
-```powershell
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
+## Database and migrations
 
-Keep generated values only in Render's environment settings or a local,
-untracked `.env` file. Never put them in frontend code or commit them.
+The dedicated FlashPost Supabase PostgreSQL project is the production source
+of truth. SQLAlchemy uses async sessions and a small connection pool for the
+Supabase Session Pooler. The initial models use UUID keys, timezone-aware
+timestamps, foreign keys, role/status constraints, and case-insensitive unique
+indexes for email and workspace slugs.
+
+Alembic exclusively owns production schema changes; the application never
+calls `create_all()`. Docker runs `alembic upgrade head` before Uvicorn starts.
+A PostgreSQL advisory lock serializes concurrent startup migrations. This
+single-service strategy can be moved to a dedicated release/pre-deploy command
+before adding workers; background workers must never run migrations.
+
+Backend tests apply those same Alembic migrations to an isolated temporary
+SQLite database. Tests never connect to or modify Supabase.
+
+## Authentication and API
+
+- Sessions use a signed, HttpOnly, SameSite=Lax cookie; it is Secure in
+  production and expires after eight hours. Cookie contents contain identity
+  references only.
+- State-changing requests require a session-bound `X-CSRF-Token`. Obtain one
+  from `GET /api/auth/csrf`; login and logout rotate the token.
+- Passwords use Argon2id. Login failures do not disclose whether an account
+  exists. The initial in-process login limiter can be replaced by a shared
+  store before horizontal scaling.
+- Workspace access is checked against active membership for each request. An
+  optional `X-Workspace-ID` is accepted only after that check.
+- Only a global `SUPER_ADMIN` can access `/api/admin/*`. Frontend guards
+  complement, but never replace, backend authorization.
+
+Initial endpoints:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Process liveness, independent of the database |
+| `GET` | `/readiness` | Database readiness check |
+| `GET` | `/api/auth/csrf` | Obtain a CSRF token for the current session |
+| `POST` | `/api/auth/login` | Sign in |
+| `POST` | `/api/auth/logout` | Sign out and rotate the CSRF token |
+| `GET` | `/api/auth/me` | Current authenticated user |
+| `GET`, `PATCH` | `/api/profile` | Read/update profile name and avatar URL |
+| `GET` | `/api/workspace` | Current active workspace membership |
+| `GET` | `/api/admin/summary` | Real user/workspace totals |
+| `GET` | `/api/admin/users` | Searchable, paginated user list |
+| `GET` | `/api/admin/workspaces` | Searchable, paginated workspace list |
+| `GET` | `/api/admin/system/settings` | Non-secret system settings |
 
 ## Local development
 
@@ -87,26 +111,35 @@ python -m pip install -r requirements-dev.txt
 python -m uvicorn app.main:app --reload
 ```
 
+Database-backed local routes need a development `DATABASE_URL` and
+`SESSION_SECRET` provided through environment variables or an untracked local
+`.env` file. Never use the production Supabase database for tests.
+
 Frontend, in a second terminal:
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-The Vite development server proxies `/health` to FastAPI at `http://127.0.0.1:8000`.
-The initial health endpoint is also available at `http://127.0.0.1:8000/health`.
+The Vite development server proxies `/health` and `/api` to FastAPI at
+`http://127.0.0.1:8000`.
 
 ## Validation
 
+Run from the repository root:
+
 ```powershell
-cd frontend
+Push-Location frontend
+npm ci
 npm run build
 npx tsc --noEmit
-cd ..\backend
+Pop-Location
+Push-Location backend
 python -m pytest
-python -m compileall -q app
+python -m compileall -q app alembic tests
+Pop-Location
 ```
 
 Build the production container from the repository root:
@@ -118,11 +151,11 @@ docker build -t flashpost .
 ## Project structure
 
 ```text
-backend/   FastAPI application, domain modules, Alembic, and tests
-frontend/  React, TypeScript, Vite, and feature-oriented UI
+backend/app/       FastAPI API, authentication/RBAC, persistence, domain packages
+backend/alembic/   Versioned PostgreSQL schema migrations
+backend/tests/     Isolated migration-backed API and security tests
+frontend/src/      React application, layouts, pages, auth, and API client
 ```
 
-PostgreSQL will be the production database when the database phase is started.
-SQLAlchemy Async and Alembic are included in the backend foundation, but no
-connection or schema changes run at startup. The app does not use SQLite or
-`create_all()` for production schema management.
+Instagram, Meta, Shark, finance, ranking, Redis, workers, and other product
+integrations are intentionally out of scope for this phase.
