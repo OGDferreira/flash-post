@@ -23,6 +23,57 @@ body {
   margin: 0;
 }
 
+.dashboard-ambient {
+  position: relative;
+  isolation: isolate;
+}
+
+.dashboard-ambient::before,
+.dashboard-ambient::after {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  content: "";
+  border-radius: 9999px;
+  opacity: 0.2;
+  filter: blur(54px);
+  animation: dashboard-glow-drift 32s ease-in-out infinite alternate;
+}
+
+.dashboard-ambient::before {
+  top: 3%;
+  left: 4%;
+  width: min(46vw, 470px);
+  height: min(32vw, 320px);
+  background: radial-gradient(ellipse, rgba(83, 109, 254, 0.28), transparent 70%);
+}
+
+.dashboard-ambient::after {
+  right: 1%;
+  bottom: 10%;
+  width: min(38vw, 370px);
+  height: min(34vw, 330px);
+  background: radial-gradient(ellipse, rgba(102, 126, 234, 0.2), transparent 72%);
+  animation-delay: -14s;
+}
+
+@keyframes dashboard-glow-drift {
+  from {
+    transform: translate3d(-8px, -6px, 0) scale(0.98);
+  }
+
+  to {
+    transform: translate3d(10px, 8px, 0) scale(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-ambient::before,
+  .dashboard-ambient::after {
+    animation: none;
+  }
+}
+
 button,
 a {
   -webkit-tap-highlight-color: transparent;

@@ -205,7 +205,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
               </h1>
             </div>
           </div>
-          <div className="hidden items-center gap-2 rounded-full border border-[#202838] bg-[#0d1015] px-3 py-2 text-xs text-[#94a3b8] sm:flex">
+          <div className="hidden items-center gap-2 rounded-full border border-[#202838] bg-[#0d1015] px-3 py-2 text-xs text-[#94a3b8] transition-colors duration-200 hover:border-[#536dfe]/40 sm:flex">
             <span className="size-1.5 rounded-full bg-[#2dd4a0]" />
             Sistema online
           </div>

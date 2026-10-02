@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -12,13 +13,19 @@ import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
 import { AppShell } from "@/layouts/AppShell";
-import { DashboardPage } from "@/pages/DashboardPage";
 import { FeaturePlaceholderPage } from "@/pages/FeaturePlaceholderPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { AdminOverviewPage } from "@/pages/admin/AdminOverviewPage";
 import { AdminSystemPage } from "@/pages/admin/AdminSystemPage";
 import { AdminUsersPage } from "@/pages/admin/AdminUsersPage";
 import { AdminWorkspacesPage } from "@/pages/admin/AdminWorkspacesPage";
+
+const DashboardPage = lazy(() =>
+  import("@/pages/DashboardPage").then((module) => ({
+    default: module.DashboardPage,
+  })),
+);
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -28,7 +35,14 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route element={<RequireAuth />}>
             <Route element={<AppShell />}>
-              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <Suspense fallback={<LoadingState label="Carregando painel" />}>
+                    <DashboardPage />
+                  </Suspense>
+                }
+              />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/feature/:slug" element={<FeaturePlaceholderPage />} />
             </Route>
