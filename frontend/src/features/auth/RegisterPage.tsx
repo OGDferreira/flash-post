@@ -105,38 +105,43 @@ export function RegisterPage() {
     form.formState.errors.nickname?.message ?? availabilityMessage;
 
   return (
-    <main className="relative grid min-h-screen overflow-hidden bg-[#070809] px-5 py-8 lg:grid-cols-[1.05fr_0.95fr] lg:px-12">
+    <main className="relative grid min-h-svh place-items-center overflow-x-hidden bg-[#070809] px-4 py-6 sm:px-6 sm:py-10">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_48%,rgba(83,109,254,0.08),transparent_45%)]" />
-      <section className="relative mx-auto flex w-full max-w-xl flex-col justify-between lg:mx-0">
-        <Link to="/" className="flex w-fit items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-xl border border-[#33447c] bg-[#11182d] text-sm font-bold text-[#9baaff]">
-            F
-          </span>
-          <span className="text-base font-semibold tracking-[-0.03em] text-[#f5f7fb]">
-            flashpost<span className="text-[#7186ff]">.</span>
-          </span>
-        </Link>
-        <div className="my-16 max-w-lg lg:my-0">
-          <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#27334a] bg-[#0d1015] px-3 py-1.5 text-xs text-[#aeb9ce]">
-            <ShieldCheck size={14} className="text-[#8295ff]" />
-            Crie seu acesso seguro
+      <div className="relative grid w-full max-w-[960px] overflow-hidden rounded-2xl border border-[#202838] bg-[#0d1015] shadow-[0_24px_80px_rgba(0,0,0,0.28)] md:grid-cols-[0.95fr_1.05fr]">
+        <section className="flex flex-col justify-between gap-10 p-6 sm:p-8 md:min-h-[540px] md:p-9">
+          <Link to="/" className="flex w-fit items-center gap-3">
+            <img
+              src="/flashpost-logo.png"
+              alt="FlashPost"
+              width="40"
+              height="40"
+              className="size-10 shrink-0 object-contain"
+            />
+            <span className="text-base font-semibold tracking-[-0.03em] text-[#f5f7fb]">
+              flashpost<span className="text-[#7186ff]">.</span>
+            </span>
+          </Link>
+          <div className="max-w-sm md:my-auto">
+            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#27334a] bg-[#0d1015] px-3 py-1.5 text-xs text-[#aeb9ce]">
+              <ShieldCheck size={14} className="text-[#8295ff]" />
+              Crie seu acesso seguro
+            </p>
+            <h1 className="text-4xl font-semibold leading-tight tracking-[-0.06em] text-[#f5f7fb] sm:text-5xl">
+              Sua operação,
+              <br />
+              <span className="text-[#7186ff]">em um só lugar.</span>
+            </h1>
+            <p className="mt-5 max-w-md text-base leading-7 text-[#94a3b8]">
+              Crie sua conta e comece a organizar seu espaço de trabalho no FlashPost.
+            </p>
+          </div>
+          <p className="hidden text-xs text-[#64748b] md:block">
+            FlashPost · Acesso protegido
           </p>
-          <h1 className="text-4xl font-semibold leading-tight tracking-[-0.06em] text-[#f5f7fb] sm:text-5xl">
-            Sua operação,
-            <br />
-            <span className="text-[#7186ff]">em um só lugar.</span>
-          </h1>
-          <p className="mt-5 max-w-md text-base leading-7 text-[#94a3b8]">
-            Crie sua conta e comece a organizar seu espaço de trabalho no FlashPost.
-          </p>
-        </div>
-        <p className="hidden text-xs text-[#64748b] lg:block">
-          FlashPost · Acesso protegido
-        </p>
-      </section>
+        </section>
 
-      <section className="relative mx-auto flex w-full max-w-md items-center lg:mx-0 lg:ml-auto">
-        <div className="max-h-[calc(100vh-4rem)] w-full overflow-y-auto rounded-2xl border border-[#202838] bg-[#0d1015] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:p-8">
+        <section className="flex items-center border-t border-[#202838] p-6 sm:p-8 md:border-l md:border-t-0 md:p-9">
+          <div className="w-full max-w-md md:mx-auto">
           <div className="mb-7">
             <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#f5f7fb]">
               Criar conta
@@ -251,8 +256,9 @@ export function RegisterPage() {
               Entrar
             </Link>
           </p>
-        </div>
-      </section>
+          </div>
+        </section>
+      </div>
     </main>
   );
 }
