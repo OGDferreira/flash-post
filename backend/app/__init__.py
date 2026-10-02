@@ -1,0 +1,1 @@
+"""FlashPost backend application."""

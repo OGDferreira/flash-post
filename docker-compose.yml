@@ -1,0 +1,9 @@
+services:
+  flashpost:
+    build: .
+    ports:
+      - "10000:10000"
+    environment:
+      ENVIRONMENT: development
+      PUBLIC_BASE_URL: http://localhost:10000
+      ALLOWED_HOSTS: localhost,127.0.0.1

@@ -1,0 +1,1 @@
+"""Shark webhook integration domain."""
