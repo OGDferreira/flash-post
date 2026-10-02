@@ -35,6 +35,7 @@ def do_run_migrations(connection) -> None:
     lock_acquired = connection.dialect.name == "postgresql"
     if lock_acquired:
         connection.execute(text("SELECT pg_advisory_lock(:lock_id)"), {"lock_id": _migration_lock_id})
+        connection.commit()
     try:
         context.configure(
             connection=connection,
