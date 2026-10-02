@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import re
-import secrets
+import unicodedata
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -15,7 +15,7 @@ from app.auth.dependencies import (
     require_csrf,
 )
 from app.core.config import get_settings
-from app.core.nickname import normalize_nickname
+from app.core.nickname import nickname_key, normalize_nickname
 from app.core.rate_limit import LoginRateLimiter
 from app.core.security import PlatformRole, WorkspaceRole, hash_password, verify_password
 from app.models import User, Workspace, WorkspaceMember
@@ -70,18 +70,21 @@ def _request_host(request: Request) -> str:
 
 
 async def _nickname_in_use(db, nickname: str, exclude_user_id: uuid.UUID | None = None) -> bool:
-    query = select(User.id).where(func.lower(User.nickname) == nickname)
+    query = select(User.id).where(User.nickname_normalized == nickname_key(nickname))
     if exclude_user_id is not None:
         query = query.where(User.id != exclude_user_id)
     return await db.scalar(query) is not None
 
 
 async def _workspace_slug(db, nickname: str) -> str:
-    base = re.sub(r"[^a-z0-9]+", "-", nickname).strip("-")[:160].rstrip("-") or "workspace"
+    ascii_name = unicodedata.normalize("NFKD", nickname).encode("ascii", "ignore").decode("ascii")
+    base = re.sub(r"[^a-z0-9]+", "-", ascii_name.casefold()).strip("-")[:160].rstrip("-") or "workspace"
     candidate = base
+    suffix = 2
     while await db.scalar(select(Workspace.id).where(func.lower(Workspace.slug) == candidate)):
-        suffix = secrets.token_hex(4)
-        candidate = f"{base[:170]}-{suffix}"
+        suffix_text = f"-{suffix}"
+        candidate = f"{base[:180 - len(suffix_text)]}{suffix_text}"
+        suffix += 1
     return candidate
 
 
@@ -94,7 +97,7 @@ async def get_csrf_token(request: Request) -> dict[str, str]:
 async def nickname_availability(
     request: Request,
     db: DbSession,
-    nickname: str = Query(min_length=3, max_length=30),
+    nickname: str = Query(min_length=2, max_length=160),
 ) -> NicknameAvailabilityResponse:
     try:
         normalized = normalize_nickname(nickname)
@@ -146,6 +149,7 @@ async def register(
     user = User(
         email=str(payload.email),
         nickname=payload.nickname,
+        nickname_normalized=nickname_key(payload.nickname),
         full_name=payload.full_name,
         password_hash=hash_password(payload.password),
         platform_role=PlatformRole.USER.value,
@@ -252,6 +256,7 @@ async def update_profile(
         raise HTTPException(status_code=409, detail="This nickname is already in use.")
     user.full_name = payload.full_name.strip()
     user.nickname = payload.nickname
+    user.nickname_normalized = nickname_key(payload.nickname)
     user.avatar_url = str(payload.avatar_url) if payload.avatar_url else None
     try:
         await db.commit()

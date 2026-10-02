@@ -65,7 +65,7 @@ export function DashboardPage() {
             Seu espaço
           </p>
           <h2 className="mt-3 text-3xl font-semibold tracking-[-0.055em] text-[#f5f7fb] sm:text-4xl lg:text-[46px] lg:leading-[1.12]">
-            Visão geral
+            Olá, {user?.nickname ?? "bem-vindo"}
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-[#94a3b8] sm:text-base lg:mx-0">
             A base da sua operação está pronta. As métricas aparecerão aqui quando

@@ -9,22 +9,15 @@ import { z } from "zod";
 
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ApiError, apiRequest, type User } from "@/services/api";
+import { isValidPublicNickname, normalizePublicNickname } from "@/features/auth/nickname";
 
-const nicknamePattern = /^[\p{L}\p{N}_.]+$/u;
 const registerSchema = z
   .object({
     full_name: z.string().trim().min(1, "Informe seu nome completo.").max(160),
     email: z.string().trim().email("Informe um e-mail válido."),
     nickname: z
       .string()
-      .refine((value) => {
-        const length = Array.from(value.normalize("NFC")).length;
-        return length >= 3 && length <= 30;
-      }, "Use entre 3 e 30 caracteres.")
-      .refine(
-        (value) => nicknamePattern.test(value.normalize("NFC")),
-        "Use apenas letras, números, ponto ou underscore, sem espaços.",
-      ),
+      .refine(isValidPublicNickname, "Use um apelido entre 2 e 40 caracteres."),
     password: z.string().min(8, "Use pelo menos 8 caracteres.").max(256),
     confirm_password: z.string().min(1, "Confirme sua senha."),
   })
@@ -54,16 +47,13 @@ export function RegisterPage() {
       confirm_password: "",
     },
   });
+  const nicknameInput = form.register("nickname");
   const nickname = form.watch("nickname");
-  const normalizedNickname = nickname.normalize("NFC");
-  const nicknameLength = Array.from(normalizedNickname).length;
-  const nicknameIsValid =
-    nicknameLength >= 3 &&
-    nicknameLength <= 30 &&
-    nicknamePattern.test(normalizedNickname);
+  const normalizedNickname = normalizePublicNickname(nickname);
+  const nicknameIsValid = isValidPublicNickname(nickname);
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setDebouncedNickname(nicknameIsValid ? nickname : "");
+      setDebouncedNickname(nicknameIsValid ? normalizedNickname : "");
     }, 350);
     return () => window.clearTimeout(timer);
   }, [nickname, nicknameIsValid]);
@@ -84,7 +74,7 @@ export function RegisterPage() {
         method: "POST",
         body: {
           ...values,
-          nickname: values.nickname.normalize("NFC").toLowerCase(),
+          nickname: normalizePublicNickname(values.nickname),
         },
       }),
     onSuccess: ({ user: signedInUser }) => {
@@ -99,7 +89,7 @@ export function RegisterPage() {
   const apiError =
     mutation.error instanceof ApiError ? mutation.error.message : null;
   const availabilityMatchesInput =
-    debouncedNickname.toLowerCase() === nickname.normalize("NFC").toLowerCase();
+    debouncedNickname.toLowerCase() === normalizedNickname.toLowerCase();
   const availabilityMessage = !availabilityMatchesInput
     ? null
     : availability.isFetching
@@ -189,9 +179,15 @@ export function RegisterPage() {
               <input
                 id="register-nickname"
                 autoComplete="nickname"
-                autoCapitalize="none"
                 spellCheck={false}
-                {...form.register("nickname")}
+                {...nicknameInput}
+                onBlur={(event) => {
+                  void nicknameInput.onBlur(event);
+                  form.setValue("nickname", normalizePublicNickname(event.target.value), {
+                    shouldValidate: true,
+                    shouldDirty: true,
+                  });
+                }}
                 aria-invalid={
                   Boolean(form.formState.errors.nickname) ||
                   (availabilityMatchesInput &&
@@ -199,10 +195,10 @@ export function RegisterPage() {
                 }
                 aria-describedby="register-nickname-hint register-nickname-status"
                 className="h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] px-3.5 text-sm text-[#f5f7fb] outline-none transition placeholder:text-[#536176] focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
-                placeholder="GuiOps"
+                placeholder="Ex.: Gui Ferreira"
               />
               <p id="register-nickname-hint" className="mt-1.5 text-xs text-[#64748b]">
-                Este será o nome exibido no ranking.
+                Este será o nome público exibido no ranking e na plataforma. Use o nome pelo qual você quer ser conhecido.
               </p>
               <p
                 id="register-nickname-status"

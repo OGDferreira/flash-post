@@ -3,6 +3,7 @@ import asyncio
 import getpass
 import re
 import sys
+import unicodedata
 from uuid import uuid4
 
 from pydantic import TypeAdapter, ValidationError
@@ -10,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import dispose_engine, get_session_factory
-from app.core.nickname import normalize_nickname
+from app.core.nickname import nickname_key, normalize_nickname
 from app.core.security import PlatformRole, WorkspaceRole, hash_password
 from app.models import User, Workspace, WorkspaceMember
 
@@ -42,7 +43,8 @@ def _prompt_password() -> str:
 
 
 def _slugify(name: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", name.casefold()).strip("-")
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.casefold()).strip("-")
     if not slug:
         slug = f"workspace-{uuid4().hex[:8]}"
     return slug[:180].rstrip("-")
@@ -70,6 +72,7 @@ async def _create_super_admin() -> None:
         user = User(
             email=email,
             nickname=nickname,
+            nickname_normalized=nickname_key(nickname),
             full_name=full_name,
             password_hash=hash_password(password),
             platform_role=PlatformRole.SUPER_ADMIN.value,
@@ -99,6 +102,7 @@ async def _create_owner() -> None:
         user = User(
             email=email,
             nickname=nickname,
+            nickname_normalized=nickname_key(nickname),
             full_name=full_name,
             password_hash=hash_password(password),
             platform_role=PlatformRole.USER.value,

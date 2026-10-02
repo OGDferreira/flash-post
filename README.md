@@ -36,9 +36,9 @@ encryption is used.
 ### Account creation
 
 The public `/register` page creates a customer `OWNER`, a workspace, and its
-active owner membership, then signs the user in. Nicknames are normalized to
-lowercase and must be unique across the platform. A case-insensitive unique
-database index backs the API checks.
+active owner membership, then signs the user in. Nicknames are public display
+names: Unicode text is preserved, whitespace is collapsed, and a separate
+case-folded key enforces platform-wide uniqueness.
 
 Only a platform administrator is created through the administrative CLI:
 
@@ -64,8 +64,8 @@ calls `create_all()`. Docker runs `alembic upgrade head` before Uvicorn starts.
 A PostgreSQL advisory lock serializes concurrent startup migrations. This
 single-service strategy can be moved to a dedicated release/pre-deploy command
 before adding workers; background workers must never run migrations.
-The nickname migration backfills existing users before enforcing the
-non-null, case-insensitive unique index.
+The nickname migrations backfill existing users before enforcing the
+non-null, case-insensitive unique index on `nickname_normalized`.
 
 Backend tests apply those same Alembic migrations to an isolated temporary
 SQLite database. Tests never connect to or modify Supabase.

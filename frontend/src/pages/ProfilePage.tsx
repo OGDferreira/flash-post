@@ -7,20 +7,13 @@ import { z } from "zod";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ApiError, apiRequest, type User, type Workspace } from "@/services/api";
+import { isValidPublicNickname, normalizePublicNickname } from "@/features/auth/nickname";
 
-const nicknamePattern = /^[\p{L}\p{N}_.]+$/u;
 const profileSchema = z.object({
   full_name: z.string().trim().min(1, "Informe seu nome.").max(160),
   nickname: z
     .string()
-    .refine((value) => {
-      const length = Array.from(value.normalize("NFC")).length;
-      return length >= 3 && length <= 30;
-    }, "Use entre 3 e 30 caracteres.")
-    .refine(
-      (value) => nicknamePattern.test(value.normalize("NFC")),
-      "Use apenas letras, números, ponto ou underscore, sem espaços.",
-    ),
+    .refine(isValidPublicNickname, "Use um apelido entre 2 e 40 caracteres."),
   avatar_url: z.union([z.literal(""), z.string().url("Informe uma URL válida.")]),
 });
 type ProfileValues = z.infer<typeof profileSchema>;
@@ -42,6 +35,7 @@ export function ProfilePage() {
     resolver: zodResolver(profileSchema),
     defaultValues: { full_name: "", nickname: "", avatar_url: "" },
   });
+  const nicknameInput = form.register("nickname");
   useEffect(() => {
     if (profile.data) {
       form.reset({
@@ -58,7 +52,7 @@ export function ProfilePage() {
         method: "PATCH",
         body: {
           full_name: values.full_name,
-          nickname: values.nickname.normalize("NFC").toLowerCase(),
+          nickname: normalizePublicNickname(values.nickname),
           avatar_url: values.avatar_url || null,
         },
       }),
@@ -123,7 +117,7 @@ export function ProfilePage() {
               {profile.data.email}
             </p>
             <p className="mt-1 truncate text-xs text-[#8295ff]">
-              @{profile.data.nickname}
+              {profile.data.nickname}
             </p>
           </div>
         </div>
@@ -168,14 +162,20 @@ export function ProfilePage() {
             <input
               id="profile-nickname"
               autoComplete="nickname"
-              autoCapitalize="none"
               spellCheck={false}
-              {...form.register("nickname")}
+              {...nicknameInput}
+              onBlur={(event) => {
+                void nicknameInput.onBlur(event);
+                form.setValue("nickname", normalizePublicNickname(event.target.value), {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                });
+              }}
               aria-invalid={Boolean(form.formState.errors.nickname)}
               className="h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
             />
             <p className="mt-1.5 text-xs text-[#64748b]">
-              Este será o nome exibido no ranking.
+              Este será o nome público exibido no ranking e na plataforma.
             </p>
             {form.formState.errors.nickname && (
               <p className="mt-1.5 text-xs text-[#f1a3ad]">

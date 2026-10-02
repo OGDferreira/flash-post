@@ -2,15 +2,17 @@ import uuid
 
 import pytest
 from httpx import AsyncClient
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.config import Settings
+from app.core.nickname import nickname_key, normalize_nickname
 from app.core.security import hash_password, verify_password
 from app.models import User, Workspace, WorkspaceMember
+from app.schemas.auth import RegisterRequest
 
 
 async def csrf(client: AsyncClient) -> str:
@@ -37,6 +39,68 @@ def test_argon2_password_hashing() -> None:
     assert verify_password("long secure password", encoded)
     assert not verify_password("incorrect", encoded)
     assert not verify_password("incorrect", None)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Gui Ferreira", "Gui Ferreira"),
+        ("00 do Site", "00 do Site"),
+        ("João Ads", "João Ads"),
+        ("Guilherme 🚀", "Guilherme 🚀"),
+        ("   Gui   Ferreira   ", "Gui Ferreira"),
+    ],
+)
+def test_public_nickname_normalization(value: str, expected: str) -> None:
+    assert normalize_nickname(value) == expected
+
+
+@pytest.mark.parametrize("value", ["", " ", "A", "x" * 41])
+def test_public_nickname_rejects_values_outside_length_bounds(value: str) -> None:
+    with pytest.raises(ValueError):
+        normalize_nickname(value)
+
+
+@pytest.mark.parametrize(
+    ("nickname", "expected"),
+    [
+        ("Gui Ferreira", "Gui Ferreira"),
+        ("00 do Site", "00 do Site"),
+        ("João Ads", "João Ads"),
+        ("Guilherme 🚀", "Guilherme 🚀"),
+        ("   Gui   Ferreira   ", "Gui Ferreira"),
+    ],
+)
+def test_registration_schema_accepts_public_display_names(
+    nickname: str, expected: str
+) -> None:
+    payload = RegisterRequest.model_validate(
+        {
+            "full_name": "Display Name User",
+            "email": "display@example.com",
+            "nickname": nickname,
+            "password": "a secure password",
+            "confirm_password": "a secure password",
+        }
+    )
+
+    assert payload.nickname == expected
+
+
+@pytest.mark.parametrize("nickname", ["A", "x" * 41])
+def test_registration_schema_rejects_public_names_outside_length_bounds(
+    nickname: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        RegisterRequest.model_validate(
+            {
+                "full_name": "Display Name User",
+                "email": "display@example.com",
+                "nickname": nickname,
+                "password": "a secure password",
+                "confirm_password": "a secure password",
+            }
+        )
 
 
 def test_encryption_round_trip() -> None:
@@ -171,7 +235,7 @@ async def test_profile_patch_requires_valid_csrf_and_updates_profile(
         headers={"X-CSRF-Token": auth["csrf_token"]},
         json={
             "full_name": "Updated Name",
-            "nickname": "Owner.Updated",
+            "nickname": "  João   Ferreira  ",
             "avatar_url": "https://example.com/avatar.png",
         },
     )
@@ -179,13 +243,13 @@ async def test_profile_patch_requires_valid_csrf_and_updates_profile(
     assert denied.status_code == 403
     assert updated.status_code == 200
     assert updated.json()["full_name"] == "Updated Name"
-    assert updated.json()["nickname"] == "owner.updated"
+    assert updated.json()["nickname"] == "João Ferreira"
     assert updated.json()["avatar_url"] == "https://example.com/avatar.png"
 
     duplicate = await client.patch(
         "/api/profile",
         headers={"X-CSRF-Token": auth["csrf_token"]},
-        json={"full_name": "Updated Name", "nickname": "COLLABORATOR", "avatar_url": None},
+        json={"full_name": "Updated Name", "nickname": "colaborador", "avatar_url": None},
     )
     assert duplicate.status_code == 409
     assert duplicate.json()["detail"] == "This nickname is already in use."
@@ -202,7 +266,7 @@ async def test_registration_creates_owner_workspace_membership_and_session(
         json={
             "full_name": "Gui Operations",
             "email": " GuiOps@Example.com ",
-            "nickname": "GuiOps",
+            "nickname": "Gui Ferreira",
             "password": "a secure password",
             "confirm_password": "a secure password",
         },
@@ -211,7 +275,7 @@ async def test_registration_creates_owner_workspace_membership_and_session(
     assert response.status_code == 201, response.text
     result = response.json()
     assert result["user"]["email"] == "guiops@example.com"
-    assert result["user"]["nickname"] == "guiops"
+    assert result["user"]["nickname"] == "Gui Ferreira"
     assert result["user"]["role"] == "OWNER"
     assert result["user"]["is_verified"] is False
     assert "password_hash" not in result["user"]
@@ -223,14 +287,37 @@ async def test_registration_creates_owner_workspace_membership_and_session(
     assert current_user.status_code == 200
     assert current_user.json()["id"] == result["user"]["id"]
     assert workspace.status_code == 200
-    assert workspace.json()["name"] == "Operação de guiops"
-    assert workspace.json()["slug"] == "guiops"
+    assert workspace.json()["name"] == "Operação de Gui Ferreira"
+    assert workspace.json()["slug"] == "gui-ferreira"
     assert workspace.json()["role"] == "OWNER"
     user = await db_session.scalar(select(User).where(User.email == "guiops@example.com"))
     assert user is not None
     assert user.platform_role == "USER"
     assert user.password_hash != "a secure password"
     assert verify_password("a secure password", user.password_hash)
+
+
+@pytest.mark.anyio
+async def test_registration_accepts_unicode_public_nickname(client: AsyncClient) -> None:
+    token = await csrf(client)
+    response = await client.post(
+        "/api/auth/register",
+        headers={"X-CSRF-Token": token},
+        json={
+            "full_name": "João Ads",
+            "email": "joao@example.com",
+            "nickname": "   João    Ads ",
+            "password": "a secure password",
+            "confirm_password": "a secure password",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["user"]["nickname"] == "João Ads"
+    assert response.json()["user"]["nickname"] != response.json()["user"]["nickname"].lower()
+    workspace = await client.get("/api/workspace")
+    assert workspace.json()["name"] == "Operação de João Ads"
+    assert workspace.json()["slug"] == "joao-ads"
 
 
 @pytest.mark.anyio
@@ -252,12 +339,13 @@ async def test_registration_adds_suffix_when_workspace_slug_is_taken(
         assert response.status_code == 201, response.text
         return response.json()
 
-    await create("flash.post", "first@example.com")
-    await create("flash_post", "second@example.com")
+    await create("00 do Site", "first@example.com")
+    await create("00-do-site", "second@example.com")
     workspace = await client.get("/api/workspace")
 
     assert workspace.status_code == 200
-    assert workspace.json()["slug"].startswith("flash-post-")
+    assert workspace.json()["name"] == "Operação de 00-do-site"
+    assert workspace.json()["slug"] == "00-do-site-2"
 
 
 @pytest.mark.anyio
@@ -269,19 +357,19 @@ async def test_registration_rejects_duplicate_email_and_nickname_case_insensitiv
     payload = {
         "full_name": "Another User",
         "email": "new@example.com",
-        "nickname": "NewUser",
+        "nickname": "New User",
         "password": "a secure password",
         "confirm_password": "a secure password",
     }
 
     availability = await client.get(
         "/api/auth/nickname-availability",
-        params={"nickname": "OWNER"},
+        params={"nickname": "GUI   FERREIRA"},
     )
     duplicate_nickname = await client.post(
         "/api/auth/register",
         headers={"X-CSRF-Token": token},
-        json={**payload, "nickname": "OWNER"},
+        json={**payload, "nickname": "gui   ferreira"},
     )
     duplicate_email = await client.post(
         "/api/auth/register",
@@ -306,7 +394,7 @@ async def test_registration_rate_limit_blocks_repeated_attempts(
     payload = {
         "full_name": "New User",
         "email": "OWNER@example.com",
-        "nickname": "new_owner",
+        "nickname": "New Owner",
         "password": "a secure password",
         "confirm_password": "a secure password",
     }
@@ -336,7 +424,7 @@ async def test_registration_validates_nickname_and_password(client: AsyncClient)
     base_payload = {
         "full_name": "New User",
         "email": "new@example.com",
-        "nickname": " valid ",
+        "nickname": " ",
         "password": "short",
         "confirm_password": "short",
     }
@@ -349,14 +437,14 @@ async def test_registration_validates_nickname_and_password(client: AsyncClient)
     bad_password = await client.post(
         "/api/auth/register",
         headers={"X-CSRF-Token": token},
-        json={**base_payload, "nickname": "valid_user", "password": "short7!", "confirm_password": "short7!"},
+        json={**base_payload, "nickname": "New User", "password": "short7!", "confirm_password": "short7!"},
     )
     mismatched_password = await client.post(
         "/api/auth/register",
         headers={"X-CSRF-Token": token},
         json={
             **base_payload,
-            "nickname": "valid_user",
+            "nickname": "New User",
             "password": "valid password",
             "confirm_password": "different password",
         },
@@ -371,15 +459,16 @@ async def test_registration_validates_nickname_and_password(client: AsyncClient)
 async def test_nickname_index_is_unique_and_case_insensitive(db_session: AsyncSession, owner) -> None:
     indexes = await db_session.execute(
         text(
-            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'uq_users_nickname_lower'"
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'uq_users_nickname_normalized'"
         )
     )
     index_sql = indexes.scalar_one()
     assert "CREATE UNIQUE INDEX" in index_sql.upper()
-    assert "LOWER(NICKNAME)" in index_sql.upper()
+    assert "NICKNAME_NORMALIZED" in index_sql.upper()
     duplicate = User(
         email="duplicate-owner@example.com",
-        nickname="OWNER",
+        nickname="gui ferreira",
+        nickname_normalized=nickname_key("gui ferreira"),
         full_name="Duplicate Owner",
         password_hash=hash_password("another long password"),
     )
@@ -400,6 +489,7 @@ async def test_workspace_endpoint_only_returns_current_member_workspace(
     other_owner = User(
         email="other-owner@example.com",
         nickname="other-owner",
+        nickname_normalized=nickname_key("other-owner"),
         full_name="Other Owner",
         password_hash=hash_password("another long password"),
     )

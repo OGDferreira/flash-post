@@ -9,7 +9,9 @@ from pathlib import Path
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
-def test_nickname_migration_backfills_existing_users(tmp_path: Path) -> None:
+def test_public_nickname_migration_preserves_and_normalizes_existing_users(
+    tmp_path: Path,
+) -> None:
     database_path = tmp_path / "legacy-users.db"
     database_url = f"sqlite+aiosqlite:///{database_path.as_posix()}"
     environment = os.environ.copy()
@@ -59,6 +61,36 @@ def test_nickname_migration_backfills_existing_users(tmp_path: Path) -> None:
             "-c",
             "alembic.ini",
             "upgrade",
+            "20261002_02",
+        ],
+        cwd=BACKEND_DIR,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        users = connection.execute(
+            "SELECT id FROM users ORDER BY created_at, id"
+        ).fetchall()
+        for user, nickname in zip(
+            users,
+            ("   Gui   Ferreira  ", "00 do Site", "Guilherme 🚀"),
+            strict=True,
+        ):
+            connection.execute(
+                "UPDATE users SET nickname = ? WHERE id = ?",
+                (nickname, user[0]),
+            )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "-c",
+            "alembic.ini",
+            "upgrade",
             "head",
         ],
         cwd=BACKEND_DIR,
@@ -68,21 +100,18 @@ def test_nickname_migration_backfills_existing_users(tmp_path: Path) -> None:
         text=True,
     )
     with sqlite3.connect(database_path) as connection:
-        nicknames = [
-            row[0]
-            for row in connection.execute(
-                "SELECT nickname FROM users ORDER BY created_at, id"
-            )
-        ]
+        nicknames = connection.execute(
+            "SELECT nickname, nickname_normalized FROM users ORDER BY created_at, id"
+        ).fetchall()
         index = connection.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
-            ("uq_users_nickname_lower",),
+            ("uq_users_nickname_normalized",),
         ).fetchone()
 
     assert len(nicknames) == 3
-    assert {nickname.casefold() for nickname in nicknames} == {
-        "guiops",
-        "guiops1",
-        "legacy.user",
-    }
+    assert nicknames == [
+        ("Gui Ferreira", "gui ferreira"),
+        ("00 do Site", "00 do site"),
+        ("Guilherme 🚀", "guilherme 🚀"),
+    ]
     assert index is not None and "UNIQUE" in index[0].upper()

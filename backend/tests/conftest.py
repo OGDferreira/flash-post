@@ -11,6 +11,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.rate_limit import LoginRateLimiter
+from app.core.nickname import nickname_key
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 TEST_DB_PATH = Path(tempfile.gettempdir()) / f"flashpost-tests-{os.getpid()}.db"
@@ -102,7 +103,8 @@ async def owner(db_session: AsyncSession):
 
     user = User(
         email="owner@example.com",
-        nickname="owner",
+        nickname="Gui Ferreira",
+        nickname_normalized=nickname_key("Gui Ferreira"),
         full_name="FlashPost Owner",
         password_hash=hash_password("correct horse battery staple"),
         platform_role="USER",
@@ -139,7 +141,8 @@ async def collaborator(db_session: AsyncSession, owner):
     _owner_user, workspace = owner
     user = User(
         email="collaborator@example.com",
-        nickname="collaborator",
+        nickname="Colaborador",
+        nickname_normalized=nickname_key("Colaborador"),
         full_name="FlashPost Collaborator",
         password_hash=hash_password("collaborator password"),
         platform_role="USER",
@@ -166,7 +169,8 @@ async def super_admin(db_session: AsyncSession):
 
     user = User(
         email="superadmin@example.com",
-        nickname="superadmin",
+        nickname="Super Admin",
+        nickname_normalized=nickname_key("Super Admin"),
         full_name="FlashPost Super Admin",
         password_hash=hash_password("super admin password"),
         platform_role="SUPER_ADMIN",
