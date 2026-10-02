@@ -180,8 +180,10 @@ export function LoginPage() {
             </button>
           </form>
           <p className="mt-6 border-t border-[#202838] pt-5 text-xs leading-5 text-[#64748b]">
-            Se você ainda não tem acesso, peça ao administrador da plataforma
-            para criar sua conta.
+            Ainda não tem uma conta?{" "}
+            <Link to="/register" className="font-medium text-[#aab7ff] hover:text-white">
+              Criar conta
+            </Link>
           </p>
         </div>
       </section>

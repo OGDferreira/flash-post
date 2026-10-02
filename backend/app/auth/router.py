@@ -1,7 +1,11 @@
 from datetime import datetime, timezone
+import re
+import secrets
+import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.dependencies import (
     AuthenticatedUser,
@@ -11,14 +15,17 @@ from app.auth.dependencies import (
     require_csrf,
 )
 from app.core.config import get_settings
+from app.core.nickname import normalize_nickname
 from app.core.rate_limit import LoginRateLimiter
-from app.core.security import PlatformRole, verify_password
+from app.core.security import PlatformRole, WorkspaceRole, hash_password, verify_password
 from app.models import User, Workspace, WorkspaceMember
 from app.schemas.auth import (
     AuthResponse,
     LoginRequest,
     MessageResponse,
+    NicknameAvailabilityResponse,
     ProfileUpdateRequest,
+    RegisterRequest,
     UserResponse,
     WorkspaceResponse,
 )
@@ -37,6 +44,7 @@ def _user_response(user: User, membership: WorkspaceMember | None) -> UserRespon
         id=user.id,
         email=user.email,
         username=user.username,
+        nickname=user.nickname,
         full_name=user.full_name,
         avatar_url=user.avatar_url,
         role=_user_role(user, membership),
@@ -57,17 +65,133 @@ async def _primary_membership(user: User, db):
     )
 
 
+def _request_host(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+async def _nickname_in_use(db, nickname: str, exclude_user_id: uuid.UUID | None = None) -> bool:
+    query = select(User.id).where(func.lower(User.nickname) == nickname)
+    if exclude_user_id is not None:
+        query = query.where(User.id != exclude_user_id)
+    return await db.scalar(query) is not None
+
+
+async def _workspace_slug(db, nickname: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", nickname).strip("-")[:160].rstrip("-") or "workspace"
+    candidate = base
+    while await db.scalar(select(Workspace.id).where(func.lower(Workspace.slug) == candidate)):
+        suffix = secrets.token_hex(4)
+        candidate = f"{base[:170]}-{suffix}"
+    return candidate
+
+
 @router.get("/auth/csrf")
 async def get_csrf_token(request: Request) -> dict[str, str]:
     return {"csrf_token": csrf_token_for(request)}
 
 
+@router.get("/auth/nickname-availability", response_model=NicknameAvailabilityResponse)
+async def nickname_availability(
+    request: Request,
+    db: DbSession,
+    nickname: str = Query(min_length=3, max_length=30),
+) -> NicknameAvailabilityResponse:
+    try:
+        normalized = normalize_nickname(nickname)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    settings = get_settings()
+    limiter: LoginRateLimiter = request.app.state.nickname_check_rate_limiter
+    rate_key = limiter.key(_request_host(request), "nickname-availability")
+    if await limiter.is_limited(rate_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many nickname checks. Please try again later.",
+            headers={"Retry-After": str(settings.nickname_check_window_seconds)},
+        )
+    await limiter.record_failure(rate_key)
+    return NicknameAvailabilityResponse(
+        available=not await _nickname_in_use(db, normalized)
+    )
+
+
+@router.post(
+    "/auth/register",
+    response_model=AuthResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_csrf)],
+)
+async def register(
+    payload: RegisterRequest,
+    request: Request,
+    db: DbSession,
+) -> AuthResponse:
+    settings = get_settings()
+    limiter: LoginRateLimiter = request.app.state.registration_rate_limiter
+    rate_key = limiter.key(_request_host(request), "registration")
+    if await limiter.is_limited(rate_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many registration attempts. Please try again later.",
+            headers={"Retry-After": str(settings.registration_window_seconds)},
+        )
+    await limiter.record_failure(rate_key)
+
+    if await db.scalar(select(User.id).where(func.lower(User.email) == str(payload.email))):
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+    if await _nickname_in_use(db, payload.nickname):
+        raise HTTPException(status_code=409, detail="This nickname is already in use.")
+
+    user = User(
+        email=str(payload.email),
+        nickname=payload.nickname,
+        full_name=payload.full_name,
+        password_hash=hash_password(payload.password),
+        platform_role=PlatformRole.USER.value,
+        is_active=True,
+        is_verified=False,
+        last_login_at=datetime.now(timezone.utc),
+    )
+    db.add(user)
+    try:
+        await db.flush()
+        workspace = Workspace(
+            name=f"Operação de {payload.nickname}"[:160],
+            slug=await _workspace_slug(db, payload.nickname),
+            owner_id=user.id,
+            status="ACTIVE",
+        )
+        db.add(workspace)
+        await db.flush()
+        membership = WorkspaceMember(
+            workspace_id=workspace.id,
+            user_id=user.id,
+            role=WorkspaceRole.OWNER.value,
+            status="ACTIVE",
+        )
+        db.add(membership)
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email or nickname already exists.",
+        ) from None
+
+    await db.refresh(user)
+    request.session.clear()
+    request.session["user_id"] = str(user.id)
+    request.session["workspace_id"] = str(workspace.id)
+    csrf_token = csrf_token_for(request)
+    return AuthResponse(user=_user_response(user, membership), csrf_token=csrf_token)
+
+
 @router.post("/auth/login", response_model=AuthResponse, dependencies=[Depends(require_csrf)])
 async def login(payload: LoginRequest, request: Request, db: DbSession) -> AuthResponse:
     settings = get_settings()
-    client_host = request.client.host if request.client else "unknown"
     limiter: LoginRateLimiter = request.app.state.login_rate_limiter
-    rate_key = limiter.key(client_host, str(payload.email))
+    rate_key = limiter.key(_request_host(request), str(payload.email))
     if await limiter.is_limited(rate_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -124,9 +248,16 @@ async def update_profile(
     user: AuthenticatedUser,
     db: DbSession,
 ) -> UserResponse:
+    if await _nickname_in_use(db, payload.nickname, user.id):
+        raise HTTPException(status_code=409, detail="This nickname is already in use.")
     user.full_name = payload.full_name.strip()
+    user.nickname = payload.nickname
     user.avatar_url = str(payload.avatar_url) if payload.avatar_url else None
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="This nickname is already in use.") from None
     await db.refresh(user)
     membership = await _primary_membership(user, db)
     return _user_response(user, membership)

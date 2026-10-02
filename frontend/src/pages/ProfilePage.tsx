@@ -8,8 +8,19 @@ import { ErrorState, LoadingState } from "@/components/PageState";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ApiError, apiRequest, type User, type Workspace } from "@/services/api";
 
+const nicknamePattern = /^[\p{L}\p{N}_.]+$/u;
 const profileSchema = z.object({
   full_name: z.string().trim().min(1, "Informe seu nome.").max(160),
+  nickname: z
+    .string()
+    .refine((value) => {
+      const length = Array.from(value.normalize("NFC")).length;
+      return length >= 3 && length <= 30;
+    }, "Use entre 3 e 30 caracteres.")
+    .refine(
+      (value) => nicknamePattern.test(value.normalize("NFC")),
+      "Use apenas letras, números, ponto ou underscore, sem espaços.",
+    ),
   avatar_url: z.union([z.literal(""), z.string().url("Informe uma URL válida.")]),
 });
 type ProfileValues = z.infer<typeof profileSchema>;
@@ -29,12 +40,13 @@ export function ProfilePage() {
   });
   const form = useForm<ProfileValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: { full_name: "", avatar_url: "" },
+    defaultValues: { full_name: "", nickname: "", avatar_url: "" },
   });
   useEffect(() => {
     if (profile.data) {
       form.reset({
         full_name: profile.data.full_name,
+        nickname: profile.data.nickname,
         avatar_url: profile.data.avatar_url ?? "",
       });
     }
@@ -46,6 +58,7 @@ export function ProfilePage() {
         method: "PATCH",
         body: {
           full_name: values.full_name,
+          nickname: values.nickname.normalize("NFC").toLowerCase(),
           avatar_url: values.avatar_url || null,
         },
       }),
@@ -85,7 +98,7 @@ export function ProfilePage() {
           Perfil
         </h2>
         <p className="mt-2 text-sm text-[#94a3b8]">
-          Consulte seus dados e atualize o nome e a imagem de perfil.
+          Consulte seus dados e atualize seu nome, apelido e imagem de perfil.
         </p>
       </div>
 
@@ -108,6 +121,9 @@ export function ProfilePage() {
             </p>
             <p className="mt-1 truncate text-sm text-[#64748b]">
               {profile.data.email}
+            </p>
+            <p className="mt-1 truncate text-xs text-[#8295ff]">
+              @{profile.data.nickname}
             </p>
           </div>
         </div>
@@ -144,6 +160,28 @@ export function ProfilePage() {
               readOnly
               className="h-11 w-full cursor-not-allowed rounded-lg border border-[#202838] bg-[#0a0d11] px-3.5 text-sm text-[#64748b]"
             />
+          </div>
+          <div>
+            <label htmlFor="profile-nickname" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+              Apelido
+            </label>
+            <input
+              id="profile-nickname"
+              autoComplete="nickname"
+              autoCapitalize="none"
+              spellCheck={false}
+              {...form.register("nickname")}
+              aria-invalid={Boolean(form.formState.errors.nickname)}
+              className="h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+            />
+            <p className="mt-1.5 text-xs text-[#64748b]">
+              Este será o nome exibido no ranking.
+            </p>
+            {form.formState.errors.nickname && (
+              <p className="mt-1.5 text-xs text-[#f1a3ad]">
+                {form.formState.errors.nickname.message}
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="profile-avatar" className="mb-2 block text-sm font-medium text-[#c7cfdd]">

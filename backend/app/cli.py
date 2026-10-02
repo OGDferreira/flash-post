@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import dispose_engine, get_session_factory
+from app.core.nickname import normalize_nickname
 from app.core.security import PlatformRole, WorkspaceRole, hash_password
 from app.models import User, Workspace, WorkspaceMember
 
@@ -21,6 +22,13 @@ def _prompt_email() -> str:
         return str(TypeAdapter(EmailStr).validate_python(value))
     except ValidationError as exc:
         raise ValueError("Enter a valid email address.") from exc
+
+
+def _prompt_nickname() -> str:
+    try:
+        return normalize_nickname(input("Nickname: "))
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _prompt_password() -> str:
@@ -57,9 +65,11 @@ async def _create_super_admin() -> None:
         full_name = input("Full name: ").strip()
         if not full_name or len(full_name) > 160:
             raise ValueError("Full name must contain between 1 and 160 characters.")
+        nickname = _prompt_nickname()
         password = _prompt_password()
         user = User(
             email=email,
+            nickname=nickname,
             full_name=full_name,
             password_hash=hash_password(password),
             platform_role=PlatformRole.SUPER_ADMIN.value,
@@ -84,9 +94,11 @@ async def _create_owner() -> None:
             raise ValueError("Full name must contain between 1 and 160 characters.")
         if not workspace_name or len(workspace_name) > 160:
             raise ValueError("Workspace name must contain between 1 and 160 characters.")
+        nickname = _prompt_nickname()
         password = _prompt_password()
         user = User(
             email=email,
+            nickname=nickname,
             full_name=full_name,
             password_hash=hash_password(password),
             platform_role=PlatformRole.USER.value,

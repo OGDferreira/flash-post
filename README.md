@@ -33,20 +33,23 @@ connection strings. Production startup requires `SESSION_SECRET`, and Docker
 startup requires `DATABASE_URL`. `MASTER_ENCRYPTION_KEY` is checked when
 encryption is used.
 
-### Bootstrap accounts
+### Account creation
 
-After a deployment has applied its migrations, use the Render service shell to
-create the platform administrator and initial customer owner:
+The public `/register` page creates a customer `OWNER`, a workspace, and its
+active owner membership, then signs the user in. Nicknames are normalized to
+lowercase and must be unique across the platform. A case-insensitive unique
+database index backs the API checks.
+
+Only a platform administrator is created through the administrative CLI:
 
 ```powershell
 python -m app.cli create-super-admin
-python -m app.cli create-owner
 ```
 
-The CLI prompts for names, email addresses, and passwords; passwords are typed
+The CLI prompts for a name, email, nickname, and password; passwords are typed
 without echo and are never printed. It requests confirmation before creating
-an additional `SUPER_ADMIN`. These commands are administrative bootstrap
-operations and are not public HTTP endpoints.
+an additional `SUPER_ADMIN`. This administrative operation is not a public
+HTTP endpoint.
 
 ## Database and migrations
 
@@ -61,6 +64,8 @@ calls `create_all()`. Docker runs `alembic upgrade head` before Uvicorn starts.
 A PostgreSQL advisory lock serializes concurrent startup migrations. This
 single-service strategy can be moved to a dedicated release/pre-deploy command
 before adding workers; background workers must never run migrations.
+The nickname migration backfills existing users before enforcing the
+non-null, case-insensitive unique index.
 
 Backend tests apply those same Alembic migrations to an isolated temporary
 SQLite database. Tests never connect to or modify Supabase.
@@ -73,8 +78,8 @@ SQLite database. Tests never connect to or modify Supabase.
 - State-changing requests require a session-bound `X-CSRF-Token`. Obtain one
   from `GET /api/auth/csrf`; login and logout rotate the token.
 - Passwords use Argon2id. Login failures do not disclose whether an account
-  exists. The initial in-process login limiter can be replaced by a shared
-  store before horizontal scaling.
+  exists. Registration and nickname availability have process-local rate
+  limits; replace these with a shared store before horizontal scaling.
 - Workspace access is checked against active membership for each request. An
   optional `X-Workspace-ID` is accepted only after that check.
 - Only a global `SUPER_ADMIN` can access `/api/admin/*`. Frontend guards
@@ -87,10 +92,12 @@ Initial endpoints:
 | `GET` | `/health` | Process liveness, independent of the database |
 | `GET` | `/readiness` | Database readiness check |
 | `GET` | `/api/auth/csrf` | Obtain a CSRF token for the current session |
+| `GET` | `/api/auth/nickname-availability` | Check whether a nickname can be registered |
+| `POST` | `/api/auth/register` | Create an OWNER, workspace, membership, and signed-in session |
 | `POST` | `/api/auth/login` | Sign in |
 | `POST` | `/api/auth/logout` | Sign out and rotate the CSRF token |
 | `GET` | `/api/auth/me` | Current authenticated user |
-| `GET`, `PATCH` | `/api/profile` | Read/update profile name and avatar URL |
+| `GET`, `PATCH` | `/api/profile` | Read/update profile name, nickname, and avatar URL |
 | `GET` | `/api/workspace` | Current active workspace membership |
 | `GET` | `/api/admin/summary` | Real user/workspace totals |
 | `GET` | `/api/admin/users` | Searchable, paginated user list |

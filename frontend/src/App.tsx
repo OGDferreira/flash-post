@@ -10,6 +10,7 @@ import {
 import { LoadingState } from "@/components/PageState";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { LoginPage } from "@/features/auth/LoginPage";
+import { RegisterPage } from "@/features/auth/RegisterPage";
 import { AppShell } from "@/layouts/AppShell";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { FeaturePlaceholderPage } from "@/pages/FeaturePlaceholderPage";
@@ -24,6 +25,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route element={<RequireAuth />}>
             <Route element={<AppShell />}>
               <Route path="/dashboard" element={<DashboardPage />} />

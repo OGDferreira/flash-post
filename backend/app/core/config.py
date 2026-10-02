@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     session_max_age_seconds: Annotated[int, Field(ge=900, le=604800)] = 28800
     login_max_attempts: Annotated[int, Field(ge=3, le=20)] = 5
     login_window_seconds: Annotated[int, Field(ge=60, le=3600)] = 900
+    registration_max_attempts: Annotated[int, Field(ge=3, le=20)] = 5
+    registration_window_seconds: Annotated[int, Field(ge=60, le=86400)] = 3600
+    nickname_check_max_attempts: Annotated[int, Field(ge=10, le=200)] = 60
+    nickname_check_window_seconds: Annotated[int, Field(ge=60, le=3600)] = 900
 
     model_config = SettingsConfigDict(
         case_sensitive=False,

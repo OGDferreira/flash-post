@@ -75,6 +75,7 @@ export type User = {
   id: string;
   email: string;
   username: string | null;
+  nickname: string;
   full_name: string;
   avatar_url: string | null;
   role: "SUPER_ADMIN" | "OWNER" | "COLLABORATOR" | "USER";

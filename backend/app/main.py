@@ -49,6 +49,14 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
         get_settings().login_max_attempts,
         get_settings().login_window_seconds,
     )
+    application.state.registration_rate_limiter = LoginRateLimiter(
+        get_settings().registration_max_attempts,
+        get_settings().registration_window_seconds,
+    )
+    application.state.nickname_check_rate_limiter = LoginRateLimiter(
+        get_settings().nickname_check_max_attempts,
+        get_settings().nickname_check_window_seconds,
+    )
     application.add_middleware(
         SessionMiddleware,
         secret_key=settings.session_signing_key,

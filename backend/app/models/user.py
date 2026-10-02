@@ -23,11 +23,13 @@ class User(Base):
             postgresql_where=text("username IS NOT NULL"),
             sqlite_where=text("username IS NOT NULL"),
         ),
+        Index("uq_users_nickname_lower", func.lower(text("nickname")), unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     username: Mapped[str | None] = mapped_column(String(80))
+    nickname: Mapped[str] = mapped_column(String(30), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     full_name: Mapped[str] = mapped_column(String(160), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(2048))

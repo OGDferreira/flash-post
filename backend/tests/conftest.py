@@ -10,6 +10,8 @@ from cryptography.fernet import Fernet
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.rate_limit import LoginRateLimiter
+
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 TEST_DB_PATH = Path(tempfile.gettempdir()) / f"flashpost-tests-{os.getpid()}.db"
 TEST_DATABASE_URL = f"sqlite+aiosqlite:///{TEST_DB_PATH.as_posix()}"
@@ -66,7 +68,18 @@ async def client(db_session: AsyncSession):
     from httpx import ASGITransport, AsyncClient
 
     from app.core.database import get_db
+    from app.core.config import get_settings
     from app.main import app, check_database_readiness
+
+    settings = get_settings()
+    app.state.registration_rate_limiter = LoginRateLimiter(
+        settings.registration_max_attempts,
+        settings.registration_window_seconds,
+    )
+    app.state.nickname_check_rate_limiter = LoginRateLimiter(
+        settings.nickname_check_max_attempts,
+        settings.nickname_check_window_seconds,
+    )
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
@@ -89,6 +102,7 @@ async def owner(db_session: AsyncSession):
 
     user = User(
         email="owner@example.com",
+        nickname="owner",
         full_name="FlashPost Owner",
         password_hash=hash_password("correct horse battery staple"),
         platform_role="USER",
@@ -125,6 +139,7 @@ async def collaborator(db_session: AsyncSession, owner):
     _owner_user, workspace = owner
     user = User(
         email="collaborator@example.com",
+        nickname="collaborator",
         full_name="FlashPost Collaborator",
         password_hash=hash_password("collaborator password"),
         platform_role="USER",
@@ -151,6 +166,7 @@ async def super_admin(db_session: AsyncSession):
 
     user = User(
         email="superadmin@example.com",
+        nickname="superadmin",
         full_name="FlashPost Super Admin",
         password_hash=hash_password("super admin password"),
         platform_role="SUPER_ADMIN",
