@@ -44,6 +44,30 @@ backend only; do not add the service-role key or a Supabase publishable key to
 frontend configuration. If a service-role key is ever shown in a screenshot,
 rotate it in Supabase and replace the Render secret before enabling uploads.
 
+Set up these values in the Render web service under **Environment**:
+
+1. Set `SUPABASE_URL` to the Project URL shown under Supabase **Project
+   Settings > API**, for example `https://your-project.supabase.co`. This value
+   is a URL, not an API key.
+2. In Supabase **Project Settings > API Keys**, rotate the exposed legacy
+   `service_role` key (or create a replacement secret key if using the new key
+   format). Update `SUPABASE_SERVICE_ROLE_KEY` in Render with the new secret.
+   If another service uses the old key, update it there too. Never paste the
+   key into this repository, the browser, or chat.
+3. Keep `INSTAGRAM_PUBLISHING_ENABLED=false` until the deployment, private
+   bucket upload, and a test-account reconnection have been verified.
+
+To run the periodic token-refresh and publication worker, create a separate
+Render **Cron Job** using this repository, branch `main`, and the same
+`Dockerfile` as the web service. Set its command to
+`python -m app.workers.loop_scheduler` and its schedule to `* * * * *` (once
+per minute). Add the worker's required environment variables in the Cron Job:
+`DATABASE_URL`, `MASTER_ENCRYPTION_KEY`, `SUPABASE_URL`, and
+`SUPABASE_SERVICE_ROLE_KEY`. Keep the publish flag disabled while testing;
+turn it on only when intentional Instagram publishing is ready. The Cron Job
+does not run the website: it is a separate scheduled worker, and it does not
+need `SESSION_SECRET` or `PUBLIC_BASE_URL`.
+
 ### Account creation
 
 The public `/register` page creates a customer `OWNER`, a workspace, and its
