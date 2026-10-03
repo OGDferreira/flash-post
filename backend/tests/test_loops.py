@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import encrypt_value
+from app.instagram.publishing import InstagramPublishingError
 from app.loops.scheduler import enqueue_due_loop_publications
 from app.models import (
     InstagramAccount,
@@ -15,6 +16,10 @@ from app.models import (
     InstagramLoopMedia,
     InstagramMedia,
     InstagramPublicationJob,
+)
+from app.workers.loop_scheduler import (
+    CONSECUTIVE_PUBLICATION_FAILURE_LIMIT,
+    _update_account_health_after_failure,
 )
 
 
@@ -182,26 +187,136 @@ async def test_loop_accepts_more_than_24_videos(
 
 
 @pytest.mark.anyio
-async def test_collaborator_cannot_manage_loops(
+async def test_collaborator_can_only_associate_accounts_with_existing_loops(
     client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
     collaborator,
 ) -> None:
+    _owner_user, workspace = owner
+    account = _active_account(workspace.id, "collaborator_loop_account")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Owner-configured loop",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        daily_limit_per_account=2,
+        post_type="reels",
+        repeat_media=True,
+        status="active",
+        next_run_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+    )
+    db_session.add_all([account, loop])
+    await db_session.flush()
+    db_session.add(InstagramLoopAccount(loop_id=loop.id, account_id=account.id))
+    additional_account = _active_account(workspace.id, "collaborator_additional_account")
+    db_session.add(additional_account)
+    await db_session.commit()
     await _login(client, "collaborator@example.com", "collaborator password")
     token = await _csrf(client)
 
-    response = await client.post(
+    create_response = await client.post(
         "/api/loops",
         headers={"X-CSRF-Token": token},
         json={
-            "name": "Forbidden loop",
+            "name": "Collaborator loop",
             "interval_min_minutes": 5,
             "interval_max_minutes": 10,
             "daily_limit_per_account": 2,
-            "account_ids": [str(uuid.uuid4())],
+            "account_ids": [str(account.id)],
         },
     )
 
-    assert response.status_code == 403
+    assert create_response.status_code == 403
+    update_response = await client.put(
+        f"/api/loops/{loop.id}/accounts",
+        headers={"X-CSRF-Token": token},
+        json={"account_ids": [str(account.id), str(additional_account.id)]},
+    )
+    assert update_response.status_code == 200, update_response.text
+    assert update_response.json()["name"] == "Owner-configured loop"
+    assert {item["id"] for item in update_response.json()["accounts"]} == {
+        str(account.id),
+        str(additional_account.id),
+    }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("failure_count", "expected_status"),
+    [
+        (CONSECUTIVE_PUBLICATION_FAILURE_LIMIT, "connected"),
+        (CONSECUTIVE_PUBLICATION_FAILURE_LIMIT + 1, "error"),
+    ],
+)
+async def test_account_enters_error_state_after_more_than_five_consecutive_failed_posts(
+    db_session: AsyncSession,
+    owner,
+    failure_count: int,
+    expected_status: str,
+) -> None:
+    _user, workspace = owner
+    account = _active_account(workspace.id, f"failure-{failure_count}")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name=f"Failure loop {failure_count}",
+        interval_min_minutes=5,
+        interval_max_minutes=10,
+        daily_limit_per_account=24,
+        post_type="reels",
+        repeat_media=True,
+        status="active",
+        next_run_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    db_session.add_all([account, loop])
+    await db_session.flush()
+    now = datetime.now(timezone.utc)
+    db_session.add_all(
+        [
+            InstagramPublicationJob(
+                workspace_id=workspace.id,
+                loop_id=loop.id,
+                account_id=account.id,
+                scheduled_for=now - timedelta(minutes=failure_count - index),
+                status="failed",
+                attempts=1,
+                last_error="Test publication rejection.",
+                updated_at=now - timedelta(minutes=failure_count - index),
+            )
+            for index in range(failure_count)
+        ]
+    )
+    await db_session.commit()
+
+    await _update_account_health_after_failure(
+        db_session,
+        account.id,
+        InstagramPublishingError("Instagram rejected media."),
+    )
+    await db_session.refresh(account)
+    assert account.status == expected_status
+
+
+@pytest.mark.anyio
+async def test_authentication_rejection_immediately_marks_account_as_errored(
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = _active_account(workspace.id, "lost-auth-account")
+    db_session.add(account)
+    await db_session.commit()
+
+    await _update_account_health_after_failure(
+        db_session,
+        account.id,
+        InstagramPublishingError(
+            "Instagram rejected media (HTTP 403).",
+            status_code=403,
+        ),
+    )
+    await db_session.refresh(account)
+    assert account.status == "error"
 
 
 @pytest.mark.anyio

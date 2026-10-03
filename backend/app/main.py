@@ -17,32 +17,41 @@ from app.core.database import dispose_engine, get_session_factory
 from app.api.health import router as health_router
 from app.core.config import get_settings
 from app.core.rate_limit import LoginRateLimiter
+from app.collaborators.router import router as collaborators_router
 from app.legal import router as legal_router
 from app.instagram.router import router as instagram_router
 from app.instagram.media_router import router as media_router
 from app.loops.router import router as loops_router
+from app.shark.router import router as shark_router
 from app.workers.scheduler_service import create_scheduler
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
-class _OAuthCallbackAccessLogFilter(logging.Filter):
+class _SensitiveAccessLogFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         args = record.args
         if (
             isinstance(args, tuple)
             and len(args) >= 3
             and isinstance(args[2], str)
-            and args[2].split("?", 1)[0] == "/api/instagram/callback"
+            and (
+                args[2].split("?", 1)[0] == "/api/instagram/callback"
+                or args[2].split("?", 1)[0].startswith("/api/sharkbot/webhook/")
+            )
         ):
             sanitized_args = list(args)
-            sanitized_args[2] = "/api/instagram/callback"
+            sanitized_args[2] = (
+                "/api/instagram/callback"
+                if args[2].split("?", 1)[0] == "/api/instagram/callback"
+                else "/api/sharkbot/webhook/[redacted]"
+            )
             record.args = tuple(sanitized_args)
         return True
 
 
-logging.getLogger("uvicorn.access").addFilter(_OAuthCallbackAccessLogFilter())
+logging.getLogger("uvicorn.access").addFilter(_SensitiveAccessLogFilter())
 
 
 @asynccontextmanager
@@ -105,9 +114,11 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(auth_router)
     application.include_router(admin_router)
     application.include_router(analytics_router)
+    application.include_router(collaborators_router)
     application.include_router(instagram_router)
     application.include_router(media_router)
     application.include_router(loops_router)
+    application.include_router(shark_router)
     application.include_router(legal_router)
 
     @application.get("/readiness", tags=["health"])

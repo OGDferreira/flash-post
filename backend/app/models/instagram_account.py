@@ -26,7 +26,7 @@ class InstagramAccount(Base):
             name="uq_instagram_accounts_workspace_user",
         ),
         CheckConstraint(
-            "status IN ('connected', 'disconnected')",
+            "status IN ('connected', 'disconnected', 'error')",
             name="ck_instagram_accounts_status",
         ),
         Index("ix_instagram_accounts_workspace_id", "workspace_id"),
@@ -38,6 +38,10 @@ class InstagramAccount(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
     )
+    connected_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    first_connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     app_credential_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("instagram_meta_apps.id", ondelete="SET NULL"),

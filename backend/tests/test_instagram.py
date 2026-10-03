@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.crypto import decrypt_value, encrypt_value
-from app.main import _OAuthCallbackAccessLogFilter
+from app.main import _SensitiveAccessLogFilter
 from app.instagram import oauth
 from app.instagram import router as instagram_router
 from app.instagram.oauth import InstagramOAuthError
@@ -52,10 +52,32 @@ def test_oauth_callback_access_logs_redact_code_and_state() -> None:
         None,
     )
 
-    assert _OAuthCallbackAccessLogFilter().filter(record)
+    assert _SensitiveAccessLogFilter().filter(record)
     assert "one-time-code" not in record.getMessage()
     assert "private-state" not in record.getMessage()
     assert "/api/instagram/callback" in record.getMessage()
+
+
+def test_sharkbot_webhook_access_logs_redact_the_workspace_token() -> None:
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        (
+            "127.0.0.1",
+            "POST",
+            "/api/sharkbot/webhook/secret-workspace-token",
+            "1.1",
+            200,
+        ),
+        None,
+    )
+
+    assert _SensitiveAccessLogFilter().filter(record)
+    assert "secret-workspace-token" not in record.getMessage()
+    assert "/api/sharkbot/webhook/[redacted]" in record.getMessage()
 
 
 @pytest.mark.anyio
@@ -118,7 +140,7 @@ async def test_disconnected_account_remains_visible_without_its_token(
 
 
 @pytest.mark.anyio
-async def test_collaborator_can_view_but_cannot_manage_instagram_accounts(
+async def test_collaborator_can_start_connect_but_cannot_manage_meta_apps(
     client: AsyncClient,
     collaborator,
 ) -> None:
@@ -133,7 +155,9 @@ async def test_collaborator_can_view_but_cannot_manage_instagram_accounts(
 
     assert response.status_code == 200
     assert response.json()["can_manage"] is False
-    assert connect.status_code == 403
+    assert response.json()["can_connect"] is True
+    assert connect.status_code == 503
+    assert "Meta App ID and App Secret" in connect.json()["detail"]
 
 
 @pytest.mark.anyio
@@ -561,6 +585,27 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
     )
     assert account is not None
     assert account.app_credential_id is not None
+    assert account.connected_by_user_id == _user.id
+    assert account.first_connected_at is not None
+    first_connected_at = account.first_connected_at
+
+    second_token = await _csrf(client)
+    second_start = await client.post(
+        "/api/instagram/connect",
+        headers={"X-CSRF-Token": second_token},
+    )
+    assert second_start.status_code == 200
+    second_state = parse_qs(
+        urlparse(second_start.json()["authorization_url"]).query
+    )["state"][0]
+    second_callback = await client.get(
+        "/api/instagram/callback",
+        params={"code": "second-one-time-code", "state": second_state},
+    )
+    assert second_callback.status_code == 303
+    await db_session.refresh(account)
+    assert account.connected_by_user_id == _user.id
+    assert account.first_connected_at == first_connected_at
     assert account.profile_picture_url == "https://scontent.cdninstagram.com/profile.jpg"
     assert account.follower_count == 128
     assert account.media_count == 42

@@ -1,11 +1,14 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
+    Numeric,
     String,
     UniqueConstraint,
     func,
@@ -32,6 +35,9 @@ class Workspace(Base):
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE", server_default="ACTIVE")
+    sharkbot_webhook_token: Mapped[str | None] = mapped_column(
+        String(128), unique=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -64,6 +70,18 @@ class WorkspaceMember(Base):
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE", server_default="ACTIVE")
+    rate_per_connection: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False, default=0, server_default="0"
+    )
+    daily_connection_goal: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    monthly_connection_goal: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    monthly_bonus: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

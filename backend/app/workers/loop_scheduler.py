@@ -18,10 +18,101 @@ logger = logging.getLogger(__name__)
 STALE_PUBLICATION_AFTER = timedelta(minutes=45)
 TOKEN_REFRESH_WINDOW = timedelta(days=10)
 TOKEN_REFRESH_RETRY_INTERVAL = timedelta(hours=12)
+CONSECUTIVE_PUBLICATION_FAILURE_LIMIT = 5
 
 
 def _utc_datetime(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _is_account_connection_failure(error: Exception) -> bool:
+    if isinstance(error, InstagramPublishingError):
+        if error.status_code in {401, 403} or error.meta_error_code in {102, 190}:
+            return True
+    if isinstance(error, httpx.HTTPStatusError):
+        if error.response.status_code in {401, 403}:
+            return True
+        try:
+            payload = error.response.json()
+        except ValueError:
+            payload = None
+        meta_error = payload.get("error") if isinstance(payload, dict) else None
+        code = meta_error.get("code") if isinstance(meta_error, dict) else None
+        message = meta_error.get("message") if isinstance(meta_error, dict) else None
+        if code in {102, 190}:
+            return True
+        if isinstance(message, str):
+            error = RuntimeError(message)
+    message = str(error).casefold()
+    return any(
+        marker in message
+        for marker in (
+            "checkpoint challenge",
+            "account suspended",
+            "account disabled",
+            "account has been disabled",
+            "access token has expired",
+            "invalid oauth access token",
+            "token has been invalidated",
+            "permission to perform this action",
+        )
+    )
+
+
+async def _mark_expired_accounts(now: datetime) -> int:
+    async with get_session_factory()() as db:
+        expired_accounts = (
+            await db.scalars(
+                select(InstagramAccount).where(
+                    InstagramAccount.status == "connected",
+                    (
+                        (InstagramAccount.encrypted_access_token.is_(None))
+                        | (InstagramAccount.token_expires_at <= now)
+                    ),
+                )
+            )
+        ).all()
+        for account in expired_accounts:
+            account.status = "error"
+        if expired_accounts:
+            await db.commit()
+        return len(expired_accounts)
+
+
+async def _update_account_health_after_failure(
+    db,
+    account_id,
+    error: Exception,
+) -> None:
+    account = await db.get(InstagramAccount, account_id)
+    if account is None or account.status != "connected":
+        return
+    if _is_account_connection_failure(error):
+        account.status = "error"
+        await db.commit()
+        return
+
+    recent_jobs = (
+        await db.scalars(
+            select(InstagramPublicationJob.status)
+            .where(
+                InstagramPublicationJob.account_id == account_id,
+                InstagramPublicationJob.attempts > 0,
+                InstagramPublicationJob.status.in_(("published", "failed")),
+            )
+            .order_by(
+                InstagramPublicationJob.updated_at.desc(),
+                InstagramPublicationJob.id.desc(),
+            )
+            .limit(CONSECUTIVE_PUBLICATION_FAILURE_LIMIT + 1)
+        )
+    ).all()
+    if (
+        len(recent_jobs) > CONSECUTIVE_PUBLICATION_FAILURE_LIMIT
+        and all(job_status == "failed" for job_status in recent_jobs)
+    ):
+        account.status = "error"
+        await db.commit()
 
 
 async def refresh_due_instagram_tokens(now: datetime | None = None) -> int:
@@ -95,6 +186,9 @@ async def refresh_due_instagram_tokens(now: datetime | None = None) -> int:
                     account_id,
                     exc.response.status_code,
                 )
+                if _is_account_connection_failure(exc):
+                    account.status = "error"
+                    await db.commit()
                 continue
             except (httpx.HTTPError, InstagramOAuthError, RuntimeError) as exc:
                 logger.warning(
@@ -149,15 +243,24 @@ async def process_one_queued_publication() -> bool:
         )
         if (
             account is None
-            or account.status != "connected"
-            or account.encrypted_access_token is None
-            or _utc_datetime(account.token_expires_at) <= datetime.now(timezone.utc)
             or media is None
         ):
             job.status = "failed"
             job.last_error = "The connected account or selected media is no longer available."
             await db.commit()
             logger.warning("Publication job %s failed preflight checks.", job.id)
+            return True
+        if (
+            account.status != "connected"
+            or account.encrypted_access_token is None
+            or _utc_datetime(account.token_expires_at) <= datetime.now(timezone.utc)
+        ):
+            if account.status == "connected":
+                account.status = "error"
+            job.status = "failed"
+            job.last_error = "The connected account or selected media is no longer available."
+            await db.commit()
+            logger.warning("Publication job %s failed account health checks.", job.id)
             return True
 
         try:
@@ -205,6 +308,7 @@ async def process_one_queued_publication() -> bool:
                     else "A network error interrupted the publication; verify Instagram before retrying."
                 )
                 await db.commit()
+                await _update_account_health_after_failure(db, account_id, exc)
         logger.error(
             "Publication job %s failed while sending account %s media %s (%s).",
             job_id,
@@ -254,6 +358,7 @@ async def fail_stale_publication_jobs(now: datetime | None = None) -> int:
 
 
 async def run_loop_scheduler_tick() -> int:
+    await _mark_expired_accounts(datetime.now(timezone.utc))
     await fail_stale_publication_jobs()
     refreshed_tokens = await refresh_due_instagram_tokens()
     async with get_session_factory()() as db:

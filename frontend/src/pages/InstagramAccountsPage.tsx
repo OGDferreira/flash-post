@@ -12,6 +12,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { InstagramAvatar } from "@/components/InstagramAvatar";
 import { ApiError, apiRequest } from "@/services/api";
+import { useAuth } from "@/features/auth/AuthProvider";
 
 type InstagramAccount = {
   id: string;
@@ -19,11 +20,12 @@ type InstagramAccount = {
   profile_picture_url: string | null;
   token_expires_at: string;
   connected_at: string;
-  status: "connected" | "disconnected";
+  status: "connected" | "disconnected" | "error";
 };
 
 type InstagramAccountsResponse = {
   can_manage: boolean;
+  can_connect: boolean;
   accounts: InstagramAccount[];
 };
 
@@ -49,6 +51,7 @@ function isInstagramAccountActive(account: InstagramAccount): boolean {
 }
 
 export function InstagramAccountsPage() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [callbackMessage, setCallbackMessage] = useState<
@@ -97,8 +100,20 @@ export function InstagramAccountsPage() {
     const outcome = searchParams.get("instagram");
     if (!outcome) return;
     setCallbackMessage(callbackMessages[outcome]);
+    if (outcome === "connected") {
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      void queryClient.invalidateQueries({ queryKey: ["collaborators"] });
+      if (user?.role === "COLLABORATOR") {
+        window.dispatchEvent(
+          new CustomEvent("flashpost-toast", {
+            detail: "Conexão concluída! Mais uma conta na sua jornada. Continue assim!",
+          }),
+        );
+      }
+    }
     setSearchParams({}, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [queryClient, searchParams, setSearchParams, user?.role]);
 
   if (accounts.isLoading) return <LoadingState label="Carregando contas Instagram" />;
   if (accounts.error || !accounts.data) {
@@ -147,18 +162,25 @@ export function InstagramAccountsPage() {
               Acompanhe as contas profissionais conectadas e o estado de cada autorização.
             </p>
           </div>
-          {accounts.data.can_manage && (
+          {accounts.data.can_connect && (
             <div className="flex flex-col items-end gap-2">
               <button
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#667eea] disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
                 onClick={() => connect.mutate()}
-                disabled={!metaApps.data?.selected_app_id || metaApps.isLoading || connect.isPending}
+                disabled={
+                  (accounts.data.can_manage &&
+                    (!metaApps.data?.selected_app_id || metaApps.isLoading)) ||
+                  connect.isPending
+                }
               >
                 <Link2 size={16} />
                 {connect.isPending ? "Conectando..." : "Conectar conta"}
               </button>
-              {!metaApps.data?.selected_app_id && !metaApps.isLoading && !metaApps.error && (
+              {accounts.data.can_manage &&
+                !metaApps.data?.selected_app_id &&
+                !metaApps.isLoading &&
+                !metaApps.error && (
                 <Link
                   className="text-xs text-[#aab7ff] hover:text-white"
                   to="/feature/settings"
@@ -201,7 +223,7 @@ export function InstagramAccountsPage() {
         </div>
       )}
 
-      {!accounts.data.can_manage && (
+      {!accounts.data.can_manage && !accounts.data.can_connect && (
         <p className="rounded-lg border border-[#27334a] bg-[#10141b] px-4 py-3 text-sm text-[#aeb9ce]">
           Você pode ver as contas conectadas. Somente o OWNER do workspace pode gerenciá-las.
         </p>
@@ -232,7 +254,7 @@ export function InstagramAccountsPage() {
           <div className="flex rounded-lg border border-[#27334a] bg-[#0d1015] p-1">
             {([
               ["active", `Ativas (${activeAccountCount})`],
-              ["issues", `Caídas (${issueAccountCount})`],
+              ["issues", `Com erro (${issueAccountCount})`],
               ["all", `Todas (${accounts.data.accounts.length})`],
             ] as const).map(([filter, label]) => (
               <button
@@ -271,6 +293,8 @@ export function InstagramAccountsPage() {
             const label =
               account.status === "disconnected"
                 ? "Desconectada — conecte novamente para ativar"
+                : account.status === "error"
+                  ? "Conta com erro — reconecte para reativar"
                 : expired
                   ? "Token expirado — reconecte a conta"
                   : `Ativa · token válido até ${new Date(account.token_expires_at).toLocaleDateString("pt-BR", {
@@ -306,20 +330,23 @@ export function InstagramAccountsPage() {
                     </p>
                   </div>
                 </div>
-                {accounts.data.can_manage && (
+                {(accounts.data.can_connect || accounts.data.can_manage) && (
                   <div className="flex gap-2">
-                    {!active && (
+                    {!active && accounts.data.can_connect && (
                       <button
                         className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
                         type="button"
                         onClick={() => connect.mutate()}
-                        disabled={connect.isPending || !metaApps.data?.selected_app_id}
+                        disabled={
+                          connect.isPending ||
+                          (accounts.data.can_manage && !metaApps.data?.selected_app_id)
+                        }
                       >
                         <Link2 size={15} />
                         Reconectar
                       </button>
                     )}
-                    {account.status === "connected" && (
+                    {account.status === "connected" && accounts.data.can_manage && (
                       <button
                         className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#47252d] px-3 py-2 text-sm text-[#f1a3ad] transition hover:bg-[#1a1013] disabled:opacity-60"
                         type="button"
@@ -347,8 +374,8 @@ export function InstagramAccountsPage() {
       </section>
 
       <p className="text-xs leading-5 text-[#64748b]">
-        Contas desconectadas continuam visíveis no hub, mas os tokens são apagados do FlashPost.
-        Tokens expirados precisam de nova autorização.
+        Contas desconectadas e contas em erro ficam fora do fluxo ativo e permanecem visíveis para
+        que você possa reconectá-las.
       </p>
     </div>
   );

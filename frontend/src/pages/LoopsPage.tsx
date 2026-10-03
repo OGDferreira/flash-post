@@ -60,6 +60,8 @@ type InstagramLoop = {
 
 type InstagramLoopsResponse = {
   can_manage: boolean;
+  can_configure: boolean;
+  can_delete: boolean;
   publishing_enabled: boolean;
   loops: InstagramLoop[];
   available_accounts: LoopAccount[];
@@ -144,11 +146,24 @@ export function LoopsPage() {
   });
 
   const saveLoop = useMutation({
-    mutationFn: () =>
-      apiRequest<InstagramLoop>(editingId ? `/api/loops/${editingId}` : "/api/loops", {
-        method: editingId ? "PUT" : "POST",
-        body: form,
-      }),
+    mutationFn: () => {
+      if (!editingId) {
+        return apiRequest<InstagramLoop>("/api/loops", {
+          method: "POST",
+          body: form,
+        });
+      }
+      if (loops.data?.can_configure) {
+        return apiRequest<InstagramLoop>(`/api/loops/${editingId}`, {
+          method: "PUT",
+          body: form,
+        });
+      }
+      return apiRequest<InstagramLoop>(`/api/loops/${editingId}/accounts`, {
+        method: "PUT",
+        body: { account_ids: form.account_ids },
+      });
+    },
     onSuccess: () => {
       setForm(emptyForm);
       setFormOpen(false);
@@ -282,7 +297,7 @@ export function LoopsPage() {
             Loops
           </h2>
         </div>
-        {loops.data.can_manage && (
+        {loops.data.can_configure && (
           <button
             className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#00c9d8] px-4 py-2 text-sm font-semibold text-[#062027] hover:bg-[#42dbe5]"
             type="button"
@@ -355,7 +370,11 @@ export function LoopsPage() {
         >
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-[#f5f7fb]">
-              {editingId ? "Editar loop" : "Novo loop"}
+              {!loops.data.can_configure && editingId
+                ? "Associar contas ao loop"
+                : editingId
+                  ? "Editar loop"
+                  : "Novo loop"}
             </h3>
             <button
               className="text-xs text-[#94a3b8] hover:text-white"
@@ -369,6 +388,7 @@ export function LoopsPage() {
               Cancelar
             </button>
           </div>
+          <fieldset disabled={!loops.data.can_configure} className="space-y-5">
           <label className="grid gap-2 text-sm text-[#cbd5e1]">
             Nome do loop
             <input
@@ -596,6 +616,7 @@ export function LoopsPage() {
             />
             Limitado: não repetir mídias
           </label>
+          </fieldset>
 
           <fieldset>
             <legend className="mb-2 text-sm text-[#cbd5e1]">
@@ -644,13 +665,20 @@ export function LoopsPage() {
             type="submit"
             disabled={
               saveLoop.isPending ||
+              (!loops.data.can_configure && !editingId) ||
               !form.name.trim() ||
               form.account_ids.length === 0 ||
               form.interval_min_minutes < 1 ||
               form.interval_max_minutes < form.interval_min_minutes
             }
           >
-            {saveLoop.isPending ? "Salvando..." : editingId ? "Salvar alterações" : "Criar loop"}
+            {saveLoop.isPending
+              ? "Salvando..."
+              : !loops.data.can_configure
+                ? "Salvar contas associadas"
+                : editingId
+                  ? "Salvar alterações"
+                  : "Criar loop"}
           </button>
         </form>
       )}
@@ -738,11 +766,16 @@ export function LoopsPage() {
                     <button
                       className="grid size-9 place-items-center rounded-lg border border-[#27334a] text-[#cbd5e1] hover:bg-[#10141b]"
                       type="button"
-                      aria-label={`Editar ${loop.name}`}
+                      aria-label={
+                        loops.data.can_configure
+                          ? `Editar ${loop.name}`
+                          : `Associar contas a ${loop.name}`
+                      }
                       onClick={() => beginEdit(loop)}
                     >
                       <Pencil size={15} />
                     </button>
+                    {loops.data.can_configure && (
                     <button
                       className="grid size-9 place-items-center rounded-lg border border-[#27334a] text-[#cbd5e1] hover:bg-[#10141b] disabled:opacity-50"
                       type="button"
@@ -754,19 +787,22 @@ export function LoopsPage() {
                     >
                       {loop.status === "active" ? <Pause size={15} /> : <Play size={15} />}
                     </button>
-                    <button
-                      className="grid size-9 place-items-center rounded-lg border border-[#47252d] text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-50"
-                      type="button"
-                      aria-label={`Excluir ${loop.name}`}
-                      disabled={deleteLoop.isPending}
-                      onClick={() => {
-                        if (window.confirm(`Excluir o loop "${loop.name}" e suas execuções pendentes?`)) {
-                          deleteLoop.mutate(loop.id);
-                        }
-                      }}
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    )}
+                    {loops.data.can_delete && (
+                      <button
+                        className="grid size-9 place-items-center rounded-lg border border-[#47252d] text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-50"
+                        type="button"
+                        aria-label={`Excluir ${loop.name}`}
+                        disabled={deleteLoop.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Excluir o loop "${loop.name}" e suas execuções pendentes?`)) {
+                            deleteLoop.mutate(loop.id);
+                          }
+                        }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

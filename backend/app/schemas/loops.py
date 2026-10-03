@@ -72,6 +72,8 @@ class InstagramLoopResponse(BaseModel):
 
 class InstagramLoopsResponse(BaseModel):
     can_manage: bool
+    can_configure: bool
+    can_delete: bool
     publishing_enabled: bool
     loops: list[InstagramLoopResponse]
     available_accounts: list[InstagramLoopAccountResponse]
@@ -79,3 +81,14 @@ class InstagramLoopsResponse(BaseModel):
 
 class InstagramLoopStatusRequest(BaseModel):
     enabled: bool
+
+
+class InstagramLoopAccountsUpdateRequest(BaseModel):
+    account_ids: Annotated[list[UUID], Field(min_length=1, max_length=100)]
+
+    @field_validator("account_ids")
+    @classmethod
+    def unique_account_ids(cls, values: list[UUID]) -> list[UUID]:
+        if len(set(values)) != len(values):
+            raise ValueError("Each Instagram account can only be selected once.")
+        return values

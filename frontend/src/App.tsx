@@ -18,6 +18,9 @@ import { InstagramAccountsPage } from "@/pages/InstagramAccountsPage";
 import { LoopsPage } from "@/pages/LoopsPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { CollaboratorsPage } from "@/pages/CollaboratorsPage";
+import { CollaboratorDashboardPage } from "@/pages/CollaboratorDashboardPage";
+import { FeedPage } from "@/pages/FeedPage";
 import { AdminOverviewPage } from "@/pages/admin/AdminOverviewPage";
 import { AdminSystemPage } from "@/pages/admin/AdminSystemPage";
 import { AdminUsersPage } from "@/pages/admin/AdminUsersPage";
@@ -42,18 +45,18 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route element={<RequireAuth />}>
+            <Route element={<RequireWorkspaceUser />}>
             <Route element={<AppShell />}>
               <Route
                 path="/dashboard"
                 element={
-                  <Suspense fallback={<LoadingState label="Carregando painel" />}>
-                    <DashboardPage />
-                  </Suspense>
+                  <WorkspaceDashboard />
                 }
               />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
               <Route path="/feature/loops" element={<LoopsPage />} />
+              <Route element={<RequireWorkspaceOwner />}>
               <Route
                 path="/feature/analytics"
                 element={
@@ -62,11 +65,13 @@ export default function App() {
                   </Suspense>
                 }
               />
-              <Route path="/feature/feed" element={<FeaturePlaceholderPage />} />
-              <Route path="/feature/collaborators" element={<FeaturePlaceholderPage />} />
+              <Route path="/feature/feed" element={<FeedPage />} />
+              <Route path="/feature/collaborators" element={<CollaboratorsPage />} />
               <Route path="/feature/notifications" element={<FeaturePlaceholderPage />} />
               <Route path="/feature/settings" element={<SettingsPage />} />
               <Route path="/feature/:slug" element={<FeaturePlaceholderPage />} />
+            </Route>
+            </Route>
             </Route>
             <Route element={<RequireSuperAdmin />}>
               <Route element={<AppShell admin />}>
@@ -83,6 +88,32 @@ export default function App() {
       </AuthProvider>
     </BrowserRouter>
   );
+}
+
+function WorkspaceDashboard() {
+  const { user } = useAuth();
+  if (user?.role === "COLLABORATOR") return <CollaboratorDashboardPage />;
+  return (
+    <Suspense fallback={<LoadingState label="Carregando painel" />}>
+      <DashboardPage />
+    </Suspense>
+  );
+}
+
+function RequireWorkspaceUser() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <LoadingState label="Verificando permissões" />;
+  if (user?.role !== "OWNER" && user?.role !== "COLLABORATOR") {
+    return <Navigate to="/" replace />;
+  }
+  return <Outlet />;
+}
+
+function RequireWorkspaceOwner() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <LoadingState label="Verificando permissões" />;
+  if (user?.role !== "OWNER") return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
 }
 
 function RequireAuth() {

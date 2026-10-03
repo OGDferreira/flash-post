@@ -121,3 +121,15 @@ async def require_owner(access: WorkspaceMemberAccess) -> WorkspaceAccess:
 
 
 OwnerAccess = Annotated[WorkspaceAccess, Depends(require_owner)]
+
+
+async def require_loop_manager(access: WorkspaceMemberAccess) -> WorkspaceAccess:
+    if access.membership.role not in {
+        WorkspaceRole.OWNER.value,
+        WorkspaceRole.COLLABORATOR.value,
+    }:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Loop access required.")
+    return access
+
+
+LoopManagerAccess = Annotated[WorkspaceAccess, Depends(require_loop_manager)]

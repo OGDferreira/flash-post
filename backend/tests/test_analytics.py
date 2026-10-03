@@ -81,6 +81,13 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
             InstagramPublicationJob(
                 workspace_id=workspace.id,
                 loop_id=loop.id,
+                account_id=first.id,
+                scheduled_for=now - timedelta(days=9),
+                status="queued",
+            ),
+            InstagramPublicationJob(
+                workspace_id=workspace.id,
+                loop_id=loop.id,
                 account_id=second.id,
                 scheduled_for=now,
                 status="failed",
@@ -118,6 +125,7 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
     all_time = await client.get("/api/analytics/summary", params={"period": "all"})
     assert all_time.status_code == 200
     assert all_time.json()["published_posts"] == 2
+    assert all_time.json()["queued_posts"] == 2
 
     today = await client.get("/api/analytics/summary", params={"period": "today"})
     assert today.status_code == 200

@@ -54,6 +54,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with engine.begin() as connection:
         from app.models import (
+            CollaboratorPayment,
             InstagramAccount,
             InstagramAppCredential,
             InstagramLoop,
@@ -61,13 +62,16 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             InstagramLoopMedia,
             InstagramMedia,
             InstagramPublicationJob,
+            SharkEvent,
             SystemSetting,
             User,
             Workspace,
             WorkspaceMember,
         )
 
+        await connection.execute(delete(CollaboratorPayment))
         await connection.execute(delete(InstagramPublicationJob))
+        await connection.execute(delete(SharkEvent))
         await connection.execute(delete(InstagramLoopMedia))
         await connection.execute(delete(InstagramLoopAccount))
         await connection.execute(delete(InstagramLoop))

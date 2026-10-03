@@ -21,7 +21,7 @@ import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { apiRequest } from "@/services/api";
 
 type Account = InstagramAccountOption & {
-  status: "connected" | "disconnected";
+  status: "connected" | "disconnected" | "error";
   token_expires_at: string;
 };
 

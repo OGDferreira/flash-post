@@ -80,6 +80,8 @@ async def list_accounts(
     ).all()
     return InstagramAccountsResponse(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
+        can_connect=access.membership.role
+        in {WorkspaceRole.OWNER.value, WorkspaceRole.COLLABORATOR.value},
         accounts=[
             InstagramAccountResponse(
                 id=account.id,
@@ -351,7 +353,7 @@ async def delete_meta_app(
 )
 async def connect_account(
     request: Request,
-    access: OwnerAccess,
+    access: WorkspaceMemberAccess,
     db: DbSession,
 ) -> InstagramConnectResponse:
     settings = get_settings()
@@ -446,7 +448,9 @@ async def instagram_callback(
             WorkspaceMember.workspace_id == workspace_id,
             WorkspaceMember.user_id == user_id,
             WorkspaceMember.status == "ACTIVE",
-            WorkspaceMember.role == WorkspaceRole.OWNER.value,
+            WorkspaceMember.role.in_(
+                (WorkspaceRole.OWNER.value, WorkspaceRole.COLLABORATOR.value)
+            ),
         )
     )
     if user is None or workspace is None or membership is None:
@@ -522,6 +526,8 @@ async def instagram_callback(
             encrypted_access_token=encrypted_token,
             token_expires_at=expires_at,
             status="connected",
+            connected_by_user_id=user.id,
+            first_connected_at=datetime.now(timezone.utc),
         )
         db.add(account)
     else:

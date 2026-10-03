@@ -18,6 +18,7 @@ class InstagramAccountResponse(BaseModel):
 
 class InstagramAccountsResponse(BaseModel):
     can_manage: bool
+    can_connect: bool
     accounts: list[InstagramAccountResponse]
 
 

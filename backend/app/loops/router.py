@@ -5,7 +5,13 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 
-from app.auth.dependencies import DbSession, OwnerAccess, WorkspaceMemberAccess, require_csrf
+from app.auth.dependencies import (
+    DbSession,
+    LoopManagerAccess,
+    OwnerAccess,
+    WorkspaceMemberAccess,
+    require_csrf,
+)
 from app.core.config import get_settings
 from app.core.time import local_day_bounds_utc, utc_now
 from app.models import (
@@ -19,6 +25,7 @@ from app.models import (
 from app.core.security import WorkspaceRole
 from app.schemas.loops import (
     InstagramLoopAccountResponse,
+    InstagramLoopAccountsUpdateRequest,
     InstagramLoopCreateRequest,
     InstagramLoopResponse,
     InstagramLoopStatusRequest,
@@ -155,7 +162,10 @@ async def list_loops(
     ).all()
     accounts = await _workspace_accounts(access.workspace.id, db)
     return InstagramLoopsResponse(
-        can_manage=access.membership.role == WorkspaceRole.OWNER.value,
+        can_manage=access.membership.role
+        in {WorkspaceRole.OWNER.value, WorkspaceRole.COLLABORATOR.value},
+        can_configure=access.membership.role == WorkspaceRole.OWNER.value,
+        can_delete=access.membership.role == WorkspaceRole.OWNER.value,
         publishing_enabled=get_settings().instagram_publishing_enabled,
         loops=[await _loop_response(loop, db, now) for loop in loops],
         available_accounts=[
@@ -354,6 +364,62 @@ async def update_loop(
             status="failed",
             media_id=None,
             last_error="Loop configuration changed before this job started.",
+        )
+    )
+    await db.commit()
+    await db.refresh(loop)
+    return await _loop_response(loop, db, utc_now())
+
+
+@router.put(
+    "/{loop_id}/accounts",
+    response_model=InstagramLoopResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def update_loop_accounts(
+    loop_id: uuid.UUID,
+    payload: InstagramLoopAccountsUpdateRequest,
+    access: LoopManagerAccess,
+    db: DbSession,
+) -> InstagramLoopResponse:
+    loop = await db.scalar(
+        select(InstagramLoop).where(
+            InstagramLoop.id == loop_id,
+            InstagramLoop.workspace_id == access.workspace.id,
+        )
+    )
+    if loop is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+
+    accounts = await _validate_selected_accounts(
+        access.workspace.id,
+        payload.account_ids,
+        db,
+    )
+    await db.execute(
+        InstagramLoopAccount.__table__.delete().where(
+            InstagramLoopAccount.loop_id == loop.id
+        )
+    )
+    _save_loop_accounts(loop, accounts, db)
+
+    selected_account_ids = [account.id for account in accounts]
+    pending_jobs = InstagramPublicationJob.__table__.update().where(
+        InstagramPublicationJob.loop_id == loop.id,
+        InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
+    )
+    await db.execute(
+        pending_jobs.where(
+            InstagramPublicationJob.account_id.in_(selected_account_ids)
+        ).values(status="waiting_for_media", media_id=None, last_error=None)
+    )
+    await db.execute(
+        pending_jobs.where(
+            InstagramPublicationJob.account_id.not_in(selected_account_ids)
+        ).values(
+            status="failed",
+            media_id=None,
+            last_error="Loop account configuration changed before this job started.",
         )
     )
     await db.commit()

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
@@ -45,10 +45,17 @@ const adminLinks = [
   { label: "Sistema", to: "/admin/system", icon: Settings2 },
 ];
 
+const collaboratorLinks = [
+  { label: "Meu painel", to: "/dashboard", icon: Home },
+  { label: "Hub de contas", to: "/feature/accounts", icon: Users },
+  { label: "Loops", to: "/feature/loops", icon: Infinity },
+];
+
 export function AppShell({ admin = false }: { admin?: boolean }) {
   const { user } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const logout = useMutation({
@@ -64,6 +71,17 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
     },
   });
   const links = admin ? adminLinks : ownerLinks;
+  const visibleLinks = !admin && user?.role === "COLLABORATOR" ? collaboratorLinks : links;
+  useEffect(() => {
+    const showToast = (event: Event) => {
+      const message = (event as CustomEvent<string>).detail;
+      if (!message) return;
+      setToast(message);
+      window.setTimeout(() => setToast(null), 4500);
+    };
+    window.addEventListener("flashpost-toast", showToast);
+    return () => window.removeEventListener("flashpost-toast", showToast);
+  }, []);
   const hour = Number(
     new Intl.DateTimeFormat("en-US", {
       hour: "numeric",
@@ -111,7 +129,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
       )}
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        {links.map(({ label, to, icon: Icon }) => (
+        {visibleLinks.map(({ label, to, icon: Icon }) => (
           <NavLink
             end={to === "/admin" || to === "/dashboard"}
             key={to}
@@ -131,6 +149,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
               {label}
             </span>
             {!admin &&
+              user?.role !== "COLLABORATOR" &&
               to !== "/dashboard" &&
               to !== "/feature/accounts" &&
               to !== "/feature/loops" &&
@@ -238,6 +257,14 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
           <Outlet />
         </main>
       </div>
+      {toast && (
+        <div
+          className="fixed right-5 top-20 z-[70] max-w-sm rounded-xl border border-[#315843] bg-[#10231a] px-4 py-3 text-sm text-[#a9e5c0] shadow-[0_12px_38px_rgba(0,0,0,.45)]"
+          role="status"
+        >
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

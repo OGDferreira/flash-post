@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -13,11 +14,21 @@ class InstagramAccountAnalytics(BaseModel):
     published_posts: int
     queued_posts: int
     failed_posts: int
+    status: str
+    leads: int
+    pix_generated: int
+    pix_paid: int
+    pix_paid_amount: Decimal
 
 
 class DailyPublicationMetric(BaseModel):
     day: date
     published_posts: int
+
+
+class DailyRevenueMetric(BaseModel):
+    day: date
+    amount: Decimal
 
 
 class InstagramAnalyticsSummary(BaseModel):
@@ -28,5 +39,12 @@ class InstagramAnalyticsSummary(BaseModel):
     published_posts: int
     queued_posts: int
     failed_posts: int
+    owner_connections_today: int
+    team_connections_today: int
+    leads: int
+    pix_generated: int
+    pix_paid: int
+    pix_paid_amount: Decimal
     accounts: list[InstagramAccountAnalytics]
     daily_publications: list[DailyPublicationMetric]
+    daily_revenue: list[DailyRevenueMetric]

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Copy, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { ApiError, apiRequest } from "@/services/api";
@@ -21,6 +21,10 @@ type InstagramMetaAppsResponse = {
   apps: InstagramMetaApp[];
 };
 
+type SharkbotWebhookSettings = {
+  webhook_url: string;
+};
+
 export function SettingsPage() {
   const queryClient = useQueryClient();
   const [displayName, setDisplayName] = useState("");
@@ -29,6 +33,7 @@ export function SettingsPage() {
   const [editingAppId, setEditingAppId] = useState<string | null>(null);
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editAppSecret, setEditAppSecret] = useState("");
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<{ can_manage: boolean }>("/api/instagram/accounts"),
@@ -37,6 +42,12 @@ export function SettingsPage() {
   const metaApps = useQuery({
     queryKey: ["instagram", "apps"],
     queryFn: () => apiRequest<InstagramMetaAppsResponse>("/api/instagram/apps"),
+    enabled: accounts.data?.can_manage === true,
+    retry: false,
+  });
+  const sharkbotSettings = useQuery({
+    queryKey: ["sharkbot", "webhook-settings"],
+    queryFn: () => apiRequest<SharkbotWebhookSettings>("/api/sharkbot/webhook/config"),
     enabled: accounts.data?.can_manage === true,
     retry: false,
   });
@@ -77,6 +88,16 @@ export function SettingsPage() {
     mutationFn: (id: string) => apiRequest(`/api/instagram/apps/${id}`, { method: "DELETE" }),
     onSuccess: invalidateApps,
   });
+  const rotateSharkbotWebhook = useMutation({
+    mutationFn: () =>
+      apiRequest<SharkbotWebhookSettings>("/api/sharkbot/webhook/rotate", {
+        method: "POST",
+      }),
+    onSuccess: (settings) => {
+      queryClient.setQueryData(["sharkbot", "webhook-settings"], settings);
+      setCopyFeedback("URL renovada. Atualize o endereço configurado no Sharkbot.");
+    },
+  });
 
   if (accounts.isLoading) return <LoadingState label="Carregando configurações" />;
   if (accounts.error || !accounts.data) {
@@ -92,12 +113,21 @@ export function SettingsPage() {
       </section>
     );
   }
-  if (metaApps.isLoading) return <LoadingState label="Carregando aplicativos Meta" />;
+  if (metaApps.isLoading || sharkbotSettings.isLoading) {
+    return <LoadingState label="Carregando configurações" />;
+  }
   if (metaApps.error || !metaApps.data) {
     const message =
       metaApps.error instanceof ApiError
         ? metaApps.error.message
         : "Não foi possível carregar os aplicativos Meta.";
+    return <ErrorState message={message} />;
+  }
+  if (sharkbotSettings.error || !sharkbotSettings.data) {
+    const message =
+      sharkbotSettings.error instanceof ApiError
+        ? sharkbotSettings.error.message
+        : "Não foi possível carregar a URL do webhook Sharkbot.";
     return <ErrorState message={message} />;
   }
 
@@ -106,12 +136,13 @@ export function SettingsPage() {
     selectMetaApp.error,
     updateMetaApp.error,
     removeMetaApp.error,
+    rotateSharkbotWebhook.error,
   ].find(Boolean);
   const mutationMessage =
     mutationError instanceof ApiError
       ? mutationError.message
       : mutationError
-        ? "Não foi possível atualizar os aplicativos Meta."
+        ? "Não foi possível atualizar as configurações."
         : null;
 
   return (
@@ -336,6 +367,61 @@ export function SettingsPage() {
             </button>
           </div>
         </form>
+      </section>
+      <section className="space-y-4 rounded-xl border border-[#27334a] bg-[#0d1015] p-5 sm:p-6">
+        <div>
+          <h3 className="font-medium text-[#f5f7fb]">Integração Sharkbot</h3>
+          <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+            Copie esta URL individual e cadastre-a como destino de webhook no Sharkbot. Os eventos
+            recebidos serão associados apenas a este workspace.
+          </p>
+        </div>
+        <label className="grid gap-2 text-sm text-[#cbd5e1]">
+          URL do webhook para cadastrar no Sharkbot
+          <input
+            className="min-h-11 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 font-mono text-xs text-[#cbd5e1] outline-none focus:border-[#7186ff]"
+            readOnly
+            value={sharkbotSettings.data.webhook_url}
+          />
+        </label>
+        {copyFeedback && (
+          <p className="text-sm text-[#9de0c0]" role="status">
+            {copyFeedback}
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
+            type="button"
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(sharkbotSettings.data.webhook_url)
+                .then(() => setCopyFeedback("URL copiada. Cole-a nas configurações do Sharkbot."))
+                .catch(() =>
+                  setCopyFeedback("Não foi possível copiar automaticamente. Selecione e copie a URL."),
+                );
+            }}
+          >
+            <Copy size={15} />
+            Copiar URL
+          </button>
+          <button
+            className="min-h-10 rounded-lg border border-[#47252d] px-3 py-2 text-sm text-[#f1a3ad] disabled:opacity-60"
+            type="button"
+            disabled={rotateSharkbotWebhook.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Gerar uma nova URL invalidará imediatamente a URL atual. Será necessário atualizá-la no Sharkbot. Continuar?",
+                )
+              ) {
+                rotateSharkbotWebhook.mutate();
+              }
+            }}
+          >
+            {rotateSharkbotWebhook.isPending ? "Gerando..." : "Gerar nova URL"}
+          </button>
+        </div>
       </section>
     </div>
   );

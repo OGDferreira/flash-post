@@ -117,13 +117,21 @@ applies this migration at startup through the existing Alembic flow.
 Migration `20261003_09` stores the Instagram profile picture URL and the
 followers/media-count snapshots returned during OAuth, for account cards and
 account-level summaries.
+Migration `20261003_10` records the user and timestamp for each account's first
+connection to a workspace, adds collaborator connection rates and goals, and
+creates the monthly payment ledger. Existing accounts are not credited
+retroactively; reconnecting an existing account does not count as a new
+connection.
+Migration `20261003_11` adds account health errors, workspace-specific
+Sharkbot webhook URLs, and timestamped, deduplicated Sharkbot events.
 
 ## Instagram accounts
 
 The **Contas** workspace page supports connecting multiple Instagram
 professional (Business and Creator) accounts using Instagram Login. Workspace
-members can view account names and token expiration dates; only the workspace
-OWNER can connect or disconnect accounts. Expired and disconnected accounts
+members can view account names and token expiration dates. Workspace
+COLLABORATORs can start an Instagram connection; only the workspace OWNER can
+disconnect accounts or manage Meta app credentials. Expired and disconnected accounts
 remain visible in the hub; disconnecting erases the saved token, records the
 account as disconnected, and attempts to revoke the Meta authorization. If
 Meta does not confirm revocation, the interface tells the OWNER how to finish
@@ -177,11 +185,14 @@ selections, daily limits, media-reuse preference, post type, and selected
 media. The page uploads media to the private `instagram-media` bucket through
 the authenticated backend; one selection can upload several compatible
 files, and a loop accepts a pool with no fixed media-count limit. Each scheduled
-execution publishes one item from that pool. An APScheduler task starts with the FastAPI web
-process and checks the queue and token refreshes once per minute. With
+execution publishes one item from that pool. Only an OWNER can create or
+configure a loop, select its media, pause it, or delete it. A COLLABORATOR can
+associate connected accounts with an existing loop, but cannot change its
+publishing settings or media pool. An APScheduler task starts with the FastAPI
+web process and checks the queue and token refreshes once per minute. With
 `INSTAGRAM_PUBLISHING_ENABLED=false`, it only creates queued intents and does
 not send posts. Enable publishing only after rotating any exposed key,
-verifying the Project URL, confirming migration `20261003_09` was applied,
+verifying the Project URL, confirming migration `20261003_11` was applied,
 uploading test media, and reconnecting a test account with the publishing
 permission. Once enabled, only queued items with compatible media are sent.
 Failed jobs are not automatically retried because a network failure can happen
@@ -189,6 +200,38 @@ after Instagram has accepted a post. Verify Instagram before uploading the
 same media again; media from an ambiguous, started attempt is not reused
 automatically. A suspended Render web service cannot run its in-process
 scheduler until the service wakes.
+
+## Collaborators and installable app
+
+Workspace OWNERs manage collaborator logins, connection rates, daily and monthly
+connection goals, bonuses, team production, and manual monthly payments. A
+COLLABORATOR can open a personal production dashboard, edit their profile, start
+Instagram account connections, and associate connected accounts with existing
+loops. Financial analytics, collaborator management, Meta app settings, loop
+configuration, and account disconnection remain OWNER-only and are checked by
+the API as well as the frontend.
+
+A connection is credited only once, when an Instagram account is first added
+to the workspace after migration `20261003_10`. Reconnecting an account does
+not create another credit. The monthly bonus is included when the collaborator
+reaches the configured monthly goal; an OWNER records payment manually, and
+the payment reduces the outstanding amount for that month.
+
+The frontend includes a web app manifest and service worker for installation
+from supported browsers. The worker can serve the app shell while offline and
+caches built static assets; `/api/` requests always go to the server and are
+never cached.
+
+An Instagram account moves out of the active status when its token expires or a
+publishing failure confirms an authorization/checkpoint problem. Other
+publication failures are counted consecutively; after more than five attempted
+posts fail without a successful post in between, the account is marked with an
+error. A successful OAuth reconnection restores its active status. The
+workspace OWNER can copy the workspace's individual Sharkbot webhook URL from
+Configurações and register it in Sharkbot; rotating the URL invalidates the old
+one. The receiver accepts the `payment_created`, `payment_approved`, and
+`user_joined` events used by Auto-Insta-1, including its nested `data` payload,
+and ignores duplicate event deliveries.
 
 Meta webhooks are not configured in this phase. A webhook is a separate HTTPS
 receiver for asynchronous Instagram events such as comments, mentions, story

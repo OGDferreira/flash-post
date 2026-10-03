@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
@@ -7,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
     func,
@@ -174,4 +176,42 @@ class InstagramPublicationJob(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SharkEvent(Base):
+    __tablename__ = "shark_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "source_event_key",
+            name="uq_shark_events_workspace_source_key",
+        ),
+        Index("ix_shark_events_workspace_occurred_at", "workspace_id", "occurred_at"),
+        Index("ix_shark_events_account_occurred_at", "account_id", "occurred_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_accounts.id", ondelete="SET NULL")
+    )
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_event_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    webhook_id: Mapped[str | None] = mapped_column(String(160))
+    transaction_id: Mapped[str | None] = mapped_column(String(160))
+    customer_name: Mapped[str | None] = mapped_column(String(240))
+    customer_username: Mapped[str | None] = mapped_column(String(120))
+    bot_name: Mapped[str | None] = mapped_column(String(160))
+    plan_name: Mapped[str | None] = mapped_column(String(160))
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

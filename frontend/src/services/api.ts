@@ -141,6 +141,35 @@ export type AdminWorkspace = {
   created_at: string;
 };
 
+export type CollaboratorReport = {
+  member_id: string;
+  user_id: string;
+  full_name: string;
+  nickname: string;
+  email: string;
+  rate_per_connection: number;
+  daily_connection_goal: number;
+  monthly_connection_goal: number;
+  monthly_bonus: number;
+  connections_today: number;
+  connections_month: number;
+  earnings_today: number;
+  earnings_month: number;
+  paid_month: number;
+  due_month: number;
+  projected_month: number;
+  recent_days: number[];
+};
+
+export type CollaboratorDashboard = Omit<
+  CollaboratorReport,
+  "member_id" | "user_id" | "email"
+> & {
+  avatar_url: string | null;
+  daily_progress: number;
+  monthly_progress: number;
+};
+
 export type Page<T> = {
   items: T[];
   total: number;

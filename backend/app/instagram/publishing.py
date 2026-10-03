@@ -12,7 +12,26 @@ VIDEO_PROCESSING_MAX_ATTEMPTS = 90
 
 
 class InstagramPublishingError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        meta_error_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.meta_error_code = meta_error_code
+
+
+def _meta_error_code(response: httpx.Response) -> int | None:
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    error = payload.get("error") if isinstance(payload, Mapping) else None
+    code = error.get("code") if isinstance(error, Mapping) else None
+    return code if isinstance(code, int) and not isinstance(code, bool) else None
 
 
 def _publication_error_detail(
@@ -141,5 +160,7 @@ async def publish_media(
                     stage,
                     access_token,
                     signed_url,
-                )
+                ),
+                status_code=exc.response.status_code,
+                meta_error_code=_meta_error_code(exc.response),
             ) from None
