@@ -20,6 +20,7 @@ from app.legal import router as legal_router
 from app.instagram.router import router as instagram_router
 from app.instagram.media_router import router as media_router
 from app.loops.router import router as loops_router
+from app.workers.scheduler_service import create_scheduler
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -46,8 +47,16 @@ logging.getLogger("uvicorn.access").addFilter(_OAuthCallbackAccessLogFilter())
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings.validate_runtime()
-    yield
-    await dispose_engine()
+    scheduler = create_scheduler()
+    scheduler.start()
+    _app.state.background_scheduler = scheduler
+    logger.info("FlashPost background scheduler started.")
+    try:
+        yield
+    finally:
+        scheduler.shutdown(wait=False)
+        logger.info("FlashPost background scheduler stopped.")
+        await dispose_engine()
 
 
 async def check_database_readiness() -> bool:

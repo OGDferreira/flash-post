@@ -57,16 +57,15 @@ Set up these values in the Render web service under **Environment**:
 3. Keep `INSTAGRAM_PUBLISHING_ENABLED=false` until the deployment, private
    bucket upload, and a test-account reconnection have been verified.
 
-To run the periodic token-refresh and publication worker, create a separate
-Render **Cron Job** using this repository, branch `main`, and the same
-`Dockerfile` as the web service. Set its command to
-`python -m app.workers.loop_scheduler` and its schedule to `* * * * *` (once
-per minute). Add the worker's required environment variables in the Cron Job:
-`DATABASE_URL`, `MASTER_ENCRYPTION_KEY`, `SUPABASE_URL`, and
-`SUPABASE_SERVICE_ROLE_KEY`. Keep the publish flag disabled while testing;
-turn it on only when intentional Instagram publishing is ready. The Cron Job
-does not run the website: it is a separate scheduled worker, and it does not
-need `SESSION_SECRET` or `PUBLIC_BASE_URL`.
+The web application starts its own APScheduler background task on startup,
+following the working pattern used by Auto-Insta. It checks the loop queue and
+refreshes Instagram tokens once per minute, using the same database and
+environment variables as the web service; no separate Render Cron Job or
+duplicate worker environment configuration is required. A PostgreSQL advisory
+lock prevents two FlashPost instances from processing the same tick at once.
+On Render plans that suspend an idle web service, the in-process scheduler is
+also suspended until the web service wakes up; dependable unattended execution
+therefore requires the web service to remain running.
 
 ### Account creation
 
@@ -167,9 +166,8 @@ worker must remain scheduled for token refresh to happen.
 The **Loops** page stores per-workspace publishing intervals, account
 selections, daily limits, media-reuse preference, post type, and selected
 media. The page uploads media to the private `instagram-media` bucket through
-the authenticated backend. The periodic worker can be run with
-`python -m app.workers.loop_scheduler`, for example once per minute from a
-Render Cron Job or another managed scheduler. With
+the authenticated backend. An APScheduler task starts with the FastAPI web
+process and checks the queue and token refreshes once per minute. With
 `INSTAGRAM_PUBLISHING_ENABLED=false`, it only creates queued intents and does
 not send posts. Enable publishing only after rotating any exposed key,
 verifying the Project URL, confirming migration `20261003_08` was applied,
@@ -178,7 +176,8 @@ permission. Once enabled, only queued items with compatible media are sent.
 Failed jobs are not automatically retried because a network failure can happen
 after Instagram has accepted a post. Verify Instagram before uploading the
 same media again; media from an ambiguous, started attempt is not reused
-automatically.
+automatically. A suspended Render web service cannot run its in-process
+scheduler until the service wakes.
 
 Meta webhooks are not configured in this phase. A webhook is a separate HTTPS
 receiver for asynchronous Instagram events such as comments, mentions, story
