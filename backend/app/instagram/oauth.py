@@ -87,7 +87,7 @@ async def exchange_instagram_authorization_code(
     redirect_uri: str,
     app_id: str,
     app_secret: str,
-) -> tuple[str, str, str, datetime]:
+) -> tuple[str, str, str | None, int | None, int | None, str, datetime]:
     timeout = httpx.Timeout(15.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         short_lived_response = await client.post(
@@ -151,7 +151,9 @@ async def exchange_instagram_authorization_code(
         profile_response = await client.get(
             f"{INSTAGRAM_GRAPH_ENDPOINT}/me",
             params={
-                "fields": "user_id,username",
+                "fields": (
+                    "user_id,username,profile_picture_url,followers_count,media_count"
+                ),
                 "access_token": access_token,
             },
         )
@@ -159,6 +161,9 @@ async def exchange_instagram_authorization_code(
         profile = _profile_data(profile_response.json())
         instagram_user_id = profile.get("user_id")
         username = profile.get("username")
+        profile_picture_url = profile.get("profile_picture_url")
+        follower_count = profile.get("followers_count")
+        media_count = profile.get("media_count")
         if (
             not isinstance(instagram_user_id, (str, int))
             or not str(instagram_user_id)
@@ -167,9 +172,35 @@ async def exchange_instagram_authorization_code(
             or len(username) > 100
         ):
             raise InstagramOAuthError("Meta returned an invalid Instagram profile.")
+        if (
+            not isinstance(profile_picture_url, str)
+            or not profile_picture_url.startswith("https://")
+            or len(profile_picture_url) > 2048
+        ):
+            profile_picture_url = None
+        if (
+            isinstance(follower_count, bool)
+            or not isinstance(follower_count, int)
+            or follower_count < 0
+        ):
+            follower_count = None
+        if (
+            isinstance(media_count, bool)
+            or not isinstance(media_count, int)
+            or media_count < 0
+        ):
+            media_count = None
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-    return str(instagram_user_id), username.strip(), access_token, expires_at
+    return (
+        str(instagram_user_id),
+        username.strip(),
+        profile_picture_url,
+        follower_count,
+        media_count,
+        access_token,
+        expires_at,
+    )
 
 
 async def refresh_instagram_long_lived_token(

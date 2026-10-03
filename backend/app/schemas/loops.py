@@ -4,8 +4,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-MAX_LOOP_MEDIA = 24
-
 
 class InstagramLoopCreateRequest(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=120)]
@@ -15,7 +13,7 @@ class InstagramLoopCreateRequest(BaseModel):
     post_type: Literal["reels", "images", "both"] = "reels"
     repeat_media: bool = True
     account_ids: Annotated[list[UUID], Field(min_length=1, max_length=100)]
-    media_ids: Annotated[list[UUID], Field(max_length=MAX_LOOP_MEDIA)] | None = None
+    media_ids: list[UUID] | None = None
 
     @field_validator("name")
     @classmethod

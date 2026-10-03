@@ -85,7 +85,6 @@ const emptyForm: LoopForm = {
   media_ids: [],
 };
 
-const MAX_LOOP_MEDIA = 24;
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 function formatDate(value: string | null): string {
@@ -180,7 +179,7 @@ export function LoopsPage() {
       setForm((current) => ({
         ...current,
         media_ids: mediaFitsLoop(uploaded, current.post_type)
-          ? [...new Set([...current.media_ids, uploaded.id])].slice(0, MAX_LOOP_MEDIA)
+          ? [...new Set([...current.media_ids, uploaded.id])]
           : current.media_ids,
       }));
       void queryClient.invalidateQueries({ queryKey: ["instagram-media"] });
@@ -220,13 +219,6 @@ export function LoopsPage() {
 
   async function uploadFiles(files: File[]) {
     setUploadValidationError(null);
-    const remainingSlots = MAX_LOOP_MEDIA - form.media_ids.length;
-    if (files.length > remainingSlots) {
-      setUploadValidationError(
-        `Este loop aceita até ${MAX_LOOP_MEDIA} mídias. Há espaço para mais ${remainingSlots}.`,
-      );
-      return;
-    }
     const invalidFile = files.find(
       (file) =>
         file.size > MAX_UPLOAD_BYTES ||
@@ -461,7 +453,7 @@ export function LoopsPage() {
 
           <fieldset className="space-y-3">
             <legend className="mb-2 text-sm text-[#cbd5e1]">
-              Pool de mídias ({form.media_ids.length}/{MAX_LOOP_MEDIA} selecionadas)
+              Pool de mídias ({form.media_ids.length} selecionadas)
             </legend>
             <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
               <label className="grid gap-2 text-sm text-[#cbd5e1]">
@@ -475,7 +467,7 @@ export function LoopsPage() {
                 />
               </label>
               <label className="grid gap-2 text-sm text-[#cbd5e1]">
-                Enviar arquivos para este loop (até {MAX_LOOP_MEDIA}, JPEG ou MP4 de até 50 MB cada)
+                Enviar arquivos para este loop (JPEG ou MP4 de até 50 MB cada)
                 <input
                   className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 py-2 text-sm text-[#cbd5e1] file:mr-3 file:rounded file:border-0 file:bg-[#17202b] file:px-3 file:py-1 file:text-[#cbd5e1]"
                   type="file"
@@ -489,7 +481,6 @@ export function LoopsPage() {
                   multiple
                   disabled={
                     uploadingBatch ||
-                    form.media_ids.length >= MAX_LOOP_MEDIA ||
                     !loops.data.can_manage
                   }
                   onChange={(event) => {
@@ -501,8 +492,8 @@ export function LoopsPage() {
               </label>
             </div>
             <p className="text-xs text-[#94a3b8]">
-              Você pode escolher vários vídeos de uma vez. Cada loop publica um vídeo por execução,
-              seguindo o intervalo configurado, até consumir o pool ou o limite diário.
+              Você pode escolher vários vídeos de uma vez, sem limite de quantidade no pool. Cada
+              loop publica um vídeo por execução, seguindo o intervalo e os limites configurados.
             </p>
             {uploadingBatch && (
               <p className="text-sm text-[#8af2fa]">Enviando arquivos para o Storage...</p>
@@ -546,8 +537,7 @@ export function LoopsPage() {
                         checked={checked}
                         disabled={
                           !compatible ||
-                          !loops.data.can_manage ||
-                          (!checked && form.media_ids.length >= MAX_LOOP_MEDIA)
+                          !loops.data.can_manage
                         }
                         aria-label={`Selecionar ${item.filename}`}
                         onChange={() =>

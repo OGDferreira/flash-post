@@ -3,24 +3,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   Clock3,
-  Instagram,
   Link2,
-  Pencil,
-  Plus,
   Search,
-  Save,
-  Trash2,
   Unlink,
-  X,
 } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
+import { InstagramAvatar } from "@/components/InstagramAvatar";
 import { ApiError, apiRequest } from "@/services/api";
 
 type InstagramAccount = {
   id: string;
   username: string;
+  profile_picture_url: string | null;
   token_expires_at: string;
   connected_at: string;
   status: "connected" | "disconnected";
@@ -31,21 +27,8 @@ type InstagramAccountsResponse = {
   accounts: InstagramAccount[];
 };
 
-type InstagramMetaApp = {
-  id: string;
-  display_name: string;
-  meta_app_name: string;
-  app_id: string;
-  category: string | null;
-  app_link: string | null;
-  is_selected: boolean;
-  app_secret_configured: boolean;
-};
-
 type InstagramMetaAppsResponse = {
-  can_manage: boolean;
   selected_app_id: string | null;
-  apps: InstagramMetaApp[];
 };
 
 type InstagramDisconnectResponse = {
@@ -74,18 +57,11 @@ export function InstagramAccountsPage() {
   const [disconnectMessage, setDisconnectMessage] = useState<
     { text: string; complete: boolean } | undefined
   >();
-  const [displayName, setDisplayName] = useState("");
-  const [appId, setAppId] = useState("");
-  const [appSecret, setAppSecret] = useState("");
-  const [editingAppId, setEditingAppId] = useState<string | null>(null);
-  const [editDisplayName, setEditDisplayName] = useState("");
-  const [editAppSecret, setEditAppSecret] = useState("");
   const [accountFilter, setAccountFilter] = useState<"active" | "issues" | "all">("active");
   const [accountSearch, setAccountSearch] = useState("");
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
-    queryFn: () =>
-      apiRequest<InstagramAccountsResponse>("/api/instagram/accounts"),
+    queryFn: () => apiRequest<InstagramAccountsResponse>("/api/instagram/accounts"),
     refetchInterval: 60_000,
     retry: false,
   });
@@ -95,65 +71,10 @@ export function InstagramAccountsPage() {
     enabled: accounts.data?.can_manage === true,
     retry: false,
   });
-  const createMetaApp = useMutation({
-    mutationFn: () =>
-      apiRequest<{ app: InstagramMetaApp }>("/api/instagram/apps", {
-        method: "POST",
-        body: { display_name: displayName, app_id: appId, app_secret: appSecret },
-      }),
-    onSuccess: () => {
-      setDisplayName("");
-      setAppId("");
-      setAppSecret("");
-      void queryClient.invalidateQueries({ queryKey: ["instagram", "apps"] });
-    },
-  });
-  const selectMetaApp = useMutation({
-    mutationFn: (metaAppId: string) =>
-      apiRequest(`/api/instagram/apps/${metaAppId}/select`, { method: "PUT" }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["instagram", "apps"] });
-    },
-  });
-  const updateMetaApp = useMutation({
-    mutationFn: ({
-      id,
-      name,
-      secret,
-    }: {
-      id: string;
-      name: string;
-      secret: string;
-    }) =>
-      apiRequest<InstagramMetaApp>(`/api/instagram/apps/${id}`, {
-        method: "PATCH",
-        body: {
-          display_name: name,
-          ...(secret.trim() ? { app_secret: secret } : {}),
-        },
-      }),
-    onSuccess: () => {
-      setEditingAppId(null);
-      setEditDisplayName("");
-      setEditAppSecret("");
-      void queryClient.invalidateQueries({ queryKey: ["instagram", "apps"] });
-    },
-  });
-  const removeMetaApp = useMutation({
-    mutationFn: (metaAppId: string) =>
-      apiRequest(`/api/instagram/apps/${metaAppId}`, { method: "DELETE" }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["instagram", "apps"] });
-    },
-  });
   const connect = useMutation({
     mutationFn: () =>
-      apiRequest<{ authorization_url: string }>("/api/instagram/connect", {
-        method: "POST",
-      }),
-    onSuccess: ({ authorization_url }) => {
-      window.location.assign(authorization_url);
-    },
+      apiRequest<{ authorization_url: string }>("/api/instagram/connect", { method: "POST" }),
+    onSuccess: ({ authorization_url }) => window.location.assign(authorization_url),
   });
   const disconnect = useMutation({
     mutationFn: (accountId: string) =>
@@ -179,9 +100,7 @@ export function InstagramAccountsPage() {
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  if (accounts.isLoading) {
-    return <LoadingState label="Carregando contas Instagram" />;
-  }
+  if (accounts.isLoading) return <LoadingState label="Carregando contas Instagram" />;
   if (accounts.error || !accounts.data) {
     return <ErrorState message="Não foi possível carregar as contas deste workspace." />;
   }
@@ -204,18 +123,6 @@ export function InstagramAccountsPage() {
       : metaApps.error
         ? "Não foi possível carregar os aplicativos Meta."
         : null;
-  const metaAppMutationError = [
-    createMetaApp.error,
-    selectMetaApp.error,
-    updateMetaApp.error,
-    removeMetaApp.error,
-  ].find(Boolean);
-  const metaAppMutationMessage =
-    metaAppMutationError instanceof ApiError
-      ? metaAppMutationError.message
-      : metaAppMutationError
-        ? "Não foi possível atualizar os aplicativos Meta."
-        : null;
   const activeAccountCount = accounts.data.accounts.filter(isInstagramAccountActive).length;
   const issueAccountCount = accounts.data.accounts.length - activeAccountCount;
   const visibleAccounts = accounts.data.accounts.filter((account) => {
@@ -230,32 +137,36 @@ export function InstagramAccountsPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-7">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
-          Workspace
-        </p>
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Workspace</p>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
               Hub de Contas
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#94a3b8]">
-              Gerencie conexões e acompanhe o estado das contas profissionais deste workspace.
+              Acompanhe as contas profissionais conectadas e o estado de cada autorização.
             </p>
           </div>
           {accounts.data.can_manage && (
-            <button
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#667eea] disabled:cursor-not-allowed disabled:opacity-60"
-              type="button"
-              onClick={() => connect.mutate()}
-              disabled={
-                !metaApps.data?.selected_app_id ||
-                metaApps.isLoading ||
-                connect.isPending
-              }
-            >
-              <Link2 size={16} />
-              {connect.isPending ? "Conectando..." : "Conectar conta"}
-            </button>
+            <div className="flex flex-col items-end gap-2">
+              <button
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#667eea] disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                onClick={() => connect.mutate()}
+                disabled={!metaApps.data?.selected_app_id || metaApps.isLoading || connect.isPending}
+              >
+                <Link2 size={16} />
+                {connect.isPending ? "Conectando..." : "Conectar conta"}
+              </button>
+              {!metaApps.data?.selected_app_id && !metaApps.isLoading && !metaApps.error && (
+                <Link
+                  className="text-xs text-[#aab7ff] hover:text-white"
+                  to="/feature/settings"
+                >
+                  Configurar aplicativo Meta
+                </Link>
+              )}
+            </div>
           )}
         </div>
       </header>
@@ -274,9 +185,9 @@ export function InstagramAccountsPage() {
           {callbackMessage.text}
         </div>
       )}
-
       {connectError && <ErrorState message={connectError} />}
       {disconnectError && <ErrorState message={disconnectError} />}
+      {metaAppsError && <ErrorState message={metaAppsError} />}
       {disconnectMessage && (
         <div
           className={`rounded-lg border px-4 py-3 text-sm ${
@@ -288,229 +199,6 @@ export function InstagramAccountsPage() {
         >
           {disconnectMessage.text}
         </div>
-      )}
-
-      {accounts.data.can_manage && (
-        <section className="space-y-5 rounded-xl border border-[#27334a] bg-[#0d1015] p-5 sm:p-6">
-          <div>
-            <h3 className="font-medium text-[#f5f7fb]">Aplicativos Meta</h3>
-            <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
-              Cadastre e escolha qual aplicativo será usado para conectar novas contas. O segredo
-              é validado na Meta e criptografado no servidor; nunca é exibido novamente.
-            </p>
-          </div>
-          {metaApps.isLoading ? (
-            <LoadingState label="Carregando aplicativos Meta" />
-          ) : metaAppsError ? (
-            <ErrorState message={metaAppsError} />
-          ) : (
-            <>
-              {metaAppMutationMessage && <ErrorState message={metaAppMutationMessage} />}
-              <div className="space-y-3">
-                {metaApps.data?.apps.map((app) => (
-                  <article
-                    className={`space-y-4 rounded-lg border p-4 ${
-                      app.is_selected
-                        ? "border-[#536dfe] bg-[#11182d]"
-                        : "border-[#27334a] bg-[#090b0f]"
-                    }`}
-                    key={app.id}
-                  >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-medium text-[#f5f7fb]">{app.display_name}</h4>
-                        {app.is_selected && (
-                          <span className="rounded-full bg-[#26366f] px-2 py-0.5 text-xs text-[#c4ceff]">
-                            Selecionado
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-sm text-[#94a3b8]">
-                        {app.meta_app_name} · ID {app.app_id}
-                      </p>
-                      <p className="mt-1 text-xs text-[#64748b]">
-                        {[app.category, app.app_link].filter(Boolean).join(" · ") ||
-                          "Informações adicionais não fornecidas pela Meta"}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        className="grid size-10 place-items-center rounded-lg border border-[#27334a] text-[#cbd5e1] hover:bg-[#10141b]"
-                        type="button"
-                        aria-label={`Editar ${app.display_name}`}
-                        onClick={() => {
-                          setEditingAppId(app.id);
-                          setEditDisplayName(app.display_name);
-                          setEditAppSecret("");
-                          updateMetaApp.reset();
-                        }}
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      {!app.is_selected && (
-                        <button
-                          className="min-h-10 rounded-lg border border-[#33447c] px-3 py-2 text-sm text-[#c4ceff] hover:bg-[#11182d] disabled:opacity-60"
-                          type="button"
-                          disabled={selectMetaApp.isPending}
-                          onClick={() => selectMetaApp.mutate(app.id)}
-                        >
-                          Usar para novas conexões
-                        </button>
-                      )}
-                      <button
-                        className="grid size-10 place-items-center rounded-lg border border-[#47252d] text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-60"
-                        type="button"
-                        aria-label={`Remover ${app.display_name}`}
-                        disabled={removeMetaApp.isPending}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `Remover o aplicativo "${app.display_name}"? Apps com contas Instagram conectadas não podem ser removidos.`,
-                            )
-                          ) {
-                            removeMetaApp.mutate(app.id);
-                          }
-                        }}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                    </div>
-                    {editingAppId === app.id && (
-                      <form
-                        className="grid gap-3 border-t border-[#27334a] pt-4 sm:grid-cols-2"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          updateMetaApp.mutate({
-                            id: app.id,
-                            name: editDisplayName,
-                            secret: editAppSecret,
-                          });
-                        }}
-                      >
-                        <label className="grid gap-2 text-sm text-[#cbd5e1]">
-                          Nome interno
-                          <input
-                            className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
-                            maxLength={120}
-                            required
-                            value={editDisplayName}
-                            onChange={(event) => setEditDisplayName(event.target.value)}
-                          />
-                        </label>
-                        <label className="grid gap-2 text-sm text-[#cbd5e1]">
-                          Novo App Secret (opcional)
-                          <input
-                            autoComplete="new-password"
-                            className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
-                            maxLength={512}
-                            type="password"
-                            value={editAppSecret}
-                            onChange={(event) => setEditAppSecret(event.target.value)}
-                            placeholder="Deixe vazio para manter o atual"
-                          />
-                        </label>
-                        <div className="flex items-center gap-2 sm:col-span-2">
-                          <button
-                            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
-                            type="submit"
-                            disabled={updateMetaApp.isPending || !editDisplayName.trim()}
-                          >
-                            <Save size={15} />
-                            {updateMetaApp.isPending ? "Salvando..." : "Salvar alterações"}
-                          </button>
-                          <button
-                            className="grid size-10 place-items-center rounded-lg border border-[#27334a] text-[#cbd5e1]"
-                            type="button"
-                            aria-label="Cancelar edição"
-                            onClick={() => {
-                              setEditingAppId(null);
-                              setEditAppSecret("");
-                              updateMetaApp.reset();
-                            }}
-                          >
-                            <X size={15} />
-                          </button>
-                        </div>
-                      </form>
-                    )}
-                  </article>
-                ))}
-                {metaApps.data?.apps.length === 0 && (
-                  <p className="rounded-lg border border-dashed border-[#27334a] px-4 py-3 text-sm text-[#94a3b8]">
-                    Nenhum aplicativo cadastrado. Adicione seu app Meta abaixo.
-                  </p>
-                )}
-              </div>
-              <form
-                className="grid gap-4 border-t border-[#202838] pt-5 sm:grid-cols-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  createMetaApp.mutate();
-                }}
-              >
-                <label className="grid gap-2 text-sm text-[#cbd5e1] sm:col-span-2">
-                  Nome para identificar o aplicativo
-                  <input
-                    autoComplete="off"
-                    className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
-                    maxLength={120}
-                    required
-                    value={displayName}
-                    onChange={(event) => setDisplayName(event.target.value)}
-                    placeholder="Ex.: App principal da marca"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm text-[#cbd5e1]">
-                  ID do Aplicativo Meta
-                  <input
-                    autoComplete="off"
-                    className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
-                    inputMode="numeric"
-                    maxLength={64}
-                    pattern="[0-9]+"
-                    required
-                    value={appId}
-                    onChange={(event) => setAppId(event.target.value)}
-                  />
-                </label>
-                <label className="grid gap-2 text-sm text-[#cbd5e1]">
-                  Chave Secreta do Aplicativo
-                  <input
-                    autoComplete="new-password"
-                    className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
-                    maxLength={512}
-                    type="password"
-                    required
-                    value={appSecret}
-                    onChange={(event) => setAppSecret(event.target.value)}
-                    placeholder="Cole a chave secreta do app Meta"
-                  />
-                </label>
-                <p className="text-xs leading-5 text-[#64748b] sm:col-span-2">
-                  Ao cadastrar, o FlashPost consulta o nome e as informações públicas disponíveis
-                  na Meta. O segredo não será retornado nem compartilhado com outros workspaces.
-                </p>
-                <div className="flex items-center gap-3 sm:col-span-2">
-                  <button
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#667eea] disabled:cursor-not-allowed disabled:opacity-60"
-                    type="submit"
-                    disabled={
-                      createMetaApp.isPending ||
-                      displayName.trim().length === 0 ||
-                      appId.trim().length === 0 ||
-                      appSecret.trim().length === 0
-                    }
-                  >
-                    <Plus size={15} />
-                    {createMetaApp.isPending ? "Validando e salvando..." : "Adicionar aplicativo"}
-                  </button>
-                </div>
-              </form>
-            </>
-          )}
-        </section>
       )}
 
       {!accounts.data.can_manage && (
@@ -580,32 +268,37 @@ export function InstagramAccountsPage() {
           visibleAccounts.map((account) => {
             const active = isInstagramAccountActive(account);
             const expired = new Date(account.token_expires_at).getTime() <= Date.now();
-            const label = account.status === "disconnected"
-              ? "Desconectada — conecte novamente para ativar"
-              : expired
-                ? "Token expirado — reconecte a conta"
-                : `Ativa · token válido até ${new Date(account.token_expires_at).toLocaleDateString("pt-BR")}`;
+            const label =
+              account.status === "disconnected"
+                ? "Desconectada — conecte novamente para ativar"
+                : expired
+                  ? "Token expirado — reconecte a conta"
+                  : `Ativa · token válido até ${new Date(account.token_expires_at).toLocaleDateString("pt-BR")}`;
 
             return (
               <article
                 className={`flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 ${
-                  active
-                    ? "border-[#23513e] bg-[#0e1b17]"
-                    : "border-[#6b3c2d] bg-[#1c1410]"
+                  active ? "border-[#23513e] bg-[#0e1b17]" : "border-[#6b3c2d] bg-[#1c1410]"
                 }`}
                 key={account.id}
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className={`grid size-11 shrink-0 place-items-center rounded-xl border ${
-                    active
-                      ? "border-[#23513e] bg-[#14251d] text-[#9de0c0]"
-                      : "border-[#6b3c2d] bg-[#271a13] text-[#f2b884]"
-                  }`}>
-                    <Instagram size={19} />
-                  </span>
+                  <InstagramAvatar
+                    className={`size-11 rounded-xl border object-cover ${
+                      active
+                        ? "border-[#23513e] bg-[#14251d] text-[#9de0c0]"
+                        : "border-[#6b3c2d] bg-[#271a13] text-[#f2b884]"
+                    }`}
+                    src={account.profile_picture_url}
+                    username={account.username}
+                  />
                   <div className="min-w-0">
                     <p className="truncate font-medium text-[#f5f7fb]">@{account.username}</p>
-                    <p className={`mt-1 flex items-center gap-1.5 text-xs ${active ? "text-[#9de0c0]" : "text-[#f2b884]"}`}>
+                    <p
+                      className={`mt-1 flex items-center gap-1.5 text-xs ${
+                        active ? "text-[#9de0c0]" : "text-[#f2b884]"
+                      }`}
+                    >
                       {active ? <Check size={13} /> : <Clock3 size={13} />}
                       {label}
                     </p>
@@ -630,7 +323,11 @@ export function InstagramAccountsPage() {
                         type="button"
                         disabled={disconnect.isPending}
                         onClick={() => {
-                          if (window.confirm(`Desconectar @${account.username}? A conta será mantida no hub como desconectada, mas o token salvo será apagado.`)) {
+                          if (
+                            window.confirm(
+                              `Desconectar @${account.username}? A conta será mantida no hub como desconectada, mas o token salvo será apagado.`,
+                            )
+                          ) {
                             disconnect.mutate(account.id);
                           }
                         }}
@@ -649,8 +346,7 @@ export function InstagramAccountsPage() {
 
       <p className="text-xs leading-5 text-[#64748b]">
         Contas desconectadas continuam visíveis no hub, mas os tokens são apagados do FlashPost.
-        Tokens expirados precisam de nova autorização. Publicações via Loop aguardam a implementação
-        do pool de mídias e da permissão de publicação da Meta.
+        Tokens expirados precisam de nova autorização.
       </p>
     </div>
   );

@@ -17,6 +17,7 @@ import { FeaturePlaceholderPage } from "@/pages/FeaturePlaceholderPage";
 import { InstagramAccountsPage } from "@/pages/InstagramAccountsPage";
 import { LoopsPage } from "@/pages/LoopsPage";
 import { ProfilePage } from "@/pages/ProfilePage";
+import { SettingsPage } from "@/pages/SettingsPage";
 import { AdminOverviewPage } from "@/pages/admin/AdminOverviewPage";
 import { AdminSystemPage } from "@/pages/admin/AdminSystemPage";
 import { AdminUsersPage } from "@/pages/admin/AdminUsersPage";
@@ -25,6 +26,11 @@ import { AdminWorkspacesPage } from "@/pages/admin/AdminWorkspacesPage";
 const DashboardPage = lazy(() =>
   import("@/pages/DashboardPage").then((module) => ({
     default: module.DashboardPage,
+  })),
+);
+const AnalyticsPage = lazy(() =>
+  import("@/pages/AnalyticsPage").then((module) => ({
+    default: module.AnalyticsPage,
   })),
 );
 
@@ -48,6 +54,18 @@ export default function App() {
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
               <Route path="/feature/loops" element={<LoopsPage />} />
+              <Route
+                path="/feature/analytics"
+                element={
+                  <Suspense fallback={<LoadingState label="Carregando Analytics" />}>
+                    <AnalyticsPage />
+                  </Suspense>
+                }
+              />
+              <Route path="/feature/feed" element={<FeaturePlaceholderPage />} />
+              <Route path="/feature/collaborators" element={<FeaturePlaceholderPage />} />
+              <Route path="/feature/notifications" element={<FeaturePlaceholderPage />} />
+              <Route path="/feature/settings" element={<SettingsPage />} />
               <Route path="/feature/:slug" element={<FeaturePlaceholderPage />} />
             </Route>
             <Route element={<RequireSuperAdmin />}>

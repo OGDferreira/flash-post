@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:filters": "node --experimental-strip-types --test tests/accountFilter.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

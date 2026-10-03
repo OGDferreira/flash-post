@@ -84,6 +84,9 @@ async def list_accounts(
             InstagramAccountResponse(
                 id=account.id,
                 username=account.username,
+                profile_picture_url=account.profile_picture_url,
+                follower_count=account.follower_count,
+                media_count=account.media_count,
                 token_expires_at=_utc_datetime(account.token_expires_at),
                 connected_at=_utc_datetime(account.connected_at),
                 status=account.status,
@@ -466,7 +469,15 @@ async def instagram_callback(
         return RedirectResponse(_accounts_page("error"), status_code=303)
 
     try:
-        instagram_user_id, username, access_token, expires_at = (
+        (
+            instagram_user_id,
+            username,
+            profile_picture_url,
+            follower_count,
+            media_count,
+            access_token,
+            expires_at,
+        ) = (
             await exchange_instagram_authorization_code(
                 code,
                 _redirect_uri(),
@@ -505,6 +516,9 @@ async def instagram_callback(
             app_credential_id=credential.id,
             instagram_user_id=instagram_user_id,
             username=username,
+            profile_picture_url=profile_picture_url,
+            follower_count=follower_count,
+            media_count=media_count,
             encrypted_access_token=encrypted_token,
             token_expires_at=expires_at,
             status="connected",
@@ -513,6 +527,9 @@ async def instagram_callback(
     else:
         account.app_credential_id = credential.id
         account.username = username
+        account.profile_picture_url = profile_picture_url
+        account.follower_count = follower_count
+        account.media_count = media_count
         account.encrypted_access_token = encrypted_token
         account.token_expires_at = expires_at
         account.status = "connected"

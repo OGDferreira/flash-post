@@ -64,19 +64,25 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
     },
   });
   const links = admin ? adminLinks : ownerLinks;
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+  const pageHeading = admin
+    ? "Painel da plataforma"
+    : `${greeting}, ${user?.full_name ?? "bem-vindo"}`;
 
   const sidebar = (
     <div className="flex h-full flex-col bg-[#0b0c0e]">
-      <div className="flex h-[72px] items-center justify-between border-b border-[#202838] px-5">
+      <div className="flex h-[72px] items-center justify-between border-b border-[#202838] px-5 lg:px-3 lg:group-hover:px-5">
         <Link
-          className="flex items-center gap-3"
+          className="flex items-center gap-3 lg:gap-0 lg:group-hover:gap-3"
           to={admin ? "/admin" : "/dashboard"}
           onClick={() => setMobileOpen(false)}
         >
           <span className="grid size-9 place-items-center rounded-xl border border-[#33447c] bg-[#11182d] text-sm font-bold text-[#9baaff]">
             F
           </span>
-          <span className="text-base font-semibold tracking-[-0.03em] text-[#f5f7fb]">
+          <span className="max-w-[140px] overflow-hidden whitespace-nowrap text-base font-semibold tracking-[-0.03em] text-[#f5f7fb] opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[140px] lg:group-hover:opacity-100">
             FlashPost<span className="text-[#7186ff]">.</span>
           </span>
         </Link>
@@ -90,9 +96,11 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
       </div>
 
       {admin && (
-        <div className="mx-4 mt-5 flex items-center gap-2 rounded-lg border border-[#27334a] bg-[#10141b] px-3 py-2 text-xs font-medium text-[#aeb9ce]">
+        <div className="mx-4 mt-5 flex items-center gap-2 overflow-hidden rounded-lg border border-[#27334a] bg-[#10141b] px-3 py-2 text-xs font-medium text-[#aeb9ce] lg:group-hover:mx-3">
           <Shield size={14} className="text-[#8295ff]" />
-          Administração da plataforma
+          <span className="max-w-[180px] overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[180px] lg:group-hover:opacity-100">
+            Administração da plataforma
+          </span>
         </div>
       )}
 
@@ -102,6 +110,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
             end={to === "/admin" || to === "/dashboard"}
             key={to}
             to={to}
+            title={label}
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
               `flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm transition-colors ${
@@ -112,12 +121,16 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
             }
           >
             <Icon size={17} strokeWidth={1.8} />
-            {label}
+            <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[170px] lg:group-hover:opacity-100">
+              {label}
+            </span>
             {!admin &&
               to !== "/dashboard" &&
               to !== "/feature/accounts" &&
-              to !== "/feature/loops" && (
-              <span className="ml-auto rounded-md border border-[#202838] px-1.5 py-0.5 text-[9px] text-[#64748b]">
+              to !== "/feature/loops" &&
+              to !== "/feature/analytics" &&
+              to !== "/feature/settings" && (
+              <span className="ml-auto hidden rounded-md border border-[#202838] px-1.5 py-0.5 text-[9px] text-[#64748b] lg:group-hover:inline">
                 EM BREVE
               </span>
             )}
@@ -129,7 +142,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
         <Link
           to="/profile"
           onClick={() => setMobileOpen(false)}
-          className="flex items-center gap-3 rounded-lg px-3 py-3 hover:bg-[#12151b]"
+          className="flex items-center justify-center gap-3 rounded-lg px-3 py-3 hover:bg-[#12151b] lg:px-0 lg:group-hover:justify-start lg:group-hover:px-3"
         >
           {user?.avatar_url ? (
             <img
@@ -142,7 +155,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
               {user?.full_name.slice(0, 1).toUpperCase() ?? "F"}
             </span>
           )}
-          <span className="min-w-0 flex-1">
+          <span className="min-w-0 max-w-[145px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[145px] lg:group-hover:opacity-100">
             <span className="block truncate text-sm font-medium text-[#e6eaf2]">
               {user?.full_name}
             </span>
@@ -150,7 +163,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
               {user?.role}
             </span>
           </span>
-          <ChevronDown size={15} className="text-[#64748b]" />
+          <ChevronDown size={15} className="hidden shrink-0 text-[#64748b] lg:group-hover:block" />
         </Link>
         <button
           onClick={() => {
@@ -158,10 +171,12 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
             logout.mutate();
           }}
           disabled={logout.isPending}
-          className="mt-1 flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-sm text-[#94a3b8] hover:bg-[#171317] hover:text-[#f1a3ad] disabled:opacity-50"
+          className="mt-1 flex min-h-10 w-full items-center justify-center gap-3 rounded-lg px-3 text-sm text-[#94a3b8] hover:bg-[#171317] hover:text-[#f1a3ad] disabled:opacity-50 lg:px-0 lg:group-hover:justify-start lg:group-hover:px-3"
         >
           <LogOut size={16} />
-          Sair
+          <span className="max-w-[120px] overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[120px] lg:group-hover:opacity-100">
+            Sair
+          </span>
         </button>
         {logoutError && (
           <p role="alert" className="px-3 pt-2 text-xs text-[#f1a3ad]">
@@ -174,7 +189,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
 
   return (
     <div className="min-h-screen bg-[#070809] text-[#f5f7fb]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[252px] border-r border-[#202838] lg:block">
+      <aside className="group fixed inset-y-0 left-0 z-30 hidden w-[68px] border-r border-[#202838] transition-[width] duration-200 hover:w-[252px] lg:block">
         {sidebar}
       </aside>
       {mobileOpen && (
@@ -184,12 +199,12 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
             onClick={() => setMobileOpen(false)}
             aria-label="Fechar menu"
           />
-          <aside className="relative h-full w-[min(300px,85vw)] border-r border-[#202838]">
+          <aside className="group relative h-full w-[min(300px,85vw)] border-r border-[#202838]">
             {sidebar}
           </aside>
         </div>
       )}
-      <div className="lg:pl-[252px]">
+      <div className="lg:pl-[68px]">
         <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#202838] bg-[#070809]/95 px-5 backdrop-blur-sm sm:px-8">
           <div className="flex items-center gap-3">
             <button
@@ -203,8 +218,8 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
               <p className="text-xs text-[#64748b]">
                 {admin ? "FlashPost / Administração" : "FlashPost / Workspace"}
               </p>
-              <h1 className="mt-0.5 text-sm font-medium text-[#e6eaf2]">
-                {admin ? "Painel da plataforma" : "Seu espaço de trabalho"}
+              <h1 className="mt-0.5 max-w-[calc(100vw-170px)] truncate text-sm font-medium text-[#e6eaf2]">
+                {pageHeading}
               </h1>
             </div>
           </div>

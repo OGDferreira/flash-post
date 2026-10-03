@@ -8,6 +8,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class InstagramAccountResponse(BaseModel):
     id: UUID
     username: str
+    profile_picture_url: str | None
+    follower_count: int | None
+    media_count: int | None
     token_expires_at: datetime
     connected_at: datetime
     status: str

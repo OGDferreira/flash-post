@@ -44,6 +44,9 @@ class InstagramAccount(Base):
     )
     instagram_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
     username: Mapped[str] = mapped_column(String(100), nullable=False)
+    profile_picture_url: Mapped[str | None] = mapped_column(String(2048))
+    follower_count: Mapped[int | None] = mapped_column()
+    media_count: Mapped[int | None] = mapped_column()
     encrypted_access_token: Mapped[str | None] = mapped_column(String(2048))
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'connected'")

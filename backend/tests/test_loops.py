@@ -131,7 +131,7 @@ async def test_loop_rejects_expired_and_cross_workspace_accounts(
 
 
 @pytest.mark.anyio
-async def test_loop_accepts_up_to_24_videos_and_rejects_more(
+async def test_loop_accepts_more_than_24_videos(
     client: AsyncClient,
     db_session: AsyncSession,
     owner,
@@ -147,14 +147,14 @@ async def test_loop_accepts_up_to_24_videos_and_rejects_more(
             media_type="video",
             size_bytes=100,
         )
-        for index in range(24)
+        for index in range(25)
     ]
     db_session.add_all([account, *videos])
     await db_session.commit()
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
     payload = {
-        "name": "Loop com 24 vídeos",
+        "name": "Loop com mais de 24 vídeos",
         "interval_min_minutes": 20,
         "interval_max_minutes": 40,
         "daily_limit_per_account": 24,
@@ -171,14 +171,7 @@ async def test_loop_accepts_up_to_24_videos_and_rejects_more(
     )
 
     assert response.status_code == 201, response.text
-    assert len(response.json()["media_ids"]) == 24
-
-    too_many_response = await client.post(
-        "/api/loops",
-        headers={"X-CSRF-Token": token},
-        json={**payload, "media_ids": [*payload["media_ids"], str(uuid.uuid4())]},
-    )
-    assert too_many_response.status_code == 422
+    assert len(response.json()["media_ids"]) == 25
 
 
 @pytest.mark.anyio

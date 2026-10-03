@@ -523,6 +523,9 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
         return (
             "17840000000000000",
             "flashpost_demo",
+            "https://scontent.cdninstagram.com/profile.jpg",
+            128,
+            42,
             "private-access-token",
             datetime.now(timezone.utc) + timedelta(days=50),
         )
@@ -558,6 +561,9 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
     )
     assert account is not None
     assert account.app_credential_id is not None
+    assert account.profile_picture_url == "https://scontent.cdninstagram.com/profile.jpg"
+    assert account.follower_count == 128
+    assert account.media_count == 42
     assert account.encrypted_access_token != "private-access-token"
     assert decrypt_value(account.encrypted_access_token) == "private-access-token"
 
@@ -629,22 +635,39 @@ async def test_instagram_oauth_exchanges_code_for_long_lived_token_and_profile(
                     {"access_token": "long-token", "expires_in": 5183944}
                 )
             assert url.endswith("/me")
-            assert params["fields"] == "user_id,username"
+            assert params["fields"] == (
+                "user_id,username,profile_picture_url,followers_count,media_count"
+            )
             assert params["access_token"] == "long-token"
             return FakeResponse(
-                {"data": [{"user_id": "17840000000000000", "username": "flashpost_demo"}]}
+                {
+                    "data": [
+                        {
+                            "user_id": "17840000000000000",
+                            "username": "flashpost_demo",
+                            "profile_picture_url": "https://scontent.cdninstagram.com/profile.jpg",
+                            "followers_count": 128,
+                            "media_count": 42,
+                        }
+                    ]
+                }
             )
 
     monkeypatch.setattr(oauth.httpx, "AsyncClient", FakeClient)
-    user_id, username, token, expires_at = await oauth.exchange_instagram_authorization_code(
-        "one-time-code",
-        "https://flashpost.example/api/instagram/callback",
-        "123456",
-        "test-app-secret",
+    user_id, username, profile_picture_url, followers_count, media_count, token, expires_at = (
+        await oauth.exchange_instagram_authorization_code(
+            "one-time-code",
+            "https://flashpost.example/api/instagram/callback",
+            "123456",
+            "test-app-secret",
+        )
     )
 
     assert user_id == "17840000000000000"
     assert username == "flashpost_demo"
+    assert profile_picture_url == "https://scontent.cdninstagram.com/profile.jpg"
+    assert followers_count == 128
+    assert media_count == 42
     assert token == "long-token"
     assert expires_at > datetime.now(timezone.utc)
 

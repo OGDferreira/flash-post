@@ -37,10 +37,10 @@ _PAGES = {
         <li><strong>Workspace:</strong> identificador do workspace, participação e função de acesso.</li>
         <li><strong>Segurança da sessão:</strong> cookie de sessão protegido e informações técnicas necessárias para autenticação e proteção contra abuso.</li>
         <li><strong>Aplicativos Meta do workspace:</strong> App IDs, nomes internos e App Secrets informados pelo OWNER. Os segredos são criptografados no servidor e não são retornados ao navegador após serem salvos.</li>
-        <li><strong>Conta profissional do Instagram conectada:</strong> identificador e nome de usuário da conta, validade do acesso e token OAuth. O token é armazenado criptografado e usado para manter a conexão autorizada.</li>
+        <li><strong>Conta profissional do Instagram conectada:</strong> identificador, nome de usuário, URL da foto de perfil, contagens de seguidores e publicações retornadas na autorização, validade do acesso e token OAuth. O token é armazenado criptografado e usado para manter a conexão autorizada.</li>
       </ul>
       <h2>Como usamos as informações</h2>
-      <p>Usamos essas informações para autenticar usuários, operar workspaces, proteger o serviço e permitir que um OWNER configure seu próprio aplicativo Meta e conecte contas profissionais do Instagram. Na etapa atual, o FlashPost solicita a permissão básica para identificar a conta; publicação, mensagens, comentários, analytics e webhooks não são oferecidos por esta integração inicial.</p>
+      <p>Usamos essas informações para autenticar usuários, operar workspaces, proteger o serviço e permitir que um OWNER configure seu próprio aplicativo Meta e conecte contas profissionais do Instagram. O FlashPost oferece publicação por Loop, métricas operacionais de publicações e exibe as contagens de seguidores e publicações retornadas no momento da autorização. Métricas de Insights da Meta, como impressões, alcance e interações, ainda não são consultadas.</p>
       <h2>Compartilhamento e serviços de terceiros</h2>
       <p>Quando você inicia uma conexão com o Instagram, o navegador é direcionado à Meta para autenticação e consentimento. A Meta trata dados conforme seus próprios termos e políticas. O FlashPost não vende informações pessoais. Dados podem ser processados pelos provedores de hospedagem e banco de dados necessários para operar o serviço.</p>
       <h2>Armazenamento e segurança</h2>
@@ -56,7 +56,7 @@ _PAGES = {
       <p class="updated">Última atualização: {updated}</p>
       <p>Estes termos se aplicam ao uso do FlashPost. Ao criar uma conta ou utilizar o serviço, você concorda com estas condições. Se não concordar, não utilize o serviço.</p>
       <h2>O serviço</h2>
-      <p>O FlashPost está em desenvolvimento e oferece uma base de contas, workspaces e, quando habilitada, conexão de contas profissionais do Instagram. Recursos podem estar indisponíveis, em teste ou ser alterados. Conectar uma conta não significa que publicação, automações, analytics, mensagens ou webhooks estejam habilitados.</p>
+      <p>O FlashPost está em desenvolvimento e oferece contas, workspaces, publicação por Loop e métricas operacionais básicas. Recursos podem estar indisponíveis, em teste ou ser alterados. Métricas de Insights da Meta, mensagens e webhooks não estão habilitados na integração atual.</p>
       <h2>Conta e segurança</h2>
       <p>Você deve fornecer informações corretas, manter suas credenciais seguras e comunicar uso não autorizado. O OWNER é responsável por gerenciar acesso ao workspace e por ações realizadas por seus membros.</p>
       <h2>Aplicativos Meta e contas Instagram</h2>

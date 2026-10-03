@@ -114,6 +114,9 @@ migration; expiry is evaluated from `token_expires_at`.
 Migration `20261003_08` adds workspace-scoped media metadata, private Storage
 object paths, loop-to-media selections, and publication result fields. Render
 applies this migration at startup through the existing Alembic flow.
+Migration `20261003_09` stores the Instagram profile picture URL and the
+followers/media-count snapshots returned during OAuth, for account cards and
+account-level summaries.
 
 ## Instagram accounts
 
@@ -125,6 +128,12 @@ remain visible in the hub; disconnecting erases the saved token, records the
 account as disconnected, and attempts to revoke the Meta authorization. If
 Meta does not confirm revocation, the interface tells the OWNER how to finish
 revoking it in Instagram settings.
+The Hub displays each account's profile thumbnail. The workspace **Configurações**
+page is where an OWNER registers, edits, selects, and removes Meta apps. Profile
+follower and media counts are snapshots from the most recent OAuth connection.
+The dashboard aggregates those snapshots and FlashPost publication-job counts
+for the accounts selected by the user; Meta Insights such as reach, impressions,
+and interactions are not currently queried.
 
 Create a Business-type Meta app, add the Instagram product, configure
 Instagram Business Login, and register this exact OAuth redirect URI in Meta:
@@ -137,7 +146,7 @@ For local testing, use the local backend URL configured through
 `PUBLIC_BASE_URL`, for example `http://localhost:8000/api/instagram/callback`.
 The URI in Meta must exactly match `PUBLIC_BASE_URL` plus
 `/api/instagram/callback`. In FlashPost, each workspace OWNER registers one or more Meta App IDs and
-App Secrets in the **Aplicativos Meta** area on the Contas page, gives each
+App Secrets in the **Aplicativos Meta** area in Configurações, gives each
 app an internal name, and selects which one to use for new connections. The
 FlashPost server validates the credentials with Meta and retrieves the app's
 available public details. The App Secret is encrypted server-side and is
@@ -167,12 +176,12 @@ The **Loops** page stores per-workspace publishing intervals, account
 selections, daily limits, media-reuse preference, post type, and selected
 media. The page uploads media to the private `instagram-media` bucket through
 the authenticated backend; one selection can upload several compatible
-files, and a loop accepts a pool of up to 24 media items. Each scheduled
+files, and a loop accepts a pool with no fixed media-count limit. Each scheduled
 execution publishes one item from that pool. An APScheduler task starts with the FastAPI web
 process and checks the queue and token refreshes once per minute. With
 `INSTAGRAM_PUBLISHING_ENABLED=false`, it only creates queued intents and does
 not send posts. Enable publishing only after rotating any exposed key,
-verifying the Project URL, confirming migration `20261003_08` was applied,
+verifying the Project URL, confirming migration `20261003_09` was applied,
 uploading test media, and reconnecting a test account with the publishing
 permission. Once enabled, only queued items with compatible media are sent.
 Failed jobs are not automatically retried because a network failure can happen

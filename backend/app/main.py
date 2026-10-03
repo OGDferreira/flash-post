@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin.router import router as admin_router
+from app.analytics.router import router as analytics_router
 from app.auth.router import router as auth_router
 from app.core.database import dispose_engine, get_session_factory
 from app.api.health import router as health_router
@@ -103,6 +104,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(health_router)
     application.include_router(auth_router)
     application.include_router(admin_router)
+    application.include_router(analytics_router)
     application.include_router(instagram_router)
     application.include_router(media_router)
     application.include_router(loops_router)
