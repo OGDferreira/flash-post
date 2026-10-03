@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import logging
 import os
 import uuid
 from urllib.parse import parse_qs, urlparse
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.crypto import decrypt_value, encrypt_value
+from app.main import _OAuthCallbackAccessLogFilter
 from app.instagram import oauth
 from app.instagram import router as instagram_router
 from app.instagram.oauth import InstagramOAuthError
@@ -31,6 +33,29 @@ async def _login(client: AsyncClient, email: str, password: str) -> None:
         json={"email": email, "password": password},
     )
     assert response.status_code == 200, response.text
+
+
+def test_oauth_callback_access_logs_redact_code_and_state() -> None:
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        (
+            "127.0.0.1",
+            "GET",
+            "/api/instagram/callback?code=one-time-code&state=private-state",
+            "1.1",
+            303,
+        ),
+        None,
+    )
+
+    assert _OAuthCallbackAccessLogFilter().filter(record)
+    assert "one-time-code" not in record.getMessage()
+    assert "private-state" not in record.getMessage()
+    assert "/api/instagram/callback" in record.getMessage()
 
 
 @pytest.mark.anyio
@@ -100,37 +125,48 @@ async def test_instagram_connect_requires_app_configuration(
 
 
 @pytest.mark.anyio
-async def test_owner_can_save_and_read_workspace_meta_app_without_secret(
+async def test_owner_can_add_and_read_meta_app_without_secret(
     client: AsyncClient,
     db_session: AsyncSession,
     owner,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
-    saved = await client.put(
-        "/api/instagram/app-settings",
+
+    async def fake_meta_info(_app_id: str, _app_secret: str):
+        return "Meta app name", "Business", "https://www.facebook.com/apps/123456789"
+
+    monkeypatch.setattr(instagram_router, "fetch_meta_app_info", fake_meta_info)
+    saved = await client.post(
+        "/api/instagram/apps",
         headers={"X-CSRF-Token": token},
-        json={"app_id": "123456789", "app_secret": "private-meta-secret"},
+        json={
+            "display_name": "My publishing app",
+            "app_id": "123456789",
+            "app_secret": "private-meta-secret",
+        },
     )
 
-    assert saved.status_code == 200
-    assert saved.json() == {
-        "configured": True,
-        "app_id": "123456789",
-        "app_secret_configured": True,
-    }
+    assert saved.status_code == 201
     assert "private-meta-secret" not in saved.text
+    app = saved.json()["app"]
+    assert app["display_name"] == "My publishing app"
+    assert app["meta_app_name"] == "Meta app name"
+    assert app["category"] == "Business"
+    assert app["is_selected"] is True
 
-    stored = await db_session.get(InstagramAppCredential, owner[1].id)
+    stored = await db_session.get(InstagramAppCredential, uuid.UUID(app["id"]))
     assert stored is not None
     assert stored.encrypted_app_secret != "private-meta-secret"
     assert decrypt_value(stored.encrypted_app_secret) == "private-meta-secret"
 
-    settings = await client.get("/api/instagram/app-settings")
-    assert settings.status_code == 200
-    assert settings.json() == saved.json()
-    assert "encrypted_app_secret" not in settings.text
-    assert "private-meta-secret" not in settings.text
+    apps = await client.get("/api/instagram/apps")
+    assert apps.status_code == 200
+    assert apps.json()["selected_app_id"] == app["id"]
+    assert apps.json()["apps"][0]["app_id"] == "123456789"
+    assert "encrypted_app_secret" not in apps.text
+    assert "private-meta-secret" not in apps.text
 
 
 @pytest.mark.anyio
@@ -141,11 +177,15 @@ async def test_collaborator_cannot_read_or_change_workspace_meta_app(
     await _login(client, "collaborator@example.com", "collaborator password")
     token = await _csrf(client)
 
-    read = await client.get("/api/instagram/app-settings")
-    write = await client.put(
-        "/api/instagram/app-settings",
+    read = await client.get("/api/instagram/apps")
+    write = await client.post(
+        "/api/instagram/apps",
         headers={"X-CSRF-Token": token},
-        json={"app_id": "123456789", "app_secret": "private-meta-secret"},
+        json={
+            "display_name": "My app",
+            "app_id": "123456789",
+            "app_secret": "private-meta-secret",
+        },
     )
 
     assert read.status_code == 403
@@ -153,7 +193,7 @@ async def test_collaborator_cannot_read_or_change_workspace_meta_app(
 
 
 @pytest.mark.anyio
-async def test_app_id_cannot_change_while_workspace_accounts_are_connected(
+async def test_meta_app_cannot_be_removed_while_accounts_are_connected(
     client: AsyncClient,
     db_session: AsyncSession,
     owner,
@@ -162,8 +202,13 @@ async def test_app_id_cannot_change_while_workspace_accounts_are_connected(
     db_session.add(
         InstagramAppCredential(
             workspace_id=workspace.id,
+            display_name="My app",
+            meta_app_name="Meta app",
             app_id="123456789",
+            category=None,
+            app_link=None,
             encrypted_app_secret=encrypt_value("private-meta-secret"),
+            is_selected=True,
             revision=uuid.uuid4(),
         )
     )
@@ -180,14 +225,27 @@ async def test_app_id_cannot_change_while_workspace_accounts_are_connected(
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
 
-    response = await client.put(
-        "/api/instagram/app-settings",
+    app = await db_session.scalar(
+        select(InstagramAppCredential).where(
+            InstagramAppCredential.workspace_id == workspace.id
+        )
+    )
+    assert app is not None
+    linked_account = await db_session.scalar(
+        select(InstagramAccount).where(
+            InstagramAccount.workspace_id == workspace.id
+        )
+    )
+    assert linked_account is not None
+    linked_account.app_credential_id = app.id
+    await db_session.commit()
+    response = await client.delete(
+        f"/api/instagram/apps/{app.id}",
         headers={"X-CSRF-Token": token},
-        json={"app_id": "987654321", "app_secret": "replacement-secret"},
     )
 
     assert response.status_code == 409
-    assert "Disconnect all Instagram accounts" in response.json()["detail"]
+    assert "connected with this app" in response.json()["detail"]
 
 
 @pytest.mark.anyio
@@ -295,6 +353,94 @@ async def test_owner_cannot_disconnect_account_from_another_workspace(
 
 
 @pytest.mark.anyio
+async def test_owner_can_select_one_of_multiple_meta_apps(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    first = InstagramAppCredential(
+        workspace_id=workspace.id,
+        display_name="First",
+        meta_app_name="First Meta app",
+        app_id="111111",
+        encrypted_app_secret=encrypt_value("first-secret"),
+        is_selected=True,
+        revision=uuid.uuid4(),
+    )
+    second = InstagramAppCredential(
+        workspace_id=workspace.id,
+        display_name="Second",
+        meta_app_name="Second Meta app",
+        app_id="222222",
+        encrypted_app_secret=encrypt_value("second-secret"),
+        is_selected=False,
+        revision=uuid.uuid4(),
+    )
+    db_session.add_all([first, second])
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+
+    response = await client.put(
+        f"/api/instagram/apps/{second.id}/select",
+        headers={"X-CSRF-Token": token},
+    )
+    apps = await client.get("/api/instagram/apps")
+
+    assert response.status_code == 200
+    assert apps.status_code == 200
+    assert apps.json()["selected_app_id"] == str(second.id)
+    assert {app["id"]: app["is_selected"] for app in apps.json()["apps"]} == {
+        str(first.id): False,
+        str(second.id): True,
+    }
+
+
+@pytest.mark.anyio
+async def test_owner_can_rename_and_rotate_meta_app_secret(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+    app = InstagramAppCredential(
+        workspace_id=workspace.id,
+        display_name="Before",
+        meta_app_name="Old Meta name",
+        app_id="123456789",
+        encrypted_app_secret=encrypt_value("old-secret"),
+        is_selected=True,
+        revision=uuid.uuid4(),
+    )
+    db_session.add(app)
+    await db_session.commit()
+    old_revision = app.revision
+
+    async def fake_meta_info(_app_id: str, app_secret: str):
+        assert app_secret == "new-secret"
+        return "Updated Meta name", "Business", "https://example.com/app"
+
+    monkeypatch.setattr(instagram_router, "fetch_meta_app_info", fake_meta_info)
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+    response = await client.patch(
+        f"/api/instagram/apps/{app.id}",
+        headers={"X-CSRF-Token": token},
+        json={"display_name": "After", "app_secret": "new-secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "After"
+    assert response.json()["meta_app_name"] == "Updated Meta name"
+    assert "new-secret" not in response.text
+    await db_session.refresh(app)
+    assert decrypt_value(app.encrypted_app_secret) == "new-secret"
+    assert app.revision != old_revision
+
+
+@pytest.mark.anyio
 async def test_oauth_callback_persists_encrypted_token_and_redirects(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -310,8 +456,24 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
     db_session.add(
         InstagramAppCredential(
             workspace_id=workspace.id,
+            display_name="Selected app",
+            meta_app_name="Meta selected app",
             app_id="123456",
+            category="Business",
+            app_link="https://example.com/app",
             encrypted_app_secret=encrypt_value("test-app-secret"),
+            is_selected=True,
+            revision=uuid.uuid4(),
+        )
+    )
+    db_session.add(
+        InstagramAppCredential(
+            workspace_id=workspace.id,
+            display_name="Not selected",
+            meta_app_name="Other Meta app",
+            app_id="654321",
+            encrypted_app_secret=encrypt_value("other-app-secret"),
+            is_selected=False,
             revision=uuid.uuid4(),
         )
     )
@@ -362,6 +524,7 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
         )
     )
     assert account is not None
+    assert account.app_credential_id is not None
     assert account.encrypted_access_token != "private-access-token"
     assert decrypt_value(account.encrypted_access_token) == "private-access-token"
 

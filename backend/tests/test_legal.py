@@ -9,7 +9,7 @@ from httpx import AsyncClient
         (
             "/privacidade",
             "Política de Privacidade — FlashPost",
-            "segredo é criptografado",
+            "segredos são criptografados",
         ),
         (
             "/termosdeuso",

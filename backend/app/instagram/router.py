@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.auth.dependencies import (
     DbSession,
@@ -23,6 +23,7 @@ from app.instagram.oauth import (
     InstagramOAuthError,
     build_authorization_url,
     exchange_instagram_authorization_code,
+    fetch_meta_app_info,
     revoke_instagram_permissions,
 )
 from app.models import (
@@ -35,8 +36,11 @@ from app.models import (
 from app.schemas.instagram import (
     InstagramAccountResponse,
     InstagramAccountsResponse,
-    InstagramAppSettingsRequest,
-    InstagramAppSettingsResponse,
+    InstagramMetaAppActionResponse,
+    InstagramMetaAppCreateRequest,
+    InstagramMetaAppResponse,
+    InstagramMetaAppsResponse,
+    InstagramMetaAppUpdateRequest,
     InstagramConnectResponse,
     InstagramDisconnectResponse,
 )
@@ -84,121 +88,252 @@ async def list_accounts(
     )
 
 
-async def _workspace_app_credential(
-    workspace_id: uuid.UUID,
-    db: DbSession,
-) -> InstagramAppCredential | None:
-    return await db.get(InstagramAppCredential, workspace_id)
-
-
-def _app_settings_response(
-    credential: InstagramAppCredential | None,
-) -> InstagramAppSettingsResponse:
-    encryption_configured = get_settings().master_encryption_key is not None
-    return InstagramAppSettingsResponse(
-        configured=credential is not None and encryption_configured,
-        app_id=credential.app_id if credential is not None else None,
-        app_secret_configured=credential is not None,
+def _meta_app_response(app: InstagramAppCredential) -> InstagramMetaAppResponse:
+    return InstagramMetaAppResponse(
+        id=app.id,
+        display_name=app.display_name,
+        meta_app_name=app.meta_app_name,
+        app_id=app.app_id,
+        category=app.category,
+        app_link=app.app_link,
+        is_selected=app.is_selected,
+        app_secret_configured=True,
     )
 
 
-@router.get("/app-settings", response_model=InstagramAppSettingsResponse)
-async def get_instagram_app_settings(
+async def _workspace_meta_app(
+    workspace_id: uuid.UUID,
+    app_id: uuid.UUID,
+    db: DbSession,
+) -> InstagramAppCredential | None:
+    return await db.scalar(
+        select(InstagramAppCredential).where(
+            InstagramAppCredential.id == app_id,
+            InstagramAppCredential.workspace_id == workspace_id,
+        )
+    )
+
+
+async def _fetch_and_validate_meta_app(
+    app_id: str,
+    app_secret: str,
+) -> tuple[str, str | None, str | None]:
+    try:
+        return await fetch_meta_app_info(app_id, app_secret)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Meta app lookup was rejected (HTTP %s).", exc.response.status_code)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Meta could not validate this App ID and App Secret.",
+        ) from None
+    except (httpx.HTTPError, InstagramOAuthError) as exc:
+        logger.warning("Meta app lookup failed (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not retrieve app information from Meta. Try again later.",
+        ) from None
+
+
+@router.get("/apps", response_model=InstagramMetaAppsResponse)
+async def list_meta_apps(
     access: OwnerAccess,
     db: DbSession,
-) -> InstagramAppSettingsResponse:
-    credential = await _workspace_app_credential(access.workspace.id, db)
-    return _app_settings_response(credential)
+) -> InstagramMetaAppsResponse:
+    apps = (
+        await db.scalars(
+            select(InstagramAppCredential)
+            .where(InstagramAppCredential.workspace_id == access.workspace.id)
+            .order_by(InstagramAppCredential.display_name, InstagramAppCredential.id)
+        )
+    ).all()
+    selected = next((app.id for app in apps if app.is_selected), None)
+    return InstagramMetaAppsResponse(
+        can_manage=True,
+        selected_app_id=selected,
+        apps=[_meta_app_response(app) for app in apps],
+    )
 
 
-@router.put(
-    "/app-settings",
-    response_model=InstagramAppSettingsResponse,
+@router.post(
+    "/apps",
+    response_model=InstagramMetaAppActionResponse,
+    status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_csrf)],
 )
-async def save_instagram_app_settings(
-    payload: InstagramAppSettingsRequest,
+async def create_meta_app(
+    payload: InstagramMetaAppCreateRequest,
     access: OwnerAccess,
     db: DbSession,
-) -> InstagramAppSettingsResponse:
-    if get_settings().master_encryption_key is None:
+) -> InstagramMetaAppActionResponse:
+    settings = get_settings()
+    if settings.master_encryption_key is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Secure credential storage is not configured for this environment.",
         )
 
-    credential = await _workspace_app_credential(access.workspace.id, db)
-    if payload.app_id != (credential.app_id if credential is not None else None):
-        has_accounts = await db.scalar(
-            select(InstagramAccount.id)
-            .where(InstagramAccount.workspace_id == access.workspace.id)
-            .limit(1)
+    existing = await db.scalar(
+        select(InstagramAppCredential.id).where(
+            InstagramAppCredential.workspace_id == access.workspace.id,
+            InstagramAppCredential.app_id == payload.app_id,
         )
-        if has_accounts is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Disconnect all Instagram accounts before changing the App ID.",
-            )
-
-    if payload.app_secret is None and credential is None:
+    )
+    if existing is not None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Enter the Instagram App Secret to configure this workspace.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This Meta App ID is already registered in this workspace.",
         )
 
-    try:
-        encrypted_secret = (
-            encrypt_value(payload.app_secret)
-            if payload.app_secret is not None
-            else None
+    meta_name, category, app_link = await _fetch_and_validate_meta_app(
+        payload.app_id,
+        payload.app_secret,
+    )
+
+    existing_selected = await db.scalar(
+        select(InstagramAppCredential.id).where(
+            InstagramAppCredential.workspace_id == access.workspace.id,
+            InstagramAppCredential.is_selected.is_(True),
         )
+    )
+    try:
+        encrypted_secret = encrypt_value(payload.app_secret)
     except RuntimeError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Secure credential storage is unavailable.",
         ) from None
 
-    if credential is None:
-        credential = InstagramAppCredential(
-            workspace_id=access.workspace.id,
-            app_id=payload.app_id,
-            encrypted_app_secret=encrypted_secret or "",
-            revision=uuid.uuid4(),
-        )
-        db.add(credential)
-    else:
-        credential.app_id = payload.app_id
-        if encrypted_secret is not None:
-            credential.encrypted_app_secret = encrypted_secret
-        credential.revision = uuid.uuid4()
+    app = InstagramAppCredential(
+        workspace_id=access.workspace.id,
+        display_name=payload.display_name,
+        meta_app_name=meta_name,
+        app_id=payload.app_id,
+        category=category,
+        app_link=app_link,
+        encrypted_app_secret=encrypted_secret,
+        is_selected=existing_selected is None,
+        revision=uuid.uuid4(),
+    )
+    db.add(app)
     await db.commit()
-    return _app_settings_response(credential)
+    await db.refresh(app)
+    return InstagramMetaAppActionResponse(
+        selected_app_id=app.id if app.is_selected else existing_selected,
+        app=_meta_app_response(app),
+    )
+
+
+@router.put(
+    "/apps/{app_id}/select",
+    response_model=InstagramMetaAppActionResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def select_meta_app(
+    app_id: uuid.UUID,
+    access: OwnerAccess,
+    db: DbSession,
+) -> InstagramMetaAppActionResponse:
+    app = await _workspace_meta_app(access.workspace.id, app_id, db)
+    if app is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meta app not found.")
+    await db.execute(
+        update(InstagramAppCredential)
+        .where(InstagramAppCredential.workspace_id == access.workspace.id)
+        .values(is_selected=False)
+    )
+    app.is_selected = True
+    await db.commit()
+    return InstagramMetaAppActionResponse(
+        selected_app_id=app.id,
+        app=_meta_app_response(app),
+    )
+
+
+@router.patch(
+    "/apps/{app_id}",
+    response_model=InstagramMetaAppResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def update_meta_app(
+    app_id: uuid.UUID,
+    payload: InstagramMetaAppUpdateRequest,
+    access: OwnerAccess,
+    db: DbSession,
+) -> InstagramMetaAppResponse:
+    app = await _workspace_meta_app(access.workspace.id, app_id, db)
+    if app is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meta app not found.")
+
+    if payload.display_name is not None:
+        app.display_name = payload.display_name
+    if payload.app_secret is not None:
+        if get_settings().master_encryption_key is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Secure credential storage is not configured for this environment.",
+            )
+        meta_name, category, app_link = await _fetch_and_validate_meta_app(
+            app.app_id,
+            payload.app_secret,
+        )
+        try:
+            app.encrypted_app_secret = encrypt_value(payload.app_secret)
+        except RuntimeError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Secure credential storage is unavailable.",
+            ) from None
+        app.meta_app_name = meta_name
+        app.category = category
+        app.app_link = app_link
+        app.revision = uuid.uuid4()
+
+    await db.commit()
+    await db.refresh(app)
+    return _meta_app_response(app)
 
 
 @router.delete(
-    "/app-settings",
-    response_model=InstagramAppSettingsResponse,
+    "/apps/{app_id}",
+    response_model=InstagramMetaAppsResponse,
     dependencies=[Depends(require_csrf)],
 )
-async def delete_instagram_app_settings(
+async def delete_meta_app(
+    app_id: uuid.UUID,
     access: OwnerAccess,
     db: DbSession,
-) -> InstagramAppSettingsResponse:
-    has_accounts = await db.scalar(
+) -> InstagramMetaAppsResponse:
+    app = await _workspace_meta_app(access.workspace.id, app_id, db)
+    if app is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meta app not found.")
+
+    linked_account = await db.scalar(
         select(InstagramAccount.id)
-        .where(InstagramAccount.workspace_id == access.workspace.id)
+        .where(InstagramAccount.app_credential_id == app.id)
         .limit(1)
     )
-    if has_accounts is not None:
+    if linked_account is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Disconnect all Instagram accounts before removing the Meta app settings.",
+            detail="Disconnect the Instagram accounts connected with this app before removing it.",
         )
-    credential = await _workspace_app_credential(access.workspace.id, db)
-    if credential is not None:
-        await db.delete(credential)
-        await db.commit()
-    return _app_settings_response(None)
+
+    was_selected = app.is_selected
+    await db.delete(app)
+    if was_selected:
+        replacement = await db.scalar(
+            select(InstagramAppCredential)
+            .where(
+                InstagramAppCredential.workspace_id == access.workspace.id,
+                InstagramAppCredential.id != app_id,
+            )
+            .order_by(InstagramAppCredential.display_name, InstagramAppCredential.id)
+            .limit(1)
+        )
+        if replacement is not None:
+            replacement.is_selected = True
+    await db.commit()
+    return await list_meta_apps(access, db)
 
 
 @router.post(
@@ -212,7 +347,12 @@ async def connect_account(
     db: DbSession,
 ) -> InstagramConnectResponse:
     settings = get_settings()
-    credential = await _workspace_app_credential(access.workspace.id, db)
+    credential = await db.scalar(
+        select(InstagramAppCredential).where(
+            InstagramAppCredential.workspace_id == access.workspace.id,
+            InstagramAppCredential.is_selected.is_(True),
+        )
+    )
     if credential is None or settings.master_encryption_key is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -235,6 +375,7 @@ async def connect_account(
         "state": state,
         "user_id": request.session["user_id"],
         "workspace_id": str(access.workspace.id),
+        "meta_app_id": str(credential.id),
         "credential_revision": str(credential.revision),
         "created_at": int(time.time()),
     }
@@ -303,7 +444,11 @@ async def instagram_callback(
     if user is None or workspace is None or membership is None:
         return RedirectResponse(_accounts_page("error"), status_code=303)
 
-    credential = await _workspace_app_credential(workspace_id, db)
+    try:
+        meta_app_id = uuid.UUID(str(pending.get("meta_app_id")))
+    except (ValueError, TypeError, AttributeError):
+        return RedirectResponse(_accounts_page("error"), status_code=303)
+    credential = await _workspace_meta_app(workspace_id, meta_app_id, db)
     if (
         credential is None
         or str(credential.revision) != pending.get("credential_revision")
@@ -324,7 +469,16 @@ async def instagram_callback(
                 app_secret,
             )
         )
-    except (httpx.HTTPError, InstagramOAuthError, RuntimeError, ValueError) as exc:
+    except InstagramOAuthError as exc:
+        logger.warning("Instagram OAuth validation failed: %s", exc)
+        return RedirectResponse(_accounts_page("error"), status_code=303)
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "Instagram OAuth token exchange was rejected by Meta (HTTP %s).",
+            exc.response.status_code,
+        )
+        return RedirectResponse(_accounts_page("error"), status_code=303)
+    except (httpx.HTTPError, RuntimeError, ValueError) as exc:
         logger.warning("Instagram OAuth callback failed (%s).", type(exc).__name__)
         return RedirectResponse(_accounts_page("error"), status_code=303)
 
@@ -343,6 +497,7 @@ async def instagram_callback(
     if account is None:
         account = InstagramAccount(
             workspace_id=workspace_id,
+            app_credential_id=credential.id,
             instagram_user_id=instagram_user_id,
             username=username,
             encrypted_access_token=encrypted_token,
@@ -350,6 +505,7 @@ async def instagram_callback(
         )
         db.add(account)
     else:
+        account.app_credential_id = credential.id
         account.username = username
         account.encrypted_access_token = encrypted_token
         account.token_expires_at = expires_at

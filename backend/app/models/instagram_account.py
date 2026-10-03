@@ -25,6 +25,10 @@ class InstagramAccount(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
     )
+    app_credential_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("instagram_meta_apps.id", ondelete="SET NULL"),
+    )
     instagram_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
     username: Mapped[str] = mapped_column(String(100), nullable=False)
     encrypted_access_token: Mapped[str] = mapped_column(String(2048), nullable=False)

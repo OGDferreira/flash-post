@@ -23,6 +23,24 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
+class _OAuthCallbackAccessLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if (
+            isinstance(args, tuple)
+            and len(args) >= 3
+            and isinstance(args[2], str)
+            and args[2].split("?", 1)[0] == "/api/instagram/callback"
+        ):
+            sanitized_args = list(args)
+            sanitized_args[2] = "/api/instagram/callback"
+            record.args = tuple(sanitized_args)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_OAuthCallbackAccessLogFilter())
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings.validate_runtime()

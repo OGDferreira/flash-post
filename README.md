@@ -69,10 +69,11 @@ The nickname migrations backfill existing users before enforcing the
 non-null, case-insensitive unique index on `nickname_normalized`.
 Migration `20261003_04` adds Instagram accounts scoped to workspaces. OAuth
 access tokens are encrypted with `MASTER_ENCRYPTION_KEY`; API responses never
-include them. Migration `20261003_05` adds one encrypted Meta app credential
-per workspace. The shared `MASTER_ENCRYPTION_KEY` remains a server-side
-infrastructure secret; each customer enters their own Meta App ID and App
-Secret in the authenticated FlashPost workspace.
+include them. Migration `20261003_05` adds encrypted Meta app credentials and
+`20261003_06` allows multiple named apps per workspace while preserving
+existing app/account associations. The shared `MASTER_ENCRYPTION_KEY` remains
+a server-side infrastructure secret; each customer registers their own Meta
+apps in the authenticated FlashPost workspace.
 
 ## Instagram accounts
 
@@ -94,9 +95,13 @@ https://flashpost.onrender.com/api/instagram/callback
 For local testing, use the local backend URL configured through
 `PUBLIC_BASE_URL`, for example `http://localhost:8000/api/instagram/callback`.
 The URI in Meta must exactly match `PUBLIC_BASE_URL` plus
-`/api/instagram/callback`. In FlashPost, each workspace OWNER enters the
-customer's App ID and App Secret on the Contas page. The App Secret is
-encrypted server-side and is never returned to the browser after saving.
+`/api/instagram/callback`. In FlashPost, each workspace OWNER registers one or more Meta App IDs and
+App Secrets in the **Aplicativos Meta** area on the Contas page, gives each
+app an internal name, and selects which one to use for new connections. The
+FlashPost server validates the credentials with Meta and retrieves the app's
+available public details. The App Secret is encrypted server-side and is
+never returned to the browser after saving. Existing Instagram accounts remain
+associated with the app that authorized them.
 Never put a customer's App Secret in frontend environment configuration,
 Render environment variables, Git, or chat.
 
@@ -159,7 +164,9 @@ Initial endpoints:
 | `GET`, `PATCH` | `/api/profile` | Read/update profile name, nickname, and avatar URL |
 | `GET` | `/api/workspace` | Current active workspace membership |
 | `GET` | `/api/instagram/accounts` | List Instagram accounts for the active workspace |
-| `GET`, `PUT`, `DELETE` | `/api/instagram/app-settings` | Read, save, or remove that workspace's encrypted Meta app credentials (OWNER only) |
+| `GET`, `POST` | `/api/instagram/apps` | List registered Meta apps or add a validated app (OWNER only) |
+| `PUT` | `/api/instagram/apps/{app_id}/select` | Select the Meta app for new Instagram connections (OWNER only) |
+| `DELETE` | `/api/instagram/apps/{app_id}` | Remove an app that has no linked Instagram accounts (OWNER only) |
 | `POST` | `/api/instagram/connect` | Start Instagram Login (OWNER only; requires CSRF) |
 | `GET` | `/api/instagram/callback` | Complete Instagram Login and store an encrypted token |
 | `DELETE` | `/api/instagram/accounts/{id}` | Disconnect an account (OWNER only; requires CSRF) |

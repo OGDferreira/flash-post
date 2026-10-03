@@ -36,7 +36,7 @@ _PAGES = {
         <li><strong>Cadastro e perfil:</strong> nome, e-mail, apelido público e, se informado, URL de imagem de perfil.</li>
         <li><strong>Workspace:</strong> identificador do workspace, participação e função de acesso.</li>
         <li><strong>Segurança da sessão:</strong> cookie de sessão protegido e informações técnicas necessárias para autenticação e proteção contra abuso.</li>
-        <li><strong>Aplicativo Meta do workspace:</strong> App ID e App Secret informados pelo OWNER. O segredo é criptografado no servidor e não é retornado ao navegador após ser salvo.</li>
+        <li><strong>Aplicativos Meta do workspace:</strong> App IDs, nomes internos e App Secrets informados pelo OWNER. Os segredos são criptografados no servidor e não são retornados ao navegador após serem salvos.</li>
         <li><strong>Conta profissional do Instagram conectada:</strong> identificador e nome de usuário da conta, validade do acesso e token OAuth. O token é armazenado criptografado e usado para manter a conexão autorizada.</li>
       </ul>
       <h2>Como usamos as informações</h2>
@@ -60,7 +60,7 @@ _PAGES = {
       <h2>Conta e segurança</h2>
       <p>Você deve fornecer informações corretas, manter suas credenciais seguras e comunicar uso não autorizado. O OWNER é responsável por gerenciar acesso ao workspace e por ações realizadas por seus membros.</p>
       <h2>Aplicativos Meta e contas Instagram</h2>
-      <p>O OWNER que configurar a integração deve fornecer um App ID e App Secret válidos de um aplicativo Meta que controle e esteja autorizado a usar. Esses segredos são armazenados criptografados. Você declara ter autoridade para conectar a conta Instagram e conceder as permissões solicitadas. A conexão depende da Meta, da elegibilidade da conta e da validade do consentimento e dos tokens.</p>
+      <p>O OWNER que configurar a integração deve fornecer App IDs e App Secrets válidos de aplicativos Meta que controle e esteja autorizado a usar. Esses segredos são armazenados criptografados. Você declara ter autoridade para conectar a conta Instagram e conceder as permissões solicitadas. A conexão depende da Meta, da elegibilidade da conta e da validade do consentimento e dos tokens. Cada conta conectada permanece associada ao app usado para autorizá-la.</p>
       <p>O Instagram, a Meta e seus serviços são independentes do FlashPost e regidos pelos próprios termos e políticas. O FlashPost não é afiliado, endossado ou administrado pela Meta.</p>
       <h2>Uso permitido</h2>
       <p>Você não deve usar o serviço para violar leis, direitos de terceiros, termos da Meta ou controles de segurança; tentar acessar workspaces sem autorização; ou interferir na disponibilidade do serviço.</p>
