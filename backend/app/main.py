@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -167,6 +167,10 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
                 "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
             )
         return response
+
+    @application.head("/", include_in_schema=False)
+    async def root_health_probe() -> Response:
+        return Response(status_code=200, headers={"Cache-Control": "no-store"})
 
     frontend_dir = static_assets_dir or Path(__file__).parent / "static"
     index_file = frontend_dir / "index.html"

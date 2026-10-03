@@ -20,10 +20,13 @@ async def test_spa_routes_and_assets_are_served_from_built_frontend(tmp_path) ->
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        health_probe = await client.head("/")
         page = await client.get("/login")
         asset = await client.get("/assets/app.js")
         missing_api = await client.get("/api/not-found")
 
+    assert health_probe.status_code == 200
+    assert health_probe.content == b""
     assert page.status_code == 200
     assert "FlashPost test" in page.text
     assert asset.status_code == 200
