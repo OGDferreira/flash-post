@@ -166,7 +166,9 @@ worker must remain scheduled for token refresh to happen.
 The **Loops** page stores per-workspace publishing intervals, account
 selections, daily limits, media-reuse preference, post type, and selected
 media. The page uploads media to the private `instagram-media` bucket through
-the authenticated backend. An APScheduler task starts with the FastAPI web
+the authenticated backend; one selection can upload several compatible
+files, and a loop accepts a pool of up to 24 media items. Each scheduled
+execution publishes one item from that pool. An APScheduler task starts with the FastAPI web
 process and checks the queue and token refreshes once per minute. With
 `INSTAGRAM_PUBLISHING_ENABLED=false`, it only creates queued intents and does
 not send posts. Enable publishing only after rotating any exposed key,

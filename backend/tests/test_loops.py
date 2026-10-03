@@ -131,6 +131,57 @@ async def test_loop_rejects_expired_and_cross_workspace_accounts(
 
 
 @pytest.mark.anyio
+async def test_loop_accepts_up_to_24_videos_and_rejects_more(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = _active_account(workspace.id, "twenty_four_videos")
+    videos = [
+        InstagramMedia(
+            workspace_id=workspace.id,
+            storage_path=f"{workspace.id}/batch/{index}.mp4",
+            filename=f"{index}.mp4",
+            mime_type="video/mp4",
+            media_type="video",
+            size_bytes=100,
+        )
+        for index in range(24)
+    ]
+    db_session.add_all([account, *videos])
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+    payload = {
+        "name": "Loop com 24 vídeos",
+        "interval_min_minutes": 20,
+        "interval_max_minutes": 40,
+        "daily_limit_per_account": 24,
+        "post_type": "reels",
+        "repeat_media": False,
+        "account_ids": [str(account.id)],
+        "media_ids": [str(media.id) for media in videos],
+    }
+
+    response = await client.post(
+        "/api/loops",
+        headers={"X-CSRF-Token": token},
+        json=payload,
+    )
+
+    assert response.status_code == 201, response.text
+    assert len(response.json()["media_ids"]) == 24
+
+    too_many_response = await client.post(
+        "/api/loops",
+        headers={"X-CSRF-Token": token},
+        json={**payload, "media_ids": [*payload["media_ids"], str(uuid.uuid4())]},
+    )
+    assert too_many_response.status_code == 422
+
+
+@pytest.mark.anyio
 async def test_collaborator_cannot_manage_loops(
     client: AsyncClient,
     collaborator,

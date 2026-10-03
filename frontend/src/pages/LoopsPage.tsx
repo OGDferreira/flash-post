@@ -85,6 +85,9 @@ const emptyForm: LoopForm = {
   media_ids: [],
 };
 
+const MAX_LOOP_MEDIA = 24;
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
 function formatDate(value: string | null): string {
   if (!value) return "Aguardando execução do agendador";
   return new Date(value).toLocaleString("pt-BR", {
@@ -106,6 +109,13 @@ function mediaFitsLoop(media: InstagramMedia, postType: LoopForm["post_type"]): 
   );
 }
 
+function fileFitsLoop(file: File, postType: LoopForm["post_type"]): boolean {
+  return (
+    (file.type === "video/mp4" && (postType === "reels" || postType === "both")) ||
+    (file.type === "image/jpeg" && (postType === "images" || postType === "both"))
+  );
+}
+
 function formatFileSize(sizeBytes: number): string {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
@@ -117,6 +127,8 @@ export function LoopsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<LoopForm>(emptyForm);
   const [uploadCaption, setUploadCaption] = useState("");
+  const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
+  const [uploadingBatch, setUploadingBatch] = useState(false);
   const loops = useQuery({
     queryKey: ["loops"],
     queryFn: () => apiRequest<InstagramLoopsResponse>("/api/loops"),
@@ -155,9 +167,9 @@ export function LoopsPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
   });
   const uploadMedia = useMutation({
-    mutationFn: (file: File) => {
+    mutationFn: ({ file, caption }: { file: File; caption: string }) => {
       const query = new URLSearchParams({ filename: file.name });
-      if (uploadCaption.trim()) query.set("caption", uploadCaption.trim());
+      if (caption) query.set("caption", caption);
       return apiRequest<InstagramMedia>(`/api/media?${query}`, {
         method: "POST",
         headers: { "Content-Type": file.type },
@@ -168,10 +180,9 @@ export function LoopsPage() {
       setForm((current) => ({
         ...current,
         media_ids: mediaFitsLoop(uploaded, current.post_type)
-          ? [...new Set([...current.media_ids, uploaded.id])]
+          ? [...new Set([...current.media_ids, uploaded.id])].slice(0, MAX_LOOP_MEDIA)
           : current.media_ids,
       }));
-      setUploadCaption("");
       void queryClient.invalidateQueries({ queryKey: ["instagram-media"] });
     },
   });
@@ -206,6 +217,43 @@ export function LoopsPage() {
     apiErrorMessage(uploadMedia.error, "Não foi possível enviar a mídia."),
     apiErrorMessage(deleteMedia.error, "Não foi possível remover a mídia."),
   ].find(Boolean);
+
+  async function uploadFiles(files: File[]) {
+    setUploadValidationError(null);
+    const remainingSlots = MAX_LOOP_MEDIA - form.media_ids.length;
+    if (files.length > remainingSlots) {
+      setUploadValidationError(
+        `Este loop aceita até ${MAX_LOOP_MEDIA} mídias. Há espaço para mais ${remainingSlots}.`,
+      );
+      return;
+    }
+    const invalidFile = files.find(
+      (file) =>
+        file.size > MAX_UPLOAD_BYTES ||
+        !fileFitsLoop(file, form.post_type),
+    );
+    if (invalidFile) {
+      setUploadValidationError(
+        "Selecione arquivos compatíveis com o tipo do loop: JPEG para imagens ou MP4 para Reels, até 50 MB cada.",
+      );
+      return;
+    }
+
+    setUploadingBatch(true);
+    try {
+      const caption = uploadCaption.trim();
+      for (const file of files) {
+        await uploadMedia.mutateAsync({ file, caption });
+      }
+      setUploadCaption("");
+    } catch {
+      setUploadValidationError(
+        "O envio em lote foi interrompido. Os arquivos enviados antes da falha permanecem salvos no pool.",
+      );
+    } finally {
+      setUploadingBatch(false);
+    }
+  }
 
   function beginEdit(loop: InstagramLoop) {
     setEditingId(loop.id);
@@ -413,7 +461,7 @@ export function LoopsPage() {
 
           <fieldset className="space-y-3">
             <legend className="mb-2 text-sm text-[#cbd5e1]">
-              Pool de mídias ({form.media_ids.length} selecionadas)
+              Pool de mídias ({form.media_ids.length}/{MAX_LOOP_MEDIA} selecionadas)
             </legend>
             <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
               <label className="grid gap-2 text-sm text-[#cbd5e1]">
@@ -427,20 +475,43 @@ export function LoopsPage() {
                 />
               </label>
               <label className="grid gap-2 text-sm text-[#cbd5e1]">
-                Enviar arquivo (JPEG ou MP4, até 50 MB)
+                Enviar arquivos para este loop (até {MAX_LOOP_MEDIA}, JPEG ou MP4 de até 50 MB cada)
                 <input
                   className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 py-2 text-sm text-[#cbd5e1] file:mr-3 file:rounded file:border-0 file:bg-[#17202b] file:px-3 file:py-1 file:text-[#cbd5e1]"
                   type="file"
-                  accept="image/jpeg,video/mp4"
-                  disabled={uploadMedia.isPending || !loops.data.can_manage}
+                  accept={
+                    form.post_type === "reels"
+                      ? "video/mp4"
+                      : form.post_type === "images"
+                        ? "image/jpeg"
+                        : "image/jpeg,video/mp4"
+                  }
+                  multiple
+                  disabled={
+                    uploadingBatch ||
+                    form.media_ids.length >= MAX_LOOP_MEDIA ||
+                    !loops.data.can_manage
+                  }
                   onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
+                    const files = Array.from(event.currentTarget.files ?? []);
                     event.currentTarget.value = "";
-                    if (file) uploadMedia.mutate(file);
+                    if (files.length) void uploadFiles(files);
                   }}
                 />
               </label>
             </div>
+            <p className="text-xs text-[#94a3b8]">
+              Você pode escolher vários vídeos de uma vez. Cada loop publica um vídeo por execução,
+              seguindo o intervalo configurado, até consumir o pool ou o limite diário.
+            </p>
+            {uploadingBatch && (
+              <p className="text-sm text-[#8af2fa]">Enviando arquivos para o Storage...</p>
+            )}
+            {uploadValidationError && (
+              <p className="rounded-lg border border-[#6b552b] bg-[#1c180e] p-3 text-sm text-[#f2d48a]">
+                {uploadValidationError}
+              </p>
+            )}
             <p className="text-xs text-[#94a3b8]">
               Imagens aceitas: JPEG. Vídeos aceitos: MP4. Os arquivos ficam privados e o servidor
               gera uma URL temporária somente durante a publicação.
@@ -473,7 +544,11 @@ export function LoopsPage() {
                         className="accent-[#00c9d8]"
                         type="checkbox"
                         checked={checked}
-                        disabled={!compatible || !loops.data.can_manage}
+                        disabled={
+                          !compatible ||
+                          !loops.data.can_manage ||
+                          (!checked && form.media_ids.length >= MAX_LOOP_MEDIA)
+                        }
                         aria-label={`Selecionar ${item.filename}`}
                         onChange={() =>
                           setForm((current) => ({
