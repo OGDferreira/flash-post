@@ -13,6 +13,7 @@ class InstagramLoopCreateRequest(BaseModel):
     post_type: Literal["reels", "images", "both"] = "reels"
     repeat_media: bool = True
     account_ids: Annotated[list[UUID], Field(min_length=1, max_length=100)]
+    media_ids: Annotated[list[UUID], Field(max_length=500)] | None = None
 
     @field_validator("name")
     @classmethod
@@ -27,6 +28,13 @@ class InstagramLoopCreateRequest(BaseModel):
     def unique_account_ids(cls, values: list[UUID]) -> list[UUID]:
         if len(set(values)) != len(values):
             raise ValueError("Each Instagram account can only be selected once.")
+        return values
+
+    @field_validator("media_ids")
+    @classmethod
+    def unique_media_ids(cls, values: list[UUID] | None) -> list[UUID] | None:
+        if values is not None and len(set(values)) != len(values):
+            raise ValueError("Each media file can only be selected once.")
         return values
 
     @model_validator(mode="after")
@@ -54,8 +62,11 @@ class InstagramLoopResponse(BaseModel):
     next_run_at: datetime | None
     last_run_at: datetime | None
     accounts: list[InstagramLoopAccountResponse]
+    media_ids: list[UUID]
     waiting_for_media_count: int
     published_today_count: int
+    failed_count: int
+    last_failure: str | None
 
 
 class InstagramLoopsResponse(BaseModel):

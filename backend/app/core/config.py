@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     public_base_url: str = "https://flashpost.onrender.com"
     allowed_hosts: str = "flashpost.onrender.com,localhost,127.0.0.1,testserver"
     database_url: SecretStr | None = None
+    supabase_url: str | None = None
+    supabase_service_role_key: SecretStr | None = None
+    instagram_publishing_enabled: bool = False
     session_secret: SecretStr | None = None
     master_encryption_key: SecretStr | None = None
     session_max_age_seconds: Annotated[int, Field(ge=900, le=604800)] = 28800
@@ -31,6 +34,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "database_url",
+        "supabase_service_role_key",
         "session_secret",
         "master_encryption_key",
         mode="before",
@@ -44,6 +48,15 @@ class Settings(BaseSettings):
     @property
     def trusted_hosts(self) -> list[str]:
         return [host.strip() for host in self.allowed_hosts.split(",") if host.strip()]
+
+    @field_validator("supabase_url", mode="before")
+    @classmethod
+    def normalize_supabase_url(cls, value):
+        if isinstance(value, str):
+            value = value.strip().rstrip("/")
+            if not value:
+                return None
+        return value
 
     @property
     def is_production(self) -> bool:
@@ -60,6 +73,13 @@ class Settings(BaseSettings):
     def validate_runtime(self) -> None:
         if self.is_production and self.session_secret is None:
             raise RuntimeError("SESSION_SECRET must be configured in production.")
+        if self.instagram_publishing_enabled and (
+            self.supabase_url is None or self.supabase_service_role_key is None
+        ):
+            raise RuntimeError(
+                "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required when "
+                "INSTAGRAM_PUBLISHING_ENABLED is true."
+            )
 
     def database_url_value(self) -> str:
         if self.database_url is None:

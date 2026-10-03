@@ -12,6 +12,17 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
 };
 
+function isRawBody(body: unknown): body is BodyInit {
+  return (
+    typeof body === "string" ||
+    body instanceof Blob ||
+    body instanceof FormData ||
+    body instanceof URLSearchParams ||
+    body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(body)
+  );
+}
+
 let csrfToken: string | undefined;
 
 export function setCsrfToken(token: string | undefined) {
@@ -25,7 +36,7 @@ export async function apiRequest<T>(
   const method = (options.method ?? "GET").toUpperCase();
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
-  if (options.body !== undefined) {
+  if (options.body !== undefined && !isRawBody(options.body)) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -49,7 +60,12 @@ export async function apiRequest<T>(
     method,
     headers,
     credentials: "same-origin",
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body:
+      options.body === undefined
+        ? undefined
+        : isRawBody(options.body)
+          ? options.body
+          : JSON.stringify(options.body),
   });
 
   if (response.status === 204) {

@@ -58,6 +58,8 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             InstagramAppCredential,
             InstagramLoop,
             InstagramLoopAccount,
+            InstagramLoopMedia,
+            InstagramMedia,
             InstagramPublicationJob,
             SystemSetting,
             User,
@@ -66,8 +68,10 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         )
 
         await connection.execute(delete(InstagramPublicationJob))
+        await connection.execute(delete(InstagramLoopMedia))
         await connection.execute(delete(InstagramLoopAccount))
         await connection.execute(delete(InstagramLoop))
+        await connection.execute(delete(InstagramMedia))
         await connection.execute(delete(InstagramAccount))
         await connection.execute(delete(InstagramAppCredential))
         await connection.execute(delete(WorkspaceMember))

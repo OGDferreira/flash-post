@@ -6,7 +6,9 @@ import httpx
 INSTAGRAM_AUTHORIZATION_ENDPOINT = "https://www.instagram.com/oauth/authorize"
 INSTAGRAM_TOKEN_ENDPOINT = "https://api.instagram.com/oauth/access_token"
 INSTAGRAM_GRAPH_ENDPOINT = "https://graph.instagram.com/v25.0"
+INSTAGRAM_TOKEN_REFRESH_ENDPOINT = "https://graph.instagram.com/refresh_access_token"
 INSTAGRAM_BASIC_PERMISSION = "instagram_business_basic"
+INSTAGRAM_PUBLISH_PERMISSION = "instagram_business_content_publish"
 
 
 class InstagramOAuthError(ValueError):
@@ -51,7 +53,7 @@ def build_authorization_url(
         "client_id": app_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": INSTAGRAM_BASIC_PERMISSION,
+        "scope": ",".join((INSTAGRAM_BASIC_PERMISSION, INSTAGRAM_PUBLISH_PERMISSION)),
         "state": state,
         "enable_fb_login": "false",
     }
@@ -102,13 +104,25 @@ async def exchange_instagram_authorization_code(
         short_lived = _token_data(short_lived_response.json())
         short_token = short_lived.get("access_token")
         permissions = short_lived.get("permissions")
+        if isinstance(permissions, str):
+            granted_permissions = set(permissions.split(","))
+        elif isinstance(permissions, list) and all(
+            isinstance(permission, str) for permission in permissions
+        ):
+            granted_permissions = set(permissions)
+        else:
+            granted_permissions = set()
         if (
             not isinstance(short_token, str)
             or not short_token
-            or not isinstance(permissions, str)
-            or INSTAGRAM_BASIC_PERMISSION not in permissions.split(",")
+            or not {
+                INSTAGRAM_BASIC_PERMISSION,
+                INSTAGRAM_PUBLISH_PERMISSION,
+            }.issubset(granted_permissions)
         ):
-            raise InstagramOAuthError("The required Instagram permission was not granted.")
+            raise InstagramOAuthError(
+                "The Instagram basic and content publishing permissions are required."
+            )
 
         long_lived_response = await client.get(
             f"{INSTAGRAM_GRAPH_ENDPOINT}/access_token",
@@ -156,6 +170,40 @@ async def exchange_instagram_authorization_code(
 
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
     return str(instagram_user_id), username.strip(), access_token, expires_at
+
+
+async def refresh_instagram_long_lived_token(
+    access_token: str,
+) -> tuple[str, datetime]:
+    timeout = httpx.Timeout(15.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.get(
+            INSTAGRAM_TOKEN_REFRESH_ENDPOINT,
+            params={
+                "grant_type": "ig_refresh_token",
+                "access_token": access_token,
+            },
+        )
+        response.raise_for_status()
+        payload = _object(
+            response.json(),
+            "Meta returned an invalid refreshed token response.",
+        )
+
+    refreshed_token = payload.get("access_token")
+    expires_in = payload.get("expires_in")
+    if (
+        not isinstance(refreshed_token, str)
+        or not refreshed_token
+        or isinstance(expires_in, bool)
+        or not isinstance(expires_in, int)
+        or expires_in <= 0
+    ):
+        raise InstagramOAuthError("Meta returned an invalid refreshed token.")
+    return (
+        refreshed_token,
+        datetime.now(timezone.utc) + timedelta(seconds=expires_in),
+    )
 
 
 async def revoke_instagram_permissions(access_token: str) -> bool:

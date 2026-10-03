@@ -25,6 +25,12 @@ Configure these environment variables directly in Render:
 - `DATABASE_URL`: the FlashPost Supabase PostgreSQL Session Pooler URL
 - `SESSION_SECRET`: session signing secret
 - `MASTER_ENCRYPTION_KEY`: Fernet-compatible encryption key
+- `SUPABASE_URL`: the Supabase Project URL, such as
+  `https://your-project.supabase.co` (not a publishable key)
+- `SUPABASE_SERVICE_ROLE_KEY`: the server-only service-role secret, stored as a
+  Render secret and never sent to the browser
+- `INSTAGRAM_PUBLISHING_ENABLED=false`: leave disabled until the storage setup,
+  migration, Meta permissions, and a test account have all been verified
 
 Secret values must remain in Render and must never be copied into this
 repository. PostgreSQL URLs are normalized for `asyncpg`; PostgreSQL
@@ -33,6 +39,10 @@ connection strings. Production startup requires `SESSION_SECRET`, and Docker
 startup requires `DATABASE_URL`. `MASTER_ENCRYPTION_KEY` is checked when
 encryption is used. Instagram App IDs and App Secrets are configured by each
 workspace OWNER in the Contas page and encrypted before database storage.
+The Storage integration uses the private `instagram-media` bucket through the
+backend only; do not add the service-role key or a Supabase publishable key to
+frontend configuration. If a service-role key is ever shown in a screenshot,
+rotate it in Supabase and replace the Render secret before enabling uploads.
 
 ### Account creation
 
@@ -78,6 +88,9 @@ Migration `20261003_07` retains disconnected account rows without retaining
 their tokens and adds loop configurations, account selections, and a durable
 publication-intent queue. Existing accounts are marked connected during the
 migration; expiry is evaluated from `token_expires_at`.
+Migration `20261003_08` adds workspace-scoped media metadata, private Storage
+object paths, loop-to-media selections, and publication result fields. Render
+applies this migration at startup through the existing Alembic flow.
 
 ## Instagram accounts
 
@@ -110,23 +123,38 @@ associated with the app that authorized them.
 Never put a customer's App Secret in frontend environment configuration,
 Render environment variables, Git, or chat.
 
-The current login requests only `instagram_business_basic`, which is enough to
-identify an Instagram professional account but does not authorize publishing.
-Publishing requires `instagram_business_content_publish` and implementation
-of the media-container/publishing flow; Meta may also require Advanced Access
-and App Review. Meta documents long-lived
-Instagram access tokens as expiring after 60 days. Automatic token renewal
-will be required before Loops can publish reliably; expired or revoked tokens
-must be reconnected until that flow is implemented.
+The Instagram Login flow requests both `instagram_business_basic` and
+`instagram_business_content_publish`. Existing accounts must reconnect and
+grant the new permission before publishing. In development, invited app
+testers must accept the invitation and grant consent. Meta may also require
+Advanced Access and App Review outside the tester setup. Instagram media
+publishing uses a private Storage object and a signed URL that expires after
+four hours; the backend creates the media container, waits for video
+processing when needed, and publishes the container. Uploads currently accept
+JPEG images and MP4 videos up to 50 MiB. Meta can still reject media that does
+not meet its current dimensions, duration, encoding, or account requirements.
+Meta documents long-lived Instagram access tokens as expiring after 60 days.
+The worker refreshes valid tokens when they are within ten days of expiration,
+extending them for another 60 days without another Instagram authorization.
+Meta requires a long-lived token to be at least 24 hours old and still valid
+for refresh; an expired or revoked token must be reconnected. The periodic
+worker must remain scheduled for token refresh to happen.
 
 The **Loops** page stores per-workspace publishing intervals, account
-selections, daily limits, media-reuse preference, and post type. Migration
-`20261003_07` also adds a durable queue. The scheduler can be run as a separate
-periodic worker with `python -m app.workers.loop_scheduler` (for example, once
-per minute from a managed scheduler). It creates idempotent jobs in
-`waiting_for_media`; it does not publish posts. A media pool, permission
-upgrade, publishing implementation, and production worker deployment are
-required before queued jobs can be sent to Instagram.
+selections, daily limits, media-reuse preference, post type, and selected
+media. The page uploads media to the private `instagram-media` bucket through
+the authenticated backend. The periodic worker can be run with
+`python -m app.workers.loop_scheduler`, for example once per minute from a
+Render Cron Job or another managed scheduler. With
+`INSTAGRAM_PUBLISHING_ENABLED=false`, it only creates queued intents and does
+not send posts. Enable publishing only after rotating any exposed key,
+verifying the Project URL, confirming migration `20261003_08` was applied,
+uploading test media, and reconnecting a test account with the publishing
+permission. Once enabled, only queued items with compatible media are sent.
+Failed jobs are not automatically retried because a network failure can happen
+after Instagram has accepted a post. Verify Instagram before uploading the
+same media again; media from an ambiguous, started attempt is not reused
+automatically.
 
 Meta webhooks are not configured in this phase. A webhook is a separate HTTPS
 receiver for asynchronous Instagram events such as comments, mentions, story

@@ -84,6 +84,43 @@ class InstagramLoopAccount(Base):
     )
 
 
+class InstagramMedia(Base):
+    __tablename__ = "instagram_media"
+    __table_args__ = (
+        CheckConstraint("media_type IN ('image', 'video')", name="ck_instagram_media_type"),
+        CheckConstraint("size_bytes > 0", name="ck_instagram_media_size"),
+        Index("ix_instagram_media_workspace_id", "workspace_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    storage_path: Mapped[str] = mapped_column(String(500), unique=True, nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    caption: Mapped[str | None] = mapped_column(String(2200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class InstagramLoopMedia(Base):
+    __tablename__ = "instagram_loop_media"
+    __table_args__ = (Index("ix_instagram_loop_media_media_id", "media_id"),)
+
+    loop_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_loops.id", ondelete="CASCADE"), primary_key=True
+    )
+    media_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_media.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
 class InstagramPublicationJob(Base):
     __tablename__ = "instagram_publication_jobs"
     __table_args__ = (
@@ -119,6 +156,9 @@ class InstagramPublicationJob(Base):
         ForeignKey("instagram_accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    media_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_media.id", ondelete="SET NULL")
+    )
     scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(
         String(24),
@@ -128,6 +168,7 @@ class InstagramPublicationJob(Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     last_error: Mapped[str | None] = mapped_column(String(500))
+    published_media_id: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

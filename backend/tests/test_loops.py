@@ -12,6 +12,8 @@ from app.models import (
     InstagramAccount,
     InstagramLoop,
     InstagramLoopAccount,
+    InstagramLoopMedia,
+    InstagramMedia,
     InstagramPublicationJob,
 )
 
@@ -237,3 +239,170 @@ async def test_scheduler_skips_expired_account_and_respects_paused_loop(
     ).all()
     assert created == 0
     assert jobs == []
+
+
+@pytest.mark.anyio
+async def test_scheduler_queues_matching_loop_media(
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    now = datetime.now(timezone.utc)
+    account = _active_account(workspace.id, "media_target")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Media loop",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        daily_limit_per_account=3,
+        post_type="reels",
+        repeat_media=True,
+        status="active",
+        next_run_at=now - timedelta(minutes=1),
+    )
+    media = InstagramMedia(
+        workspace_id=workspace.id,
+        storage_path=f"{workspace.id}/sample/reel.mp4",
+        filename="reel.mp4",
+        mime_type="video/mp4",
+        media_type="video",
+        size_bytes=100,
+    )
+    db_session.add_all([account, loop, media])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            InstagramLoopAccount(loop_id=loop.id, account_id=account.id),
+            InstagramLoopMedia(loop_id=loop.id, media_id=media.id),
+        ]
+    )
+    await db_session.commit()
+
+    created = await enqueue_due_loop_publications(db_session, now=now)
+    job = await db_session.scalar(
+        select(InstagramPublicationJob).where(
+            InstagramPublicationJob.loop_id == loop.id
+        )
+    )
+    assert created == 1
+    assert job is not None
+    assert job.media_id == media.id
+    assert job.status == "queued"
+
+
+@pytest.mark.anyio
+async def test_scheduler_releases_waiting_job_after_media_is_added(
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    now = datetime.now(timezone.utc)
+    account = _active_account(workspace.id, "waiting_media_target")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Waiting loop",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        daily_limit_per_account=3,
+        post_type="images",
+        repeat_media=True,
+        status="active",
+        next_run_at=now + timedelta(minutes=10),
+    )
+    db_session.add_all([account, loop])
+    await db_session.flush()
+    job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=loop.id,
+        account_id=account.id,
+        scheduled_for=now - timedelta(minutes=1),
+        status="waiting_for_media",
+    )
+    db_session.add(job)
+    await db_session.flush()
+    db_session.add(InstagramLoopAccount(loop_id=loop.id, account_id=account.id))
+    media = InstagramMedia(
+        workspace_id=workspace.id,
+        storage_path=f"{workspace.id}/sample/photo.jpg",
+        filename="photo.jpg",
+        mime_type="image/jpeg",
+        media_type="image",
+        size_bytes=100,
+    )
+    db_session.add(media)
+    await db_session.flush()
+    db_session.add(InstagramLoopMedia(loop_id=loop.id, media_id=media.id))
+    await db_session.commit()
+
+    created = await enqueue_due_loop_publications(db_session, now=now)
+    await db_session.refresh(job)
+    assert created == 0
+    assert job.media_id == media.id
+    assert job.status == "queued"
+
+
+@pytest.mark.anyio
+async def test_pausing_loop_stops_queued_job_and_prevents_delete_during_publish(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = _active_account(workspace.id, "pause_target")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Pause loop",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        daily_limit_per_account=3,
+        post_type="images",
+        repeat_media=True,
+        status="active",
+        next_run_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+    )
+    media = InstagramMedia(
+        workspace_id=workspace.id,
+        storage_path=f"{workspace.id}/pause/photo.jpg",
+        filename="photo.jpg",
+        mime_type="image/jpeg",
+        media_type="image",
+        size_bytes=100,
+    )
+    db_session.add_all([account, loop, media])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            InstagramLoopAccount(loop_id=loop.id, account_id=account.id),
+            InstagramLoopMedia(loop_id=loop.id, media_id=media.id),
+        ]
+    )
+    job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=loop.id,
+        account_id=account.id,
+        media_id=media.id,
+        scheduled_for=datetime.now(timezone.utc),
+        status="queued",
+    )
+    db_session.add(job)
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    csrf = await _csrf(client)
+
+    pause_response = await client.patch(
+        f"/api/loops/{loop.id}/status",
+        headers={"X-CSRF-Token": csrf},
+        json={"enabled": False},
+    )
+    assert pause_response.status_code == 200
+    await db_session.refresh(job)
+    assert job.status == "waiting_for_media"
+    assert job.media_id is None
+
+    job.status = "publishing"
+    await db_session.commit()
+    delete_response = await client.delete(
+        f"/api/loops/{loop.id}",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert delete_response.status_code == 409

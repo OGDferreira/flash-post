@@ -23,6 +23,21 @@ type LoopAccount = {
   token_expires_at: string;
 };
 
+type InstagramMedia = {
+  id: string;
+  filename: string;
+  mime_type: string;
+  media_type: "image" | "video";
+  size_bytes: number;
+  caption: string | null;
+  created_at: string;
+};
+
+type InstagramMediaResponse = {
+  can_manage: boolean;
+  media: InstagramMedia[];
+};
+
 type InstagramLoop = {
   id: string;
   name: string;
@@ -35,8 +50,11 @@ type InstagramLoop = {
   next_run_at: string | null;
   last_run_at: string | null;
   accounts: LoopAccount[];
+  media_ids: string[];
   waiting_for_media_count: number;
   published_today_count: number;
+  failed_count: number;
+  last_failure: string | null;
 };
 
 type InstagramLoopsResponse = {
@@ -53,6 +71,7 @@ type LoopForm = {
   post_type: "reels" | "images" | "both";
   repeat_media: boolean;
   account_ids: string[];
+  media_ids: string[];
 };
 
 const emptyForm: LoopForm = {
@@ -63,6 +82,7 @@ const emptyForm: LoopForm = {
   post_type: "reels",
   repeat_media: true,
   account_ids: [],
+  media_ids: [],
 };
 
 function formatDate(value: string | null): string {
@@ -78,16 +98,34 @@ function apiErrorMessage(error: unknown, fallback: string): string | null {
   return error instanceof ApiError ? error.message : fallback;
 }
 
+function mediaFitsLoop(media: InstagramMedia, postType: LoopForm["post_type"]): boolean {
+  return (
+    postType === "both" ||
+    (postType === "reels" && media.media_type === "video") ||
+    (postType === "images" && media.media_type === "image")
+  );
+}
+
+function formatFileSize(sizeBytes: number): string {
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function LoopsPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"continuous" | "limited">("continuous");
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<LoopForm>(emptyForm);
+  const [uploadCaption, setUploadCaption] = useState("");
   const loops = useQuery({
     queryKey: ["loops"],
     queryFn: () => apiRequest<InstagramLoopsResponse>("/api/loops"),
     refetchInterval: 60_000,
+    retry: false,
+  });
+  const media = useQuery({
+    queryKey: ["instagram-media"],
+    queryFn: () => apiRequest<InstagramMediaResponse>("/api/media"),
     retry: false,
   });
 
@@ -116,6 +154,37 @@ export function LoopsPage() {
     mutationFn: (id: string) => apiRequest(`/api/loops/${id}`, { method: "DELETE" }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
   });
+  const uploadMedia = useMutation({
+    mutationFn: (file: File) => {
+      const query = new URLSearchParams({ filename: file.name });
+      if (uploadCaption.trim()) query.set("caption", uploadCaption.trim());
+      return apiRequest<InstagramMedia>(`/api/media?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+    },
+    onSuccess: (uploaded) => {
+      setForm((current) => ({
+        ...current,
+        media_ids: mediaFitsLoop(uploaded, current.post_type)
+          ? [...new Set([...current.media_ids, uploaded.id])]
+          : current.media_ids,
+      }));
+      setUploadCaption("");
+      void queryClient.invalidateQueries({ queryKey: ["instagram-media"] });
+    },
+  });
+  const deleteMedia = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/media/${id}`, { method: "DELETE" }),
+    onSuccess: (_result, id) => {
+      setForm((current) => ({
+        ...current,
+        media_ids: current.media_ids.filter((mediaId) => mediaId !== id),
+      }));
+      void queryClient.invalidateQueries({ queryKey: ["instagram-media"] });
+    },
+  });
 
   const visibleLoops = useMemo(
     () =>
@@ -134,6 +203,8 @@ export function LoopsPage() {
     apiErrorMessage(saveLoop.error, "Não foi possível salvar o loop."),
     apiErrorMessage(changeStatus.error, "Não foi possível alterar o estado do loop."),
     apiErrorMessage(deleteLoop.error, "Não foi possível remover o loop."),
+    apiErrorMessage(uploadMedia.error, "Não foi possível enviar a mídia."),
+    apiErrorMessage(deleteMedia.error, "Não foi possível remover a mídia."),
   ].find(Boolean);
 
   function beginEdit(loop: InstagramLoop) {
@@ -145,6 +216,7 @@ export function LoopsPage() {
       daily_limit_per_account: loop.daily_limit_per_account,
       post_type: loop.post_type,
       repeat_media: loop.repeat_media,
+      media_ids: loop.media_ids,
       account_ids: loop.accounts
         .filter((account) =>
           loops.data?.available_accounts.some((available) => available.id === account.id),
@@ -187,9 +259,9 @@ export function LoopsPage() {
       <div className="rounded-lg border border-[#6b552b] bg-[#1c180e] p-4 text-sm text-[#f2d48a]">
         <p className="flex items-start gap-2">
           <AlertTriangle size={17} className="mt-0.5 shrink-0" />
-          Esta etapa salva a programação e prepara itens na fila. A publicação real ainda depende
-          do pool de mídias e da permissão <code className="font-mono">instagram_business_content_publish</code>;
-          nenhum post será enviado ao Instagram por enquanto.
+          O envio ao Instagram só acontece com o worker ativo e
+          <code className="mx-1 font-mono">INSTAGRAM_PUBLISHING_ENABLED=true</code>.
+          Mantenha essa opção desativada até validar as credenciais e testar uma conta.
         </p>
       </div>
       {mutationError && <ErrorState message={mutationError} />}
@@ -220,8 +292,8 @@ export function LoopsPage() {
       </div>
       <p className="text-sm leading-6 text-[#94a3b8]">
         Cada loop escolhe a próxima execução aleatoriamente dentro do intervalo configurado e
-        respeita o limite diário por conta. Itens da fila permanecem aguardando mídia até o pool
-        ser implementado.
+        respeita o limite diário por conta. A mídia precisa estar no bucket privado e selecionada
+        no pool do loop para entrar na fila de publicação.
       </p>
 
       {formOpen && loops.data.can_manage && (
@@ -321,13 +393,124 @@ export function LoopsPage() {
                   }`}
                   key={value}
                   type="button"
-                  onClick={() => setForm({ ...form, post_type: value })}
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      post_type: value,
+                      media_ids: current.media_ids.filter((id) => {
+                        const selectedMedia = media.data?.media.find((item) => item.id === id);
+                        return selectedMedia ? mediaFitsLoop(selectedMedia, value) : false;
+                      }),
+                    }))
+                  }
                 >
                   <Icon size={15} />
                   {label}
                 </button>
               ))}
             </div>
+          </fieldset>
+
+          <fieldset className="space-y-3">
+            <legend className="mb-2 text-sm text-[#cbd5e1]">
+              Pool de mídias ({form.media_ids.length} selecionadas)
+            </legend>
+            <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
+              <label className="grid gap-2 text-sm text-[#cbd5e1]">
+                Legenda para esta mídia (opcional)
+                <input
+                  className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+                  maxLength={2200}
+                  value={uploadCaption}
+                  onChange={(event) => setUploadCaption(event.target.value)}
+                  placeholder="Legenda do post"
+                />
+              </label>
+              <label className="grid gap-2 text-sm text-[#cbd5e1]">
+                Enviar arquivo (JPEG ou MP4, até 50 MB)
+                <input
+                  className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 py-2 text-sm text-[#cbd5e1] file:mr-3 file:rounded file:border-0 file:bg-[#17202b] file:px-3 file:py-1 file:text-[#cbd5e1]"
+                  type="file"
+                  accept="image/jpeg,video/mp4"
+                  disabled={uploadMedia.isPending || !loops.data.can_manage}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (file) uploadMedia.mutate(file);
+                  }}
+                />
+              </label>
+            </div>
+            <p className="text-xs text-[#94a3b8]">
+              Imagens aceitas: JPEG. Vídeos aceitos: MP4. Os arquivos ficam privados e o servidor
+              gera uma URL temporária somente durante a publicação.
+            </p>
+            {media.isLoading ? (
+              <p className="text-sm text-[#94a3b8]">Carregando mídias...</p>
+            ) : media.error || !media.data ? (
+              <p className="rounded-lg border border-[#47252d] bg-[#1a1013] p-3 text-sm text-[#f1a3ad]">
+                Não foi possível carregar as mídias deste workspace.
+              </p>
+            ) : media.data.media.length === 0 ? (
+              <p className="rounded-lg border border-[#27334a] bg-[#090b0f] p-3 text-sm text-[#94a3b8]">
+                Nenhuma mídia enviada. Envie um arquivo para começar a montar o pool.
+              </p>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {media.data.media.map((item) => {
+                  const checked = form.media_ids.includes(item.id);
+                  const compatible = mediaFitsLoop(item, form.post_type);
+                  return (
+                    <div
+                      className={`flex items-center gap-3 rounded-lg border p-3 ${
+                        checked
+                          ? "border-[#00c9d8] bg-[#0d3036]"
+                          : "border-[#27334a] bg-[#090b0f]"
+                      }`}
+                      key={item.id}
+                    >
+                      <input
+                        className="accent-[#00c9d8]"
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!compatible || !loops.data.can_manage}
+                        aria-label={`Selecionar ${item.filename}`}
+                        onChange={() =>
+                          setForm((current) => ({
+                            ...current,
+                            media_ids: checked
+                              ? current.media_ids.filter((id) => id !== item.id)
+                              : [...current.media_ids, item.id],
+                          }))
+                        }
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-[#f5f7fb]">{item.filename}</p>
+                        <p className="text-xs text-[#94a3b8]">
+                          {item.media_type === "video" ? "MP4" : "JPEG"} · {formatFileSize(item.size_bytes)}
+                          {!compatible && " · incompatível com o tipo selecionado"}
+                        </p>
+                      </div>
+                      {loops.data.can_manage && (
+                        <button
+                          className="grid size-8 shrink-0 place-items-center rounded border border-[#47252d] text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-50"
+                          type="button"
+                          aria-label={`Excluir mídia ${item.filename}`}
+                          disabled={deleteMedia.isPending}
+                          onClick={() => {
+                            if (window.confirm(`Excluir a mídia "${item.filename}"?`)) {
+                              deleteMedia.mutate(item.id);
+                            }
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </fieldset>
 
           <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-[#27334a] bg-[#090b0f] p-3 text-sm text-[#cbd5e1]">
@@ -461,6 +644,16 @@ export function LoopsPage() {
                     {loop.waiting_for_media_count} {loop.waiting_for_media_count === 1 ? "item" : "itens"} aguardando mídia ·{" "}
                     {loop.published_today_count} publicados hoje
                   </p>
+                  {loop.failed_count > 0 && (
+                    <div className="mt-1 space-y-1 text-xs text-[#f1a3ad]">
+                      <p>
+                        {loop.failed_count}{" "}
+                        {loop.failed_count === 1 ? "publicação falhou" : "publicações falharam"}.
+                        Mídias com tentativa iniciada não são reenviadas automaticamente.
+                      </p>
+                      {loop.last_failure && <p>Falha mais recente: {loop.last_failure}</p>}
+                    </div>
+                  )}
                 </div>
                 {loops.data.can_manage && (
                   <div className="flex shrink-0 items-start gap-2">

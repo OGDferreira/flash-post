@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.rate_limit import LoginRateLimiter
 from app.legal import router as legal_router
 from app.instagram.router import router as instagram_router
+from app.instagram.media_router import router as media_router
 from app.loops.router import router as loops_router
 
 settings = get_settings()
@@ -94,6 +95,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(auth_router)
     application.include_router(admin_router)
     application.include_router(instagram_router)
+    application.include_router(media_router)
     application.include_router(loops_router)
     application.include_router(legal_router)
 

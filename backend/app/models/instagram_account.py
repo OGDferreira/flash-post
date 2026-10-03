@@ -49,6 +49,9 @@ class InstagramAccount(Base):
         String(20), nullable=False, server_default=text("'connected'")
     )
     token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    token_refresh_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     connected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

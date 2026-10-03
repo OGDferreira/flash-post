@@ -562,7 +562,7 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
     assert decrypt_value(account.encrypted_access_token) == "private-access-token"
 
 
-def test_instagram_authorization_url_requests_only_basic_access() -> None:
+def test_instagram_authorization_url_requests_publishing_access() -> None:
     authorization_url = oauth.build_authorization_url(
         "123456",
         "https://flashpost.example/api/instagram/callback",
@@ -571,7 +571,9 @@ def test_instagram_authorization_url_requests_only_basic_access() -> None:
     parameters = parse_qs(urlparse(authorization_url).query)
 
     assert urlparse(authorization_url).netloc == "www.instagram.com"
-    assert parameters["scope"] == ["instagram_business_basic"]
+    assert parameters["scope"] == [
+        "instagram_business_basic,instagram_business_content_publish"
+    ]
     assert parameters["state"] == ["state-value"]
     assert parameters["enable_fb_login"] == ["false"]
 
@@ -609,7 +611,10 @@ async def test_instagram_oauth_exchanges_code_for_long_lived_token_and_profile(
                     "data": [
                         {
                             "access_token": "short-token",
-                            "permissions": "instagram_business_basic",
+                            "permissions": (
+                                "instagram_business_basic,"
+                                "instagram_business_content_publish"
+                            ),
                         }
                     ]
                 }
@@ -676,6 +681,44 @@ async def test_instagram_oauth_rejects_missing_basic_permission(
             "123456",
             "test-app-secret",
         )
+
+
+@pytest.mark.anyio
+async def test_instagram_long_lived_token_refresh_extends_expiration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> object:
+            return {"access_token": "refreshed-token", "expires_in": 5183944}
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url: str, *, params: dict[str, str]):
+            assert url == oauth.INSTAGRAM_TOKEN_REFRESH_ENDPOINT
+            assert params == {
+                "grant_type": "ig_refresh_token",
+                "access_token": "valid-long-lived-token",
+            }
+            return FakeResponse()
+
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", FakeClient)
+    refreshed_token, expires_at = await oauth.refresh_instagram_long_lived_token(
+        "valid-long-lived-token"
+    )
+
+    assert refreshed_token == "refreshed-token"
+    assert expires_at > datetime.now(timezone.utc) + timedelta(days=59)
 
 
 @pytest.mark.anyio

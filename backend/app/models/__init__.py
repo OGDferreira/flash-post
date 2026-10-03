@@ -13,6 +13,8 @@ from app.models.instagram_app_credential import InstagramAppCredential
 from app.models.instagram_loop import (
     InstagramLoop,
     InstagramLoopAccount,
+    InstagramLoopMedia,
+    InstagramMedia,
     InstagramPublicationJob,
 )
 from app.models.user import User
@@ -24,6 +26,8 @@ __all__ = [
     "InstagramAppCredential",
     "InstagramLoop",
     "InstagramLoopAccount",
+    "InstagramLoopMedia",
+    "InstagramMedia",
     "InstagramPublicationJob",
     "SystemSetting",
     "User",
