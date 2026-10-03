@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 
 from app.auth.dependencies import DbSession, OwnerAccess, WorkspaceMemberAccess, require_csrf
+from app.core.config import get_settings
+from app.core.time import local_day_bounds_utc, utc_now
 from app.models import (
     InstagramAccount,
     InstagramLoop,
@@ -37,7 +39,7 @@ async def _workspace_accounts(
         InstagramAccount.workspace_id == workspace_id,
         InstagramAccount.status == "connected",
         InstagramAccount.encrypted_access_token.is_not(None),
-        InstagramAccount.token_expires_at > datetime.now(timezone.utc),
+        InstagramAccount.token_expires_at > utc_now(),
     )
     if account_ids is not None:
         query = query.where(InstagramAccount.id.in_(account_ids))
@@ -69,13 +71,13 @@ async def _loop_response(
             InstagramPublicationJob.status == "waiting_for_media",
         )
     )
-    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    local_day_start, local_day_end = local_day_bounds_utc(now)
     published_count = await db.scalar(
         select(func.count(InstagramPublicationJob.id)).where(
             InstagramPublicationJob.loop_id == loop.id,
             InstagramPublicationJob.status == "published",
-            InstagramPublicationJob.updated_at >= midnight,
-            InstagramPublicationJob.updated_at < midnight + timedelta(days=1),
+            InstagramPublicationJob.updated_at >= local_day_start,
+            InstagramPublicationJob.updated_at < local_day_end,
         )
     )
     failed_count = await db.scalar(
@@ -93,6 +95,22 @@ async def _loop_response(
         )
         .order_by(InstagramPublicationJob.updated_at.desc())
         .limit(1)
+    )
+    selected_media_ids = list(
+        (
+            await db.scalars(
+                select(InstagramLoopMedia.media_id)
+                .join(
+                    InstagramMedia,
+                    InstagramMedia.id == InstagramLoopMedia.media_id,
+                )
+                .where(
+                    InstagramLoopMedia.loop_id == loop.id,
+                    InstagramMedia.workspace_id == loop.workspace_id,
+                )
+                .order_by(InstagramLoopMedia.media_id)
+            )
+        ).all()
     )
     return InstagramLoopResponse(
         id=loop.id,
@@ -113,22 +131,8 @@ async def _loop_response(
             )
             for account in accounts
         ],
-        media_ids=list(
-            (
-                await db.scalars(
-                    select(InstagramLoopMedia.media_id)
-                    .join(
-                        InstagramMedia,
-                        InstagramMedia.id == InstagramLoopMedia.media_id,
-                    )
-                    .where(
-                        InstagramLoopMedia.loop_id == loop.id,
-                        InstagramMedia.workspace_id == loop.workspace_id,
-                    )
-                    .order_by(InstagramLoopMedia.media_id)
-                )
-            ).all()
-        ),
+        media_ids=selected_media_ids,
+        media_count=len(selected_media_ids),
         waiting_for_media_count=waiting_count or 0,
         published_today_count=published_count or 0,
         failed_count=failed_count or 0,
@@ -141,7 +145,7 @@ async def list_loops(
     access: WorkspaceMemberAccess,
     db: DbSession,
 ) -> InstagramLoopsResponse:
-    now = datetime.now(timezone.utc)
+    now = utc_now()
     loops = (
         await db.scalars(
             select(InstagramLoop)
@@ -152,6 +156,7 @@ async def list_loops(
     accounts = await _workspace_accounts(access.workspace.id, db)
     return InstagramLoopsResponse(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
+        publishing_enabled=get_settings().instagram_publishing_enabled,
         loops=[await _loop_response(loop, db, now) for loop in loops],
         available_accounts=[
             InstagramLoopAccountResponse(
@@ -248,7 +253,7 @@ async def create_loop(
         payload.post_type,
         db,
     )
-    now = datetime.now(timezone.utc)
+    now = utc_now()
     loop = InstagramLoop(
         workspace_id=access.workspace.id,
         name=payload.name,
@@ -314,7 +319,7 @@ async def update_loop(
     loop.daily_limit_per_account = payload.daily_limit_per_account
     loop.post_type = payload.post_type
     loop.repeat_media = payload.repeat_media
-    loop.next_run_at = _next_run_at(loop, datetime.now(timezone.utc)) if loop.status == "active" else None
+    loop.next_run_at = _next_run_at(loop, utc_now()) if loop.status == "active" else None
     await db.execute(
         InstagramLoopAccount.__table__.delete().where(
             InstagramLoopAccount.loop_id == loop.id
@@ -353,7 +358,7 @@ async def update_loop(
     )
     await db.commit()
     await db.refresh(loop)
-    return await _loop_response(loop, db, datetime.now(timezone.utc))
+    return await _loop_response(loop, db, utc_now())
 
 
 @router.patch(
@@ -377,7 +382,7 @@ async def update_loop_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
     loop.status = "active" if payload.enabled else "paused"
     loop.next_run_at = (
-        _next_run_at(loop, datetime.now(timezone.utc)) if payload.enabled else None
+        _next_run_at(loop, utc_now()) if payload.enabled else None
     )
     if not payload.enabled:
         await db.execute(
@@ -390,7 +395,7 @@ async def update_loop_status(
         )
     await db.commit()
     await db.refresh(loop)
-    return await _loop_response(loop, db, datetime.now(timezone.utc))
+    return await _loop_response(loop, db, utc_now())
 
 
 @router.delete(

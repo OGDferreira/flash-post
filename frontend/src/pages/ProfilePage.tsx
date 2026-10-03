@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -14,13 +14,16 @@ const profileSchema = z.object({
   nickname: z
     .string()
     .refine(isValidPublicNickname, "Use um apelido entre 2 e 40 caracteres."),
-  avatar_url: z.union([z.literal(""), z.string().url("Informe uma URL válida.")]),
 });
 type ProfileValues = z.infer<typeof profileSchema>;
 
 export function ProfilePage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const profile = useQuery({
     queryKey: ["profile"],
     queryFn: () => apiRequest<User>("/api/profile"),
@@ -33,7 +36,7 @@ export function ProfilePage() {
   });
   const form = useForm<ProfileValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: { full_name: "", nickname: "", avatar_url: "" },
+    defaultValues: { full_name: "", nickname: "" },
   });
   const nicknameInput = form.register("nickname");
   useEffect(() => {
@@ -41,7 +44,6 @@ export function ProfilePage() {
       form.reset({
         full_name: profile.data.full_name,
         nickname: profile.data.nickname,
-        avatar_url: profile.data.avatar_url ?? "",
       });
     }
   }, [profile.data, form]);
@@ -53,14 +55,53 @@ export function ProfilePage() {
         body: {
           full_name: values.full_name,
           nickname: normalizePublicNickname(values.nickname),
-          avatar_url: values.avatar_url || null,
         },
       }),
-    onSuccess: (user) => {
-      queryClient.setQueryData(["profile"], user);
-      queryClient.setQueryData(["auth", "me"], user);
+    onSuccess: (updatedUser) => {
+      queryClient.setQueryData(["profile"], updatedUser);
+      queryClient.setQueryData(["auth", "me"], updatedUser);
     },
   });
+  const uploadAvatar = useMutation({
+    mutationFn: (file: File) =>
+      apiRequest<User>("/api/profile/avatar", {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      }),
+    onSuccess: (updatedUser) => {
+      queryClient.setQueryData(["profile"], updatedUser);
+      queryClient.setQueryData(["auth", "me"], updatedUser);
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      setAvatarError(null);
+    },
+  });
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview(null);
+      return;
+    }
+    const preview = URL.createObjectURL(avatarFile);
+    setAvatarPreview(preview);
+    return () => URL.revokeObjectURL(preview);
+  }, [avatarFile]);
+  const saveProfile = async (values: ProfileValues) => {
+    setAvatarError(null);
+    setSubmitError(null);
+    try {
+      await update.mutateAsync(values);
+      if (avatarFile) {
+        await uploadAvatar.mutateAsync(avatarFile);
+      }
+    } catch (error) {
+      setSubmitError(
+        error instanceof ApiError
+          ? error.message
+          : "Não foi possível salvar as alterações do perfil.",
+      );
+    }
+  };
 
   if (
     profile.isLoading ||
@@ -76,7 +117,16 @@ export function ProfilePage() {
   }
 
   const apiError =
-    update.error instanceof ApiError ? update.error.message : null;
+    submitError ??
+    (update.error instanceof ApiError
+      ? update.error.message
+      : update.error
+        ? "Não foi possível atualizar o perfil."
+        : uploadAvatar.error instanceof ApiError
+          ? uploadAvatar.error.message
+          : uploadAvatar.error
+            ? "Não foi possível enviar a imagem de perfil."
+            : null);
   const workspaceName =
     user?.role === "SUPER_ADMIN"
       ? "Acesso global"
@@ -98,9 +148,9 @@ export function ProfilePage() {
 
       <section className="rounded-xl border border-[#202838] bg-[#0d1015] p-5 sm:p-7">
         <div className="mb-7 flex items-center gap-4 border-b border-[#202838] pb-6">
-          {profile.data.avatar_url ? (
+          {avatarPreview || profile.data.avatar_url ? (
             <img
-              src={profile.data.avatar_url}
+              src={avatarPreview ?? profile.data.avatar_url ?? undefined}
               alt=""
               className="size-14 rounded-full border border-[#27334a] object-cover"
             />
@@ -124,7 +174,7 @@ export function ProfilePage() {
 
         <form
           className="space-y-5"
-          onSubmit={form.handleSubmit((values) => update.mutate(values))}
+          onSubmit={form.handleSubmit((values) => void saveProfile(values))}
           noValidate
         >
           <div>
@@ -185,21 +235,38 @@ export function ProfilePage() {
           </div>
           <div>
             <label htmlFor="profile-avatar" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
-              URL do avatar <span className="font-normal text-[#64748b]">(opcional)</span>
+              Foto de perfil <span className="font-normal text-[#64748b]">(JPEG, PNG ou WebP; até 5 MB)</span>
             </label>
             <input
               id="profile-avatar"
-              type="url"
-              autoComplete="url"
-              {...form.register("avatar_url")}
-              aria-invalid={Boolean(form.formState.errors.avatar_url)}
-              className="h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
-              placeholder="https://"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0] ?? null;
+                event.currentTarget.value = "";
+                if (!file) return;
+                if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+                  setAvatarFile(null);
+                  setAvatarError("Selecione uma imagem JPEG, PNG ou WebP.");
+                  return;
+                }
+                if (file.size > 5 * 1024 * 1024) {
+                  setAvatarFile(null);
+                  setAvatarError("A imagem deve ter até 5 MB.");
+                  return;
+                }
+                setAvatarError(null);
+                setAvatarFile(file);
+              }}
+              className="block min-h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] text-sm text-[#c7cfdd] file:mr-3 file:min-h-11 file:border-0 file:bg-[#171e31] file:px-4 file:font-medium file:text-[#aab7ff]"
             />
-            {form.formState.errors.avatar_url && (
+            {avatarError && (
               <p className="mt-1.5 text-xs text-[#f1a3ad]">
-                {form.formState.errors.avatar_url.message}
+                {avatarError}
               </p>
+            )}
+            {avatarFile && !avatarError && (
+              <p className="mt-1.5 text-xs text-[#94a3b8]">{avatarFile.name} selecionada.</p>
             )}
           </div>
           <div className="grid gap-3 border-t border-[#202838] pt-5 sm:grid-cols-2">
@@ -210,7 +277,9 @@ export function ProfilePage() {
             />
             <Info
               label="Criado em"
-              value={new Date(profile.data.created_at).toLocaleDateString("pt-BR")}
+              value={new Date(profile.data.created_at).toLocaleDateString("pt-BR", {
+                timeZone: "America/Sao_Paulo",
+              })}
             />
           </div>
           {apiError && (
@@ -228,7 +297,7 @@ export function ProfilePage() {
             disabled={update.isPending}
             className="min-h-11 rounded-lg bg-[#536dfe] px-5 text-sm font-semibold text-white transition hover:bg-[#667eea] disabled:opacity-60"
           >
-            {update.isPending ? "Salvando..." : "Salvar alterações"}
+            {update.isPending || uploadAvatar.isPending ? "Salvando..." : "Salvar alterações"}
           </button>
         </form>
       </section>

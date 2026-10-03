@@ -46,7 +46,9 @@ export function AdminSystemPage() {
                 <p className="text-sm font-medium text-[#e6eaf2]">{setting.key}</p>
                 <p className="mt-1 text-xs text-[#64748b]">
                   {setting.is_public ? "Pública" : "Operacional"} · Atualizada{" "}
-                  {new Date(setting.updated_at).toLocaleString("pt-BR")}
+                  {new Date(setting.updated_at).toLocaleString("pt-BR", {
+                    timeZone: "America/Sao_Paulo",
+                  })}
                 </p>
               </div>
               <code className="max-w-full overflow-auto rounded-lg border border-[#202838] bg-[#090b0e] px-3 py-2 text-xs text-[#aeb9ce]">

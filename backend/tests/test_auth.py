@@ -256,6 +256,73 @@ async def test_profile_patch_requires_valid_csrf_and_updates_profile(
 
 
 @pytest.mark.anyio
+async def test_profile_patch_keeps_existing_avatar_when_omitted(
+    client: AsyncClient,
+    owner,
+) -> None:
+    user, _workspace = owner
+    user.avatar_url = "https://example.com/previous-avatar.png"
+    auth = await login(client, "owner@example.com", "correct horse battery staple")
+
+    response = await client.patch(
+        "/api/profile",
+        headers={"X-CSRF-Token": auth["csrf_token"]},
+        json={"full_name": "Updated Name", "nickname": "Gui Ferreira"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["avatar_url"] == "https://example.com/previous-avatar.png"
+
+
+@pytest.mark.anyio
+async def test_profile_avatar_upload_uses_private_storage_and_signed_redirect(
+    client: AsyncClient,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeStorage:
+        uploaded: tuple[str, bytes, str] | None = None
+
+        async def upload(self, path: str, content: bytes, content_type: str) -> None:
+            self.uploaded = (path, content, content_type)
+
+        async def delete(self, _path: str) -> None:
+            return None
+
+        async def create_signed_url(self, _path: str) -> str:
+            return "https://storage.example/signed-avatar"
+
+    storage = FakeStorage()
+    monkeypatch.setattr(
+        "app.auth.router.SupabaseStorage.from_settings",
+        classmethod(lambda _cls: storage),
+    )
+    await login(client, "owner@example.com", "correct horse battery staple")
+    token = await csrf(client)
+
+    uploaded = await client.post(
+        "/api/profile/avatar",
+        content=b"\xff\xd8\xffprofile-avatar",
+        headers={"Content-Type": "image/jpeg", "X-CSRF-Token": token},
+    )
+
+    assert uploaded.status_code == 200, uploaded.text
+    avatar_path = uploaded.json()["avatar_url"]
+    stored_path = owner[0].avatar_url
+    assert stored_path is not None
+    assert stored_path.startswith(f"avatars/{owner[0].id}/")
+    assert avatar_path.startswith("/api/profile/avatar?")
+    assert storage.uploaded == (
+        stored_path,
+        b"\xff\xd8\xffprofile-avatar",
+        "image/jpeg",
+    )
+    redirected = await client.get("/api/profile/avatar")
+    assert redirected.status_code == 307
+    assert redirected.headers["location"] == "https://storage.example/signed-avatar"
+
+
+@pytest.mark.anyio
 async def test_registration_creates_owner_workspace_membership_and_session(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:

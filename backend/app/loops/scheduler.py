@@ -4,6 +4,7 @@ import random
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time import local_day_bounds_utc
 from app.models import (
     InstagramAccount,
     InstagramLoop,
@@ -193,8 +194,7 @@ async def enqueue_due_loop_publications(
         ).all()
 
         for account in accounts:
-            midnight = scheduled_for.replace(hour=0, minute=0, second=0, microsecond=0)
-            tomorrow = midnight + timedelta(days=1)
+            midnight, tomorrow = local_day_bounds_utc(scheduled_for)
             daily_jobs = await db.scalar(
                 select(func.count(InstagramPublicationJob.id)).where(
                     InstagramPublicationJob.loop_id == loop.id,

@@ -80,11 +80,13 @@ async def test_owner_can_create_and_read_a_loop(
     assert [item["id"] for item in result["accounts"]] == [str(account.id)]
     assert result["waiting_for_media_count"] == 0
     assert result["published_today_count"] == 0
+    assert result["media_count"] == 0
 
     listing = await client.get("/api/loops")
     assert listing.status_code == 200
     assert listing.json()["loops"][0]["id"] == result["id"]
     assert listing.json()["available_accounts"][0]["username"] == "flashpost_demo"
+    assert "publishing_enabled" in listing.json()
 
 
 @pytest.mark.anyio
@@ -172,6 +174,11 @@ async def test_loop_accepts_more_than_24_videos(
 
     assert response.status_code == 201, response.text
     assert len(response.json()["media_ids"]) == 25
+    assert response.json()["media_count"] == 25
+
+    listing = await client.get("/api/loops")
+    assert listing.status_code == 200
+    assert listing.json()["loops"][0]["media_count"] == 25
 
 
 @pytest.mark.anyio

@@ -21,6 +21,7 @@ class DailyPublicationMetric(BaseModel):
 
 
 class InstagramAnalyticsSummary(BaseModel):
+    period: str
     followers_count: int | None
     media_count: int | None
     active_accounts: int

@@ -64,12 +64,18 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
     },
   });
   const links = admin ? adminLinks : ownerLinks;
-  const hour = new Date().getHours();
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      hourCycle: "h23",
+      timeZone: "America/Sao_Paulo",
+    }).format(new Date()),
+  );
   const greeting =
     hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
   const pageHeading = admin
     ? "Painel da plataforma"
-    : `${greeting}, ${user?.full_name ?? "bem-vindo"}`;
+    : `${greeting}, ${user?.nickname ?? "bem-vindo"}`;
 
   const sidebar = (
     <div className="flex h-full flex-col bg-[#0b0c0e]">
@@ -97,7 +103,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
 
       {admin && (
         <div className="mx-4 mt-5 flex items-center gap-2 overflow-hidden rounded-lg border border-[#27334a] bg-[#10141b] px-3 py-2 text-xs font-medium text-[#aeb9ce] lg:group-hover:mx-3">
-          <Shield size={14} className="text-[#8295ff]" />
+          <Shield className="shrink-0 text-[#8295ff]" size={14} />
           <span className="max-w-[180px] overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[180px] lg:group-hover:opacity-100">
             Administração da plataforma
           </span>
@@ -120,7 +126,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
               }`
             }
           >
-            <Icon size={17} strokeWidth={1.8} />
+            <Icon className="shrink-0" size={17} strokeWidth={1.8} />
             <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[170px] lg:group-hover:opacity-100">
               {label}
             </span>
@@ -173,7 +179,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
           disabled={logout.isPending}
           className="mt-1 flex min-h-10 w-full items-center justify-center gap-3 rounded-lg px-3 text-sm text-[#94a3b8] hover:bg-[#171317] hover:text-[#f1a3ad] disabled:opacity-50 lg:px-0 lg:group-hover:justify-start lg:group-hover:px-3"
         >
-          <LogOut size={16} />
+          <LogOut className="shrink-0" size={16} />
           <span className="max-w-[120px] overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[120px] lg:group-hover:opacity-100">
             Sair
           </span>

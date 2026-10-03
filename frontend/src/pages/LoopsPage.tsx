@@ -51,6 +51,7 @@ type InstagramLoop = {
   last_run_at: string | null;
   accounts: LoopAccount[];
   media_ids: string[];
+  media_count: number;
   waiting_for_media_count: number;
   published_today_count: number;
   failed_count: number;
@@ -59,6 +60,7 @@ type InstagramLoop = {
 
 type InstagramLoopsResponse = {
   can_manage: boolean;
+  publishing_enabled: boolean;
   loops: InstagramLoop[];
   available_accounts: LoopAccount[];
 };
@@ -92,6 +94,7 @@ function formatDate(value: string | null): string {
   return new Date(value).toLocaleString("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
   });
 }
 
@@ -296,14 +299,20 @@ export function LoopsPage() {
         )}
       </header>
 
-      <div className="rounded-lg border border-[#6b552b] bg-[#1c180e] p-4 text-sm text-[#f2d48a]">
-        <p className="flex items-start gap-2">
-          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
-          O envio ao Instagram só acontece com o worker ativo e
-          <code className="mx-1 font-mono">INSTAGRAM_PUBLISHING_ENABLED=true</code>.
-          Mantenha essa opção desativada até validar as credenciais e testar uma conta.
-        </p>
-      </div>
+      {!loops.data.publishing_enabled ? (
+        <div className="rounded-lg border border-[#6b552b] bg-[#1c180e] p-4 text-sm text-[#f2d48a]">
+          <p className="flex items-start gap-2">
+            <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+            As publicações automáticas estão desativadas no servidor. Configure
+            {" "}<code className="font-mono">INSTAGRAM_PUBLISHING_ENABLED=true</code>
+            {" "}no serviço Web do Render e reinicie ou reimplante o serviço para habilitá-las.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-[#23513e] bg-[#0e1b17] p-4 text-sm text-[#9de0c0]">
+          Publicações automáticas habilitadas. O worker precisa estar ativo para processar a fila.
+        </div>
+      )}
       {mutationError && <ErrorState message={mutationError} />}
       {!loops.data.can_manage && (
         <p className="rounded-lg border border-[#27334a] bg-[#10141b] px-4 py-3 text-sm text-[#aeb9ce]">
@@ -706,7 +715,11 @@ export function LoopsPage() {
                     Próxima execução: {formatDate(loop.next_run_at)}
                   </p>
                   <p className="mt-1 text-xs text-[#f2d48a]">
-                    {loop.waiting_for_media_count} {loop.waiting_for_media_count === 1 ? "item" : "itens"} aguardando mídia ·{" "}
+                    Pool: {loop.media_count} {loop.media_count === 1 ? "mídia" : "mídias"} ·{" "}
+                    {loop.waiting_for_media_count}{" "}
+                    {loop.waiting_for_media_count === 1
+                      ? "publicação aguardando mídia"
+                      : "publicações aguardando mídia"} ·{" "}
                     {loop.published_today_count} publicados hoje
                   </p>
                   {loop.failed_count > 0 && (

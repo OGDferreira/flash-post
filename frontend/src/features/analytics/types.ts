@@ -10,6 +10,7 @@ export type InstagramAnalyticsAccount = {
 };
 
 export type InstagramAnalyticsSummary = {
+  period: "today" | "yesterday" | "7d" | "30d" | "all";
   followers_count: number | null;
   media_count: number | null;
   active_accounts: number;

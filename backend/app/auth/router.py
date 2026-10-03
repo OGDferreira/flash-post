@@ -1,11 +1,15 @@
 from datetime import datetime, timezone
+import logging
 import re
 import unicodedata
 import uuid
+from urllib.parse import urlencode
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth.dependencies import (
     AuthenticatedUser,
@@ -18,6 +22,7 @@ from app.core.config import get_settings
 from app.core.nickname import nickname_key, normalize_nickname
 from app.core.rate_limit import LoginRateLimiter
 from app.core.security import PlatformRole, WorkspaceRole, hash_password, verify_password
+from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.models import User, Workspace, WorkspaceMember
 from app.schemas.auth import (
     AuthResponse,
@@ -31,6 +36,19 @@ from app.schemas.auth import (
 )
 
 router = APIRouter(prefix="/api", tags=["authentication"])
+logger = logging.getLogger(__name__)
+MAX_PROFILE_AVATAR_BYTES = 5 * 1024 * 1024
+PROFILE_AVATAR_TYPES = {
+    "image/jpeg": (".jpg", lambda content: content.startswith(b"\xff\xd8\xff")),
+    "image/png": (".png", lambda content: content.startswith(b"\x89PNG\r\n\x1a\n")),
+    "image/webp": (
+        ".webp",
+        lambda content: len(content) >= 12
+        and content.startswith(b"RIFF")
+        and content[8:12] == b"WEBP",
+    ),
+}
+_AVATAR_STORAGE_PREFIX = "avatars/"
 
 
 def _user_role(user: User, membership: WorkspaceMember | None) -> str:
@@ -46,7 +64,11 @@ def _user_response(user: User, membership: WorkspaceMember | None) -> UserRespon
         username=user.username,
         nickname=user.nickname,
         full_name=user.full_name,
-        avatar_url=user.avatar_url,
+        avatar_url=(
+            f"/api/profile/avatar?{urlencode({'v': int(user.updated_at.timestamp())})}"
+            if user.avatar_url and user.avatar_url.startswith(_AVATAR_STORAGE_PREFIX)
+            else user.avatar_url
+        ),
         role=_user_role(user, membership),
         is_active=user.is_active,
         is_verified=user.is_verified,
@@ -257,7 +279,8 @@ async def update_profile(
     user.full_name = payload.full_name.strip()
     user.nickname = payload.nickname
     user.nickname_normalized = nickname_key(payload.nickname)
-    user.avatar_url = str(payload.avatar_url) if payload.avatar_url else None
+    if "avatar_url" in payload.model_fields_set:
+        user.avatar_url = str(payload.avatar_url) if payload.avatar_url else None
     try:
         await db.commit()
     except IntegrityError:
@@ -266,6 +289,125 @@ async def update_profile(
     await db.refresh(user)
     membership = await _primary_membership(user, db)
     return _user_response(user, membership)
+
+
+@router.post(
+    "/profile/avatar",
+    response_model=UserResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_csrf)],
+)
+async def upload_profile_avatar(
+    request: Request,
+    user: AuthenticatedUser,
+    db: DbSession,
+) -> UserResponse:
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    avatar_type = PROFILE_AVATAR_TYPES.get(content_type)
+    if avatar_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Envie uma imagem JPEG, PNG ou WebP.",
+        )
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_PROFILE_AVATAR_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="A imagem do perfil deve ter até 5 MB.",
+                )
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Não foi possível verificar o tamanho da imagem.",
+            ) from None
+
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_PROFILE_AVATAR_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="A imagem do perfil deve ter até 5 MB.",
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
+    if not content or not avatar_type[1](content):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="O conteúdo enviado não corresponde a uma imagem JPEG, PNG ou WebP válida.",
+        )
+
+    try:
+        storage = SupabaseStorage.from_settings()
+    except RuntimeError as exc:
+        logger.error("Profile avatar storage is not configured (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="O armazenamento de imagens de perfil não está configurado no servidor.",
+        ) from None
+
+    previous_path = user.avatar_url
+    avatar_path = f"{_AVATAR_STORAGE_PREFIX}{user.id}/{uuid.uuid4()}{avatar_type[0]}"
+    try:
+        await storage.upload(avatar_path, content, content_type)
+    except (SupabaseStorageError, httpx.HTTPError) as exc:
+        logger.error("Profile avatar upload failed (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Não foi possível salvar a imagem de perfil.",
+        ) from None
+
+    user.avatar_url = avatar_path
+    try:
+        await db.commit()
+        await db.refresh(user)
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        try:
+            await storage.delete(avatar_path)
+        except (SupabaseStorageError, httpx.HTTPError) as cleanup_exc:
+            logger.error(
+                "Orphaned profile avatar cleanup failed (%s) after database failure (%s).",
+                type(cleanup_exc).__name__,
+                type(exc).__name__,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="A imagem foi enviada, mas não foi possível atualizar o perfil.",
+        ) from None
+
+    if previous_path and previous_path.startswith(f"{_AVATAR_STORAGE_PREFIX}{user.id}/"):
+        try:
+            await storage.delete(previous_path)
+        except (SupabaseStorageError, httpx.HTTPError) as exc:
+            logger.warning("Old profile avatar cleanup failed (%s).", type(exc).__name__)
+    membership = await _primary_membership(user, db)
+    return _user_response(user, membership)
+
+
+@router.get("/profile/avatar")
+async def get_profile_avatar(user: AuthenticatedUser) -> RedirectResponse:
+    if not user.avatar_url or not user.avatar_url.startswith(_AVATAR_STORAGE_PREFIX):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile avatar not found.")
+    try:
+        storage = SupabaseStorage.from_settings()
+        signed_url = await storage.create_signed_url(user.avatar_url)
+    except RuntimeError as exc:
+        logger.error("Profile avatar storage is not configured (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="O armazenamento de imagens de perfil não está configurado no servidor.",
+        ) from None
+    except (SupabaseStorageError, httpx.HTTPError) as exc:
+        logger.error("Profile avatar URL signing failed (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Não foi possível abrir a imagem de perfil.",
+        ) from None
+    return RedirectResponse(signed_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @router.get("/workspace", response_model=WorkspaceResponse)

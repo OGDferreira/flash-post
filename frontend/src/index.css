@@ -28,6 +28,23 @@ body {
   isolation: isolate;
 }
 
+.dashboard-card {
+  border: 1px solid rgba(83, 109, 254, 0.2);
+  background: linear-gradient(145deg, rgba(19, 24, 38, 0.94), rgba(13, 16, 21, 0.98));
+  box-shadow:
+    0 0 0 1px rgba(83, 109, 254, 0.035),
+    0 10px 32px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.dashboard-card:hover {
+  border-color: rgba(113, 137, 255, 0.42);
+  box-shadow:
+    0 0 22px rgba(83, 109, 254, 0.1),
+    0 12px 36px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
 .dashboard-ambient::before,
 .dashboard-ambient::after {
   position: absolute;

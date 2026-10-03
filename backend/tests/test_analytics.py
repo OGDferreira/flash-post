@@ -67,6 +67,14 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
                 workspace_id=workspace.id,
                 loop_id=loop.id,
                 account_id=first.id,
+                scheduled_for=now - timedelta(days=8),
+                updated_at=now - timedelta(days=8),
+                status="published",
+            ),
+            InstagramPublicationJob(
+                workspace_id=workspace.id,
+                loop_id=loop.id,
+                account_id=first.id,
                 scheduled_for=now + timedelta(minutes=1),
                 status="queued",
             ),
@@ -89,6 +97,7 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
 
     assert selected.status_code == 200, selected.text
     result = selected.json()
+    assert result["period"] == "7d"
     assert result["followers_count"] == 200
     assert result["media_count"] == 25
     assert result["active_accounts"] == 2
@@ -105,6 +114,14 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
     assert only_first.status_code == 200
     assert only_first.json()["followers_count"] == 120
     assert only_first.json()["failed_posts"] == 0
+
+    all_time = await client.get("/api/analytics/summary", params={"period": "all"})
+    assert all_time.status_code == 200
+    assert all_time.json()["published_posts"] == 2
+
+    today = await client.get("/api/analytics/summary", params={"period": "today"})
+    assert today.status_code == 200
+    assert today.json()["published_posts"] == 1
 
 
 @pytest.mark.anyio

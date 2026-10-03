@@ -253,7 +253,7 @@ export function InstagramAccountsPage() {
         <div className="flex items-center justify-between text-sm text-[#94a3b8]">
           <h3>Contas Instagram ({visibleAccounts.length})</h3>
           {issueAccountCount > 0 && (
-            <span className="text-xs text-[#f2b884]">{issueAccountCount} com erro ou expiradas</span>
+            <span className="text-xs text-[#f1a3ad]">{issueAccountCount} com erro ou expiradas</span>
           )}
         </div>
         {visibleAccounts.length === 0 ? (
@@ -273,12 +273,14 @@ export function InstagramAccountsPage() {
                 ? "Desconectada — conecte novamente para ativar"
                 : expired
                   ? "Token expirado — reconecte a conta"
-                  : `Ativa · token válido até ${new Date(account.token_expires_at).toLocaleDateString("pt-BR")}`;
+                  : `Ativa · token válido até ${new Date(account.token_expires_at).toLocaleDateString("pt-BR", {
+                      timeZone: "America/Sao_Paulo",
+                    })}`;
 
             return (
               <article
                 className={`flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 ${
-                  active ? "border-[#23513e] bg-[#0e1b17]" : "border-[#6b3c2d] bg-[#1c1410]"
+                  active ? "border-[#23513e] bg-[#0e1b17]"                   : "border-[#47252d] bg-[#1a1013]"
                 }`}
                 key={account.id}
               >
@@ -287,7 +289,7 @@ export function InstagramAccountsPage() {
                     className={`size-11 rounded-xl border object-cover ${
                       active
                         ? "border-[#23513e] bg-[#14251d] text-[#9de0c0]"
-                        : "border-[#6b3c2d] bg-[#271a13] text-[#f2b884]"
+                        : "border-[#47252d] bg-[#211318] text-[#f1a3ad]"
                     }`}
                     src={account.profile_picture_url}
                     username={account.username}
@@ -296,7 +298,7 @@ export function InstagramAccountsPage() {
                     <p className="truncate font-medium text-[#f5f7fb]">@{account.username}</p>
                     <p
                       className={`mt-1 flex items-center gap-1.5 text-xs ${
-                        active ? "text-[#9de0c0]" : "text-[#f2b884]"
+                        active ? "text-[#9de0c0]"                         : "text-[#f1a3ad]"
                       }`}
                     >
                       {active ? <Check size={13} /> : <Clock3 size={13} />}

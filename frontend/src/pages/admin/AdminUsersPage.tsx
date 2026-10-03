@@ -165,5 +165,6 @@ export function formatDate(value: string) {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: "America/Sao_Paulo",
   });
 }
