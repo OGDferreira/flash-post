@@ -31,7 +31,8 @@ repository. PostgreSQL URLs are normalized for `asyncpg`; PostgreSQL
 connections require TLS. The application does not print credentials or
 connection strings. Production startup requires `SESSION_SECRET`, and Docker
 startup requires `DATABASE_URL`. `MASTER_ENCRYPTION_KEY` is checked when
-encryption is used.
+encryption is used. Instagram App IDs and App Secrets are configured by each
+workspace OWNER in the Contas page and encrypted before database storage.
 
 ### Account creation
 
@@ -66,6 +67,64 @@ single-service strategy can be moved to a dedicated release/pre-deploy command
 before adding workers; background workers must never run migrations.
 The nickname migrations backfill existing users before enforcing the
 non-null, case-insensitive unique index on `nickname_normalized`.
+Migration `20261003_04` adds Instagram accounts scoped to workspaces. OAuth
+access tokens are encrypted with `MASTER_ENCRYPTION_KEY`; API responses never
+include them. Migration `20261003_05` adds one encrypted Meta app credential
+per workspace. The shared `MASTER_ENCRYPTION_KEY` remains a server-side
+infrastructure secret; each customer enters their own Meta App ID and App
+Secret in the authenticated FlashPost workspace.
+
+## Instagram accounts
+
+The **Contas** workspace page supports connecting multiple Instagram
+professional (Business and Creator) accounts using Instagram Login. Workspace
+members can view connected account names and token expiration dates; only the
+workspace OWNER can connect or disconnect accounts. Disconnecting removes the
+saved FlashPost credential and attempts to revoke the Meta authorization. If
+Meta does not confirm revocation, the account is still removed locally and the
+interface tells the OWNER how to finish revoking it in Instagram settings.
+
+Create a Business-type Meta app, add the Instagram product, configure
+Instagram Business Login, and register this exact OAuth redirect URI in Meta:
+
+```text
+https://flashpost.onrender.com/api/instagram/callback
+```
+
+For local testing, use the local backend URL configured through
+`PUBLIC_BASE_URL`, for example `http://localhost:8000/api/instagram/callback`.
+The URI in Meta must exactly match `PUBLIC_BASE_URL` plus
+`/api/instagram/callback`. In FlashPost, each workspace OWNER enters the
+customer's App ID and App Secret on the Contas page. The App Secret is
+encrypted server-side and is never returned to the browser after saving.
+Never put a customer's App Secret in frontend environment configuration,
+Render environment variables, Git, or chat.
+
+The first phase requests only `instagram_business_basic`; publishing
+permissions are deliberately not requested yet. Meta documents long-lived
+Instagram access tokens as expiring after 60 days. Automatic token renewal
+will be required before Loops can publish reliably; expired or revoked tokens
+must be reconnected until that flow is implemented. Meta may require Advanced
+Access and App Review when serving professional accounts not owned or managed
+by the app developer.
+
+Meta webhooks are not configured in this phase. A webhook is a separate HTTPS
+receiver for asynchronous Instagram events such as comments, mentions, story
+expiration, and incoming messages; it is not the OAuth redirect callback.
+FlashPost does not yet implement Meta's webhook verification or event receiver,
+so do not reuse another product's callback URL or verification token here.
+
+Public information pages for Meta app settings:
+
+- Privacy policy: `https://flashpost.onrender.com/privacidade`
+- Terms of service: `https://flashpost.onrender.com/termosdeuso`
+- Data deletion instructions: `https://flashpost.onrender.com/deletar`
+
+These pages are served as HTML directly by FastAPI, so Meta can read their
+contents without running the React application. The data deletion page
+currently gives instructions to contact support; account deletion is not
+automated in the product yet. Review the legal text and published support
+contact for your business before submitting the Meta app for review.
 
 Backend tests apply those same Alembic migrations to an isolated temporary
 SQLite database. Tests never connect to or modify Supabase.
@@ -99,6 +158,11 @@ Initial endpoints:
 | `GET` | `/api/auth/me` | Current authenticated user |
 | `GET`, `PATCH` | `/api/profile` | Read/update profile name, nickname, and avatar URL |
 | `GET` | `/api/workspace` | Current active workspace membership |
+| `GET` | `/api/instagram/accounts` | List Instagram accounts for the active workspace |
+| `GET`, `PUT`, `DELETE` | `/api/instagram/app-settings` | Read, save, or remove that workspace's encrypted Meta app credentials (OWNER only) |
+| `POST` | `/api/instagram/connect` | Start Instagram Login (OWNER only; requires CSRF) |
+| `GET` | `/api/instagram/callback` | Complete Instagram Login and store an encrypted token |
+| `DELETE` | `/api/instagram/accounts/{id}` | Disconnect an account (OWNER only; requires CSRF) |
 | `GET` | `/api/admin/summary` | Real user/workspace totals |
 | `GET` | `/api/admin/users` | Searchable, paginated user list |
 | `GET` | `/api/admin/workspaces` | Searchable, paginated workspace list |
@@ -164,5 +228,7 @@ backend/tests/     Isolated migration-backed API and security tests
 frontend/src/      React application, layouts, pages, auth, and API client
 ```
 
-Instagram, Meta, Shark, finance, ranking, Redis, workers, and other product
-integrations are intentionally out of scope for this phase.
+Instagram account connection is implemented behind Meta app configuration.
+Publishing, Loops, analytics, Shark, finance, ranking, Redis, workers, and
+other product modules remain out of scope until their requirements are
+defined.

@@ -16,6 +16,8 @@ from app.core.database import dispose_engine, get_session_factory
 from app.api.health import router as health_router
 from app.core.config import get_settings
 from app.core.rate_limit import LoginRateLimiter
+from app.legal import router as legal_router
+from app.instagram.router import router as instagram_router
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -72,6 +74,8 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(health_router)
     application.include_router(auth_router)
     application.include_router(admin_router)
+    application.include_router(instagram_router)
+    application.include_router(legal_router)
 
     @application.get("/readiness", tags=["health"])
     async def readiness(

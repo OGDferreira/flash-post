@@ -74,7 +74,7 @@ export function LoginPage() {
               className="size-10 shrink-0 object-contain"
             />
             <span className="text-base font-semibold tracking-[-0.03em] text-[#f5f7fb]">
-              flashpost<span className="text-[#7186ff]">.</span>
+              FlashPost<span className="text-[#7186ff]">.</span>
             </span>
           </Link>
           <div className="max-w-sm md:my-auto">

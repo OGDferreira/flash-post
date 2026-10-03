@@ -14,6 +14,7 @@ import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
 import { AppShell } from "@/layouts/AppShell";
 import { FeaturePlaceholderPage } from "@/pages/FeaturePlaceholderPage";
+import { InstagramAccountsPage } from "@/pages/InstagramAccountsPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { AdminOverviewPage } from "@/pages/admin/AdminOverviewPage";
 import { AdminSystemPage } from "@/pages/admin/AdminSystemPage";
@@ -44,6 +45,7 @@ export default function App() {
                 }
               />
               <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
               <Route path="/feature/:slug" element={<FeaturePlaceholderPage />} />
             </Route>
             <Route element={<RequireSuperAdmin />}>

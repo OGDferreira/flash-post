@@ -29,7 +29,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    @field_validator("database_url", "session_secret", "master_encryption_key", mode="before")
+    @field_validator(
+        "database_url",
+        "session_secret",
+        "master_encryption_key",
+        mode="before",
+    )
     @classmethod
     def empty_secrets_are_missing(cls, value):
         if isinstance(value, str) and not value.strip():

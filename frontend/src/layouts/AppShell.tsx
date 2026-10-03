@@ -77,7 +77,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
             F
           </span>
           <span className="text-base font-semibold tracking-[-0.03em] text-[#f5f7fb]">
-            flashpost<span className="text-[#7186ff]">.</span>
+            FlashPost<span className="text-[#7186ff]">.</span>
           </span>
         </Link>
         <button
@@ -113,7 +113,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
           >
             <Icon size={17} strokeWidth={1.8} />
             {label}
-            {!admin && to !== "/dashboard" && (
+            {!admin && to !== "/dashboard" && to !== "/feature/accounts" && (
               <span className="ml-auto rounded-md border border-[#202838] px-1.5 py-0.5 text-[9px] text-[#64748b]">
                 EM BREVE
               </span>

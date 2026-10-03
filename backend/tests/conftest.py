@@ -53,8 +53,17 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with engine.begin() as connection:
-        from app.models import SystemSetting, User, Workspace, WorkspaceMember
+        from app.models import (
+            InstagramAccount,
+            InstagramAppCredential,
+            SystemSetting,
+            User,
+            Workspace,
+            WorkspaceMember,
+        )
 
+        await connection.execute(delete(InstagramAccount))
+        await connection.execute(delete(InstagramAppCredential))
         await connection.execute(delete(WorkspaceMember))
         await connection.execute(delete(SystemSetting))
         await connection.execute(delete(Workspace))

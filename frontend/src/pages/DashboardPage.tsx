@@ -89,7 +89,7 @@ export function DashboardPage() {
             </h3>
           </div>
           <div className="mt-5">
-            <EmptyState message="Contas, publicações, analytics e integrações serão adicionados nas próximas fases." />
+            <EmptyState message="Publicações, analytics e integrações serão adicionadas nas próximas fases. Gerencie suas contas na aba Contas." />
           </div>
         </motion.section>
       </section>
