@@ -10,6 +10,7 @@ class InstagramAccountResponse(BaseModel):
     username: str
     token_expires_at: datetime
     connected_at: datetime
+    status: str
 
 
 class InstagramAccountsResponse(BaseModel):

@@ -62,6 +62,10 @@ def _accounts_page(outcome: str) -> str:
     )
 
 
+def _utc_datetime(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
 @router.get("/accounts", response_model=InstagramAccountsResponse)
 async def list_accounts(
     access: WorkspaceMemberAccess,
@@ -80,8 +84,9 @@ async def list_accounts(
             InstagramAccountResponse(
                 id=account.id,
                 username=account.username,
-                token_expires_at=account.token_expires_at,
-                connected_at=account.connected_at,
+                token_expires_at=_utc_datetime(account.token_expires_at),
+                connected_at=_utc_datetime(account.connected_at),
+                status=account.status,
             )
             for account in accounts
         ],
@@ -502,6 +507,7 @@ async def instagram_callback(
             username=username,
             encrypted_access_token=encrypted_token,
             token_expires_at=expires_at,
+            status="connected",
         )
         db.add(account)
     else:
@@ -509,6 +515,7 @@ async def instagram_callback(
         account.username = username
         account.encrypted_access_token = encrypted_token
         account.token_expires_at = expires_at
+        account.status = "connected"
         account.connected_at = datetime.now(timezone.utc)
     await db.commit()
     return RedirectResponse(_accounts_page("connected"), status_code=303)
@@ -533,11 +540,17 @@ async def disconnect_account(
     if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instagram account not found.")
     try:
-        access_token = decrypt_value(account.encrypted_access_token)
+        access_token = (
+            decrypt_value(account.encrypted_access_token)
+            if account.encrypted_access_token is not None
+            else None
+        )
     except (RuntimeError, ValueError) as exc:
         logger.warning("Instagram token could not be decrypted for revocation (%s).", type(exc).__name__)
         access_token = None
-    await db.delete(account)
+    account.encrypted_access_token = None
+    account.status = "disconnected"
+    account.app_credential_id = None
     await db.commit()
 
     meta_revoked = False

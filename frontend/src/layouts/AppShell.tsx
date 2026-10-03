@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   Bell,
   Blocks,
   ChartNoAxesCombined,
@@ -9,6 +8,7 @@ import {
   CircleDollarSign,
   Clapperboard,
   Home,
+  Infinity,
   LogOut,
   Menu,
   MessageSquareText,
@@ -26,7 +26,7 @@ import { ApiError, apiRequest } from "@/services/api";
 const ownerLinks = [
   { label: "Visão geral", to: "/dashboard", icon: Home },
   { label: "Contas", to: "/feature/accounts", icon: Users },
-  { label: "Loops", to: "/feature/loops", icon: Activity },
+  { label: "Loops", to: "/feature/loops", icon: Infinity },
   { label: "Analytics", to: "/feature/analytics", icon: ChartNoAxesCombined },
   { label: "Financeiro", to: "/feature/finance", icon: CircleDollarSign },
   { label: "Ranking", to: "/feature/ranking", icon: Trophy },
@@ -113,7 +113,10 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
           >
             <Icon size={17} strokeWidth={1.8} />
             {label}
-            {!admin && to !== "/dashboard" && to !== "/feature/accounts" && (
+            {!admin &&
+              to !== "/dashboard" &&
+              to !== "/feature/accounts" &&
+              to !== "/feature/loops" && (
               <span className="ml-auto rounded-md border border-[#202838] px-1.5 py-0.5 text-[9px] text-[#64748b]">
                 EM BREVE
               </span>

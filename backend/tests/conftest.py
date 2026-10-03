@@ -56,12 +56,18 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         from app.models import (
             InstagramAccount,
             InstagramAppCredential,
+            InstagramLoop,
+            InstagramLoopAccount,
+            InstagramPublicationJob,
             SystemSetting,
             User,
             Workspace,
             WorkspaceMember,
         )
 
+        await connection.execute(delete(InstagramPublicationJob))
+        await connection.execute(delete(InstagramLoopAccount))
+        await connection.execute(delete(InstagramLoop))
         await connection.execute(delete(InstagramAccount))
         await connection.execute(delete(InstagramAppCredential))
         await connection.execute(delete(WorkspaceMember))

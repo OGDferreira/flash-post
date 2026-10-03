@@ -7,6 +7,7 @@ import {
   Link2,
   Pencil,
   Plus,
+  Search,
   Save,
   Trash2,
   Unlink,
@@ -22,6 +23,7 @@ type InstagramAccount = {
   username: string;
   token_expires_at: string;
   connected_at: string;
+  status: "connected" | "disconnected";
 };
 
 type InstagramAccountsResponse = {
@@ -59,6 +61,10 @@ const callbackMessages: Record<string, { text: string; kind: "success" | "error"
   },
 };
 
+function isInstagramAccountActive(account: InstagramAccount): boolean {
+  return account.status === "connected" && new Date(account.token_expires_at).getTime() > Date.now();
+}
+
 export function InstagramAccountsPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -74,10 +80,13 @@ export function InstagramAccountsPage() {
   const [editingAppId, setEditingAppId] = useState<string | null>(null);
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editAppSecret, setEditAppSecret] = useState("");
+  const [accountFilter, setAccountFilter] = useState<"active" | "issues" | "all">("active");
+  const [accountSearch, setAccountSearch] = useState("");
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () =>
       apiRequest<InstagramAccountsResponse>("/api/instagram/accounts"),
+    refetchInterval: 60_000,
     retry: false,
   });
   const metaApps = useQuery({
@@ -159,6 +168,7 @@ export function InstagramAccountsPage() {
           : "Conta removida do FlashPost, mas a Meta não confirmou a revogação. Remova o FlashPost dos apps conectados nas configurações do Instagram para concluir.",
       });
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["loops"] });
     },
   });
 
@@ -206,6 +216,16 @@ export function InstagramAccountsPage() {
       : metaAppMutationError
         ? "Não foi possível atualizar os aplicativos Meta."
         : null;
+  const activeAccountCount = accounts.data.accounts.filter(isInstagramAccountActive).length;
+  const issueAccountCount = accounts.data.accounts.length - activeAccountCount;
+  const visibleAccounts = accounts.data.accounts.filter((account) => {
+    const active = isInstagramAccountActive(account);
+    const matchesFilter =
+      accountFilter === "all" ||
+      (accountFilter === "active" && active) ||
+      (accountFilter === "issues" && !active);
+    return matchesFilter && account.username.toLowerCase().includes(accountSearch.toLowerCase());
+  });
 
   return (
     <div className="mx-auto max-w-4xl space-y-7">
@@ -216,11 +236,10 @@ export function InstagramAccountsPage() {
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
-              Contas Instagram
+              Hub de Contas
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#94a3b8]">
-              Conecte contas profissionais para mantê-las disponíveis neste workspace.
-              As publicações pelos Loops serão adicionadas em uma próxima fase.
+              Gerencie conexões e acompanhe o estado das contas profissionais deste workspace.
             </p>
           </div>
           {accounts.data.can_manage && (
@@ -500,57 +519,127 @@ export function InstagramAccountsPage() {
         </p>
       )}
 
-      <section className="space-y-3">
-        <h3 className="text-sm font-medium text-[#cbd5e1]">
-          Contas conectadas <span className="text-[#64748b]">({accounts.data.accounts.length})</span>
-        </h3>
-        {accounts.data.accounts.length === 0 ? (
-          <EmptyState message="Ainda não há contas Instagram conectadas a este workspace." />
+      <section className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-[#23513e] bg-[#0e1b17] p-4">
+            <p className="text-xs uppercase tracking-wide text-[#76c8a0]">Conectadas e ativas</p>
+            <p className="mt-1 text-2xl font-semibold text-[#b4f0d0]">{activeAccountCount}</p>
+          </div>
+          <div className="rounded-xl border border-[#6b3c2d] bg-[#1c1410] p-4">
+            <p className="text-xs uppercase tracking-wide text-[#f2b884]">Precisam de atenção</p>
+            <p className="mt-1 text-2xl font-semibold text-[#ffd1a8]">{issueAccountCount}</p>
+          </div>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <label className="flex min-h-11 flex-1 items-center gap-2 rounded-lg border border-[#27334a] bg-[#0d1015] px-3 text-[#94a3b8]">
+            <Search size={16} />
+            <input
+              className="w-full bg-transparent text-sm text-[#f5f7fb] outline-none placeholder:text-[#64748b]"
+              value={accountSearch}
+              onChange={(event) => setAccountSearch(event.target.value)}
+              placeholder="Buscar por usuário..."
+              aria-label="Buscar conta Instagram por usuário"
+            />
+          </label>
+          <div className="flex rounded-lg border border-[#27334a] bg-[#0d1015] p-1">
+            {([
+              ["active", `Ativas (${activeAccountCount})`],
+              ["issues", `Caídas (${issueAccountCount})`],
+              ["all", `Todas (${accounts.data.accounts.length})`],
+            ] as const).map(([filter, label]) => (
+              <button
+                className={`rounded-md px-3 py-2 text-xs font-medium transition ${
+                  accountFilter === filter
+                    ? "bg-[#536dfe] text-white"
+                    : "text-[#94a3b8] hover:text-white"
+                }`}
+                key={filter}
+                type="button"
+                onClick={() => setAccountFilter(filter)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center justify-between text-sm text-[#94a3b8]">
+          <h3>Contas Instagram ({visibleAccounts.length})</h3>
+          {issueAccountCount > 0 && (
+            <span className="text-xs text-[#f2b884]">{issueAccountCount} com erro ou expiradas</span>
+          )}
+        </div>
+        {visibleAccounts.length === 0 ? (
+          <EmptyState
+            message={
+              accounts.data.accounts.length === 0
+                ? "Ainda não há contas Instagram conectadas a este workspace."
+                : "Nenhuma conta corresponde a este filtro."
+            }
+          />
         ) : (
-          accounts.data.accounts.map((account) => {
-            const expiresAt = new Date(account.token_expires_at);
-            const isExpired = expiresAt.getTime() <= Date.now();
-            const expiryLabel = isExpired
-              ? "Token expirado — reconecte a conta"
-              : `Acesso válido até ${expiresAt.toLocaleDateString("pt-BR")}`;
+          visibleAccounts.map((account) => {
+            const active = isInstagramAccountActive(account);
+            const expired = new Date(account.token_expires_at).getTime() <= Date.now();
+            const label = account.status === "disconnected"
+              ? "Desconectada — conecte novamente para ativar"
+              : expired
+                ? "Token expirado — reconecte a conta"
+                : `Ativa · token válido até ${new Date(account.token_expires_at).toLocaleDateString("pt-BR")}`;
 
             return (
               <article
-                className="flex flex-col gap-4 rounded-xl border border-[#202838] bg-[#0d1015] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"
+                className={`flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 ${
+                  active
+                    ? "border-[#23513e] bg-[#0e1b17]"
+                    : "border-[#6b3c2d] bg-[#1c1410]"
+                }`}
                 key={account.id}
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#33447c] bg-[#11182d] text-[#aab7ff]">
+                  <span className={`grid size-11 shrink-0 place-items-center rounded-xl border ${
+                    active
+                      ? "border-[#23513e] bg-[#14251d] text-[#9de0c0]"
+                      : "border-[#6b3c2d] bg-[#271a13] text-[#f2b884]"
+                  }`}>
                     <Instagram size={19} />
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-[#f5f7fb]">
-                      @{account.username}
-                    </p>
-                    <p className={`mt-1 flex items-center gap-1.5 text-xs ${isExpired ? "text-[#f1a3ad]" : "text-[#94a3b8]"}`}>
-                      {isExpired ? <Clock3 size={13} /> : <Check size={13} />}
-                      {expiryLabel}
+                    <p className="truncate font-medium text-[#f5f7fb]">@{account.username}</p>
+                    <p className={`mt-1 flex items-center gap-1.5 text-xs ${active ? "text-[#9de0c0]" : "text-[#f2b884]"}`}>
+                      {active ? <Check size={13} /> : <Clock3 size={13} />}
+                      {label}
                     </p>
                   </div>
                 </div>
                 {accounts.data.can_manage && (
-                  <button
-                    className="inline-flex min-h-10 items-center justify-center gap-2 self-start rounded-lg border border-[#47252d] px-3 py-2 text-sm text-[#f1a3ad] transition hover:bg-[#1a1013] disabled:opacity-60 sm:self-auto"
-                    type="button"
-                    disabled={disconnect.isPending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Desconectar @${account.username}? O FlashPost removerá o acesso salvo e tentará revogar a autorização no Instagram. Será preciso reconectar antes de publicar novamente.`,
-                        )
-                      ) {
-                        disconnect.mutate(account.id);
-                      }
-                    }}
-                  >
-                    <Unlink size={15} />
-                    Desconectar
-                  </button>
+                  <div className="flex gap-2">
+                    {!active && (
+                      <button
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
+                        type="button"
+                        onClick={() => connect.mutate()}
+                        disabled={connect.isPending || !metaApps.data?.selected_app_id}
+                      >
+                        <Link2 size={15} />
+                        Reconectar
+                      </button>
+                    )}
+                    {account.status === "connected" && (
+                      <button
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#47252d] px-3 py-2 text-sm text-[#f1a3ad] transition hover:bg-[#1a1013] disabled:opacity-60"
+                        type="button"
+                        disabled={disconnect.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Desconectar @${account.username}? A conta será mantida no hub como desconectada, mas o token salvo será apagado.`)) {
+                            disconnect.mutate(account.id);
+                          }
+                        }}
+                      >
+                        <Unlink size={15} />
+                        Desconectar
+                      </button>
+                    )}
+                  </div>
                 )}
               </article>
             );
@@ -559,9 +648,9 @@ export function InstagramAccountsPage() {
       </section>
 
       <p className="text-xs leading-5 text-[#64748b]">
-        As contas ficam conectadas até um OWNER desconectá-las ou a autorização expirar/revogar.
-        A Meta emite tokens de longa duração com validade limitada; a renovação automática será
-        integrada ao fluxo de publicação dos Loops.
+        Contas desconectadas continuam visíveis no hub, mas os tokens são apagados do FlashPost.
+        Tokens expirados precisam de nova autorização. Publicações via Loop aguardam a implementação
+        do pool de mídias e da permissão de publicação da Meta.
       </p>
     </div>
   );

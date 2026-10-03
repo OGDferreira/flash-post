@@ -1,7 +1,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -15,6 +24,10 @@ class InstagramAccount(Base):
             "workspace_id",
             "instagram_user_id",
             name="uq_instagram_accounts_workspace_user",
+        ),
+        CheckConstraint(
+            "status IN ('connected', 'disconnected')",
+            name="ck_instagram_accounts_status",
         ),
         Index("ix_instagram_accounts_workspace_id", "workspace_id"),
     )
@@ -31,7 +44,10 @@ class InstagramAccount(Base):
     )
     instagram_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
     username: Mapped[str] = mapped_column(String(100), nullable=False)
-    encrypted_access_token: Mapped[str] = mapped_column(String(2048), nullable=False)
+    encrypted_access_token: Mapped[str | None] = mapped_column(String(2048))
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'connected'")
+    )
     token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     connected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

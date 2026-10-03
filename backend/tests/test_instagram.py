@@ -89,6 +89,35 @@ async def test_instagram_accounts_are_workspace_scoped_and_tokens_are_not_return
 
 
 @pytest.mark.anyio
+async def test_disconnected_account_remains_visible_without_its_token(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    db_session.add(
+        InstagramAccount(
+            workspace_id=workspace.id,
+            instagram_user_id="17840000000000001",
+            username="previously_connected",
+            encrypted_access_token=None,
+            token_expires_at=datetime.now(timezone.utc) + timedelta(days=10),
+            status="disconnected",
+        )
+    )
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+
+    response = await client.get("/api/instagram/accounts")
+
+    assert response.status_code == 200
+    assert response.json()["accounts"][0]["username"] == "previously_connected"
+    assert response.json()["accounts"][0]["status"] == "disconnected"
+    assert "encrypted_access_token" not in response.text
+    assert "private-access-token" not in response.text
+
+
+@pytest.mark.anyio
 async def test_collaborator_can_view_but_cannot_manage_instagram_accounts(
     client: AsyncClient,
     collaborator,
@@ -279,7 +308,9 @@ async def test_owner_can_disconnect_only_an_account_in_their_workspace(
 
     assert response.status_code == 200
     assert response.json() == {"meta_revoked": True}
-    assert await db_session.get(InstagramAccount, account.id) is None
+    await db_session.refresh(account)
+    assert account.status == "disconnected"
+    assert account.encrypted_access_token is None
 
 
 @pytest.mark.anyio
@@ -313,7 +344,9 @@ async def test_account_is_removed_locally_when_meta_revocation_cannot_be_confirm
 
     assert response.status_code == 200
     assert response.json() == {"meta_revoked": False}
-    assert await db_session.get(InstagramAccount, account.id) is None
+    await db_session.refresh(account)
+    assert account.status == "disconnected"
+    assert account.encrypted_access_token is None
 
 
 @pytest.mark.anyio

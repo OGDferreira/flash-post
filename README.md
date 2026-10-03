@@ -74,16 +74,21 @@ include them. Migration `20261003_05` adds encrypted Meta app credentials and
 existing app/account associations. The shared `MASTER_ENCRYPTION_KEY` remains
 a server-side infrastructure secret; each customer registers their own Meta
 apps in the authenticated FlashPost workspace.
+Migration `20261003_07` retains disconnected account rows without retaining
+their tokens and adds loop configurations, account selections, and a durable
+publication-intent queue. Existing accounts are marked connected during the
+migration; expiry is evaluated from `token_expires_at`.
 
 ## Instagram accounts
 
 The **Contas** workspace page supports connecting multiple Instagram
 professional (Business and Creator) accounts using Instagram Login. Workspace
-members can view connected account names and token expiration dates; only the
-workspace OWNER can connect or disconnect accounts. Disconnecting removes the
-saved FlashPost credential and attempts to revoke the Meta authorization. If
-Meta does not confirm revocation, the account is still removed locally and the
-interface tells the OWNER how to finish revoking it in Instagram settings.
+members can view account names and token expiration dates; only the workspace
+OWNER can connect or disconnect accounts. Expired and disconnected accounts
+remain visible in the hub; disconnecting erases the saved token, records the
+account as disconnected, and attempts to revoke the Meta authorization. If
+Meta does not confirm revocation, the interface tells the OWNER how to finish
+revoking it in Instagram settings.
 
 Create a Business-type Meta app, add the Instagram product, configure
 Instagram Business Login, and register this exact OAuth redirect URI in Meta:
@@ -105,13 +110,23 @@ associated with the app that authorized them.
 Never put a customer's App Secret in frontend environment configuration,
 Render environment variables, Git, or chat.
 
-The first phase requests only `instagram_business_basic`; publishing
-permissions are deliberately not requested yet. Meta documents long-lived
+The current login requests only `instagram_business_basic`, which is enough to
+identify an Instagram professional account but does not authorize publishing.
+Publishing requires `instagram_business_content_publish` and implementation
+of the media-container/publishing flow; Meta may also require Advanced Access
+and App Review. Meta documents long-lived
 Instagram access tokens as expiring after 60 days. Automatic token renewal
 will be required before Loops can publish reliably; expired or revoked tokens
-must be reconnected until that flow is implemented. Meta may require Advanced
-Access and App Review when serving professional accounts not owned or managed
-by the app developer.
+must be reconnected until that flow is implemented.
+
+The **Loops** page stores per-workspace publishing intervals, account
+selections, daily limits, media-reuse preference, and post type. Migration
+`20261003_07` also adds a durable queue. The scheduler can be run as a separate
+periodic worker with `python -m app.workers.loop_scheduler` (for example, once
+per minute from a managed scheduler). It creates idempotent jobs in
+`waiting_for_media`; it does not publish posts. A media pool, permission
+upgrade, publishing implementation, and production worker deployment are
+required before queued jobs can be sent to Instagram.
 
 Meta webhooks are not configured in this phase. A webhook is a separate HTTPS
 receiver for asynchronous Instagram events such as comments, mentions, story
@@ -170,6 +185,11 @@ Initial endpoints:
 | `POST` | `/api/instagram/connect` | Start Instagram Login (OWNER only; requires CSRF) |
 | `GET` | `/api/instagram/callback` | Complete Instagram Login and store an encrypted token |
 | `DELETE` | `/api/instagram/accounts/{id}` | Disconnect an account (OWNER only; requires CSRF) |
+| `GET` | `/api/loops` | List workspace loops and active, eligible Instagram accounts |
+| `POST` | `/api/loops` | Create a loop with interval, daily cap, media mode, and accounts (OWNER only) |
+| `PUT` | `/api/loops/{id}` | Update a loop (OWNER only) |
+| `PATCH` | `/api/loops/{id}/status` | Pause or resume a loop (OWNER only) |
+| `DELETE` | `/api/loops/{id}` | Delete a loop and its queued intents (OWNER only) |
 | `GET` | `/api/admin/summary` | Real user/workspace totals |
 | `GET` | `/api/admin/users` | Searchable, paginated user list |
 | `GET` | `/api/admin/workspaces` | Searchable, paginated workspace list |
