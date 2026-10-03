@@ -15,6 +15,47 @@ class InstagramPublishingError(RuntimeError):
     pass
 
 
+def _publication_error_detail(
+    response: httpx.Response,
+    stage: str,
+    access_token: str,
+    signed_url: str,
+) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+
+    error = payload.get("error") if isinstance(payload, Mapping) else None
+    code = error.get("code") if isinstance(error, Mapping) else None
+    subcode = error.get("error_subcode") if isinstance(error, Mapping) else None
+    error_type = error.get("type") if isinstance(error, Mapping) else None
+    message = error.get("message") if isinstance(error, Mapping) else None
+
+    details = []
+    if isinstance(error_type, str) and error_type:
+        details.append(error_type[:80])
+    if isinstance(code, (str, int)):
+        details.append(f"code {code}")
+    if isinstance(subcode, (str, int)):
+        details.append(f"subcode {subcode}")
+
+    safe_message = message.strip() if isinstance(message, str) else ""
+    if access_token:
+        safe_message = safe_message.replace(access_token, "[redacted]")
+    if signed_url:
+        safe_message = safe_message.replace(signed_url, "[media URL]")
+    safe_message = " ".join(safe_message.split())
+
+    description = f"Instagram rejected {stage} (HTTP {response.status_code}"
+    if details:
+        description += f", {', '.join(details)}"
+    description += ")."
+    if safe_message:
+        description += f" {safe_message}"
+    return description[:500]
+
+
 def _response_id(payload: object) -> str:
     if isinstance(payload, Mapping):
         value = payload.get("id")
@@ -40,6 +81,7 @@ async def publish_media(
         create_payload["caption"] = media.caption
 
     timeout = httpx.Timeout(30.0)
+    stage = "media container creation"
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
             create_response = await client.post(
@@ -50,6 +92,7 @@ async def publish_media(
             container_id = _response_id(create_response.json())
 
             if media.media_type == "video":
+                stage = "video processing status check"
                 for _ in range(VIDEO_PROCESSING_MAX_ATTEMPTS):
                     await asyncio.sleep(VIDEO_PROCESSING_INTERVAL_SECONDS)
                     status_response = await client.get(
@@ -81,6 +124,7 @@ async def publish_media(
                         "Instagram video processing exceeded the worker time limit."
                     )
 
+            stage = "media publication"
             publish_response = await client.post(
                 f"{GRAPH_ENDPOINT}/{account.instagram_user_id}/media_publish",
                 data={
@@ -92,5 +136,10 @@ async def publish_media(
             return _response_id(publish_response.json())
         except httpx.HTTPStatusError as exc:
             raise InstagramPublishingError(
-                f"Instagram rejected the publication request (HTTP {exc.response.status_code})."
+                _publication_error_detail(
+                    exc.response,
+                    stage,
+                    access_token,
+                    signed_url,
+                )
             ) from None

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import uuid
 
+import httpx
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -236,3 +237,73 @@ async def test_video_publication_waits_for_processing(
     )
 
     assert published_id == "published-2"
+
+
+@pytest.mark.anyio
+async def test_publication_error_preserves_meta_reason_without_exposing_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signed_url = "https://private-storage.example/signed-photo?token=signed-secret"
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, url: str, *, data: dict[str, str]):
+            request = httpx.Request("POST", url)
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "message": f"Invalid image URL {signed_url}; token private-access-token",
+                        "type": "OAuthException",
+                        "code": 9004,
+                        "error_subcode": 2207052,
+                    }
+                },
+                request=request,
+            )
+
+    class FakeStorage:
+        async def create_signed_url(self, _path: str) -> str:
+            return signed_url
+
+    monkeypatch.setattr(publishing.httpx, "AsyncClient", FakeClient)
+    account = InstagramAccount(
+        workspace_id=uuid.uuid4(),
+        instagram_user_id="instagram-user-error",
+        username="test_account",
+        encrypted_access_token="encrypted",
+        token_expires_at=datetime.now(timezone.utc),
+    )
+    media = InstagramMedia(
+        workspace_id=account.workspace_id,
+        storage_path="workspace/media/photo.jpg",
+        filename="photo.jpg",
+        mime_type="image/jpeg",
+        media_type="image",
+        size_bytes=100,
+    )
+
+    with pytest.raises(publishing.InstagramPublishingError) as error:
+        await publishing.publish_media(
+            account,
+            media,
+            "private-access-token",
+            FakeStorage(),
+        )
+
+    message = str(error.value)
+    assert "media container creation" in message
+    assert "HTTP 400" in message
+    assert "code 9004" in message
+    assert "subcode 2207052" in message
+    assert "Invalid image URL" in message
+    assert "private-access-token" not in message
+    assert "signed-secret" not in message
