@@ -162,11 +162,17 @@ export type CollaboratorReport = {
   recent_days: number[];
   recent_earnings: number[];
   recent_payments: number[];
+  account_earnings: {
+    account_id: string;
+    username: string;
+    connected_at: string | null;
+    rate_per_connection: number;
+  }[];
 };
 
 export type CollaboratorDashboard = Omit<
   CollaboratorReport,
-  "member_id" | "user_id" | "email"
+  "member_id" | "user_id" | "email" | "account_earnings"
 > & {
   avatar_url: string | null;
   daily_progress: number;

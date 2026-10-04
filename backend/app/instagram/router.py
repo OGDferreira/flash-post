@@ -705,6 +705,11 @@ async def instagram_callback(
             status="connected",
             connected_by_user_id=user.id,
             first_connected_at=datetime.now(timezone.utc),
+            collaborator_rate_at_connection=(
+                membership.rate_per_connection
+                if membership.role == WorkspaceRole.COLLABORATOR.value
+                else None
+            ),
         )
         db.add(account)
     else:

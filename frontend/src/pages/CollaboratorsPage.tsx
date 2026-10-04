@@ -43,6 +43,15 @@ function money(value: number) {
   }).format(value);
 }
 
+function formatConnectionDate(value: string | null) {
+  if (!value) return "Data indisponível";
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date(value));
+}
+
 function displayError(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : error ? fallback : null;
 }
@@ -277,7 +286,7 @@ export function CollaboratorsPage() {
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <MoneyField
-                      label="Valor por conexão (R$)"
+                      label="Valor para novas conexões (R$)"
                       onChange={(value) =>
                         setDrafts({ ...drafts, [item.member_id]: { ...draft, rate_per_connection: value } })
                       }
@@ -336,6 +345,45 @@ export function CollaboratorsPage() {
                       </span>
                     </div>
                   </div>
+                </div>
+
+                <div className="space-y-2 border-t border-[#202838] pt-4">
+                  <h4 className="text-xs font-medium text-[#cbd5e1]">
+                    Valor salvo por conta conectada
+                  </h4>
+                  {item.account_earnings.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[420px] text-left text-xs">
+                        <thead className="text-[#78839b]">
+                          <tr>
+                            <th className="py-2 pr-3 font-medium">Conta</th>
+                            <th className="py-2 pr-3 font-medium">Conectada em</th>
+                            <th className="py-2 text-right font-medium">Valor salvo</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {item.account_earnings.map((account) => (
+                            <tr className="border-t border-[#202838]" key={account.account_id}>
+                              <td className="py-2 pr-3 text-[#e6eaf2]">@{account.username}</td>
+                              <td className="py-2 pr-3 text-[#94a3b8]">
+                                {formatConnectionDate(account.connected_at)}
+                              </td>
+                              <td className="py-2 text-right font-medium text-[#f2d48a]">
+                                {money(account.rate_per_connection)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[#78839b]">
+                      O valor atual será salvo quando uma nova conta for conectada.
+                    </p>
+                  )}
+                  <p className="text-xs text-[#78839b]">
+                    Ao salvar um novo valor, ele passa a valer para conexões futuras; os valores já salvos não mudam.
+                  </p>
                 </div>
               </article>
             );

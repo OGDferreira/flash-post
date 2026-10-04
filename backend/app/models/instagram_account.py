@@ -1,11 +1,13 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
+    Numeric,
     String,
     UniqueConstraint,
     func,
@@ -45,6 +47,9 @@ class InstagramAccount(Base):
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     first_connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    collaborator_rate_at_connection: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2)
+    )
     app_credential_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("instagram_meta_apps.id", ondelete="SET NULL"),

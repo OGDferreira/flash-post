@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import encrypt_value
@@ -200,3 +201,78 @@ async def test_owner_can_query_historical_monthly_collaborator_rankings(
         params={"month": "not-a-month"},
     )
     assert invalid.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_rate_change_preserves_existing_account_value_and_prices_new_connections(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    collaborator,
+) -> None:
+    _owner_user, workspace = owner
+    member = await db_session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.user_id == collaborator.id,
+        )
+    )
+    assert member is not None
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        InstagramAccount(
+            workspace_id=workspace.id,
+            connected_by_user_id=collaborator.id,
+            first_connected_at=now - timedelta(days=1),
+            collaborator_rate_at_connection=Decimal("10.00"),
+            instagram_user_id="rate-before-change",
+            username="before_change",
+            encrypted_access_token=encrypt_value("rate-before-token"),
+            token_expires_at=now + timedelta(days=60),
+            status="connected",
+        )
+    )
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+
+    token = await _csrf(client)
+    changed = await client.patch(
+        f"/api/collaborators/{member.id}",
+        headers={"X-CSRF-Token": token},
+        json={
+            "rate_per_connection": "15.00",
+            "daily_connection_goal": 0,
+            "monthly_connection_goal": 0,
+            "monthly_bonus": "0.00",
+        },
+    )
+    assert changed.status_code == 200, changed.text
+
+    db_session.add(
+        InstagramAccount(
+            workspace_id=workspace.id,
+            connected_by_user_id=collaborator.id,
+            first_connected_at=now,
+            collaborator_rate_at_connection=Decimal("15.00"),
+            instagram_user_id="rate-after-change",
+            username="after_change",
+            encrypted_access_token=encrypt_value("rate-after-token"),
+            token_expires_at=now + timedelta(days=60),
+            status="connected",
+        )
+    )
+    await db_session.commit()
+
+    report = await client.get("/api/collaborators")
+    assert report.status_code == 200, report.text
+    item = report.json()["collaborators"][0]
+    assert item["connections_month"] == 2
+    assert Decimal(item["earnings_month"]) == Decimal("25.00")
+    saved_rates = {
+        account["username"]: Decimal(account["rate_per_connection"])
+        for account in item["account_earnings"]
+    }
+    assert saved_rates == {
+        "before_change": Decimal("10.00"),
+        "after_change": Decimal("15.00"),
+    }

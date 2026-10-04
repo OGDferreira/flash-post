@@ -18,6 +18,7 @@ from app.models import (
     WorkspaceMember,
 )
 from app.schemas.collaborators import (
+    CollaboratorAccountEarning,
     CollaboratorCreateRequest,
     CollaboratorDashboardResponse,
     CollaboratorPaymentActionResponse,
@@ -103,6 +104,54 @@ async def _recent_daily_counts(
     return counts
 
 
+async def _earnings_between(
+    db: DbSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    start: datetime,
+    end: datetime,
+    fallback_rate: Decimal,
+) -> Decimal:
+    amount = await db.scalar(
+        select(
+            func.coalesce(
+                func.sum(
+                    func.coalesce(
+                        InstagramAccount.collaborator_rate_at_connection,
+                        fallback_rate,
+                    )
+                ),
+                0,
+            )
+        ).where(
+            InstagramAccount.workspace_id == workspace_id,
+            InstagramAccount.connected_by_user_id == user_id,
+            InstagramAccount.first_connected_at >= start,
+            InstagramAccount.first_connected_at < end,
+        )
+    )
+    return Decimal(str(amount or 0)).quantize(_CENT)
+
+
+async def _recent_daily_earnings(
+    db: DbSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    now: datetime,
+    fallback_rate: Decimal,
+) -> list[Decimal]:
+    today = now.astimezone(_BRAZIL_TIME_ZONE).date()
+    amounts = []
+    for offset in range(6, -1, -1):
+        start, end = _day_bounds(today - timedelta(days=offset))
+        amounts.append(
+            await _earnings_between(
+                db, workspace_id, user_id, start, end, fallback_rate
+            )
+        )
+    return amounts
+
+
 async def _payments_between(
     db: DbSession,
     workspace_id: uuid.UUID,
@@ -154,6 +203,13 @@ async def _member_report(
     connections_month = await _connections_between(
         db, workspace_id, user.id, month_start, month_end
     )
+    rate = Decimal(str(member.rate_per_connection)).quantize(_CENT)
+    earnings_today = await _earnings_between(
+        db, workspace_id, user.id, today_start, today_end, rate
+    )
+    earnings_month = await _earnings_between(
+        db, workspace_id, user.id, month_start, month_end, rate
+    )
     paid_month = Decimal(
         str(
             await db.scalar(
@@ -166,9 +222,7 @@ async def _member_report(
             or 0
         )
     ).quantize(_CENT)
-    rate = Decimal(str(member.rate_per_connection)).quantize(_CENT)
     monthly_bonus = Decimal(str(member.monthly_bonus)).quantize(_CENT)
-    earnings_month = (rate * connections_month).quantize(_CENT)
     bonus_earned = (
         monthly_bonus
         if member.monthly_connection_goal > 0
@@ -177,7 +231,6 @@ async def _member_report(
     )
     earnings_month += bonus_earned
     due_month = max(earnings_month - paid_month, Decimal("0.00")).quantize(_CENT)
-    earnings_today = (rate * connections_today).quantize(_CENT)
     projected_month = (
         rate * member.monthly_connection_goal + monthly_bonus
         if member.monthly_connection_goal > 0
@@ -201,6 +254,34 @@ async def _member_report(
         due_month=due_month,
         projected_month=projected_month,
         recent_days=await _recent_daily_counts(db, workspace_id, user.id, now),
+        recent_earnings=await _recent_daily_earnings(
+            db, workspace_id, user.id, now, rate
+        ),
+        account_earnings=[
+            CollaboratorAccountEarning(
+                account_id=account.id,
+                username=account.username,
+                connected_at=account.first_connected_at,
+                rate_per_connection=(
+                    account.collaborator_rate_at_connection
+                    if account.collaborator_rate_at_connection is not None
+                    else rate
+                ),
+            )
+            for account in (
+                await db.scalars(
+                    select(InstagramAccount)
+                    .where(
+                        InstagramAccount.workspace_id == workspace_id,
+                        InstagramAccount.connected_by_user_id == user.id,
+                    )
+                    .order_by(
+                        InstagramAccount.first_connected_at.desc().nullslast(),
+                        InstagramAccount.username,
+                    )
+                )
+            ).all()
+        ],
     )
 
 
@@ -238,10 +319,7 @@ def _dashboard_response(
         daily_progress=daily_progress,
         monthly_progress=monthly_progress,
         recent_days=report.recent_days,
-        recent_earnings=[
-            (Decimal(count) * report.rate_per_connection).quantize(_CENT)
-            for count in report.recent_days
-        ],
+        recent_earnings=report.recent_earnings,
         recent_payments=recent_payments,
     )
 

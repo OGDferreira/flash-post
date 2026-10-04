@@ -60,6 +60,13 @@ class CollaboratorPaymentResponse(BaseModel):
     paid_at: datetime
 
 
+class CollaboratorAccountEarning(BaseModel):
+    account_id: UUID
+    username: str
+    connected_at: datetime | None
+    rate_per_connection: Decimal
+
+
 class CollaboratorReportItem(BaseModel):
     member_id: UUID
     user_id: UUID
@@ -78,6 +85,8 @@ class CollaboratorReportItem(BaseModel):
     due_month: Decimal
     projected_month: Decimal
     recent_days: list[int]
+    recent_earnings: list[Decimal]
+    account_earnings: list[CollaboratorAccountEarning]
 
 
 class CollaboratorsResponse(BaseModel):
