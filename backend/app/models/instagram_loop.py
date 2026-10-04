@@ -52,7 +52,9 @@ class InstagramLoop(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     interval_min_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     interval_max_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
-    daily_limit_per_account: Mapped[int] = mapped_column(Integer, nullable=False)
+    daily_limit_per_account: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=100
+    )
     post_type: Mapped[str] = mapped_column(String(16), nullable=False, default="reels")
     repeat_media: Mapped[bool] = mapped_column(
         nullable=False, default=True, server_default=text("true")

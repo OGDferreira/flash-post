@@ -1,5 +1,4 @@
-from datetime import datetime, timedelta, timezone
-import random
+from datetime import datetime, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -108,7 +107,7 @@ async def _loop_response(
                     InstagramLoopMedia.loop_id == loop.id,
                     InstagramMedia.workspace_id == loop.workspace_id,
                 )
-                .order_by(InstagramLoopMedia.media_id)
+                .order_by(InstagramMedia.created_at, InstagramMedia.id)
             )
         ).all()
     )
@@ -117,7 +116,6 @@ async def _loop_response(
         name=loop.name,
         interval_min_minutes=loop.interval_min_minutes,
         interval_max_minutes=loop.interval_max_minutes,
-        daily_limit_per_account=loop.daily_limit_per_account,
         post_type=loop.post_type,
         repeat_media=loop.repeat_media,
         status=loop.status,
@@ -265,11 +263,6 @@ async def _validate_selected_media(
     return media
 
 
-def _next_run_at(loop: InstagramLoop, now: datetime) -> datetime:
-    interval = random.randint(loop.interval_min_minutes, loop.interval_max_minutes)
-    return now + timedelta(minutes=interval)
-
-
 def _save_loop_accounts(
     loop: InstagramLoop,
     accounts: list[InstagramAccount],
@@ -316,16 +309,10 @@ async def create_loop(
         name=payload.name,
         interval_min_minutes=payload.interval_min_minutes,
         interval_max_minutes=payload.interval_max_minutes,
-        daily_limit_per_account=payload.daily_limit_per_account,
         post_type=payload.post_type,
         repeat_media=payload.repeat_media,
         status="active",
-        next_run_at=now + timedelta(
-            minutes=random.randint(
-                payload.interval_min_minutes,
-                payload.interval_max_minutes,
-            )
-        ),
+        next_run_at=now,
     )
     db.add(loop)
     await db.flush()
@@ -383,12 +370,12 @@ async def update_loop(
         else None
     )
     loop.name = payload.name
+    now = utc_now()
     loop.interval_min_minutes = payload.interval_min_minutes
     loop.interval_max_minutes = payload.interval_max_minutes
-    loop.daily_limit_per_account = payload.daily_limit_per_account
     loop.post_type = payload.post_type
     loop.repeat_media = payload.repeat_media
-    loop.next_run_at = _next_run_at(loop, utc_now()) if loop.status == "active" else None
+    loop.next_run_at = now if loop.status == "active" else None
     await db.execute(
         InstagramLoopAccount.__table__.delete().where(
             InstagramLoopAccount.loop_id == loop.id
@@ -427,8 +414,13 @@ async def update_loop(
         )
     )
     new_accounts = [account for account in accounts if account.id not in previous_account_ids]
-    if loop.status == "active" and new_accounts:
-        await enqueue_loop_publications_now(db, loop, new_accounts, now=utc_now())
+    if loop.status == "active":
+        await enqueue_loop_publications_now(
+            db,
+            loop,
+            accounts if media is not None else new_accounts,
+            now=now,
+        )
     await db.commit()
     await db.refresh(loop)
     return await _loop_response(loop, db, utc_now())
@@ -523,10 +515,27 @@ async def update_loop_status(
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
     loop.status = "active" if payload.enabled else "paused"
-    loop.next_run_at = (
-        _next_run_at(loop, utc_now()) if payload.enabled else None
-    )
-    if not payload.enabled:
+    now = utc_now()
+    loop.next_run_at = now if payload.enabled else None
+    if payload.enabled:
+        accounts = (
+            await db.scalars(
+                select(InstagramAccount)
+                .join(
+                    InstagramLoopAccount,
+                    InstagramLoopAccount.account_id == InstagramAccount.id,
+                )
+                .where(
+                    InstagramLoopAccount.loop_id == loop.id,
+                    InstagramAccount.workspace_id == loop.workspace_id,
+                    InstagramAccount.status == "connected",
+                    InstagramAccount.encrypted_access_token.is_not(None),
+                    InstagramAccount.token_expires_at > now,
+                )
+            )
+        ).all()
+        await enqueue_loop_publications_now(db, loop, list(accounts), now=now)
+    else:
         await db.execute(
             InstagramPublicationJob.__table__.update()
             .where(
@@ -538,6 +547,57 @@ async def update_loop_status(
     await db.commit()
     await db.refresh(loop)
     return await _loop_response(loop, db, utc_now())
+
+
+@router.delete(
+    "/{loop_id}/media/{media_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_csrf)],
+)
+async def remove_loop_media(
+    loop_id: uuid.UUID,
+    media_id: uuid.UUID,
+    access: OwnerAccess,
+    db: DbSession,
+) -> None:
+    loop = await db.scalar(
+        select(InstagramLoop).where(
+            InstagramLoop.id == loop_id,
+            InstagramLoop.workspace_id == access.workspace.id,
+        )
+    )
+    if loop is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    loop_media = await db.get(InstagramLoopMedia, (loop.id, media_id))
+    if loop_media is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop media not found.")
+
+    publishing_job = await db.scalar(
+        select(InstagramPublicationJob.id)
+        .where(
+            InstagramPublicationJob.loop_id == loop.id,
+            InstagramPublicationJob.media_id == media_id,
+            InstagramPublicationJob.status == "publishing",
+        )
+        .limit(1)
+    )
+    if publishing_job is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A publication using this media is already in progress.",
+        )
+
+    await db.execute(
+        InstagramPublicationJob.__table__.update()
+        .where(
+            InstagramPublicationJob.loop_id == loop.id,
+            InstagramPublicationJob.media_id == media_id,
+            InstagramPublicationJob.status == "queued",
+        )
+        .values(status="waiting_for_media", media_id=None)
+    )
+    await db.delete(loop_media)
+    await db.commit()
 
 
 @router.delete(

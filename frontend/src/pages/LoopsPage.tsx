@@ -43,7 +43,6 @@ type InstagramLoop = {
   name: string;
   interval_min_minutes: number;
   interval_max_minutes: number;
-  daily_limit_per_account: number;
   post_type: "reels" | "images" | "both";
   repeat_media: boolean;
   status: "active" | "paused";
@@ -85,7 +84,6 @@ type LoopForm = {
   name: string;
   interval_min_minutes: number;
   interval_max_minutes: number;
-  daily_limit_per_account: number;
   post_type: "reels" | "images" | "both";
   repeat_media: boolean;
   account_ids: string[];
@@ -96,7 +94,6 @@ const emptyForm: LoopForm = {
   name: "",
   interval_min_minutes: 20,
   interval_max_minutes: 40,
-  daily_limit_per_account: 24,
   post_type: "reels",
   repeat_media: true,
   account_ids: [],
@@ -204,6 +201,17 @@ export function LoopsPage() {
     mutationFn: (id: string) => apiRequest(`/api/loops/${id}`, { method: "DELETE" }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
   });
+  const removeLoopMedia = useMutation({
+    mutationFn: ({ loopId, mediaId }: { loopId: string; mediaId: string }) =>
+      apiRequest(`/api/loops/${loopId}/media/${mediaId}`, { method: "DELETE" }),
+    onSuccess: (_result, { mediaId }) => {
+      setForm((current) => ({
+        ...current,
+        media_ids: current.media_ids.filter((id) => id !== mediaId),
+      }));
+      void queryClient.invalidateQueries({ queryKey: ["loops"] });
+    },
+  });
   const uploadMedia = useMutation({
     mutationFn: ({ file, caption }: { file: File; caption: string }) => {
       const query = new URLSearchParams({ filename: file.name });
@@ -252,6 +260,7 @@ export function LoopsPage() {
     apiErrorMessage(saveLoop.error, "Não foi possível salvar o loop."),
     apiErrorMessage(changeStatus.error, "Não foi possível alterar o estado do loop."),
     apiErrorMessage(deleteLoop.error, "Não foi possível remover o loop."),
+    apiErrorMessage(removeLoopMedia.error, "Não foi possível remover a mídia deste loop."),
     apiErrorMessage(uploadMedia.error, "Não foi possível enviar a mídia."),
     apiErrorMessage(deleteMedia.error, "Não foi possível remover a mídia."),
   ].find(Boolean);
@@ -292,7 +301,6 @@ export function LoopsPage() {
       name: loop.name,
       interval_min_minutes: loop.interval_min_minutes,
       interval_max_minutes: loop.interval_max_minutes,
-      daily_limit_per_account: loop.daily_limit_per_account,
       post_type: loop.post_type,
       repeat_media: loop.repeat_media,
       media_ids: loop.media_ids,
@@ -423,8 +431,8 @@ export function LoopsPage() {
         <div className="space-y-6">
       <p className="text-sm leading-6 text-[#94a3b8]">
         Cada loop escolhe a próxima execução aleatoriamente dentro do intervalo configurado e
-        respeita o limite diário por conta. A mídia precisa estar no bucket privado e selecionada
-        no pool do loop para entrar na fila de publicação.
+        usa uma lista de mídias independente. A primeira publicação entra na fila assim que o loop
+        é criado com contas e mídias; o intervalo controla as publicações seguintes.
       </p>
 
       {formOpen && loops.data.can_manage && (
@@ -468,7 +476,7 @@ export function LoopsPage() {
             />
           </label>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             <label className="grid gap-2 text-sm text-[#cbd5e1]">
               Intervalo mínimo (min)
               <input
@@ -494,20 +502,6 @@ export function LoopsPage() {
                 value={form.interval_max_minutes}
                 onChange={(event) =>
                   setForm({ ...form, interval_max_minutes: Number(event.target.value) })
-                }
-              />
-            </label>
-            <label className="grid gap-2 text-sm text-[#cbd5e1]">
-              Limite diário por conta
-              <input
-                className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
-                type="number"
-                min={1}
-                max={100}
-                required
-                value={form.daily_limit_per_account}
-                onChange={(event) =>
-                  setForm({ ...form, daily_limit_per_account: Number(event.target.value) })
                 }
               />
             </label>
@@ -588,8 +582,8 @@ export function LoopsPage() {
               </label>
             </div>
             <p className="text-xs text-[#94a3b8]">
-              Você pode escolher vários vídeos de uma vez, sem limite de quantidade no pool. Cada
-              loop publica um vídeo por execução, seguindo o intervalo e os limites configurados.
+              Adicione quantos arquivos quiser. Eles serão associados somente a este loop quando
+              você salvar; a primeira publicação começa assim que houver contas e mídias.
             </p>
             {uploadingBatch && (
               <p className="text-sm text-[#8af2fa]">Enviando arquivos para o Storage...</p>
@@ -787,7 +781,6 @@ export function LoopsPage() {
                       <Clock3 size={13} />
                       {loop.interval_min_minutes}–{loop.interval_max_minutes} min entre posts
                     </span>
-                    <span>Limite {loop.daily_limit_per_account}/dia/conta</span>
                     <span>
                       {loop.post_type === "reels"
                         ? "Reels"
@@ -810,13 +803,71 @@ export function LoopsPage() {
                     Próxima execução: {formatDate(loop.next_run_at)}
                   </p>
                   <p className="mt-1 text-xs text-[#f2d48a]">
-                    Pool: {loop.media_count} {loop.media_count === 1 ? "mídia" : "mídias"} ·{" "}
+                    Mídias: {loop.media_count} {loop.media_count === 1 ? "arquivo" : "arquivos"} ·{" "}
                     {loop.waiting_for_media_count}{" "}
                     {loop.waiting_for_media_count === 1
                       ? "publicação aguardando mídia"
                       : "publicações aguardando mídia"} ·{" "}
                     {loop.published_today_count} publicados hoje · Falhas: {loop.failed_count}
                   </p>
+                  <div
+                    className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"
+                    aria-label={`Mídias do loop ${loop.name}`}
+                  >
+                    {loop.media_ids.map((mediaId) => {
+                      const item = media.data?.media.find((entry) => entry.id === mediaId);
+                      if (!item) return null;
+                      return (
+                        <div
+                          className="min-w-0 overflow-hidden rounded-lg border border-[#27334a] bg-[#090b0f]"
+                          key={mediaId}
+                        >
+                          {item.media_type === "video" ? (
+                            <video
+                              className="aspect-video w-full bg-black object-cover"
+                              src={`/api/media/${item.id}/preview`}
+                              muted
+                              playsInline
+                              preload="metadata"
+                              controls
+                              aria-label={`Prévia do vídeo ${item.filename}`}
+                            />
+                          ) : (
+                            <img
+                              className="aspect-video w-full bg-black object-cover"
+                              src={`/api/media/${item.id}/preview`}
+                              alt={`Prévia de ${item.filename}`}
+                              loading="lazy"
+                            />
+                          )}
+                          <div className="flex items-center justify-between gap-2 p-2">
+                            <span className="min-w-0 truncate text-[11px] text-[#cbd5e1]">
+                              {item.filename}
+                            </span>
+                            {loops.data.can_configure && (
+                              <button
+                                className="grid size-7 shrink-0 place-items-center rounded border border-[#47252d] text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-50"
+                                type="button"
+                                aria-label={`Remover ${item.filename} deste loop`}
+                                disabled={removeLoopMedia.isPending}
+                                onClick={() => {
+                                  if (
+                                    window.confirm(
+                                      `Remover "${item.filename}" somente do loop "${loop.name}"?`,
+                                    )
+                                  ) {
+                                    removeLoopMedia.mutate({ loopId: loop.id, mediaId });
+                                  }
+                                }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
                 {loops.data.can_manage && (
                   <div className="flex shrink-0 items-start gap-2">

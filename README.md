@@ -134,6 +134,11 @@ The owner-only **Feed** page lists workspace profiles, loads up to 25 recent
 Instagram media items per selected profile, and shows profile snapshots and
 media engagement returned by Instagram. The **Colaboradores** navigation and
 management page are also owner-only.
+Each loop keeps its own media selection, with signed previews and
+per-loop removal in the Loops page. The first eligible publication is queued
+immediately when a loop is created or activated; later publications follow its
+configured interval. The configurable per-account daily limit is removed, but
+the scheduler retains Instagram's 100-publications-per-24-hours safety guard.
 
 ## Instagram accounts
 

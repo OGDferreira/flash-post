@@ -70,7 +70,6 @@ async def test_owner_can_create_and_read_a_loop(
             "name": "Reels da semana",
             "interval_min_minutes": 20,
             "interval_max_minutes": 40,
-            "daily_limit_per_account": 6,
             "post_type": "reels",
             "repeat_media": False,
             "account_ids": [str(account.id)],
@@ -82,6 +81,11 @@ async def test_owner_can_create_and_read_a_loop(
     assert result["name"] == "Reels da semana"
     assert result["repeat_media"] is False
     assert result["status"] == "active"
+    assert "daily_limit_per_account" not in result
+    assert (
+        datetime.fromisoformat(result["next_run_at"])
+        <= datetime.now(timezone.utc) + timedelta(seconds=5)
+    )
     assert [item["id"] for item in result["accounts"]] == [str(account.id)]
     assert result["waiting_for_media_count"] == 0
     assert result["published_today_count"] == 0
@@ -149,6 +153,11 @@ async def test_new_reel_loop_queues_the_same_first_video_for_every_account(
     assert len({job.media_id for job in jobs}) == 1
     assert jobs[0].media_id in {video.id for video in videos}
     assert all(job.status == "queued" for job in jobs)
+    assert all(
+        job.scheduled_for.replace(tzinfo=timezone.utc)
+        <= datetime.now(timezone.utc) + timedelta(seconds=5)
+        for job in jobs
+    )
 
 
 @pytest.mark.anyio
@@ -364,6 +373,114 @@ async def test_loop_accepts_more_than_24_videos(
 
 
 @pytest.mark.anyio
+async def test_removing_media_from_loop_keeps_workspace_file_and_other_loop_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = _active_account(workspace.id, "loop_media_removal")
+    first_loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="First loop",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        daily_limit_per_account=24,
+        post_type="reels",
+        repeat_media=True,
+        status="active",
+    )
+    second_loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Second loop",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        daily_limit_per_account=24,
+        post_type="reels",
+        repeat_media=True,
+        status="active",
+    )
+    media = InstagramMedia(
+        workspace_id=workspace.id,
+        storage_path=f"{workspace.id}/loop-media/removal.mp4",
+        filename="removal.mp4",
+        mime_type="video/mp4",
+        media_type="video",
+        size_bytes=100,
+    )
+    db_session.add_all([account, first_loop, second_loop, media])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            InstagramLoopAccount(loop_id=first_loop.id, account_id=account.id),
+            InstagramLoopMedia(loop_id=first_loop.id, media_id=media.id),
+            InstagramLoopMedia(loop_id=second_loop.id, media_id=media.id),
+        ]
+    )
+    queued_job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=first_loop.id,
+        account_id=account.id,
+        media_id=media.id,
+        scheduled_for=datetime.now(timezone.utc),
+        status="queued",
+    )
+    db_session.add(queued_job)
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+
+    response = await client.delete(
+        f"/api/loops/{first_loop.id}/media/{media.id}",
+        headers={"X-CSRF-Token": token},
+    )
+
+    assert response.status_code == 204
+    assert await db_session.get(InstagramMedia, media.id) is not None
+    assert await db_session.get(InstagramLoopMedia, (first_loop.id, media.id)) is None
+    assert await db_session.get(InstagramLoopMedia, (second_loop.id, media.id)) is not None
+    await db_session.refresh(queued_job)
+    assert queued_job.status == "waiting_for_media"
+    assert queued_job.media_id is None
+
+
+@pytest.mark.anyio
+async def test_media_preview_redirects_to_a_temporary_storage_url(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+    media = InstagramMedia(
+        workspace_id=workspace.id,
+        storage_path=f"{workspace.id}/loop-media/preview.mp4",
+        filename="preview.mp4",
+        mime_type="video/mp4",
+        media_type="video",
+        size_bytes=100,
+    )
+    db_session.add(media)
+    await db_session.commit()
+
+    class FakeStorage:
+        async def create_signed_url(self, path: str) -> str:
+            assert path == media.storage_path
+            return "https://storage.example/signed-preview"
+
+    monkeypatch.setattr(
+        "app.instagram.media_router._storage_or_http_error",
+        lambda: FakeStorage(),
+    )
+    await _login(client, "owner@example.com", "correct horse battery staple")
+
+    response = await client.get(f"/api/media/{media.id}/preview", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://storage.example/signed-preview"
+
+
+@pytest.mark.anyio
 async def test_collaborator_can_only_associate_accounts_with_existing_loops(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -563,6 +680,67 @@ async def test_scheduler_creates_one_waiting_publication_job_per_due_loop(
 
     second_tick = await enqueue_due_loop_publications(db_session, now=now)
     assert second_tick == 0
+
+
+@pytest.mark.anyio
+async def test_scheduler_ignores_legacy_daily_limit_setting(
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    now = datetime.now(timezone.utc)
+    account = _active_account(workspace.id, "unlimited_daily_posts")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="No configured daily cap",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        daily_limit_per_account=1,
+        post_type="reels",
+        repeat_media=True,
+        status="active",
+        next_run_at=now - timedelta(minutes=1),
+    )
+    media = InstagramMedia(
+        workspace_id=workspace.id,
+        storage_path=f"{workspace.id}/unlimited/daily.mp4",
+        filename="daily.mp4",
+        mime_type="video/mp4",
+        media_type="video",
+        size_bytes=100,
+    )
+    db_session.add_all([account, loop, media])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            InstagramLoopAccount(loop_id=loop.id, account_id=account.id),
+            InstagramLoopMedia(loop_id=loop.id, media_id=media.id),
+            InstagramPublicationJob(
+                workspace_id=workspace.id,
+                loop_id=loop.id,
+                account_id=account.id,
+                media_id=media.id,
+                scheduled_for=now - timedelta(minutes=5),
+                status="published",
+                attempts=1,
+                updated_at=now - timedelta(minutes=5),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    created = await enqueue_due_loop_publications(db_session, now=now)
+
+    assert created == 1
+    jobs = (
+        await db_session.scalars(
+            select(InstagramPublicationJob).where(
+                InstagramPublicationJob.loop_id == loop.id
+            )
+        )
+    ).all()
+    assert len(jobs) == 2
+    assert {job.status for job in jobs} == {"published", "queued"}
 
 
 @pytest.mark.anyio

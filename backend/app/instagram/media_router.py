@@ -4,6 +4,7 @@ from pathlib import PurePosixPath
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -66,6 +67,32 @@ async def list_media(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
         media=[_media_response(item) for item in media],
     )
+
+
+@router.get("/{media_id}/preview")
+async def preview_media(
+    media_id: uuid.UUID,
+    access: WorkspaceMemberAccess,
+    db: DbSession,
+) -> RedirectResponse:
+    media = await db.scalar(
+        select(InstagramMedia).where(
+            InstagramMedia.id == media_id,
+            InstagramMedia.workspace_id == access.workspace.id,
+        )
+    )
+    if media is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found.")
+    storage = _storage_or_http_error()
+    try:
+        signed_url = await storage.create_signed_url(media.storage_path)
+    except (SupabaseStorageError, httpx.HTTPError) as exc:
+        logger.error("Private media preview could not be signed (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The media preview could not be loaded from private storage.",
+        ) from None
+    return RedirectResponse(signed_url)
 
 
 @router.post(

@@ -9,7 +9,6 @@ class InstagramLoopCreateRequest(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=120)]
     interval_min_minutes: Annotated[int, Field(ge=1, le=1440)]
     interval_max_minutes: Annotated[int, Field(ge=1, le=1440)]
-    daily_limit_per_account: Annotated[int, Field(ge=1, le=100)]
     post_type: Literal["reels", "images", "both"] = "reels"
     repeat_media: bool = True
     account_ids: Annotated[list[UUID], Field(min_length=1, max_length=100)]
@@ -55,7 +54,6 @@ class InstagramLoopResponse(BaseModel):
     name: str
     interval_min_minutes: int
     interval_max_minutes: int
-    daily_limit_per_account: int
     post_type: Literal["reels", "images", "both"]
     repeat_media: bool
     status: Literal["active", "paused"]

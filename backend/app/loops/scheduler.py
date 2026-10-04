@@ -4,7 +4,6 @@ import random
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time import local_day_bounds_utc
 from app.models import (
     InstagramAccount,
     InstagramLoop,
@@ -190,26 +189,6 @@ async def enqueue_loop_publications_now(
     has_loop_history, shared_media = await _next_loop_media_for_new_accounts(db, loop)
     created_jobs = 0
     for account in accounts:
-        daily_start, daily_end = local_day_bounds_utc(current)
-        daily_count = await db.scalar(
-            select(func.count(InstagramPublicationJob.id)).where(
-                InstagramPublicationJob.account_id == account.id,
-                or_(
-                    and_(
-                        InstagramPublicationJob.status == "published",
-                        InstagramPublicationJob.updated_at >= daily_start,
-                        InstagramPublicationJob.updated_at < daily_end,
-                    ),
-                    and_(
-                        InstagramPublicationJob.status.in_(_ACTIVE_JOB_STATUSES),
-                        InstagramPublicationJob.scheduled_for >= daily_start,
-                        InstagramPublicationJob.scheduled_for < daily_end,
-                    ),
-                ),
-            )
-        )
-        if (daily_count or 0) >= loop.daily_limit_per_account:
-            continue
         rolling_count = await db.scalar(
             select(func.count(InstagramPublicationJob.id)).where(
                 InstagramPublicationJob.account_id == account.id,
@@ -336,28 +315,6 @@ async def enqueue_due_loop_publications(
         ).all()
 
         for account in accounts:
-            midnight, tomorrow = local_day_bounds_utc(scheduled_for)
-            daily_jobs = await db.scalar(
-                select(func.count(InstagramPublicationJob.id)).where(
-                    InstagramPublicationJob.loop_id == loop.id,
-                    InstagramPublicationJob.account_id == account.id,
-                    or_(
-                        and_(
-                            InstagramPublicationJob.status == "published",
-                            InstagramPublicationJob.updated_at >= midnight,
-                            InstagramPublicationJob.updated_at < tomorrow,
-                        ),
-                        and_(
-                            InstagramPublicationJob.status.in_(_ACTIVE_JOB_STATUSES),
-                            InstagramPublicationJob.scheduled_for >= midnight,
-                            InstagramPublicationJob.scheduled_for < tomorrow,
-                        ),
-                    ),
-                )
-            )
-            if (daily_jobs or 0) >= loop.daily_limit_per_account:
-                continue
-
             rolling_jobs = await db.scalar(
                 select(func.count(InstagramPublicationJob.id)).where(
                     InstagramPublicationJob.account_id == account.id,
