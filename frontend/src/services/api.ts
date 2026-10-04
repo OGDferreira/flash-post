@@ -172,7 +172,7 @@ export type CollaboratorReport = {
 
 export type CollaboratorDashboard = Omit<
   CollaboratorReport,
-  "member_id" | "user_id" | "email" | "account_earnings"
+  "member_id" | "user_id" | "email"
 > & {
   avatar_url: string | null;
   daily_progress: number;

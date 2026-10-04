@@ -5,7 +5,7 @@ import uuid
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, WorkspaceMemberAccess, require_csrf
@@ -231,11 +231,20 @@ async def _member_report(
     )
     earnings_month += bonus_earned
     due_month = max(earnings_month - paid_month, Decimal("0.00")).quantize(_CENT)
-    projected_month = (
-        rate * member.monthly_connection_goal + monthly_bonus
-        if member.monthly_connection_goal > 0
-        else Decimal("0.00")
-    ).quantize(_CENT)
+    projected_month = Decimal("0.00")
+    if member.monthly_connection_goal > 0:
+        remaining_connections = max(
+            member.monthly_connection_goal - connections_month, 0
+        )
+        projected_month = (
+            earnings_month
+            + rate * remaining_connections
+            + (
+                monthly_bonus
+                if connections_month < member.monthly_connection_goal
+                else Decimal("0.00")
+            )
+        ).quantize(_CENT)
     return CollaboratorReportItem(
         member_id=member.id,
         user_id=user.id,
@@ -321,6 +330,7 @@ def _dashboard_response(
         recent_days=report.recent_days,
         recent_earnings=report.recent_earnings,
         recent_payments=recent_payments,
+        account_earnings=report.account_earnings,
     )
 
 
@@ -536,6 +546,16 @@ async def update_collaborator(
     member.daily_connection_goal = payload.daily_connection_goal
     member.monthly_connection_goal = payload.monthly_connection_goal
     member.monthly_bonus = payload.monthly_bonus
+    if payload.apply_rate_to_existing_accounts:
+        await db.execute(
+            update(InstagramAccount)
+            .where(
+                InstagramAccount.workspace_id == access.workspace.id,
+                InstagramAccount.connected_by_user_id == member.user_id,
+                InstagramAccount.first_connected_at.is_not(None),
+            )
+            .values(collaborator_rate_at_connection=payload.rate_per_connection)
+        )
     await db.commit()
     user = await db.get(User, member.user_id)
     if user is None:

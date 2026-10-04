@@ -3,6 +3,7 @@ import secrets
 import time
 import uuid
 from datetime import datetime, timezone
+from typing import Literal
 from urllib.parse import urlencode
 
 import httpx
@@ -63,6 +64,15 @@ def _accounts_page(outcome: str) -> str:
         f"{get_settings().public_base_url.rstrip('/')}/feature/accounts?"
         f"{urlencode({'instagram': outcome})}"
     )
+
+
+def _connection_result_page(return_to: str, outcome: str) -> str:
+    if return_to == "/dashboard":
+        return (
+            f"{get_settings().public_base_url.rstrip('/')}/dashboard?"
+            f"{urlencode({'instagram': outcome})}"
+        )
+    return _accounts_page(outcome)
 
 
 def _utc_datetime(value: datetime) -> datetime:
@@ -532,6 +542,7 @@ async def connect_account(
     request: Request,
     access: WorkspaceMemberAccess,
     db: DbSession,
+    return_to: Literal["/dashboard", "/feature/accounts"] = "/feature/accounts",
 ) -> InstagramConnectResponse:
     settings = get_settings()
     credential = await db.scalar(
@@ -565,6 +576,7 @@ async def connect_account(
         "meta_app_id": str(credential.id),
         "credential_revision": str(credential.revision),
         "created_at": int(time.time()),
+        "return_to": return_to,
     }
     return InstagramConnectResponse(
         authorization_url=build_authorization_url(
@@ -597,19 +609,22 @@ async def instagram_callback(
         or request.session.get("user_id") != pending.get("user_id")
     ):
         return RedirectResponse(_accounts_page("error"), status_code=303)
+    return_to = pending.get("return_to")
+    if return_to not in {"/dashboard", "/feature/accounts"}:
+        return_to = "/feature/accounts"
     request.session.pop(_OAUTH_SESSION_KEY, None)
 
     if error:
         outcome = "cancelled" if error == "access_denied" else "error"
-        return RedirectResponse(_accounts_page(outcome), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, outcome), status_code=303)
     if not code:
-        return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
 
     try:
         user_id = uuid.UUID(str(pending.get("user_id")))
         workspace_id = uuid.UUID(str(pending.get("workspace_id")))
     except (ValueError, TypeError, AttributeError):
-        return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
 
     user = await db.scalar(
         select(User).where(User.id == user_id, User.is_active.is_(True))
@@ -631,23 +646,23 @@ async def instagram_callback(
         )
     )
     if user is None or workspace is None or membership is None:
-        return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
 
     try:
         meta_app_id = uuid.UUID(str(pending.get("meta_app_id")))
     except (ValueError, TypeError, AttributeError):
-        return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
     credential = await _workspace_meta_app(workspace_id, meta_app_id, db)
     if (
         credential is None
         or str(credential.revision) != pending.get("credential_revision")
     ):
-        return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
     try:
         app_secret = decrypt_value(credential.encrypted_app_secret)
     except (RuntimeError, ValueError) as exc:
         logger.error("Instagram App Secret could not be decrypted (%s).", type(exc).__name__)
-        return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
 
     try:
         (
@@ -668,22 +683,22 @@ async def instagram_callback(
         )
     except InstagramOAuthError as exc:
         logger.warning("Instagram OAuth validation failed: %s", exc)
-        return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
     except httpx.HTTPStatusError as exc:
         logger.warning(
             "Instagram OAuth token exchange was rejected by Meta (HTTP %s).",
             exc.response.status_code,
         )
-        return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
     except (httpx.HTTPError, RuntimeError, ValueError) as exc:
         logger.warning("Instagram OAuth callback failed (%s).", type(exc).__name__)
-        return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
 
     try:
         encrypted_token = encrypt_value(access_token)
     except RuntimeError as exc:
         logger.error("Instagram token encryption failed (%s).", type(exc).__name__)
-        return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
 
     account = await db.scalar(
         select(InstagramAccount).where(
@@ -723,7 +738,7 @@ async def instagram_callback(
         account.status = "connected"
         account.connected_at = datetime.now(timezone.utc)
     await db.commit()
-    return RedirectResponse(_accounts_page("connected"), status_code=303)
+    return RedirectResponse(_connection_result_page(return_to, "connected"), status_code=303)
 
 
 @router.delete(

@@ -242,8 +242,8 @@ async def test_rate_change_preserves_existing_account_value_and_prices_new_conne
         json={
             "rate_per_connection": "15.00",
             "daily_connection_goal": 0,
-            "monthly_connection_goal": 0,
-            "monthly_bonus": "0.00",
+            "monthly_connection_goal": 3,
+            "monthly_bonus": "5.00",
         },
     )
     assert changed.status_code == 200, changed.text
@@ -275,4 +275,27 @@ async def test_rate_change_preserves_existing_account_value_and_prices_new_conne
     assert saved_rates == {
         "before_change": Decimal("10.00"),
         "after_change": Decimal("15.00"),
+    }
+
+    retroactive_token = await _csrf(client)
+    retroactive = await client.patch(
+        f"/api/collaborators/{member.id}",
+        headers={"X-CSRF-Token": retroactive_token},
+        json={
+            "rate_per_connection": "20.00",
+            "daily_connection_goal": 0,
+            "monthly_connection_goal": 3,
+            "monthly_bonus": "5.00",
+            "apply_rate_to_existing_accounts": True,
+        },
+    )
+    assert retroactive.status_code == 200, retroactive.text
+    assert Decimal(retroactive.json()["earnings_month"]) == Decimal("40.00")
+    assert Decimal(retroactive.json()["projected_month"]) == Decimal("65.00")
+    assert {
+        account["username"]: Decimal(account["rate_per_connection"])
+        for account in retroactive.json()["account_earnings"]
+    } == {
+        "before_change": Decimal("20.00"),
+        "after_change": Decimal("20.00"),
     }

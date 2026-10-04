@@ -46,6 +46,7 @@ class CollaboratorUpdateRequest(BaseModel):
     daily_connection_goal: int = Field(ge=0, le=100000)
     monthly_connection_goal: int = Field(ge=0, le=1000000)
     monthly_bonus: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    apply_rate_to_existing_accounts: bool = False
 
     @field_validator("rate_per_connection", "monthly_bonus")
     @classmethod
@@ -130,6 +131,7 @@ class CollaboratorDashboardResponse(BaseModel):
     recent_days: list[int]
     recent_earnings: list[Decimal]
     recent_payments: list[Decimal]
+    account_earnings: list[CollaboratorAccountEarning]
 
 
 class CollaboratorPaymentActionResponse(BaseModel):

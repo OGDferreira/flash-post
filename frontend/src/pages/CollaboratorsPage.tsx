@@ -18,6 +18,10 @@ type CollaboratorDraft = {
   monthly_bonus: number;
 };
 
+type CollaboratorUpdateDraft = CollaboratorDraft & {
+  apply_rate_to_existing_accounts: boolean;
+};
+
 type NewCollaboratorForm = CollaboratorDraft & {
   full_name: string;
   nickname: string;
@@ -56,19 +60,20 @@ function displayError(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : error ? fallback : null;
 }
 
-function draftFrom(item: CollaboratorReport): CollaboratorDraft {
+function draftFrom(item: CollaboratorReport): CollaboratorUpdateDraft {
   return {
     rate_per_connection: item.rate_per_connection,
     daily_connection_goal: item.daily_connection_goal,
     monthly_connection_goal: item.monthly_connection_goal,
     monthly_bonus: item.monthly_bonus,
+    apply_rate_to_existing_accounts: false,
   };
 }
 
 export function CollaboratorsPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(blankForm);
-  const [drafts, setDrafts] = useState<Record<string, CollaboratorDraft>>({});
+  const [drafts, setDrafts] = useState<Record<string, CollaboratorUpdateDraft>>({});
   const report = useQuery({
     queryKey: ["collaborators", "report"],
     queryFn: () => apiRequest<CollaboratorsResponse>("/api/collaborators"),
@@ -87,12 +92,18 @@ export function CollaboratorsPage() {
     },
   });
   const update = useMutation({
-    mutationFn: ({ memberId, values }: { memberId: string; values: CollaboratorDraft }) =>
+    mutationFn: ({ memberId, values }: { memberId: string; values: CollaboratorUpdateDraft }) =>
       apiRequest<CollaboratorReport>(`/api/collaborators/${memberId}`, {
         method: "PATCH",
         body: values,
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["collaborators"] }),
+    onSuccess: async (_result, { memberId, values }) => {
+      setDrafts((current) => ({
+        ...current,
+        [memberId]: { ...values, apply_rate_to_existing_accounts: false },
+      }));
+      await queryClient.invalidateQueries({ queryKey: ["collaborators"] });
+    },
   });
   const payout = useMutation({
     mutationFn: (memberId: string) =>
@@ -292,6 +303,9 @@ export function CollaboratorsPage() {
                       }
                       value={draft.rate_per_connection}
                     />
+                    <p className="text-xs leading-5 text-[#78839b] sm:col-span-2">
+                      Ao alterar o valor, você poderá escolher se ele também vale para as contas já conectadas.
+                    </p>
                     <NumberField
                       label="Meta diária"
                       onChange={(value) =>
@@ -320,9 +334,20 @@ export function CollaboratorsPage() {
                       <button
                         className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#34446f] px-3 text-xs font-semibold text-[#c3ccff] hover:bg-[#151b2d] disabled:opacity-50"
                         disabled={update.isPending}
-                        onClick={() =>
-                          update.mutate({ memberId: item.member_id, values: draft })
-                        }
+                        onClick={() => {
+                          const applyRateToExistingAccounts =
+                            draft.rate_per_connection !== item.rate_per_connection &&
+                            window.confirm(
+                              "Aplicar este valor também a todas as contas já conectadas?\n\nOK: atualizar as contas já conectadas.\nCancelar: aplicar somente às próximas conexões.",
+                            );
+                          update.mutate({
+                            memberId: item.member_id,
+                            values: {
+                              ...draft,
+                              apply_rate_to_existing_accounts: applyRateToExistingAccounts,
+                            },
+                          });
+                        }}
                         type="button"
                       >
                         <Save size={14} />
