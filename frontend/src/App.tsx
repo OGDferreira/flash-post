@@ -20,7 +20,6 @@ import { ProfilePage } from "@/pages/ProfilePage";
 import { ProfileFoldersPage } from "@/pages/ProfileFoldersPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { CollaboratorsPage } from "@/pages/CollaboratorsPage";
-import { CollaboratorDashboardPage } from "@/pages/CollaboratorDashboardPage";
 import { FeedPage } from "@/pages/FeedPage";
 import { AdminOverviewPage } from "@/pages/admin/AdminOverviewPage";
 import { AdminSystemPage } from "@/pages/admin/AdminSystemPage";
@@ -47,32 +46,29 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route element={<RequireAuth />}>
             <Route element={<RequireWorkspaceUser />}>
-            <Route element={<AppShell />}>
-              <Route
-                path="/dashboard"
-                element={
-                  <WorkspaceDashboard />
-                }
-              />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
-              <Route path="/feature/loops" element={<LoopsPage />} />
-              <Route element={<RequireWorkspaceOwner />}>
-              <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
-              <Route
-                path="/feature/analytics"
-                element={
-                  <Suspense fallback={<LoadingState label="Carregando Analytics" />}>
-                    <AnalyticsPage />
-                  </Suspense>
-                }
-              />
-              <Route path="/feature/feed" element={<FeedPage />} />
-              <Route path="/feature/collaborators" element={<CollaboratorsPage />} />
-              <Route path="/feature/notifications" element={<FeaturePlaceholderPage />} />
-              <Route path="/feature/settings" element={<SettingsPage />} />
-              <Route path="/feature/:slug" element={<FeaturePlaceholderPage />} />
-            </Route>
+              <Route element={<RequireCollaboratorHub />}>
+                <Route element={<AppShell />}>
+                  <Route path="/dashboard" element={<WorkspaceDashboard />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
+                  <Route path="/feature/loops" element={<LoopsPage />} />
+                  <Route element={<RequireWorkspaceOwner />}>
+                    <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
+                    <Route
+                      path="/feature/analytics"
+                      element={
+                        <Suspense fallback={<LoadingState label="Carregando Analytics" />}>
+                          <AnalyticsPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route path="/feature/feed" element={<FeedPage />} />
+                    <Route path="/feature/collaborators" element={<CollaboratorsPage />} />
+                    <Route path="/feature/notifications" element={<FeaturePlaceholderPage />} />
+                    <Route path="/feature/settings" element={<SettingsPage />} />
+                    <Route path="/feature/:slug" element={<FeaturePlaceholderPage />} />
+                  </Route>
+                </Route>
             </Route>
             </Route>
             <Route element={<RequireSuperAdmin />}>
@@ -94,7 +90,7 @@ export default function App() {
 
 function WorkspaceDashboard() {
   const { user } = useAuth();
-  if (user?.role === "COLLABORATOR") return <CollaboratorDashboardPage />;
+  if (user?.role === "COLLABORATOR") return <Navigate to="/feature/accounts" replace />;
   return (
     <Suspense fallback={<LoadingState label="Carregando painel" />}>
       <DashboardPage />
@@ -115,6 +111,15 @@ function RequireWorkspaceOwner() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingState label="Verificando permissões" />;
   if (user?.role !== "OWNER") return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
+function RequireCollaboratorHub() {
+  const { user } = useAuth();
+  const location = useLocation();
+  if (user?.role === "COLLABORATOR" && location.pathname !== "/feature/accounts") {
+    return <Navigate to="/feature/accounts" replace />;
+  }
   return <Outlet />;
 }
 
@@ -143,7 +148,13 @@ function HomeRedirect() {
   if (!user) return <Navigate to="/login" replace />;
   return (
     <Navigate
-      to={user.role === "SUPER_ADMIN" ? "/admin" : "/dashboard"}
+      to={
+        user.role === "SUPER_ADMIN"
+          ? "/admin"
+          : user.role === "COLLABORATOR"
+            ? "/feature/accounts"
+            : "/dashboard"
+      }
       replace
     />
   );

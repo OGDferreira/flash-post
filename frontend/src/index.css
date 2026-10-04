@@ -202,13 +202,14 @@ body {
 .dashboard-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
   gap: 18px;
 }
 
 .dashboard-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(6, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -263,11 +264,15 @@ body {
 
 .dashboard-visuals {
   display: grid;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
   gap: 16px;
 }
 
 .dashboard-chart-panel {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: 19px;
 }
@@ -317,7 +322,8 @@ body {
 
 .dashboard-revenue-chart {
   display: grid;
-  min-height: 250px;
+  min-height: 300px;
+  flex: 1;
   margin-top: 14px;
   place-items: center;
   border-top: 1px solid rgba(37, 44, 62, 0.55);
@@ -356,6 +362,66 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+}
+
+.dashboard-summary-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 190px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 17px;
+}
+
+.dashboard-summary-value {
+  margin-top: auto;
+  color: #f5f7fb;
+  font-size: 28px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.dashboard-summary-detail {
+  color: #78839b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.dashboard-payment-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.dashboard-payment-stats div {
+  display: grid;
+  gap: 5px;
+}
+
+.dashboard-payment-stats span {
+  color: #78839b;
+  font-size: 10px;
+}
+
+.dashboard-payment-stats strong {
+  color: #f5f7fb;
+  font-size: 18px;
+}
+
+.dashboard-payment-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #252c3e;
+}
+
+.dashboard-payment-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #76c8a0;
+  transition: width 220ms ease;
 }
 
 .dashboard-donut-wrap {
@@ -517,13 +583,13 @@ body {
 
 @media (min-width: 720px) {
   .dashboard-bottom-panels {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1280px) {
   .dashboard-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
     gap: 20px;
   }
 

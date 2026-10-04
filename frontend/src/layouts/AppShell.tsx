@@ -22,7 +22,7 @@ import {
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/AuthProvider";
-import { ApiError, apiRequest } from "@/services/api";
+import { setCsrfToken, apiRequest } from "@/services/api";
 
 const ownerLinks = [
   { label: "Visão geral", to: "/dashboard", icon: Home },
@@ -48,28 +48,22 @@ const adminLinks = [
 ];
 
 const collaboratorLinks = [
-  { label: "Meu painel", to: "/dashboard", icon: Home },
   { label: "Hub de contas", to: "/feature/accounts", icon: Users },
-  { label: "Loops", to: "/feature/loops", icon: Infinity },
 ];
 
 export function AppShell({ admin = false }: { admin?: boolean }) {
   const { user } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [logoutError, setLogoutError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const logout = useMutation({
     mutationFn: () => apiRequest("/api/auth/logout", { method: "POST" }),
-    onSuccess: () => {
+    onSettled: () => {
+      setCsrfToken(undefined);
       queryClient.clear();
+      queryClient.setQueryData(["auth", "me"], null);
       navigate("/login", { replace: true });
-    },
-    onError: (error) => {
-      setLogoutError(
-        error instanceof ApiError ? error.message : "Não foi possível encerrar a sessão.",
-      );
     },
   });
   const links = admin ? adminLinks : ownerLinks;
@@ -168,7 +162,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
             />
           ) : (
             <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#171e31] text-sm font-semibold text-[#aab7ff]">
-              {user?.full_name.slice(0, 1).toUpperCase() ?? "F"}
+              {(user?.full_name || user?.nickname || "F").slice(0, 1).toUpperCase()}
             </span>
           )}
           <span className="min-w-0 max-w-[145px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[145px] lg:group-hover:opacity-100">
@@ -183,7 +177,6 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
         </Link>
         <button
           onClick={() => {
-            setLogoutError(null);
             logout.mutate();
           }}
           disabled={logout.isPending}
@@ -194,11 +187,6 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
             Sair
           </span>
         </button>
-        {logoutError && (
-          <p role="alert" className="px-3 pt-2 text-xs text-[#f1a3ad]">
-            {logoutError}
-          </p>
-        )}
       </div>
     </div>
   );
@@ -244,7 +232,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
             Sistema online
           </div>
         </header>
-        <main className="mx-auto max-w-[1440px] px-5 py-7 sm:px-8 sm:py-9">
+        <main className="min-h-[calc(100vh-72px)] w-full px-5 py-7 sm:px-8 sm:py-9">
           <Outlet />
         </main>
       </div>

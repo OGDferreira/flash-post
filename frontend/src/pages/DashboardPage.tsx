@@ -17,9 +17,6 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -58,8 +55,6 @@ const periodOptions: { value: AnalyticsPeriod; label: string }[] = [
   { value: "all", label: "Total" },
   { value: "custom", label: "Personalizado" },
 ];
-
-const statusColors = ["#7c8cff", "#f2d48a", "#f16f82"];
 
 function formatCount(value: number | null | undefined): string {
   return value == null ? "—" : new Intl.NumberFormat("pt-BR").format(value);
@@ -183,16 +178,14 @@ export function DashboardPage() {
       account.status !== "connected" ||
       Date.parse(account.token_expires_at) <= Date.now(),
   ).length;
-  const publicationStatuses = [
-    { name: "Publicadas", value: metrics?.published_posts ?? 0 },
-    { name: "Na fila", value: metrics?.queued_posts ?? 0 },
-    { name: "Falhas", value: metrics?.failed_posts ?? 0 },
-  ];
-  const publicationTotal = publicationStatuses.reduce((sum, item) => sum + item.value, 0);
-  const publishedShare =
-    publicationTotal > 0
-      ? Math.round(((metrics?.published_posts ?? 0) / publicationTotal) * 100)
-      : 0;
+  const pixGenerated = metrics?.pix_generated ?? 0;
+  const pixPaid = metrics?.pix_paid ?? 0;
+  const pixConversion =
+    pixGenerated > 0 ? Math.round((pixPaid / pixGenerated) * 100) : null;
+  const totalRevenue =
+    metrics && metrics.pix_paid > 0
+      ? formatMoney(Number(metrics.pix_paid_amount))
+      : "R$ —";
 
   const metricsCards = [
     {
@@ -272,18 +265,20 @@ export function DashboardPage() {
       icon: CircleCheck,
       color: "text-[#76c8a0]",
     },
+    {
+      title: "Valor faturado",
+      value: totalRevenue,
+      detail: "Total de Pix pagos no período",
+      icon: Wallet,
+      color: "text-[#76c8a0]",
+    },
   ];
   const revenueSeries = (metrics?.daily_revenue ?? []).map(({ day, amount }) => ({
     day: formatDay(day),
     revenue: Number(amount),
   }));
-  const totalRevenue =
-    metrics && metrics.pix_paid > 0
-      ? formatMoney(Number(metrics.pix_paid_amount))
-      : "R$ —";
-
   return (
-    <div className="dashboard-ambient mx-auto w-full max-w-[1440px] space-y-6">
+    <div className="dashboard-ambient min-h-[calc(100vh-144px)] w-full space-y-6">
       <header className="space-y-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
@@ -491,105 +486,58 @@ export function DashboardPage() {
           </article>
 
           <div className="dashboard-bottom-panels">
-            <article className="dashboard-card dashboard-chart-panel">
+            <article className="dashboard-card dashboard-summary-panel">
               <header className="dashboard-panel-header">
                 <div>
-                  <p className="dashboard-eyebrow">Publicações</p>
-                  <h2 className="dashboard-panel-title">Status das publicações</h2>
+                  <p className="dashboard-eyebrow">Pagamentos</p>
+                  <h2 className="dashboard-panel-title">Conversão de Pix</h2>
                 </div>
               </header>
-              {publicationTotal > 0 ? (
-                <div className="dashboard-donut-wrap">
-                  <ResponsiveContainer height="100%" width="100%">
-                    <PieChart>
-                      <Pie
-                        data={publicationStatuses.filter(({ value }) => value > 0)}
-                        dataKey="value"
-                        innerRadius="70%"
-                        outerRadius="92%"
-                        paddingAngle={4}
-                        stroke="none"
-                      >
-                        {publicationStatuses
-                          .filter(({ value }) => value > 0)
-                          .map((item) => (
-                            <Cell
-                              fill={
-                                statusColors[
-                                  publicationStatuses.findIndex(
-                                    ({ name }) => name === item.name,
-                                  )
-                                ]
-                              }
-                              key={item.name}
-                            />
-                          ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          background: "#10141b",
-                          border: "1px solid #27334a",
-                          borderRadius: 10,
-                          color: "#f5f7fb",
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="dashboard-donut-center">
-                    <strong>{publishedShare}%</strong>
-                    <span>publicadas</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="dashboard-small-empty">
-                  <span>Sem publicações registradas no período.</span>
-                </div>
-              )}
-              <ul className="dashboard-legend">
-                {publicationStatuses.map((item, index) => (
-                  <li key={item.name}>
-                    <span className="dashboard-legend-label">
-                      <i style={{ backgroundColor: statusColors[index] }} />
-                      {item.name}
-                    </span>
-                    <strong>{formatCount(metrics ? item.value : null)}</strong>
-                  </li>
-                ))}
-              </ul>
+              <p className="dashboard-summary-value">
+                {pixConversion === null ? "—" : `${pixConversion}%`}
+              </p>
+              <p className="dashboard-summary-detail">Pix pagos em relação aos gerados</p>
             </article>
 
-            <article className="dashboard-card dashboard-chart-panel">
+            <article className="dashboard-card dashboard-summary-panel">
               <header className="dashboard-panel-header">
                 <div>
-                  <p className="dashboard-eyebrow">Audiência</p>
-                  <h2 className="dashboard-panel-title">Geração de tráfego</h2>
+                  <p className="dashboard-eyebrow">Sharkbot</p>
+                  <h2 className="dashboard-panel-title">Taxa de lead</h2>
                 </div>
               </header>
-              <div className="dashboard-traffic-empty">
-                <div className="dashboard-traffic-list">
-                  {[
-                    "Visualizações",
-                    "Visitas ao perfil",
-                    "Cliques no link",
-                    "Leads Sharkbot",
-                  ].map((label) => (
-                    <div className="dashboard-traffic-item" key={label}>
-                      <div className="dashboard-traffic-item-heading">
-                        <span>{label}</span>
-                        <strong>—</strong>
-                      </div>
-                      <div
-                        aria-label={`${label}: dados não disponíveis`}
-                        className="dashboard-traffic-track"
-                      >
-                        <span />
-                      </div>
-                    </div>
-                  ))}
-                  <p className="dashboard-traffic-note">
-                    Integrações de Insights e Sharkbot necessárias para preencher estes dados.
-                  </p>
+              <p className="dashboard-summary-value">—</p>
+              <p className="dashboard-summary-detail">
+                {formatCount(metrics?.leads)} leads no período; visitantes não integrados.
+              </p>
+            </article>
+
+            <article className="dashboard-card dashboard-summary-panel">
+              <header className="dashboard-panel-header">
+                <div>
+                  <p className="dashboard-eyebrow">Status</p>
+                  <h2 className="dashboard-panel-title">Pix gerados e pagos</h2>
                 </div>
+              </header>
+              <div className="dashboard-payment-stats">
+                <div>
+                  <span>Gerados</span>
+                  <strong>{formatCount(metrics?.pix_generated)}</strong>
+                </div>
+                <div>
+                  <span>Pagos</span>
+                  <strong>{formatCount(metrics?.pix_paid)}</strong>
+                </div>
+              </div>
+              <div
+                aria-label={`Conversão de Pix: ${pixConversion ?? 0}%`}
+                aria-valuemax={100}
+                aria-valuemin={0}
+                aria-valuenow={pixConversion ?? 0}
+                className="dashboard-payment-track"
+                role="progressbar"
+              >
+                <span style={{ width: `${pixConversion ?? 0}%` }} />
               </div>
             </article>
           </div>
