@@ -17,6 +17,7 @@ import { FeaturePlaceholderPage } from "@/pages/FeaturePlaceholderPage";
 import { InstagramAccountsPage } from "@/pages/InstagramAccountsPage";
 import { LoopsPage } from "@/pages/LoopsPage";
 import { ProfilePage } from "@/pages/ProfilePage";
+import { ProfileFoldersPage } from "@/pages/ProfileFoldersPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { CollaboratorsPage } from "@/pages/CollaboratorsPage";
 import { CollaboratorDashboardPage } from "@/pages/CollaboratorDashboardPage";
@@ -57,6 +58,7 @@ export default function App() {
               <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
               <Route path="/feature/loops" element={<LoopsPage />} />
               <Route element={<RequireWorkspaceOwner />}>
+              <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
               <Route
                 path="/feature/analytics"
                 element={

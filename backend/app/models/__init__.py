@@ -11,6 +11,7 @@ from app.models.system_setting import SystemSetting
 from app.models.collaborator_payment import CollaboratorPayment
 from app.models.instagram_account import InstagramAccount
 from app.models.instagram_app_credential import InstagramAppCredential
+from app.models.instagram_profile_folder import InstagramProfileFolder
 from app.models.instagram_loop import (
     InstagramLoop,
     InstagramLoopAccount,
@@ -31,6 +32,7 @@ __all__ = [
     "InstagramLoopAccount",
     "InstagramLoopMedia",
     "InstagramMedia",
+    "InstagramProfileFolder",
     "InstagramPublicationJob",
     "SharkEvent",
     "SystemSetting",

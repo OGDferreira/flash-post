@@ -1,51 +1,71 @@
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle,
-  BarChart3,
-  CircleCheck,
-  Clock3,
-  CreditCard,
+  Image as ImageIcon,
+  MessageCircle,
+  RefreshCw,
+  Star,
   UsersRound,
 } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { InstagramAvatar } from "@/components/InstagramAvatar";
-import type {
-  InstagramAnalyticsAccount,
-  InstagramAnalyticsSummary,
-} from "@/features/analytics/types";
-import { apiRequest } from "@/services/api";
+import { ApiError, apiRequest } from "@/services/api";
 
 type InstagramAccount = {
   id: string;
   username: string;
   profile_picture_url: string | null;
-  status: "connected" | "disconnected" | "error";
+  follower_count: number | null;
+  media_count: number | null;
   token_expires_at: string;
+  status: "connected" | "disconnected" | "error";
+  has_highlights: boolean;
 };
 
 type InstagramAccountsResponse = {
   accounts: InstagramAccount[];
 };
 
+type InstagramFeedMedia = {
+  id: string;
+  media_type: string;
+  media_url: string | null;
+  thumbnail_url: string | null;
+  permalink: string | null;
+  timestamp: string | null;
+  caption: string | null;
+  like_count: number | null;
+  comments_count: number | null;
+};
+
+type InstagramAccountFeedResponse = {
+  account_id: string;
+  username: string;
+  followers_count: number | null;
+  media_count: number | null;
+  follows_count: number | null;
+  media: InstagramFeedMedia[];
+};
+
 function formatCount(value: number | null | undefined): string {
   return value == null ? "—" : new Intl.NumberFormat("pt-BR").format(value);
 }
 
-function formatMoney(value: string | number | null | undefined): string {
-  if (value == null) return "R$ —";
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(Number(value));
+function formatTimestamp(value: string | null): string {
+  if (!value) return "Data indisponível";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Data indisponível";
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
+  }).format(date);
 }
 
-function isHealthy(account: InstagramAccount): boolean {
-  return (
-    account.status === "connected" &&
-    Date.parse(account.token_expires_at) > Date.now()
-  );
+function displayError(error: unknown, fallback: string): string | null {
+  if (!error) return null;
+  return error instanceof ApiError ? error.message : fallback;
 }
 
 function FeedMetric({
@@ -58,7 +78,7 @@ function FeedMetric({
   icon: typeof UsersRound;
 }) {
   return (
-    <div className="rounded-lg border border-[#202838] bg-[#090b0f] p-3">
+    <div className="rounded-lg border border-[#202838] bg-[#0d151c] p-3">
       <div className="flex items-center gap-2 text-xs text-[#94a3b8]">
         <Icon className="text-[#8295ff]" size={14} />
         {label}
@@ -69,151 +89,290 @@ function FeedMetric({
 }
 
 export function FeedPage() {
+  const queryClient = useQueryClient();
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<InstagramAccountsResponse>("/api/instagram/accounts"),
     refetchInterval: 60_000,
     retry: false,
   });
-  const accountIds = useMemo(
-    () => (accounts.data?.accounts ?? []).map(({ id }) => id).sort(),
-    [accounts.data?.accounts],
-  );
-  const summary = useQuery({
-    queryKey: ["analytics", "feed", "30d", accountIds],
-    queryFn: () => {
-      const query = new URLSearchParams({ period: "30d" });
-      accountIds.forEach((id) => query.append("account_ids", id));
-      return apiRequest<InstagramAnalyticsSummary>(`/api/analytics/summary?${query}`);
-    },
-    enabled: !accounts.isLoading && !accounts.error,
+  const selectedAccount =
+    accounts.data?.accounts.find((account) => account.id === selectedAccountId) ??
+    accounts.data?.accounts[0] ??
+    null;
+  const feed = useQuery({
+    queryKey: ["instagram", "feed", selectedAccount?.id],
+    queryFn: () =>
+      apiRequest<InstagramAccountFeedResponse>(
+        `/api/instagram/accounts/${selectedAccount?.id}/feed`,
+      ),
+    enabled: Boolean(selectedAccount),
+    refetchInterval: 5 * 60_000,
     retry: false,
   });
-  const metricsByAccount = useMemo(
-    () =>
-      new Map<string, InstagramAnalyticsAccount>(
-        (summary.data?.accounts ?? []).map((item) => [item.account_id, item]),
-      ),
-    [summary.data?.accounts],
-  );
+  const updateHighlights = useMutation({
+    mutationFn: (has_highlights: boolean) =>
+      apiRequest(`/api/instagram/accounts/${selectedAccount?.id}/highlights`, {
+        method: "PATCH",
+        body: { has_highlights },
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] }),
+  });
+
+  useEffect(() => {
+    if (
+      selectedAccountId &&
+      accounts.data &&
+      !accounts.data.accounts.some((account) => account.id === selectedAccountId)
+    ) {
+      setSelectedAccountId(accounts.data.accounts[0]?.id ?? null);
+    }
+  }, [accounts.data, selectedAccountId]);
 
   if (accounts.isLoading) return <LoadingState label="Carregando contas do Feed" />;
   if (accounts.error || !accounts.data) {
     return <ErrorState message="Não foi possível carregar as contas deste workspace." />;
   }
+  if (accounts.data.accounts.length === 0) {
+    return (
+      <div className="mx-auto max-w-[1280px] space-y-6">
+        <FeedHeading />
+        <EmptyState message="Conecte uma conta Instagram para visualizar o Feed." />
+      </div>
+    );
+  }
+
+  const updateError = displayError(
+    updateHighlights.error,
+    "Não foi possível guardar a opção de destaques.",
+  );
 
   return (
-    <div className="mx-auto max-w-[1280px] space-y-6">
-      <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
-          Desempenho por perfil
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
-          Feed
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#94a3b8]">
-          Veja as métricas de cada conta separadamente. Publicações e eventos Sharkbot mostram os
-          últimos 30 dias; seguidores e mídias são os retratos recebidos na última autorização Meta.
-        </p>
-      </header>
+    <div className="mx-auto max-w-[1440px] space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <FeedHeading />
+        <button
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#27334a] bg-[#0d151c] px-3 text-sm text-[#cbd5e1] transition hover:bg-[#151b24] disabled:opacity-60"
+          type="button"
+          disabled={feed.isFetching || accounts.isFetching}
+          onClick={() => {
+            void accounts.refetch();
+            void feed.refetch();
+          }}
+        >
+          <RefreshCw className={feed.isFetching ? "animate-spin" : ""} size={14} />
+          Atualizar
+        </button>
+      </div>
 
-      {summary.error && (
-        <ErrorState message="Não foi possível carregar as métricas das contas." />
-      )}
-      {summary.isLoading && <LoadingState label="Carregando métricas individuais" />}
-
-      {accounts.data.accounts.length === 0 ? (
-        <EmptyState message="Conecte uma conta Instagram para começar a consultar o Feed." />
-      ) : (
-        <section aria-label="Métricas por conta Instagram" className="grid gap-4 xl:grid-cols-2">
+      <div className="grid items-start gap-4 xl:grid-cols-[216px_minmax(0,1fr)]">
+        <nav
+          aria-label="Perfis Instagram"
+          className="flex gap-2 overflow-x-auto pb-1 xl:max-h-[calc(100vh-190px)] xl:flex-col xl:overflow-y-auto xl:overflow-x-hidden xl:pr-1"
+        >
           {accounts.data.accounts.map((account) => {
-            const metrics = metricsByAccount.get(account.id);
-            const healthy = isHealthy(account);
+            const selected = selectedAccount?.id === account.id;
             return (
-              <article
-                className="dashboard-card space-y-4 rounded-xl p-4 sm:p-5"
+              <button
+                className={`flex min-w-[190px] items-center gap-3 rounded-lg border p-2.5 text-left transition xl:w-full ${
+                  selected
+                    ? "border-[#00c9d8] bg-[#0d2229]"
+                    : "border-[#202838] bg-[#0d151c] hover:border-[#3a4a60]"
+                }`}
                 key={account.id}
+                type="button"
+                aria-current={selected ? "true" : undefined}
+                onClick={() => setSelectedAccountId(account.id)}
               >
-                <header className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <InstagramAvatar
-                      className="size-12 rounded-full border border-[#27334a] object-cover"
-                      src={account.profile_picture_url}
-                      username={account.username}
-                    />
-                    <div className="min-w-0">
-                      <h2 className="truncate font-semibold text-[#f5f7fb]">
-                        @{account.username}
-                      </h2>
-                      <p
-                        className={`mt-1 text-xs ${
-                          healthy ? "text-[#9de0c0]" : "text-[#f1a3ad]"
-                        }`}
-                      >
-                        {healthy ? "Conectada e saudável" : "Conta com erro ou autorização expirada"}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-[#17202b] px-2.5 py-1 text-xs text-[#aeb9ce]">
-                    Últimos 30 dias
+                <InstagramAvatar
+                  className="size-10 shrink-0 rounded-full border border-[#27334a] object-cover"
+                  src={account.profile_picture_url}
+                  username={account.username}
+                />
+                <span className="min-w-0">
+                  <span className="block truncate text-xs font-semibold text-[#f5f7fb]">
+                    @{account.username}
                   </span>
-                </header>
-
-                {metrics ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <FeedMetric
-                      icon={UsersRound}
-                      label="Seguidores"
-                      value={formatCount(metrics.follower_count)}
-                    />
-                    <FeedMetric
-                      icon={BarChart3}
-                      label="Mídias no perfil"
-                      value={formatCount(metrics.media_count)}
-                    />
-                    <FeedMetric
-                      icon={CircleCheck}
-                      label="Publicações concluídas"
-                      value={formatCount(metrics.published_posts)}
-                    />
-                    <FeedMetric
-                      icon={Clock3}
-                      label="Publicações na fila"
-                      value={formatCount(metrics.queued_posts)}
-                    />
-                    <FeedMetric
-                      icon={AlertTriangle}
-                      label="Publicações com falha"
-                      value={formatCount(metrics.failed_posts)}
-                    />
-                    <FeedMetric
-                      icon={UsersRound}
-                      label="Leads Sharkbot"
-                      value={formatCount(metrics.leads)}
-                    />
-                    <FeedMetric
-                      icon={CreditCard}
-                      label="Pix gerados / pagos"
-                      value={`${formatCount(metrics.pix_generated)} / ${formatCount(metrics.pix_paid)}`}
-                    />
-                    <FeedMetric
-                      icon={CreditCard}
-                      label="Valor de Pix pagos"
-                      value={formatMoney(metrics.pix_paid_amount)}
-                    />
-                  </div>
-                ) : (
-                  <p className="rounded-lg border border-dashed border-[#27334a] p-4 text-sm text-[#94a3b8]">
-                    {summary.isLoading
-                      ? "Carregando os dados deste perfil..."
-                      : "Ainda não há métricas disponíveis para esta conta."}
-                  </p>
-                )}
-              </article>
+                  <span className="mt-0.5 block text-[10px] text-[#94a3b8]">
+                    {formatCount(account.follower_count)} seguidores
+                  </span>
+                </span>
+              </button>
             );
           })}
-        </section>
-      )}
+        </nav>
+
+        {selectedAccount && (
+          <section className="min-w-0 space-y-3" aria-label={`Feed de ${selectedAccount.username}`}>
+            <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#202838] bg-[#0d151c] px-3 py-2.5">
+              <div className="flex min-w-0 items-center gap-2">
+                <Star className="shrink-0 text-[#f2d48a]" size={15} />
+                <h2 className="truncate text-sm font-semibold text-[#f5f7fb]">
+                  @{selectedAccount.username}
+                </h2>
+                <span
+                  className={`size-2 shrink-0 rounded-full ${
+                    selectedAccount.status === "connected" ? "bg-[#22c58b]" : "bg-[#f17380]"
+                  }`}
+                  aria-label={
+                    selectedAccount.status === "connected" ? "Conta conectada" : "Conta com erro"
+                  }
+                />
+              </div>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[#cbd5e1]">
+                <input
+                  className="size-3.5 accent-[#00c9d8]"
+                  type="checkbox"
+                  checked={selectedAccount.has_highlights}
+                  disabled={updateHighlights.isPending}
+                  onChange={(event) => updateHighlights.mutate(event.target.checked)}
+                />
+                Tem destaques
+              </label>
+            </header>
+
+            {updateError && <ErrorState message={updateError} />}
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              <FeedMetric
+                icon={UsersRound}
+                label="Seguidores"
+                value={formatCount(feed.data?.followers_count ?? selectedAccount.follower_count)}
+              />
+              <FeedMetric
+                icon={ImageIcon}
+                label="Posts"
+                value={formatCount(feed.data?.media_count ?? selectedAccount.media_count)}
+              />
+              <FeedMetric
+                icon={UsersRound}
+                label="Seguindo"
+                value={formatCount(feed.data?.follows_count)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-xs font-medium text-[#94a3b8]">Mídias recentes</h3>
+              {feed.data && (
+                <span className="text-[10px] text-[#64748b]">
+                  {feed.data.media.length} exibidas
+                </span>
+              )}
+            </div>
+
+            {feed.isLoading ? (
+              <LoadingState label={`Carregando mídias de @${selectedAccount.username}`} />
+            ) : feed.error ? (
+              <ErrorState
+                message={
+                  displayError(feed.error, "Não foi possível carregar as mídias recentes.") ??
+                  "Não foi possível carregar as mídias recentes."
+                }
+              />
+            ) : feed.data?.media.length ? (
+              <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                {feed.data.media.map((item) => (
+                  <article
+                    className="overflow-hidden rounded-lg border border-[#202838] bg-[#0d151c]"
+                    key={item.id}
+                  >
+                    {item.permalink ? (
+                      <a
+                        className="group relative block aspect-square overflow-hidden bg-[#080b10]"
+                        href={item.permalink}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`Abrir publicação de ${formatTimestamp(item.timestamp)} no Instagram`}
+                      >
+                        <MediaImage item={item} />
+                        <MediaTypeBadge mediaType={item.media_type} />
+                      </a>
+                    ) : (
+                      <div className="relative aspect-square overflow-hidden bg-[#080b10]">
+                        <MediaImage item={item} />
+                        <MediaTypeBadge mediaType={item.media_type} />
+                      </div>
+                    )}
+                    <div className="space-y-2 p-2.5">
+                      <div className="flex items-center gap-3 text-[10px] text-[#94a3b8]">
+                        <span className="inline-flex items-center gap-1">
+                          <UsersRound size={11} />
+                          {formatCount(item.like_count)}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <MessageCircle size={11} />
+                          {formatCount(item.comments_count)}
+                        </span>
+                      </div>
+                      <time className="block text-[9px] text-[#64748b]">
+                        {formatTimestamp(item.timestamp)}
+                      </time>
+                      {item.caption && (
+                        <p className="line-clamp-2 text-[10px] leading-4 text-[#aeb9ce]">
+                          {item.caption}
+                        </p>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyState message="O Instagram não retornou mídias recentes para este perfil." />
+            )}
+          </section>
+        )}
+      </div>
+
+      <p className="text-[11px] leading-5 text-[#64748b]">
+        O Instagram não disponibiliza a contagem de perfis seguidos nesta integração; por isso esse
+        indicador aparece como “—”. O Feed mostra até 25 publicações recentes por perfil.
+      </p>
     </div>
+  );
+}
+
+function FeedHeading() {
+  return (
+    <header>
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+        Perfis &amp; Métricas
+      </p>
+      <h1 className="mt-1 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb]">
+        Veja seguidores, posts e mídias de cada perfil.
+      </h1>
+    </header>
+  );
+}
+
+function MediaImage({ item }: { item: InstagramFeedMedia }) {
+  const source = item.thumbnail_url ?? item.media_url;
+  if (!source) {
+    return (
+      <div className="grid size-full place-items-center text-[#64748b]">
+        <ImageIcon size={28} />
+      </div>
+    );
+  }
+  return (
+    <img
+      alt={item.caption?.slice(0, 140) || "Publicação recente do Instagram"}
+      className="size-full object-cover transition duration-300 group-hover:scale-[1.02]"
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      src={source}
+    />
+  );
+}
+
+function MediaTypeBadge({ mediaType }: { mediaType: string }) {
+  return (
+    <span className="absolute right-2 top-2 rounded bg-[#080b10]/75 p-1 text-white">
+      {mediaType === "VIDEO" || mediaType === "REELS" ? (
+        <span className="text-[9px] font-semibold">REEL</span>
+      ) : (
+        <ImageIcon size={12} />
+      )}
+    </span>
   );
 }

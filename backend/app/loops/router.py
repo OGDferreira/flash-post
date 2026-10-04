@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 import random
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from app.auth.dependencies import (
@@ -22,8 +22,11 @@ from app.models import (
     InstagramMedia,
     InstagramPublicationJob,
 )
+from app.loops.scheduler import enqueue_loop_publications_now
 from app.core.security import WorkspaceRole
 from app.schemas.loops import (
+    InstagramPublicationFailureResponse,
+    InstagramPublicationFailuresResponse,
     InstagramLoopAccountResponse,
     InstagramLoopAccountsUpdateRequest,
     InstagramLoopCreateRequest,
@@ -93,16 +96,6 @@ async def _loop_response(
             InstagramPublicationJob.status == "failed",
         )
     )
-    last_failure = await db.scalar(
-        select(InstagramPublicationJob.last_error)
-        .where(
-            InstagramPublicationJob.loop_id == loop.id,
-            InstagramPublicationJob.status == "failed",
-            InstagramPublicationJob.last_error.is_not(None),
-        )
-        .order_by(InstagramPublicationJob.updated_at.desc())
-        .limit(1)
-    )
     selected_media_ids = list(
         (
             await db.scalars(
@@ -143,7 +136,6 @@ async def _loop_response(
         waiting_for_media_count=waiting_count or 0,
         published_today_count=published_count or 0,
         failed_count=failed_count or 0,
-        last_failure=last_failure,
     )
 
 
@@ -176,6 +168,61 @@ async def list_loops(
             )
             for account in accounts
         ],
+    )
+
+
+@router.get("/failures", response_model=InstagramPublicationFailuresResponse)
+async def list_publication_failures(
+    access: OwnerAccess,
+    db: DbSession,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> InstagramPublicationFailuresResponse:
+    rows = (
+        await db.execute(
+            select(
+                InstagramPublicationJob,
+                InstagramLoop.name,
+                InstagramAccount.username,
+                InstagramMedia.filename,
+            )
+            .join(
+                InstagramLoop,
+                InstagramLoop.id == InstagramPublicationJob.loop_id,
+            )
+            .join(
+                InstagramAccount,
+                InstagramAccount.id == InstagramPublicationJob.account_id,
+            )
+            .outerjoin(
+                InstagramMedia,
+                InstagramMedia.id == InstagramPublicationJob.media_id,
+            )
+            .where(
+                InstagramPublicationJob.workspace_id == access.workspace.id,
+                InstagramPublicationJob.status == "failed",
+                InstagramPublicationJob.last_error.is_not(None),
+            )
+            .order_by(
+                InstagramPublicationJob.updated_at.desc(),
+                InstagramPublicationJob.id.desc(),
+            )
+            .limit(limit)
+        )
+    ).all()
+    return InstagramPublicationFailuresResponse(
+        failures=[
+            InstagramPublicationFailureResponse(
+                id=job.id,
+                loop_name=loop_name,
+                account_username=username,
+                media_filename=filename,
+                scheduled_for=_utc_datetime(job.scheduled_for),
+                updated_at=_utc_datetime(job.updated_at),
+                attempts=job.attempts,
+                error=job.last_error or "Falha sem detalhes registrados.",
+            )
+            for job, loop_name, username, filename in rows
+        ]
     )
 
 
@@ -284,6 +331,9 @@ async def create_loop(
     await db.flush()
     _save_loop_accounts(loop, accounts, db)
     _save_loop_media(loop, media, db)
+    await db.flush()
+    if loop.status == "active":
+        await enqueue_loop_publications_now(db, loop, accounts, now=now)
     await db.commit()
     await db.refresh(loop)
     return await _loop_response(loop, db, now)
@@ -308,6 +358,15 @@ async def update_loop(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    previous_account_ids = set(
+        (
+            await db.scalars(
+                select(InstagramLoopAccount.account_id).where(
+                    InstagramLoopAccount.loop_id == loop.id
+                )
+            )
+        ).all()
+    )
     accounts = await _validate_selected_accounts(
         access.workspace.id,
         payload.account_ids,
@@ -344,6 +403,7 @@ async def update_loop(
             )
         )
         _save_loop_media(loop, media, db)
+    await db.flush()
     await db.execute(
         InstagramPublicationJob.__table__.update()
         .where(
@@ -366,6 +426,9 @@ async def update_loop(
             last_error="Loop configuration changed before this job started.",
         )
     )
+    new_accounts = [account for account in accounts if account.id not in previous_account_ids]
+    if loop.status == "active" and new_accounts:
+        await enqueue_loop_publications_now(db, loop, new_accounts, now=utc_now())
     await db.commit()
     await db.refresh(loop)
     return await _loop_response(loop, db, utc_now())
@@ -391,6 +454,15 @@ async def update_loop_accounts(
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
 
+    previous_account_ids = set(
+        (
+            await db.scalars(
+                select(InstagramLoopAccount.account_id).where(
+                    InstagramLoopAccount.loop_id == loop.id
+                )
+            )
+        ).all()
+    )
     accounts = await _validate_selected_accounts(
         access.workspace.id,
         payload.account_ids,
@@ -402,6 +474,7 @@ async def update_loop_accounts(
         )
     )
     _save_loop_accounts(loop, accounts, db)
+    await db.flush()
 
     selected_account_ids = [account.id for account in accounts]
     pending_jobs = InstagramPublicationJob.__table__.update().where(
@@ -422,6 +495,9 @@ async def update_loop_accounts(
             last_error="Loop account configuration changed before this job started.",
         )
     )
+    new_accounts = [account for account in accounts if account.id not in previous_account_ids]
+    if loop.status == "active" and new_accounts:
+        await enqueue_loop_publications_now(db, loop, new_accounts, now=utc_now())
     await db.commit()
     await db.refresh(loop)
     return await _loop_response(loop, db, utc_now())

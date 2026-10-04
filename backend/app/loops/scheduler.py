@@ -62,51 +62,193 @@ async def _select_loop_media(
     if not media_pool:
         return None
 
-    published_jobs = (
-        await db.execute(
-            select(
-                InstagramPublicationJob.media_id,
-                func.count(InstagramPublicationJob.id),
-            )
-            .where(
-                InstagramPublicationJob.loop_id == loop.id,
-                InstagramPublicationJob.account_id == account.id,
-                InstagramPublicationJob.status == "published",
-                InstagramPublicationJob.media_id.is_not(None),
-            )
-            .group_by(InstagramPublicationJob.media_id)
-        )
-    ).all()
-    published_counts = {media_id: count for media_id, count in published_jobs}
-    attempted_failure_ids = set(
-        (
-            await db.scalars(
-                select(InstagramPublicationJob.media_id).where(
-                    InstagramPublicationJob.loop_id == loop.id,
-                    InstagramPublicationJob.account_id == account.id,
+    last_media_id = await db.scalar(
+        select(InstagramPublicationJob.media_id)
+        .where(
+            InstagramPublicationJob.loop_id == loop.id,
+            InstagramPublicationJob.account_id == account.id,
+            InstagramPublicationJob.media_id.is_not(None),
+            or_(
+                InstagramPublicationJob.status.in_(("published", "queued", "publishing")),
+                and_(
                     InstagramPublicationJob.status == "failed",
                     InstagramPublicationJob.attempts > 0,
-                    InstagramPublicationJob.media_id.is_not(None),
+                ),
+            ),
+        )
+        .order_by(
+            InstagramPublicationJob.scheduled_for.desc(),
+            InstagramPublicationJob.id.desc(),
+        )
+        .limit(1)
+    )
+    if last_media_id is None:
+        return media_pool[0]
+
+    last_index = next(
+        (index for index, item in enumerate(media_pool) if item.id == last_media_id),
+        None,
+    )
+    if last_index is None:
+        return media_pool[0]
+    next_index = last_index + 1
+    if next_index >= len(media_pool):
+        return media_pool[0] if loop.repeat_media else None
+    return media_pool[next_index]
+
+
+async def _next_loop_media_for_new_accounts(
+    db: AsyncSession,
+    loop: InstagramLoop,
+) -> tuple[bool, InstagramMedia | None]:
+    media_pool = list(
+        (
+            await db.scalars(
+                select(InstagramMedia)
+                .join(InstagramLoopMedia, InstagramLoopMedia.media_id == InstagramMedia.id)
+                .where(
+                    InstagramLoopMedia.loop_id == loop.id,
+                    InstagramMedia.workspace_id == loop.workspace_id,
+                    (
+                        InstagramMedia.media_type == "video"
+                        if loop.post_type == "reels"
+                        else InstagramMedia.media_type == "image"
+                        if loop.post_type == "images"
+                        else InstagramMedia.media_type.in_(("image", "video"))
+                    ),
                 )
+                .order_by(InstagramMedia.created_at, InstagramMedia.id)
             )
         ).all()
     )
-    if not loop.repeat_media:
-        return next(
-            (
-                item
-                for item in media_pool
-                if item.id not in published_counts and item.id not in attempted_failure_ids
-            ),
+    if not media_pool:
+        return False, None
+
+    current_batch_media_id = await db.scalar(
+        select(InstagramPublicationJob.media_id)
+        .where(
+            InstagramPublicationJob.loop_id == loop.id,
+            InstagramPublicationJob.status.in_(("queued", "publishing")),
+            InstagramPublicationJob.media_id.is_not(None),
+        )
+        .order_by(
+            InstagramPublicationJob.scheduled_for.desc(),
+            InstagramPublicationJob.id.desc(),
+        )
+        .limit(1)
+    )
+    if current_batch_media_id is not None:
+        current = next(
+            (item for item in media_pool if item.id == current_batch_media_id),
             None,
         )
-    available_media = [
-        item for item in media_pool if item.id not in attempted_failure_ids
-    ]
-    if not available_media:
-        return None
-    publication_count = sum(published_counts.values())
-    return available_media[publication_count % len(available_media)]
+        if current is not None:
+            return True, current
+
+    latest_job = await db.execute(
+        select(InstagramPublicationJob.media_id)
+        .where(
+            InstagramPublicationJob.loop_id == loop.id,
+            InstagramPublicationJob.media_id.is_not(None),
+            or_(
+                InstagramPublicationJob.status == "published",
+                and_(
+                    InstagramPublicationJob.status == "failed",
+                    InstagramPublicationJob.attempts > 0,
+                ),
+            ),
+        )
+        .order_by(
+            InstagramPublicationJob.scheduled_for.desc(),
+            InstagramPublicationJob.id.desc(),
+        )
+        .limit(1)
+    )
+    last_media_id = latest_job.scalar_one_or_none()
+    if last_media_id is None:
+        return False, None
+    last_index = next(
+        (index for index, item in enumerate(media_pool) if item.id == last_media_id),
+        None,
+    )
+    if last_index is None:
+        return True, media_pool[0]
+    next_index = last_index + 1
+    if next_index >= len(media_pool):
+        return True, media_pool[0] if loop.repeat_media else None
+    return True, media_pool[next_index]
+
+
+async def enqueue_loop_publications_now(
+    db: AsyncSession,
+    loop: InstagramLoop,
+    accounts: list[InstagramAccount],
+    now: datetime | None = None,
+) -> int:
+    """Queue the current playlist item for each eligible newly attached account."""
+    current = now or datetime.now(timezone.utc)
+    has_loop_history, shared_media = await _next_loop_media_for_new_accounts(db, loop)
+    created_jobs = 0
+    for account in accounts:
+        daily_start, daily_end = local_day_bounds_utc(current)
+        daily_count = await db.scalar(
+            select(func.count(InstagramPublicationJob.id)).where(
+                InstagramPublicationJob.account_id == account.id,
+                or_(
+                    and_(
+                        InstagramPublicationJob.status == "published",
+                        InstagramPublicationJob.updated_at >= daily_start,
+                        InstagramPublicationJob.updated_at < daily_end,
+                    ),
+                    and_(
+                        InstagramPublicationJob.status.in_(_ACTIVE_JOB_STATUSES),
+                        InstagramPublicationJob.scheduled_for >= daily_start,
+                        InstagramPublicationJob.scheduled_for < daily_end,
+                    ),
+                ),
+            )
+        )
+        if (daily_count or 0) >= loop.daily_limit_per_account:
+            continue
+        rolling_count = await db.scalar(
+            select(func.count(InstagramPublicationJob.id)).where(
+                InstagramPublicationJob.account_id == account.id,
+                _scheduled_or_published_since(current - timedelta(hours=24)),
+            )
+        )
+        if (rolling_count or 0) >= INSTAGRAM_MAX_POSTS_PER_24_HOURS:
+            continue
+        active_job = await db.scalar(
+            select(InstagramPublicationJob.id)
+            .where(
+                InstagramPublicationJob.account_id == account.id,
+                InstagramPublicationJob.status.in_(_ACTIVE_JOB_STATUSES),
+            )
+            .limit(1)
+        )
+        if active_job is not None:
+            continue
+
+        selected_media = (
+            shared_media
+            if has_loop_history
+            else await _select_loop_media(db, loop, account)
+        )
+        if selected_media is None:
+            continue
+        db.add(
+            InstagramPublicationJob(
+                workspace_id=loop.workspace_id,
+                loop_id=loop.id,
+                account_id=account.id,
+                media_id=selected_media.id,
+                scheduled_for=current,
+                status="queued",
+            )
+        )
+        created_jobs += 1
+    await db.flush()
+    return created_jobs
 
 
 async def _assign_waiting_jobs(db: AsyncSession, current: datetime) -> None:

@@ -5,6 +5,7 @@ import {
   Clock3,
   Link2,
   Search,
+  Trash2,
   Unlink,
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -16,6 +17,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 
 type InstagramAccount = {
   id: string;
+  profile_folder_id: string | null;
   username: string;
   profile_picture_url: string | null;
   token_expires_at: string;
@@ -95,6 +97,23 @@ export function InstagramAccountsPage() {
       void queryClient.invalidateQueries({ queryKey: ["loops"] });
     },
   });
+  const removeErroredAccount = useMutation({
+    mutationFn: (accountId: string) =>
+      apiRequest<InstagramDisconnectResponse>(`/api/instagram/accounts/${accountId}/remove`, {
+        method: "DELETE",
+      }),
+    onSuccess: ({ meta_revoked }) => {
+      setDisconnectMessage({
+        complete: meta_revoked,
+        text: meta_revoked
+          ? "A conta com erro foi removida do FlashPost e a autorização foi revogada no Instagram."
+          : "A conta com erro foi removida do FlashPost, mas a Meta não confirmou a revogação. Remova o FlashPost dos apps conectados nas configurações do Instagram.",
+      });
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["loops"] });
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "folders"] });
+    },
+  });
 
   useEffect(() => {
     const outcome = searchParams.get("instagram");
@@ -131,6 +150,12 @@ export function InstagramAccountsPage() {
       ? disconnect.error.message
       : disconnect.error
         ? "Não foi possível desconectar a conta."
+        : null;
+  const removeError =
+    removeErroredAccount.error instanceof ApiError
+      ? removeErroredAccount.error.message
+      : removeErroredAccount.error
+        ? "Não foi possível remover a conta com erro."
         : null;
   const metaAppsError =
     metaApps.error instanceof ApiError
@@ -209,6 +234,7 @@ export function InstagramAccountsPage() {
       )}
       {connectError && <ErrorState message={connectError} />}
       {disconnectError && <ErrorState message={disconnectError} />}
+      {removeError && <ErrorState message={removeError} />}
       {metaAppsError && <ErrorState message={metaAppsError} />}
       {disconnectMessage && (
         <div
@@ -363,6 +389,25 @@ export function InstagramAccountsPage() {
                       >
                         <Unlink size={15} />
                         Desconectar
+                      </button>
+                    )}
+                    {account.status === "error" && accounts.data.can_manage && (
+                      <button
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#47252d] px-3 py-2 text-sm text-[#f1a3ad] transition hover:bg-[#1a1013] disabled:opacity-60"
+                        type="button"
+                        disabled={removeErroredAccount.isPending}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Remover @${account.username} do FlashPost? A conta e o histórico de publicações associado serão excluídos.`,
+                            )
+                          ) {
+                            removeErroredAccount.mutate(account.id);
+                          }
+                        }}
+                      >
+                        <Trash2 size={15} />
+                        Remover conta
                       </button>
                     )}
                   </div>

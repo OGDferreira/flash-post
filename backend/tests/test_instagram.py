@@ -338,6 +338,196 @@ async def test_owner_can_disconnect_only_an_account_in_their_workspace(
 
 
 @pytest.mark.anyio
+async def test_owner_can_load_recent_media_for_selected_instagram_account(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+    account = InstagramAccount(
+        workspace_id=workspace.id,
+        instagram_user_id="17840000000000789",
+        username="feed_profile",
+        encrypted_access_token=encrypt_value("feed-access-token"),
+        token_expires_at=datetime.now(timezone.utc) + timedelta(days=50),
+        follower_count=42,
+        media_count=7,
+    )
+    db_session.add(account)
+    await db_session.commit()
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> object:
+            return {
+                "data": [
+                    {
+                        "id": "media-1",
+                        "media_type": "VIDEO",
+                        "media_url": "https://cdn.instagram.com/reel.mp4",
+                        "thumbnail_url": "https://cdn.instagram.com/reel.jpg",
+                        "permalink": "https://www.instagram.com/p/example/",
+                        "timestamp": "2026-10-03T12:30:00+0000",
+                        "caption": "A recent Reel",
+                        "like_count": 12,
+                        "comments_count": 3,
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url: str, *, params: dict[str, str]):
+            calls.append((url, params))
+            return FakeResponse()
+
+    monkeypatch.setattr(instagram_router.httpx, "AsyncClient", FakeClient)
+    await _login(client, "owner@example.com", "correct horse battery staple")
+
+    response = await client.get(f"/api/instagram/accounts/{account.id}/feed")
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["username"] == "feed_profile"
+    assert result["followers_count"] == 42
+    assert result["media_count"] == 7
+    assert result["follows_count"] is None
+    assert result["media"][0]["id"] == "media-1"
+    assert result["media"][0]["like_count"] == 12
+    assert calls[0][0].endswith("/17840000000000789/media")
+    assert calls[0][1]["access_token"] == "feed-access-token"
+    assert "feed-access-token" not in response.text
+
+
+@pytest.mark.anyio
+async def test_owner_can_save_highlights_flag_on_account(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = InstagramAccount(
+        workspace_id=workspace.id,
+        instagram_user_id="17840000000000890",
+        username="highlights_profile",
+        token_expires_at=datetime.now(timezone.utc) + timedelta(days=50),
+    )
+    db_session.add(account)
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+
+    response = await client.patch(
+        f"/api/instagram/accounts/{account.id}/highlights",
+        headers={"X-CSRF-Token": token},
+        json={"has_highlights": True},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["has_highlights"] is True
+    await db_session.refresh(account)
+    assert account.has_highlights is True
+
+
+@pytest.mark.anyio
+async def test_owner_can_create_color_folder_and_assign_accounts(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = InstagramAccount(
+        workspace_id=workspace.id,
+        instagram_user_id="17840000000000123",
+        username="folder_test_account",
+        token_expires_at=datetime.now(timezone.utc) + timedelta(days=50),
+    )
+    db_session.add(account)
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+
+    created = await client.post(
+        "/api/instagram/folders",
+        headers={"X-CSRF-Token": token},
+        json={"name": "Humor", "color": "#ff3399"},
+    )
+    assert created.status_code == 201, created.text
+    folder_id = created.json()["id"]
+    assert created.json()["color"] == "#ff3399"
+
+    assigned = await client.put(
+        f"/api/instagram/folders/{folder_id}/accounts",
+        headers={"X-CSRF-Token": token},
+        json={"account_ids": [str(account.id)]},
+    )
+    assert assigned.status_code == 200, assigned.text
+    assert [item["username"] for item in assigned.json()["accounts"]] == [
+        "folder_test_account"
+    ]
+
+    listed = await client.get("/api/instagram/folders")
+    assert listed.status_code == 200
+    assert listed.json()["accounts"][0]["profile_folder_id"] == folder_id
+    assert listed.json()["folders"][0]["color"] == "#ff3399"
+
+    deleted = await client.delete(
+        f"/api/instagram/folders/{folder_id}",
+        headers={"X-CSRF-Token": token},
+    )
+    assert deleted.status_code == 204
+    await db_session.refresh(account)
+    assert account.profile_folder_id is None
+
+
+@pytest.mark.anyio
+async def test_owner_can_remove_an_errored_account(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+    account = InstagramAccount(
+        workspace_id=workspace.id,
+        instagram_user_id="17840000000000456",
+        username="errored_account",
+        encrypted_access_token=encrypt_value("private-access-token"),
+        token_expires_at=datetime.now(timezone.utc) + timedelta(days=50),
+        status="error",
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    async def fake_revoke(_access_token: str) -> bool:
+        return True
+
+    monkeypatch.setattr(instagram_router, "revoke_instagram_permissions", fake_revoke)
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+    response = await client.delete(
+        f"/api/instagram/accounts/{account.id}/remove",
+        headers={"X-CSRF-Token": token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"meta_revoked": True}
+    assert await db_session.get(InstagramAccount, account.id) is None
+
+
+@pytest.mark.anyio
 async def test_account_is_removed_locally_when_meta_revocation_cannot_be_confirmed(
     client: AsyncClient,
     db_session: AsyncSession,

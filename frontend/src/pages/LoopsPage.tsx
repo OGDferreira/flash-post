@@ -55,7 +55,6 @@ type InstagramLoop = {
   waiting_for_media_count: number;
   published_today_count: number;
   failed_count: number;
-  last_failure: string | null;
 };
 
 type InstagramLoopsResponse = {
@@ -65,6 +64,21 @@ type InstagramLoopsResponse = {
   publishing_enabled: boolean;
   loops: InstagramLoop[];
   available_accounts: LoopAccount[];
+};
+
+type PublicationFailure = {
+  id: string;
+  loop_name: string;
+  account_username: string;
+  media_filename: string | null;
+  scheduled_for: string;
+  updated_at: string;
+  attempts: number;
+  error: string;
+};
+
+type PublicationFailuresResponse = {
+  failures: PublicationFailure[];
 };
 
 type LoopForm = {
@@ -126,7 +140,7 @@ function formatFileSize(sizeBytes: number): string {
 
 export function LoopsPage() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"continuous" | "limited">("continuous");
+  const [tab, setTab] = useState<"continuous" | "limited" | "errors">("continuous");
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<LoopForm>(emptyForm);
@@ -142,6 +156,13 @@ export function LoopsPage() {
   const media = useQuery({
     queryKey: ["instagram-media"],
     queryFn: () => apiRequest<InstagramMediaResponse>("/api/media"),
+    retry: false,
+  });
+  const failures = useQuery({
+    queryKey: ["loops", "failures"],
+    queryFn: () => apiRequest<PublicationFailuresResponse>("/api/loops/failures"),
+    enabled: tab === "errors" && loops.data?.can_configure === true,
+    refetchInterval: 60_000,
     retry: false,
   });
 
@@ -216,8 +237,8 @@ export function LoopsPage() {
 
   const visibleLoops = useMemo(
     () =>
-      (loops.data?.loops ?? []).filter((loop) =>
-        tab === "continuous" ? loop.repeat_media : !loop.repeat_media,
+      (loops.data?.loops ?? []).filter(
+        (loop) => tab !== "errors" && (tab === "continuous" ? loop.repeat_media : !loop.repeat_media),
       ),
     [loops.data?.loops, tab],
   );
@@ -353,7 +374,53 @@ export function LoopsPage() {
             {label}
           </button>
         ))}
+        {loops.data.can_configure && (
+        <button
+          className={`border-b-2 px-4 py-3 text-sm ${
+            tab === "errors"
+              ? "border-[#00c9d8] font-medium text-white"
+              : "border-transparent text-[#94a3b8] hover:text-white"
+          }`}
+          type="button"
+          onClick={() => setTab("errors")}
+        >
+          Erros ({loops.data.loops.reduce((total, loop) => total + loop.failed_count, 0)})
+        </button>
+        )}
       </div>
+      {tab === "errors" ? (
+        failures.isLoading ? (
+        <LoadingState label="Carregando log de erros" />
+        ) : failures.error || !failures.data ? (
+        <ErrorState message="Não foi possível carregar o log de erros." />
+        ) : failures.data.failures.length === 0 ? (
+        <EmptyState message="Nenhuma falha de publicação registrada." />
+        ) : (
+        <section aria-label="Log de erros de publicação" className="space-y-3">
+          {failures.data.failures.map((failure) => (
+            <article
+              className="space-y-2 rounded-xl border border-[#47252d] bg-[#130e11] p-4"
+              key={failure.id}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-medium text-[#f5f7fb]">
+                  @{failure.account_username} · {failure.loop_name}
+                </h3>
+                <time className="text-xs text-[#94a3b8]">
+                  {formatDate(failure.updated_at)}
+                </time>
+              </div>
+              <p className="text-xs text-[#94a3b8]">
+                {failure.media_filename ?? "Mídia não identificada"} ·{" "}
+                {failure.attempts} {failure.attempts === 1 ? "tentativa" : "tentativas"}
+              </p>
+              <p className="break-words text-sm leading-6 text-[#f1a3ad]">{failure.error}</p>
+            </article>
+          ))}
+        </section>
+        )
+      ) : (
+        <div className="space-y-6">
       <p className="text-sm leading-6 text-[#94a3b8]">
         Cada loop escolhe a próxima execução aleatoriamente dentro do intervalo configurado e
         respeita o limite diário por conta. A mídia precisa estar no bucket privado e selecionada
@@ -748,18 +815,8 @@ export function LoopsPage() {
                     {loop.waiting_for_media_count === 1
                       ? "publicação aguardando mídia"
                       : "publicações aguardando mídia"} ·{" "}
-                    {loop.published_today_count} publicados hoje
+                    {loop.published_today_count} publicados hoje · Falhas: {loop.failed_count}
                   </p>
-                  {loop.failed_count > 0 && (
-                    <div className="mt-1 space-y-1 text-xs text-[#f1a3ad]">
-                      <p>
-                        {loop.failed_count}{" "}
-                        {loop.failed_count === 1 ? "publicação falhou" : "publicações falharam"}.
-                        Mídias com tentativa iniciada não são reenviadas automaticamente.
-                      </p>
-                      {loop.last_failure && <p>Falha mais recente: {loop.last_failure}</p>}
-                    </div>
-                  )}
                 </div>
                 {loops.data.can_manage && (
                   <div className="flex shrink-0 items-start gap-2">
@@ -808,6 +865,8 @@ export function LoopsPage() {
               </div>
             </article>
           ))}
+        </div>
+      )}
         </div>
       )}
     </div>

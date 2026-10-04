@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   Clapperboard,
+  Folder,
   Home,
   Infinity,
   LogOut,
@@ -26,6 +27,7 @@ import { ApiError, apiRequest } from "@/services/api";
 const ownerLinks = [
   { label: "Visão geral", to: "/dashboard", icon: Home },
   { label: "Contas", to: "/feature/accounts", icon: Users },
+  { label: "Pastas de perfis", to: "/feature/profile-folders", icon: Folder },
   { label: "Loops", to: "/feature/loops", icon: Infinity },
   { label: "Analytics", to: "/feature/analytics", icon: ChartNoAxesCombined },
   { label: "Financeiro", to: "/feature/finance", icon: CircleDollarSign },
@@ -154,6 +156,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
               to !== "/feature/accounts" &&
               to !== "/feature/loops" &&
               to !== "/feature/analytics" &&
+              to !== "/feature/profile-folders" &&
               to !== "/feature/settings" && (
               <span className="ml-auto hidden rounded-md border border-[#202838] px-1.5 py-0.5 text-[9px] text-[#64748b] lg:group-hover:inline">
                 EM BREVE

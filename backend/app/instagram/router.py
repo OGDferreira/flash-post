@@ -43,6 +43,9 @@ from app.schemas.instagram import (
     InstagramMetaAppUpdateRequest,
     InstagramConnectResponse,
     InstagramDisconnectResponse,
+    InstagramAccountFeedResponse,
+    InstagramAccountHighlightsRequest,
+    InstagramFeedMediaResponse,
 )
 
 router = APIRouter(prefix="/api/instagram", tags=["Instagram accounts"])
@@ -85,6 +88,8 @@ async def list_accounts(
         accounts=[
             InstagramAccountResponse(
                 id=account.id,
+                profile_folder_id=account.profile_folder_id,
+                has_highlights=account.has_highlights,
                 username=account.username,
                 profile_picture_url=account.profile_picture_url,
                 follower_count=account.follower_count,
@@ -95,6 +100,178 @@ async def list_accounts(
             )
             for account in accounts
         ],
+    )
+
+
+@router.patch(
+    "/accounts/{account_id}/highlights",
+    response_model=InstagramAccountResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def update_account_highlights(
+    account_id: uuid.UUID,
+    payload: InstagramAccountHighlightsRequest,
+    access: OwnerAccess,
+    db: DbSession,
+) -> InstagramAccountResponse:
+    account = await db.scalar(
+        select(InstagramAccount).where(
+            InstagramAccount.id == account_id,
+            InstagramAccount.workspace_id == access.workspace.id,
+        )
+    )
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instagram account not found.")
+    account.has_highlights = payload.has_highlights
+    await db.commit()
+    await db.refresh(account)
+    return InstagramAccountResponse(
+        id=account.id,
+        profile_folder_id=account.profile_folder_id,
+        has_highlights=account.has_highlights,
+        username=account.username,
+        profile_picture_url=account.profile_picture_url,
+        follower_count=account.follower_count,
+        media_count=account.media_count,
+        token_expires_at=_utc_datetime(account.token_expires_at),
+        connected_at=_utc_datetime(account.connected_at),
+        status=account.status,
+    )
+
+
+@router.get(
+    "/accounts/{account_id}/feed",
+    response_model=InstagramAccountFeedResponse,
+)
+async def get_account_feed(
+    account_id: uuid.UUID,
+    access: OwnerAccess,
+    db: DbSession,
+) -> InstagramAccountFeedResponse:
+    account = await db.scalar(
+        select(InstagramAccount).where(
+            InstagramAccount.id == account_id,
+            InstagramAccount.workspace_id == access.workspace.id,
+        )
+    )
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instagram account not found.")
+    if account.encrypted_access_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta conta não possui uma autorização ativa. Reconecte-a no Hub de Contas.",
+        )
+    try:
+        access_token = decrypt_value(account.encrypted_access_token)
+    except (RuntimeError, ValueError) as exc:
+        logger.error("Instagram token could not be decrypted for feed (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Não foi possível ler a autorização salva desta conta com segurança.",
+        ) from None
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+            response = await client.get(
+                f"https://graph.instagram.com/v25.0/{account.instagram_user_id}/media",
+                params={
+                    "fields": (
+                        "id,media_type,media_url,thumbnail_url,permalink,timestamp,"
+                        "caption,like_count,comments_count"
+                    ),
+                    "limit": "25",
+                    "access_token": access_token,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "Instagram feed request was rejected for account %s (HTTP %s).",
+            account.id,
+            exc.response.status_code,
+        )
+        if exc.response.status_code in {401, 403}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="O Instagram recusou a autorização desta conta. Reconecte-a no Hub de Contas.",
+            ) from None
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="O Instagram não conseguiu carregar as mídias recentes. Tente novamente.",
+        ) from None
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "Instagram feed request failed for account %s (%s).",
+            account.id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Não foi possível conectar ao Instagram para carregar as mídias recentes.",
+        ) from None
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="O Instagram retornou uma resposta inválida para as mídias recentes.",
+        ) from None
+
+    raw_media = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(raw_media, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="O Instagram retornou uma lista de mídias inválida.",
+        )
+    media = []
+    for item in raw_media:
+        if not isinstance(item, dict):
+            continue
+        media_id = item.get("id")
+        if not isinstance(media_id, (str, int)) or not str(media_id):
+            continue
+        values: dict[str, object] = {}
+        for field in ("media_url", "thumbnail_url", "permalink"):
+            value = item.get(field)
+            values[field] = (
+                value
+                if isinstance(value, str) and value.startswith("https://")
+                else None
+            )
+        timestamp = item.get("timestamp")
+        try:
+            parsed_timestamp = datetime.fromisoformat(
+                timestamp.replace("Z", "+00:00")
+            ) if isinstance(timestamp, str) else None
+        except ValueError:
+            parsed_timestamp = None
+        media.append(
+            InstagramFeedMediaResponse(
+                id=str(media_id),
+                media_type=item.get("media_type")
+                if isinstance(item.get("media_type"), str)
+                else "UNKNOWN",
+                media_url=values["media_url"],
+                thumbnail_url=values["thumbnail_url"],
+                permalink=values["permalink"],
+                timestamp=parsed_timestamp,
+                caption=item.get("caption") if isinstance(item.get("caption"), str) else None,
+                like_count=item.get("like_count")
+                if isinstance(item.get("like_count"), int)
+                and not isinstance(item.get("like_count"), bool)
+                else None,
+                comments_count=item.get("comments_count")
+                if isinstance(item.get("comments_count"), int)
+                and not isinstance(item.get("comments_count"), bool)
+                else None,
+            )
+        )
+    return InstagramAccountFeedResponse(
+        account_id=account.id,
+        username=account.username,
+        followers_count=account.follower_count,
+        media_count=account.media_count,
+        follows_count=None,
+        media=media,
     )
 
 
@@ -584,4 +761,50 @@ async def disconnect_account(
             logger.warning("Instagram permission revocation failed (%s).", type(exc).__name__)
     if not meta_revoked:
         logger.warning("Instagram account was removed locally without confirmed Meta revocation.")
+    return InstagramDisconnectResponse(meta_revoked=meta_revoked)
+
+
+@router.delete(
+    "/accounts/{account_id}/remove",
+    response_model=InstagramDisconnectResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def remove_error_account(
+    account_id: uuid.UUID,
+    access: OwnerAccess,
+    db: DbSession,
+) -> InstagramDisconnectResponse:
+    account = await db.scalar(
+        select(InstagramAccount).where(
+            InstagramAccount.id == account_id,
+            InstagramAccount.workspace_id == access.workspace.id,
+        )
+    )
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instagram account not found.")
+    if account.status != "error":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only accounts marked with an error can be removed here.",
+        )
+    try:
+        access_token = (
+            decrypt_value(account.encrypted_access_token)
+            if account.encrypted_access_token is not None
+            else None
+        )
+    except (RuntimeError, ValueError) as exc:
+        logger.warning("Instagram token could not be decrypted for revocation (%s).", type(exc).__name__)
+        access_token = None
+    await db.delete(account)
+    await db.commit()
+
+    meta_revoked = False
+    if access_token is not None:
+        try:
+            meta_revoked = await revoke_instagram_permissions(access_token)
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("Instagram permission revocation failed (%s).", type(exc).__name__)
+    if not meta_revoked:
+        logger.warning("Errored Instagram account was removed locally without confirmed Meta revocation.")
     return InstagramDisconnectResponse(meta_revoked=meta_revoked)

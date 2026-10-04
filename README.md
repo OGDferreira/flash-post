@@ -124,6 +124,16 @@ retroactively; reconnecting an existing account does not count as a new
 connection.
 Migration `20261003_11` adds account health errors, workspace-specific
 Sharkbot webhook URLs, and timestamped, deduplicated Sharkbot events.
+Migration `20261003_12` adds colored profile folders for organizing Instagram
+accounts. The Loops page shows only published-today and failure counts; owners
+can inspect detailed publication errors in its separate Errors tab. Accounts
+marked with errors are detached from loops and queued jobs, and can be removed
+from the Hub. Removing an errored account permanently deletes its associated
+publication-job history, so review its entries in the Errors tab first.
+The owner-only **Feed** page lists workspace profiles, loads up to 25 recent
+Instagram media items per selected profile, and shows profile snapshots and
+media engagement returned by Instagram. The **Colaboradores** navigation and
+management page are also owner-only.
 
 ## Instagram accounts
 
@@ -192,7 +202,7 @@ publishing settings or media pool. An APScheduler task starts with the FastAPI
 web process and checks the queue and token refreshes once per minute. With
 `INSTAGRAM_PUBLISHING_ENABLED=false`, it only creates queued intents and does
 not send posts. Enable publishing only after rotating any exposed key,
-verifying the Project URL, confirming migration `20261003_11` was applied,
+verifying the Project URL, confirming migration `20261003_12` was applied,
 uploading test media, and reconnecting a test account with the publishing
 permission. Once enabled, only queued items with compatible media are sent.
 Failed jobs are not automatically retried because a network failure can happen
@@ -200,6 +210,11 @@ after Instagram has accepted a post. Verify Instagram before uploading the
 same media again; media from an ambiguous, started attempt is not reused
 automatically. A suspended Render web service cannot run its in-process
 scheduler until the service wakes.
+An active loop queues its first selected media immediately for each eligible
+account instead of waiting for the first random interval. Accounts added later
+join the current playlist item immediately (or the next item after the last
+completed item), and each account advances independently through the same
+ordered media pool.
 
 ## Collaborators and installable app
 

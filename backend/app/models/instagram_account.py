@@ -38,6 +38,9 @@ class InstagramAccount(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
     )
+    profile_folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_profile_folders.id", ondelete="SET NULL")
+    )
     connected_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -54,6 +57,9 @@ class InstagramAccount(Base):
     encrypted_access_token: Mapped[str | None] = mapped_column(String(2048))
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'connected'")
+    )
+    has_highlights: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default=text("false")
     )
     token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     token_refresh_checked_at: Mapped[datetime | None] = mapped_column(

@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
@@ -11,7 +11,12 @@ from app.core.database import get_session_factory
 from app.instagram.publishing import InstagramPublishingError, publish_media
 from app.instagram.oauth import InstagramOAuthError, refresh_instagram_long_lived_token
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
-from app.models import InstagramAccount, InstagramMedia, InstagramPublicationJob
+from app.models import (
+    InstagramAccount,
+    InstagramLoopAccount,
+    InstagramMedia,
+    InstagramPublicationJob,
+)
 from app.loops.scheduler import enqueue_due_loop_publications
 
 logger = logging.getLogger(__name__)
@@ -73,10 +78,26 @@ async def _mark_expired_accounts(now: datetime) -> int:
             )
         ).all()
         for account in expired_accounts:
-            account.status = "error"
+            await _mark_account_as_error(db, account)
         if expired_accounts:
             await db.commit()
         return len(expired_accounts)
+
+
+async def _mark_account_as_error(db, account: InstagramAccount) -> None:
+    account.status = "error"
+    await db.execute(
+        delete(InstagramLoopAccount).where(
+            InstagramLoopAccount.account_id == account.id
+        )
+    )
+    await db.execute(
+        delete(InstagramPublicationJob)
+        .where(
+            InstagramPublicationJob.account_id == account.id,
+            InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
+        )
+    )
 
 
 async def _update_account_health_after_failure(
@@ -88,7 +109,7 @@ async def _update_account_health_after_failure(
     if account is None or account.status != "connected":
         return
     if _is_account_connection_failure(error):
-        account.status = "error"
+        await _mark_account_as_error(db, account)
         await db.commit()
         return
 
@@ -111,7 +132,7 @@ async def _update_account_health_after_failure(
         len(recent_jobs) > CONSECUTIVE_PUBLICATION_FAILURE_LIMIT
         and all(job_status == "failed" for job_status in recent_jobs)
     ):
-        account.status = "error"
+        await _mark_account_as_error(db, account)
         await db.commit()
 
 
@@ -187,7 +208,7 @@ async def refresh_due_instagram_tokens(now: datetime | None = None) -> int:
                     exc.response.status_code,
                 )
                 if _is_account_connection_failure(exc):
-                    account.status = "error"
+                    await _mark_account_as_error(db, account)
                     await db.commit()
                 continue
             except (httpx.HTTPError, InstagramOAuthError, RuntimeError) as exc:
@@ -256,7 +277,7 @@ async def process_one_queued_publication() -> bool:
             or _utc_datetime(account.token_expires_at) <= datetime.now(timezone.utc)
         ):
             if account.status == "connected":
-                account.status = "error"
+                await _mark_account_as_error(db, account)
             job.status = "failed"
             job.last_error = "The connected account or selected media is no longer available."
             await db.commit()

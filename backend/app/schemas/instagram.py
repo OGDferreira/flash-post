@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class InstagramAccountResponse(BaseModel):
     id: UUID
+    profile_folder_id: UUID | None
+    has_highlights: bool
     username: str
     profile_picture_url: str | None
     follower_count: int | None
@@ -108,3 +110,28 @@ class InstagramConnectResponse(BaseModel):
 
 class InstagramDisconnectResponse(BaseModel):
     meta_revoked: bool
+
+
+class InstagramAccountHighlightsRequest(BaseModel):
+    has_highlights: bool
+
+
+class InstagramFeedMediaResponse(BaseModel):
+    id: str
+    media_type: str
+    media_url: str | None
+    thumbnail_url: str | None
+    permalink: str | None
+    timestamp: datetime | None
+    caption: str | None
+    like_count: int | None
+    comments_count: int | None
+
+
+class InstagramAccountFeedResponse(BaseModel):
+    account_id: UUID
+    username: str
+    followers_count: int | None
+    media_count: int | None
+    follows_count: int | None
+    media: list[InstagramFeedMediaResponse]

@@ -67,7 +67,6 @@ class InstagramLoopResponse(BaseModel):
     waiting_for_media_count: int
     published_today_count: int
     failed_count: int
-    last_failure: str | None
 
 
 class InstagramLoopsResponse(BaseModel):
@@ -77,6 +76,21 @@ class InstagramLoopsResponse(BaseModel):
     publishing_enabled: bool
     loops: list[InstagramLoopResponse]
     available_accounts: list[InstagramLoopAccountResponse]
+
+
+class InstagramPublicationFailureResponse(BaseModel):
+    id: UUID
+    loop_name: str
+    account_username: str
+    media_filename: str | None
+    scheduled_for: datetime
+    updated_at: datetime
+    attempts: int
+    error: str
+
+
+class InstagramPublicationFailuresResponse(BaseModel):
+    failures: list[InstagramPublicationFailureResponse]
 
 
 class InstagramLoopStatusRequest(BaseModel):

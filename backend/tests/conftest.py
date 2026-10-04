@@ -61,6 +61,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             InstagramLoopAccount,
             InstagramLoopMedia,
             InstagramMedia,
+            InstagramProfileFolder,
             InstagramPublicationJob,
             SharkEvent,
             SystemSetting,
@@ -77,6 +78,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await connection.execute(delete(InstagramLoop))
         await connection.execute(delete(InstagramMedia))
         await connection.execute(delete(InstagramAccount))
+        await connection.execute(delete(InstagramProfileFolder))
         await connection.execute(delete(InstagramAppCredential))
         await connection.execute(delete(WorkspaceMember))
         await connection.execute(delete(SystemSetting))
