@@ -41,6 +41,7 @@ export function ProfileFoldersPage() {
   const [draft, setDraft] = useState(emptyDraft);
   const [managingFolderId, setManagingFolderId] = useState<string | null>(null);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [accountSearch, setAccountSearch] = useState("");
   const folders = useQuery({
     queryKey: ["instagram", "folders"],
     queryFn: () => apiRequest<ProfileFoldersResponse>("/api/instagram/folders"),
@@ -98,6 +99,10 @@ export function ProfileFoldersPage() {
     .filter((account) => account.profile_folder_id)
     .map((account) => account.id);
   const unassignedCount = folderData.accounts.length - folderAccountIds.length;
+  const query = accountSearch.trim().toLocaleLowerCase("pt-BR");
+  const visibleAccounts = folderData.accounts.filter((account) =>
+    account.username.toLocaleLowerCase("pt-BR").includes(query),
+  );
 
   function openCreateForm() {
     setEditingId(null);
@@ -115,6 +120,7 @@ export function ProfileFoldersPage() {
 
   function openAccountManager(folder: ProfileFolder) {
     setManagingFolderId(folder.id);
+    setAccountSearch("");
     setSelectedAccountIds(
       folderData.accounts
         .filter((account) => account.profile_folder_id === folder.id)
@@ -291,8 +297,43 @@ export function ProfileFoldersPage() {
                   <p className="text-sm font-medium text-[#f5f7fb]">
                     Selecione as contas que pertencem a {folder.name}
                   </p>
+                  <label className="grid gap-1.5 text-xs text-[#94a3b8]">
+                    Buscar perfil pelo nome
+                    <input
+                      className="min-h-9 rounded-lg border border-[#27334a] bg-[#10141b] px-3 text-sm text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+                      type="search"
+                      value={accountSearch}
+                      onChange={(event) => setAccountSearch(event.target.value)}
+                      placeholder="Digite o nome do perfil"
+                    />
+                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-[#94a3b8]">
+                      {visibleAccounts.length} {visibleAccounts.length === 1 ? "perfil" : "perfis"}
+                      {" "}correspondem à busca
+                    </p>
+                    <button
+                      className="min-h-8 rounded-lg border border-[#27334a] px-3 text-xs font-medium text-[#cbd5e1] hover:bg-[#101923] disabled:opacity-50"
+                      type="button"
+                      disabled={visibleAccounts.length === 0}
+                      onClick={() =>
+                        setSelectedAccountIds((current) =>
+                          Array.from(
+                            new Set([...current, ...visibleAccounts.map((account) => account.id)]),
+                          ),
+                        )
+                      }
+                    >
+                      Selecionar todos
+                    </button>
+                  </div>
+                  {visibleAccounts.length === 0 ? (
+                    <p className="py-2 text-xs text-[#94a3b8]">
+                      Nenhum perfil corresponde à busca.
+                    </p>
+                  ) : (
                   <div className="grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-                    {folderData.accounts.map((account) => {
+                    {visibleAccounts.map((account) => {
                       const checked = selectedAccountIds.includes(account.id);
                       return (
                         <label
@@ -325,6 +366,7 @@ export function ProfileFoldersPage() {
                       );
                     })}
                   </div>
+                  )}
                   <div className="flex justify-end gap-2">
                     <button
                       className="min-h-9 rounded-lg border border-[#27334a] px-3 text-xs text-[#cbd5e1]"

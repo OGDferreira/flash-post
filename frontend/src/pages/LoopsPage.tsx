@@ -464,6 +464,29 @@ export function LoopsPage() {
             </button>
           </div>
           <fieldset disabled={!loops.data.can_configure} className="space-y-5">
+          {editingId && (
+            <section className="space-y-2 rounded-lg border border-[#27334a] bg-[#090b0f] p-3">
+              <h4 className="text-xs font-medium text-[#cbd5e1]">Mídias deste loop</h4>
+              {form.media_ids.length === 0 ? (
+                <p className="text-xs text-[#94a3b8]">Nenhuma mídia selecionada.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {form.media_ids.map((mediaId) => {
+                    const item = media.data?.media.find((entry) => entry.id === mediaId);
+                    return (
+                      <li
+                        className="truncate text-xs text-[#cbd5e1]"
+                        key={mediaId}
+                        title={item?.filename ?? mediaId}
+                      >
+                        {item?.filename ?? "Arquivo indisponível"}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          )}
           <label className="grid gap-2 text-sm text-[#cbd5e1]">
             Nome do loop
             <input
@@ -810,64 +833,6 @@ export function LoopsPage() {
                       : "publicações aguardando mídia"} ·{" "}
                     {loop.published_today_count} publicados hoje · Falhas: {loop.failed_count}
                   </p>
-                  <div
-                    className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"
-                    aria-label={`Mídias do loop ${loop.name}`}
-                  >
-                    {loop.media_ids.map((mediaId) => {
-                      const item = media.data?.media.find((entry) => entry.id === mediaId);
-                      if (!item) return null;
-                      return (
-                        <div
-                          className="min-w-0 overflow-hidden rounded-lg border border-[#27334a] bg-[#090b0f]"
-                          key={mediaId}
-                        >
-                          {item.media_type === "video" ? (
-                            <video
-                              className="aspect-video w-full bg-black object-cover"
-                              src={`/api/media/${item.id}/preview`}
-                              muted
-                              playsInline
-                              preload="metadata"
-                              controls
-                              aria-label={`Prévia do vídeo ${item.filename}`}
-                            />
-                          ) : (
-                            <img
-                              className="aspect-video w-full bg-black object-cover"
-                              src={`/api/media/${item.id}/preview`}
-                              alt={`Prévia de ${item.filename}`}
-                              loading="lazy"
-                            />
-                          )}
-                          <div className="flex items-center justify-between gap-2 p-2">
-                            <span className="min-w-0 truncate text-[11px] text-[#cbd5e1]">
-                              {item.filename}
-                            </span>
-                            {loops.data.can_configure && (
-                              <button
-                                className="grid size-7 shrink-0 place-items-center rounded border border-[#47252d] text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-50"
-                                type="button"
-                                aria-label={`Remover ${item.filename} deste loop`}
-                                disabled={removeLoopMedia.isPending}
-                                onClick={() => {
-                                  if (
-                                    window.confirm(
-                                      `Remover "${item.filename}" somente do loop "${loop.name}"?`,
-                                    )
-                                  ) {
-                                    removeLoopMedia.mutate({ loopId: loop.id, mediaId });
-                                  }
-                                }}
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
                 {loops.data.can_manage && (
                   <div className="flex shrink-0 items-start gap-2">

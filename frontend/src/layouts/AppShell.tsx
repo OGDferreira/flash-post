@@ -150,18 +150,6 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
             <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[170px] lg:group-hover:opacity-100">
               {label}
             </span>
-            {!admin &&
-              user?.role !== "COLLABORATOR" &&
-              to !== "/dashboard" &&
-              to !== "/feature/accounts" &&
-              to !== "/feature/loops" &&
-              to !== "/feature/analytics" &&
-              to !== "/feature/profile-folders" &&
-              to !== "/feature/settings" && (
-              <span className="ml-auto hidden rounded-md border border-[#202838] px-1.5 py-0.5 text-[9px] text-[#64748b] lg:group-hover:inline">
-                EM BREVE
-              </span>
-            )}
           </NavLink>
         ))}
       </nav>
