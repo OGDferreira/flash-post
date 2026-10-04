@@ -48,7 +48,9 @@ const adminLinks = [
 ];
 
 const collaboratorLinks = [
+  { label: "Meu painel", to: "/dashboard", icon: Home },
   { label: "Hub de contas", to: "/feature/accounts", icon: Users },
+  { label: "Loops", to: "/feature/loops", icon: Infinity },
 ];
 
 export function AppShell({ admin = false }: { admin?: boolean }) {

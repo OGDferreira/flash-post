@@ -108,6 +108,16 @@ async def test_owner_manages_collaborator_goals_and_records_monthly_payout(
     assert dashboard.json()["connections_today"] == 1
     assert dashboard.json()["daily_progress"] == 50
     assert Decimal(dashboard.json()["paid_month"]) == Decimal("37.50")
+    assert Decimal(dashboard.json()["paid_total"]) == Decimal("37.50")
+    assert sum(
+        Decimal(value) for value in dashboard.json()["recent_earnings"]
+    ) == Decimal("12.50")
+    assert sum(
+        Decimal(value) for value in dashboard.json()["recent_payments"]
+    ) == Decimal("37.50")
+    ranking = await client.get("/api/collaborators/ranking")
+    assert ranking.status_code == 200, ranking.text
+    assert ranking.json()["collaborators"][0]["user_id"] == str(user.id)
     forbidden_report = await client.get("/api/collaborators")
     forbidden_analytics = await client.get("/api/analytics/summary")
     assert forbidden_report.status_code == 403

@@ -157,8 +157,11 @@ export type CollaboratorReport = {
   earnings_month: number;
   paid_month: number;
   due_month: number;
+  paid_total: number;
   projected_month: number;
   recent_days: number[];
+  recent_earnings: number[];
+  recent_payments: number[];
 };
 
 export type CollaboratorDashboard = Omit<

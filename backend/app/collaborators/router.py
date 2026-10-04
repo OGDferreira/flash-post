@@ -103,6 +103,41 @@ async def _recent_daily_counts(
     return counts
 
 
+async def _payments_between(
+    db: DbSession,
+    workspace_id: uuid.UUID,
+    member_id: uuid.UUID,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> Decimal:
+    query = select(func.coalesce(func.sum(CollaboratorPayment.amount), 0)).where(
+        CollaboratorPayment.workspace_id == workspace_id,
+        CollaboratorPayment.workspace_member_id == member_id,
+    )
+    if start is not None:
+        query = query.where(CollaboratorPayment.paid_at >= start)
+    if end is not None:
+        query = query.where(CollaboratorPayment.paid_at < end)
+    amount = await db.scalar(query)
+    return Decimal(str(amount or 0)).quantize(_CENT)
+
+
+async def _recent_daily_payments(
+    db: DbSession,
+    workspace_id: uuid.UUID,
+    member_id: uuid.UUID,
+    now: datetime,
+) -> list[Decimal]:
+    today = now.astimezone(_BRAZIL_TIME_ZONE).date()
+    amounts = []
+    for offset in range(6, -1, -1):
+        start, end = _day_bounds(today - timedelta(days=offset))
+        amounts.append(
+            await _payments_between(db, workspace_id, member_id, start, end)
+        )
+    return amounts
+
+
 async def _member_report(
     db: DbSession,
     workspace_id: uuid.UUID,
@@ -169,7 +204,11 @@ async def _member_report(
     )
 
 
-def _dashboard_response(report: CollaboratorReportItem) -> CollaboratorDashboardResponse:
+def _dashboard_response(
+    report: CollaboratorReportItem,
+    paid_total: Decimal,
+    recent_payments: list[Decimal],
+) -> CollaboratorDashboardResponse:
     daily_progress = (
         min(round(report.connections_today / report.daily_connection_goal * 100), 100)
         if report.daily_connection_goal
@@ -194,10 +233,16 @@ def _dashboard_response(report: CollaboratorReportItem) -> CollaboratorDashboard
         earnings_month=report.earnings_month,
         paid_month=report.paid_month,
         due_month=report.due_month,
+        paid_total=paid_total,
         projected_month=report.projected_month,
         daily_progress=daily_progress,
         monthly_progress=monthly_progress,
         recent_days=report.recent_days,
+        recent_earnings=[
+            (Decimal(count) * report.rate_per_connection).quantize(_CENT)
+            for count in report.recent_days
+        ],
+        recent_payments=recent_payments,
     )
 
 
@@ -209,8 +254,15 @@ async def collaborator_dashboard(
 ) -> CollaboratorDashboardResponse:
     if access.membership.role != WorkspaceRole.COLLABORATOR.value:
         raise HTTPException(status_code=403, detail="Collaborator dashboard only.")
-    report = await _member_report(db, access.workspace.id, access.membership, user, _utc_now())
-    response = _dashboard_response(report)
+    now = _utc_now()
+    report = await _member_report(db, access.workspace.id, access.membership, user, now)
+    recent_payments = await _recent_daily_payments(
+        db, access.workspace.id, access.membership.id, now
+    )
+    paid_total = await _payments_between(
+        db, access.workspace.id, access.membership.id
+    )
+    response = _dashboard_response(report, paid_total, recent_payments)
     response.avatar_url = user.avatar_url
     return response
 
@@ -309,10 +361,15 @@ async def create_collaborator(
 
 @router.get("/ranking", response_model=CollaboratorRankingResponse)
 async def collaborator_ranking(
-    access: OwnerAccess,
+    access: WorkspaceMemberAccess,
     db: DbSession,
     month: str | None = None,
 ) -> CollaboratorRankingResponse:
+    if access.membership.role not in {
+        WorkspaceRole.OWNER.value,
+        WorkspaceRole.COLLABORATOR.value,
+    }:
+        raise HTTPException(status_code=403, detail="Insufficient permissions.")
     current_month_start = _month_bounds(_utc_now())[2]
     try:
         month_date = (

@@ -36,6 +36,11 @@ const AnalyticsPage = lazy(() =>
     default: module.AnalyticsPage,
   })),
 );
+const CollaboratorDashboardPage = lazy(() =>
+  import("@/pages/CollaboratorDashboardPage").then((module) => ({
+    default: module.CollaboratorDashboardPage,
+  })),
+);
 
 export default function App() {
   return (
@@ -46,7 +51,7 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route element={<RequireAuth />}>
             <Route element={<RequireWorkspaceUser />}>
-              <Route element={<RequireCollaboratorHub />}>
+              <Route element={<RequireCollaboratorAccess />}>
                 <Route element={<AppShell />}>
                   <Route path="/dashboard" element={<WorkspaceDashboard />} />
                   <Route path="/profile" element={<ProfilePage />} />
@@ -90,7 +95,13 @@ export default function App() {
 
 function WorkspaceDashboard() {
   const { user } = useAuth();
-  if (user?.role === "COLLABORATOR") return <Navigate to="/feature/accounts" replace />;
+  if (user?.role === "COLLABORATOR") {
+    return (
+      <Suspense fallback={<LoadingState label="Carregando seu painel" />}>
+        <CollaboratorDashboardPage />
+      </Suspense>
+    );
+  }
   return (
     <Suspense fallback={<LoadingState label="Carregando painel" />}>
       <DashboardPage />
@@ -114,10 +125,18 @@ function RequireWorkspaceOwner() {
   return <Outlet />;
 }
 
-function RequireCollaboratorHub() {
+function RequireCollaboratorAccess() {
   const { user } = useAuth();
   const location = useLocation();
-  if (user?.role === "COLLABORATOR" && location.pathname !== "/feature/accounts") {
+  const collaboratorRoutes = [
+    "/dashboard",
+    "/feature/accounts",
+    "/feature/loops",
+  ];
+  if (
+    user?.role === "COLLABORATOR" &&
+    !collaboratorRoutes.includes(location.pathname)
+  ) {
     return <Navigate to="/feature/accounts" replace />;
   }
   return <Outlet />;

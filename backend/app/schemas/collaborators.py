@@ -114,10 +114,13 @@ class CollaboratorDashboardResponse(BaseModel):
     earnings_month: Decimal
     paid_month: Decimal
     due_month: Decimal
+    paid_total: Decimal
     projected_month: Decimal
     daily_progress: int
     monthly_progress: int
     recent_days: list[int]
+    recent_earnings: list[Decimal]
+    recent_payments: list[Decimal]
 
 
 class CollaboratorPaymentActionResponse(BaseModel):
