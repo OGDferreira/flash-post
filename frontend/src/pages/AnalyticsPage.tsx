@@ -27,7 +27,7 @@ type Account = InstagramAccountOption & {
 
 function formatCount(value: number | null | undefined): string {
   return value === null || value === undefined
-    ? "Não disponível"
+    ? "—"
     : new Intl.NumberFormat("pt-BR").format(value);
 }
 
@@ -68,6 +68,11 @@ export function AnalyticsPage() {
     retry: false,
   });
   const accountMetrics = summary.data?.accounts[0];
+  const viewsUnavailable =
+    !selectedAccountId ||
+    !summary.data ||
+    summary.data.insights_unavailable ||
+    summary.data.missing_permissions.length > 0;
   const metrics = [
     {
       title: "Seguidores",
@@ -101,39 +106,34 @@ export function AnalyticsPage() {
     },
     {
       title: "Impressões",
-      value: "Não disponível",
+      value: "—",
       helper: "Requer leitura dos Insights da Meta",
       icon: Eye,
     },
     {
       title: "Visualizações",
-      value:
-        summary.data?.insights_unavailable ||
-        summary.data?.missing_permissions.length
-          ? "Não disponível"
-          : formatCount(summary.data?.views_count),
+      value: viewsUnavailable ? "—" : formatCount(summary.data?.views_count),
       helper:
-        summary.data?.insights_unavailable ||
-        summary.data?.missing_permissions.length
+        viewsUnavailable
           ? "Verifique a permissão e a resposta da Meta nas notificações"
           : "Informado pelos Insights da Meta",
       icon: Eye,
     },
     {
       title: "Curtidas",
-      value: "Não disponível",
+      value: "—",
       helper: "Requer leitura dos Insights da Meta",
       icon: BarChart3,
     },
     {
       title: "Comentários",
-      value: "Não disponível",
+      value: "—",
       helper: "Requer leitura dos Insights da Meta",
       icon: BarChart3,
     },
     {
       title: "Compartilhamentos",
-      value: "Não disponível",
+      value: "—",
       helper: "Requer leitura dos Insights de cada publicação",
       icon: BarChart3,
     },
@@ -260,10 +260,10 @@ export function AnalyticsPage() {
                 </div>
               </section>
               <p className="rounded-lg border border-[#27334a] bg-[#10141b] px-4 py-3 text-xs leading-5 text-[#94a3b8]">
-                Impressões, alcance, visualizações e interações não são preenchidos com dados
-                estimados: a integração atual não consulta os Insights da Meta. Seguidores e posts
-                no perfil são uma fotografia dos valores retornados durante a última autorização da
-                conta.
+                Visualizações são consultadas nos Insights da Meta para o período selecionado; se a
+                API não as retornar, o valor aparece como “—” e os detalhes ficam nas notificações.
+                As métricas que a integração ainda não consulta não são estimadas. Seguidores e
+                publicações do perfil usam os valores mais recentes disponíveis.
               </p>
             </>
           )}

@@ -106,6 +106,11 @@ export function DashboardPage() {
     (metrics?.errored_accounts ?? 0) +
     (metrics?.disconnected_accounts ?? 0) +
     (metrics?.expired_accounts ?? 0);
+  const viewsUnavailable =
+    !metrics ||
+    metrics.active_accounts === 0 ||
+    metrics.insights_unavailable ||
+    metrics.missing_permissions.length > 0;
   const dailyConnections = metrics?.daily_account_connections ?? [];
   const dailyConnectionMaximum = Math.max(
     ...dailyConnections.map(({ connected_accounts }) => connected_accounts),
@@ -132,11 +137,11 @@ export function DashboardPage() {
     {
       title: "Total de visualizações",
       value:
-        metrics?.insights_unavailable || metrics?.missing_permissions.length
-          ? "Não disponível"
+        viewsUnavailable
+          ? "—"
           : formatCount(metrics?.views_count),
       detail:
-        metrics?.insights_unavailable || metrics?.missing_permissions.length
+        viewsUnavailable
           ? "Consulte as notificações para verificar os Insights da Meta"
           : "Insights recebidos da Meta no período",
       icon: ChartNoAxesCombined,
@@ -160,7 +165,7 @@ export function DashboardPage() {
       title: "Seguidores",
       value:
         metrics?.followers_count == null
-          ? "Não disponível"
+          ? "—"
           : formatCount(metrics.followers_count),
       detail: metrics?.profile_metrics_unavailable
         ? "Meta indisponível; mostrando último valor salvo"
@@ -172,7 +177,7 @@ export function DashboardPage() {
       title: "Mídias nos perfis",
       value:
         metrics?.media_count == null
-          ? "Não disponível"
+          ? "—"
           : formatCount(metrics.media_count),
       detail: metrics?.profile_metrics_unavailable
         ? "Meta indisponível; mostrando último valor salvo"
@@ -239,7 +244,7 @@ export function DashboardPage() {
     {
       title: "Valor faturado",
       value: formatMoney(Number(metrics?.pix_paid_amount ?? 0)),
-      detail: "Pix pagos no período, pelo horário local",
+      detail: "Pix pagos no período, pelo horário de Brasília",
       icon: Wallet,
       color: "text-[#76c8a0]",
     },

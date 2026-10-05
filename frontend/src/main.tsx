@@ -7,7 +7,11 @@ import "./index.css";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("/service-worker.js");
+    void navigator.serviceWorker
+      .register("/service-worker.js")
+      .catch((error: unknown) => {
+        console.error("FlashPost could not register its offline app shell.", error);
+      });
   });
 }
 

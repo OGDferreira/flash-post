@@ -163,6 +163,78 @@ async def test_owner_cannot_register_a_zero_or_duplicate_monthly_payout(
 
 
 @pytest.mark.anyio
+async def test_owner_can_block_and_restore_collaborator_workspace_access(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    collaborator,
+) -> None:
+    _owner_user, workspace = owner
+    member = await db_session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.user_id == collaborator.id,
+        )
+    )
+    assert member is not None
+    db_session.add(
+        InstagramAccount(
+            workspace_id=workspace.id,
+            connected_by_user_id=collaborator.id,
+            first_connected_at=datetime.now(timezone.utc),
+            instagram_user_id="blocked-member-account",
+            username="blocked_member_account",
+            encrypted_access_token=encrypt_value("blocked-member-token"),
+            token_expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+            status="connected",
+        )
+    )
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+
+    blocked = await client.patch(
+        f"/api/collaborators/{member.id}/access",
+        headers={"X-CSRF-Token": await _csrf(client)},
+        json={"enabled": False},
+    )
+    assert blocked.status_code == 200, blocked.text
+    assert blocked.json()["access_status"] == "SUSPENDED"
+    assert len(blocked.json()["account_earnings"]) == 1
+
+    listed = await client.get("/api/collaborators")
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["collaborators"][0]["access_status"] == "SUSPENDED"
+    assert listed.json()["team_connections_today"] == 0
+
+    blocked_login = await client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": await _csrf(client)},
+        json={
+            "email": "collaborator@example.com",
+            "password": "collaborator password",
+        },
+    )
+    assert blocked_login.status_code == 403
+    assert blocked_login.json()["detail"] == (
+        "O acesso ao workspace foi bloqueado pelo administrador."
+    )
+
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    restored = await client.patch(
+        f"/api/collaborators/{member.id}/access",
+        headers={"X-CSRF-Token": await _csrf(client)},
+        json={"enabled": True},
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["access_status"] == "ACTIVE"
+    assert len(restored.json()["account_earnings"]) == 1
+
+    await _login(client, "collaborator@example.com", "collaborator password")
+    dashboard = await client.get("/api/collaborators/dashboard")
+    assert dashboard.status_code == 200, dashboard.text
+
+
+@pytest.mark.anyio
 async def test_owner_can_query_historical_monthly_collaborator_rankings(
     client: AsyncClient,
     db_session: AsyncSession,

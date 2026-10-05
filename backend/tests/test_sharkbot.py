@@ -146,6 +146,56 @@ async def test_sharkbot_webhook_settings_are_owner_only_and_rotatable(
 
 
 @pytest.mark.anyio
+async def test_naive_sharkbot_timestamps_are_interpreted_as_brasilia_local_time(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = InstagramAccount(
+        workspace_id=workspace.id,
+        instagram_user_id="17840000000001",
+        username="local_time_revenue",
+        encrypted_access_token=encrypt_value("local-time-token"),
+        token_expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        status="connected",
+    )
+    db_session.add(account)
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    settings = await client.get("/api/sharkbot/webhook/config")
+    webhook_path = urlparse(settings.json()["webhook_url"]).path
+
+    received = await client.post(
+        webhook_path,
+        json={
+            "event": "payment_approved",
+            "webhook_id": f"local-time-{uuid.uuid4()}",
+            "timestamp": "2026-09-16T01:30:00",
+            "data": {
+                "instagram_user_id": account.instagram_user_id,
+                "transaction": {"id": f"local-time-{uuid.uuid4()}", "amount": "12.34"},
+            },
+        },
+    )
+    assert received.status_code == 200, received.text
+
+    summary = await client.get(
+        "/api/analytics/summary",
+        params={
+            "period": "custom",
+            "start_date": "2026-09-16",
+            "end_date": "2026-09-16",
+        },
+    )
+    assert summary.status_code == 200, summary.text
+    assert summary.json()["pix_paid_amount"] == "12.34"
+    assert summary.json()["daily_revenue"] == [
+        {"day": "2026-09-16", "amount": "12.34"}
+    ]
+
+
+@pytest.mark.anyio
 async def test_sharkbot_rejects_unknown_token_and_invalid_event_payload(
     client: AsyncClient,
     owner,

@@ -56,6 +56,26 @@ async def require_authenticated_user(
     if user is None or not user.is_active or not user.is_approved:
         request.session.clear()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+    if user.platform_role != PlatformRole.SUPER_ADMIN.value:
+        active_membership = await db.scalar(
+            select(WorkspaceMember.id).where(
+                WorkspaceMember.user_id == user.id,
+                WorkspaceMember.status == "ACTIVE",
+            ).limit(1)
+        )
+        if active_membership is None:
+            suspended_membership = await db.scalar(
+                select(WorkspaceMember.id).where(
+                    WorkspaceMember.user_id == user.id,
+                    WorkspaceMember.status == "SUSPENDED",
+                ).limit(1)
+            )
+            if suspended_membership is not None:
+                request.session.clear()
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="O acesso ao workspace foi bloqueado pelo administrador.",
+                )
     return user
 
 

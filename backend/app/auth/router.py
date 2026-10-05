@@ -242,6 +242,21 @@ async def login(payload: LoginRequest, request: Request, db: DbSession) -> AuthR
         .order_by(WorkspaceMember.created_at, WorkspaceMember.workspace_id)
         .limit(1)
     )
+    if (
+        membership is None
+        and user.platform_role != PlatformRole.SUPER_ADMIN.value
+        and await db.scalar(
+            select(WorkspaceMember.id).where(
+                WorkspaceMember.user_id == user.id,
+                WorkspaceMember.status == "SUSPENDED",
+            ).limit(1)
+        )
+        is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="O acesso ao workspace foi bloqueado pelo administrador.",
+        )
     request.session.clear()
     request.session["user_id"] = str(user.id)
     if membership is not None:

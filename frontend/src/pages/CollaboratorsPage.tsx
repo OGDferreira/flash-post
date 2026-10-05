@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, CircleDollarSign, Medal, Plus, Save, UsersRound } from "lucide-react";
+import {
+  BarChart3,
+  CircleDollarSign,
+  LockKeyhole,
+  Medal,
+  Plus,
+  Save,
+  UnlockKeyhole,
+  UsersRound,
+} from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { ApiError, apiRequest, type CollaboratorReport } from "@/services/api";
@@ -128,6 +137,14 @@ export function CollaboratorsPage() {
       apiRequest(`/api/collaborators/${memberId}/payout`, { method: "POST" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["collaborators"] }),
   });
+  const accessToggle = useMutation({
+    mutationFn: ({ memberId, enabled }: { memberId: string; enabled: boolean }) =>
+      apiRequest<CollaboratorReport>(`/api/collaborators/${memberId}/access`, {
+        method: "PATCH",
+        body: { enabled },
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["collaborators"] }),
+  });
 
   if (report.isLoading) return <LoadingState label="Carregando colaboradores" />;
   if (report.error || !report.data) {
@@ -137,6 +154,10 @@ export function CollaboratorsPage() {
   const createError = displayError(create.error, "Não foi possível criar o colaborador.");
   const saveError = displayError(update.error, "Não foi possível salvar as configurações.");
   const payoutError = displayError(payout.error, "Não foi possível registrar o pagamento.");
+  const accessError = displayError(
+    accessToggle.error,
+    "Não foi possível alterar o acesso do colaborador.",
+  );
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-7">
@@ -293,6 +314,7 @@ export function CollaboratorsPage() {
         </div>
         {saveError && <ErrorState message={saveError} />}
         {payoutError && <ErrorState message={payoutError} />}
+        {accessError && <ErrorState message={accessError} />}
         {report.data.collaborators.length === 0 ? (
           <EmptyState message="Ainda não há colaboradores neste workspace." />
         ) : (
@@ -307,11 +329,49 @@ export function CollaboratorsPage() {
                     <p className="mt-1 text-xs text-[#8295ff]">
                       @{item.nickname} · {item.email}
                     </p>
+                    <span
+                      className={`mt-2 inline-flex rounded-full border px-2 py-1 text-[10px] font-medium ${
+                        item.access_status === "ACTIVE"
+                          ? "border-[#315843] bg-[#10231a] text-[#a9e5c0]"
+                          : "border-[#5a3037] bg-[#241216] text-[#f1a3ad]"
+                      }`}
+                    >
+                      {item.access_status === "ACTIVE" ? "Acesso liberado" : "Acesso bloqueado"}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2 rounded-lg border border-[#27334a] bg-[#090b0e] px-3 py-2 text-xs">
-                    <CircleDollarSign className="text-[#f2d48a]" size={15} />
-                    <span className="text-[#94a3b8]">Devido</span>
-                    <strong className="text-[#f2d48a]">{money(item.due_month)}</strong>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      className={`inline-flex min-h-10 items-center gap-2 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50 ${
+                        item.access_status === "ACTIVE"
+                          ? "border-[#5a3037] text-[#f1a3ad] hover:bg-[#241216]"
+                          : "border-[#315843] text-[#a9e5c0] hover:bg-[#10231a]"
+                      }`}
+                      disabled={accessToggle.isPending}
+                      onClick={() => {
+                        const enabled = item.access_status !== "ACTIVE";
+                        const action = enabled ? "liberar" : "bloquear";
+                        if (
+                          window.confirm(
+                            `Deseja ${action} o acesso de ${item.full_name}? ${enabled ? "O colaborador poderá voltar a entrar neste workspace." : "Ele perderá acesso ao workspace imediatamente; seus dados e resultados serão preservados."}`,
+                          )
+                        ) {
+                          accessToggle.mutate({ memberId: item.member_id, enabled });
+                        }
+                      }}
+                      type="button"
+                    >
+                      {item.access_status === "ACTIVE" ? (
+                        <LockKeyhole size={14} />
+                      ) : (
+                        <UnlockKeyhole size={14} />
+                      )}
+                      {item.access_status === "ACTIVE" ? "Bloquear acesso" : "Liberar acesso"}
+                    </button>
+                    <div className="flex items-center gap-2 rounded-lg border border-[#27334a] bg-[#090b0e] px-3 py-2 text-xs">
+                      <CircleDollarSign className="text-[#f2d48a]" size={15} />
+                      <span className="text-[#94a3b8]">Devido</span>
+                      <strong className="text-[#f2d48a]">{money(item.due_month)}</strong>
+                    </div>
                   </div>
                 </div>
 

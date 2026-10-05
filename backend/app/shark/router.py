@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
 from app.core.config import get_settings
+from app.core.time import BRAZIL_TIME_ZONE
 from app.models import InstagramAccount, SharkEvent, Workspace
 
 router = APIRouter(prefix="/api/sharkbot", tags=["Sharkbot"])
@@ -144,7 +145,9 @@ def _event_timestamp(event: dict[str, Any], value: dict[str, Any]) -> datetime:
     if isinstance(raw_timestamp, str):
         try:
             parsed = datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=BRAZIL_TIME_ZONE)
+            return parsed.astimezone(timezone.utc)
         except ValueError:
             logger.warning("Sharkbot sent an invalid event timestamp.")
     return datetime.now(timezone.utc)

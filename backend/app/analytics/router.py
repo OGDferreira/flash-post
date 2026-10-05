@@ -282,24 +282,23 @@ async def get_analytics_summary(
         if event_type == "pix_paid":
             pix_paid_amount += Decimal(str(amount or 0))
 
-    dialect = db.get_bind().dialect.name
-    local_event_date = (
-        func.date(func.timezone("America/Sao_Paulo", SharkEvent.occurred_at))
-        if dialect == "postgresql"
-        else func.date(SharkEvent.occurred_at, "-3 hours")
-    )
     daily_revenue_query = (
-        select(local_event_date, func.coalesce(func.sum(SharkEvent.amount), 0))
+        select(SharkEvent.occurred_at, SharkEvent.amount)
         .where(
             *event_conditions,
             SharkEvent.event_type == "pix_paid",
         )
-        .group_by(local_event_date)
-        .order_by(local_event_date)
+        .order_by(SharkEvent.occurred_at, SharkEvent.id)
     )
+    revenue_by_local_day: dict[date, Decimal] = {}
+    for occurred_at, amount in await db.execute(daily_revenue_query):
+        local_day = _utc(occurred_at).astimezone(BRAZIL_TIME_ZONE).date()
+        revenue_by_local_day[local_day] = revenue_by_local_day.get(
+            local_day, Decimal("0.00")
+        ) + Decimal(str(amount or 0))
     daily_revenue = [
         DailyRevenueMetric(day=day, amount=amount)
-        for day, amount in await db.execute(daily_revenue_query)
+        for day, amount in sorted(revenue_by_local_day.items())
     ]
 
     status_filters = []

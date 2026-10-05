@@ -652,6 +652,11 @@ export function LoopsPage() {
               />
             </label>
           </div>
+          <p className="text-xs leading-5 text-[#78839b]">
+            Os intervalos são contados como tempo decorrido (independente do fuso do
+            servidor); os horários da próxima execução são exibidos no horário de
+            Brasília (America/Sao_Paulo).
+          </p>
 
           <fieldset>
             <legend className="mb-2 text-sm text-[#cbd5e1]">Tipo de publicação</legend>

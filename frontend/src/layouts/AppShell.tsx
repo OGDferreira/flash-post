@@ -8,6 +8,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   Clapperboard,
+  Download,
   Folder,
   Home,
   Infinity,
@@ -15,6 +16,7 @@ import {
   Menu,
   MessageSquareText,
   Settings2,
+  Share,
   Shield,
   Trophy,
   Users,
@@ -67,6 +69,8 @@ export function AppShell() {
   const [toast, setToast] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [installGuideOpen, setInstallGuideOpen] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const analyticsNotifications = useQuery({
@@ -123,6 +127,13 @@ export function AppShell() {
   });
   const workspaceLinks =
     workspaceRole === "COLLABORATOR" ? collaboratorLinks : ownerLinks;
+  const mobileLinks = isAdminRoute
+    ? adminLinks
+    : workspaceRole === "COLLABORATOR"
+      ? collaboratorLinks
+      : ownerLinks.filter(({ to }) =>
+          ["/dashboard", "/feature/accounts", "/feature/loops", "/feature/collaborators"].includes(to),
+        );
   const visibleLinkGroups = [
     ...(hasWorkspaceOwnerAccess || workspaceRole === "COLLABORATOR"
       ? [{ title: "Workspace", links: workspaceLinks }]
@@ -142,6 +153,13 @@ export function AppShell() {
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
     return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+    setIsStandalone(
+      window.matchMedia("(display-mode: standalone)").matches ||
+        navigatorWithStandalone.standalone === true,
+    );
   }, []);
   const hour = Number(
     new Intl.DateTimeFormat("en-US", {
@@ -308,7 +326,7 @@ export function AppShell() {
         </div>
       )}
       <div className="lg:pl-[68px]">
-        <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#202838] bg-[#070809]/95 px-5 backdrop-blur-sm sm:px-8">
+        <header className="app-shell-header sticky top-0 z-20 flex items-center justify-between border-b border-[#202838] bg-[#070809]/95 px-4 backdrop-blur-sm sm:px-8">
           <div className="flex items-center gap-3">
             <button
               className="grid size-9 place-items-center rounded-lg border border-[#202838] text-[#94a3b8] hover:bg-[#10141b] lg:hidden"
@@ -327,6 +345,17 @@ export function AppShell() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {!isStandalone && (
+              <button
+                aria-label="Instruções para instalar o FlashPost"
+                className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[#34446f] bg-[#11182d] px-3 text-xs font-medium text-[#c3ccff] hover:bg-[#171e31]"
+                onClick={() => setInstallGuideOpen(true)}
+                type="button"
+              >
+                <Download size={14} />
+                <span className="hidden sm:inline">Instalar app</span>
+              </button>
+            )}
             <div className="relative">
               <button
                 aria-label={
@@ -396,10 +425,87 @@ export function AppShell() {
             </div>
           </div>
         </header>
-        <main className="min-h-[calc(100vh-72px)] w-full px-5 py-7 sm:px-8 sm:py-9">
+        <main className="app-shell-content min-h-[calc(100dvh-72px)] w-full px-4 py-6 sm:px-8 sm:py-9">
           <Outlet />
         </main>
       </div>
+      <nav
+        aria-label="Navegação principal"
+        className="app-mobile-nav fixed inset-x-0 bottom-0 z-30 flex border-t border-[#202838] bg-[#0b0c0e]/95 px-2 pt-2 backdrop-blur-xl lg:hidden"
+      >
+        {mobileLinks.map(({ label, to, icon: Icon }) => (
+          <NavLink
+            end={to === "/dashboard" || to === "/admin"}
+            key={to}
+            to={to}
+            onClick={() => setMobileOpen(false)}
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-[10px] transition ${
+                isActive ? "text-[#aab7ff]" : "text-[#78839b]"
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />
+                <span className="max-w-full truncate">{label}</span>
+              </>
+            )}
+          </NavLink>
+        ))}
+      </nav>
+      {installGuideOpen && (
+        <div
+          className="fixed inset-0 z-[80] grid items-end bg-black/70 p-3 sm:items-center sm:justify-items-center"
+          onClick={() => setInstallGuideOpen(false)}
+        >
+          <section
+            aria-labelledby="install-guide-title"
+            aria-modal="true"
+            className="dashboard-card w-full max-w-md rounded-2xl p-5 sm:p-6"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#8295ff]">
+                  App FlashPost
+                </p>
+                <h2 id="install-guide-title" className="mt-2 text-lg font-semibold text-[#f5f7fb]">
+                  Adicione à tela de início
+                </h2>
+              </div>
+              <button
+                aria-label="Fechar instruções"
+                className="grid size-9 shrink-0 place-items-center rounded-lg text-[#94a3b8] hover:bg-[#151922]"
+                onClick={() => setInstallGuideOpen(false)}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <ol className="mt-4 space-y-3 text-sm leading-6 text-[#cbd5e1]">
+              <li className="flex gap-3">
+                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs text-[#aab7ff]">1</span>
+                Abra o FlashPost no Safari do iPhone.
+              </li>
+              <li className="flex gap-3">
+                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs text-[#aab7ff]">2</span>
+                Toque em <Share className="mt-1 inline shrink-0 text-[#aab7ff]" size={15} />{" "}
+                Compartilhar.
+              </li>
+              <li className="flex gap-3">
+                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs text-[#aab7ff]">3</span>
+                Escolha “Adicionar à Tela de Início” e confirme em “Adicionar”.
+              </li>
+            </ol>
+            <p className="mt-4 rounded-lg border border-[#27334a] bg-[#0d1015] p-3 text-xs leading-5 text-[#94a3b8]">
+              Depois de adicionar, abra o ícone FlashPost pela tela de início. O app
+              abrirá em modo próprio, sem a barra de endereço do navegador.
+            </p>
+          </section>
+        </div>
+      )}
       {toast && (
         <div
           className="fixed right-5 top-20 z-[70] max-w-sm rounded-xl border border-[#315843] bg-[#10231a] px-4 py-3 text-sm text-[#a9e5c0] shadow-[0_12px_38px_rgba(0,0,0,.45)]"

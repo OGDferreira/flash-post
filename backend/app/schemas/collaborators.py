@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -54,6 +55,10 @@ class CollaboratorUpdateRequest(BaseModel):
         return value.quantize(Decimal("0.01"))
 
 
+class CollaboratorAccessRequest(BaseModel):
+    enabled: bool
+
+
 class CollaboratorPaymentResponse(BaseModel):
     id: UUID
     amount: Decimal
@@ -71,6 +76,7 @@ class CollaboratorAccountEarning(BaseModel):
 class CollaboratorReportItem(BaseModel):
     member_id: UUID
     user_id: UUID
+    access_status: Literal["ACTIVE", "SUSPENDED"]
     full_name: str
     nickname: str
     email: EmailStr

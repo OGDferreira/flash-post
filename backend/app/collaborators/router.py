@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.schemas.collaborators import (
     CollaboratorAccountEarning,
+    CollaboratorAccessRequest,
     CollaboratorCreateRequest,
     CollaboratorDashboardResponse,
     CollaboratorPaymentActionResponse,
@@ -249,6 +250,7 @@ async def _member_report(
     return CollaboratorReportItem(
         member_id=member.id,
         user_id=user.id,
+        access_status=member.status,
         full_name=user.full_name,
         nickname=user.nickname,
         email=user.email,
@@ -368,7 +370,7 @@ async def list_collaborators(
         .where(
             WorkspaceMember.workspace_id == access.workspace.id,
             WorkspaceMember.role == WorkspaceRole.COLLABORATOR.value,
-            WorkspaceMember.status == "ACTIVE",
+            WorkspaceMember.status.in_(("ACTIVE", "SUSPENDED")),
         )
         .order_by(User.full_name, User.id)
     )
@@ -387,7 +389,11 @@ async def list_collaborators(
     return CollaboratorsResponse(
         collaborators=collaborators,
         owner_connections_today=owner_connections_today,
-        team_connections_today=sum(item.connections_today for item in collaborators),
+        team_connections_today=sum(
+            item.connections_today
+            for item in collaborators
+            if item.access_status == "ACTIVE"
+        ),
     )
 
 
@@ -621,6 +627,35 @@ async def update_collaborator(
             )
             .values(collaborator_rate_at_connection=payload.rate_per_connection)
         )
+    await db.commit()
+    user = await db.get(User, member.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Usuário do colaborador não encontrado.")
+    return await _member_report(db, access.workspace.id, member, user, _utc_now())
+
+
+@router.patch(
+    "/{member_id}/access",
+    response_model=CollaboratorReportItem,
+    dependencies=[Depends(require_csrf)],
+)
+async def update_collaborator_access(
+    member_id: uuid.UUID,
+    payload: CollaboratorAccessRequest,
+    access: OwnerAccess,
+    db: DbSession,
+) -> CollaboratorReportItem:
+    member = await db.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.id == member_id,
+            WorkspaceMember.workspace_id == access.workspace.id,
+            WorkspaceMember.role == WorkspaceRole.COLLABORATOR.value,
+        )
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="Colaborador não encontrado.")
+
+    member.status = "ACTIVE" if payload.enabled else "SUSPENDED"
     await db.commit()
     user = await db.get(User, member.user_id)
     if user is None:

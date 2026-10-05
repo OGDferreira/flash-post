@@ -151,6 +151,7 @@ export type AdminWorkspace = {
 export type CollaboratorReport = {
   member_id: string;
   user_id: string;
+  access_status: "ACTIVE" | "SUSPENDED";
   full_name: string;
   nickname: string;
   email: string;
