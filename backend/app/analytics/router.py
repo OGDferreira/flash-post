@@ -17,6 +17,7 @@ from app.instagram.oauth import (
     InstagramOAuthError,
     fetch_instagram_profile_metrics,
     fetch_instagram_views,
+    instagram_api_error_detail,
 )
 from app.models import (
     InstagramAccount,
@@ -374,7 +375,11 @@ async def get_analytics_summary(
     missing_permissions: list[str] = []
     insights_unavailable = False
     profile_metrics_unavailable = False
-    refreshed_profile_metrics: dict[UUID, tuple[int | None, int | None]] = {}
+    refreshed_profile_metrics: dict[
+        UUID, tuple[int | None, int | None, int | None]
+    ] = {}
+    profile_metric_errors: dict[UUID, str] = {}
+    insights_errors: dict[UUID, str] = {}
     for account in accounts:
         counts = job_counts.get(account.id, {})
         shark_counts = event_counts.get(account.id, {})
@@ -387,12 +392,24 @@ async def get_analytics_summary(
             if include_meta_insights and account.encrypted_access_token is None:
                 profile_metrics_unavailable = True
                 insights_unavailable = True
+                profile_metric_errors[account.id] = (
+                    "O token de autorização não está disponível. Reconecte esta conta."
+                )
+                insights_errors[account.id] = (
+                    "O token de autorização não está disponível. Reconecte esta conta."
+                )
             elif include_meta_insights:
                 try:
                     access_token = decrypt_value(account.encrypted_access_token)
                 except (RuntimeError, ValueError) as exc:
                     profile_metrics_unavailable = True
                     insights_unavailable = True
+                    profile_metric_errors[account.id] = (
+                        "O FlashPost não conseguiu ler o token salvo. Reconecte esta conta."
+                    )
+                    insights_errors[account.id] = (
+                        "O FlashPost não conseguiu ler o token salvo. Reconecte esta conta."
+                    )
                     logger.warning(
                         "Instagram metrics token could not be decrypted for account %s (%s).",
                         account.id,
@@ -400,17 +417,33 @@ async def get_analytics_summary(
                     )
                 else:
                     try:
-                        live_followers, live_media = (
+                        live_followers, live_follows, live_media = (
                             await fetch_instagram_profile_metrics(
-                                account.instagram_user_id, access_token
+                                access_token
                             )
                         )
-                        if live_followers is None or live_media is None:
+                        if (
+                            live_followers is None
+                            or live_media is None
+                        ):
                             profile_metrics_unavailable = True
+                            missing_fields = [
+                                field
+                                for field, value in (
+                                    ("followers_count", live_followers),
+                                    ("media_count", live_media),
+                                )
+                                if value is None
+                            ]
+                            profile_metric_errors[account.id] = (
+                                "A Meta não retornou os campos "
+                                f"{', '.join(missing_fields)} nesta consulta."
+                            )
                         refreshed_profile_metrics[account.id] = (
                             live_followers
                             if live_followers is not None
                             else account.follower_count,
+                            live_follows,
                             live_media if live_media is not None else account.media_count,
                         )
                     except (
@@ -420,10 +453,13 @@ async def get_analytics_summary(
                         ValueError,
                     ) as exc:
                         profile_metrics_unavailable = True
+                        profile_metric_errors[account.id] = instagram_api_error_detail(
+                            exc
+                        )
                         logger.warning(
-                            "Instagram profile metrics unavailable for account %s (%s).",
+                            "Instagram profile metrics unavailable for account %s: %s",
                             account.id,
-                            type(exc).__name__,
+                            profile_metric_errors[account.id],
                         )
                     insight_start = period_start or _utc(account.connected_at)
                     insight_start = max(insight_start, _utc(account.connected_at))
@@ -438,6 +474,9 @@ async def get_analytics_summary(
                             )
                         except InstagramInsightsPermissionError:
                             missing_permissions.append(INSTAGRAM_INSIGHTS_PERMISSION)
+                            insights_errors[account.id] = instagram_api_error_detail(
+                                InstagramInsightsPermissionError()
+                            )
                         except (
                             httpx.HTTPError,
                             InstagramOAuthError,
@@ -445,10 +484,13 @@ async def get_analytics_summary(
                             ValueError,
                         ) as exc:
                             insights_unavailable = True
+                            insights_errors[account.id] = instagram_api_error_detail(
+                                exc
+                            )
                             logger.warning(
-                                "Instagram Insights unavailable for account %s (%s).",
+                                "Instagram Insights unavailable for account %s: %s",
                                 account.id,
-                                type(exc).__name__,
+                                insights_errors[account.id],
                             )
         elif account.status == "connected" and token_expires_at <= now:
             expired_accounts += 1
@@ -458,15 +500,19 @@ async def get_analytics_summary(
                 username=account.username,
                 profile_picture_url=account.profile_picture_url,
                 follower_count=refreshed_profile_metrics.get(
-                    account.id, (account.follower_count, account.media_count)
+                    account.id,
+                    (account.follower_count, None, account.media_count),
                 )[0],
                 media_count=refreshed_profile_metrics.get(
-                    account.id, (account.follower_count, account.media_count)
-                )[1],
+                    account.id,
+                    (account.follower_count, None, account.media_count),
+                )[2],
                 published_posts=published,
                 queued_posts=queued,
                 failed_posts=failed,
                 status=account.status,
+                insights_error=insights_errors.get(account.id),
+                profile_metrics_error=profile_metric_errors.get(account.id),
                 leads=shark_counts.get("lead_initiated", 0),
                 pix_generated=shark_counts.get("pix_generated", 0),
                 pix_paid=shark_counts.get("pix_paid", 0),

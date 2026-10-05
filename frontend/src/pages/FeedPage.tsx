@@ -45,6 +45,7 @@ type InstagramAccountFeedResponse = {
   followers_count: number | null;
   media_count: number | null;
   follows_count: number | null;
+  profile_metrics_error: string | null;
   media: InstagramFeedMedia[];
 };
 
@@ -251,6 +252,16 @@ export function FeedPage() {
                 value={formatCount(feed.data?.follows_count)}
               />
             </div>
+            {feed.data?.profile_metrics_error && (
+              <div
+                className="rounded-lg border border-[#544526] bg-[#211c10] p-3 text-xs leading-5 text-[#f2d48a]"
+                role="status"
+              >
+                A Meta não disponibilizou as métricas atuais deste perfil:{" "}
+                {feed.data.profile_metrics_error} Os últimos valores salvos são
+                mantidos quando disponíveis.
+              </div>
+            )}
 
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-xs font-medium text-[#94a3b8]">Mídias recentes</h3>
@@ -325,8 +336,8 @@ export function FeedPage() {
       </div>
 
       <p className="text-[11px] leading-5 text-[#64748b]">
-        O Instagram não disponibiliza a contagem de perfis seguidos nesta integração; por isso esse
-        indicador aparece como “—”. O Feed mostra até 25 publicações recentes por perfil.
+        A contagem de perfis seguidos depende dos campos disponibilizados pela Meta; “—” indica que
+        esse dado não foi retornado. O Feed mostra até 25 publicações recentes por perfil.
       </p>
     </div>
   );

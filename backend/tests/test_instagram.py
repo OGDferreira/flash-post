@@ -392,11 +392,16 @@ async def test_owner_can_load_recent_media_for_selected_instagram_account(
     calls: list[tuple[str, dict[str, str]]] = []
 
     class FakeResponse:
+        def __init__(self, payload: object):
+            self.payload = payload
+
         def raise_for_status(self) -> None:
             return None
 
         def json(self) -> object:
-            return {
+            return self.payload
+
+    media_payload = {
                 "data": [
                     {
                         "id": "media-1",
@@ -411,6 +416,12 @@ async def test_owner_can_load_recent_media_for_selected_instagram_account(
                     }
                 ]
             }
+    profile_payload = {
+        "user_id": "17840000000000789",
+        "followers_count": 420,
+        "follows_count": 180,
+        "media_count": 70,
+    }
 
     class FakeClient:
         def __init__(self, **_kwargs):
@@ -424,7 +435,9 @@ async def test_owner_can_load_recent_media_for_selected_instagram_account(
 
         async def get(self, url: str, *, params: dict[str, str]):
             calls.append((url, params))
-            return FakeResponse()
+            if url.endswith("/me"):
+                return FakeResponse(profile_payload)
+            return FakeResponse(media_payload)
 
     monkeypatch.setattr(instagram_router.httpx, "AsyncClient", FakeClient)
     await _login(client, "owner@example.com", "correct horse battery staple")
@@ -434,13 +447,20 @@ async def test_owner_can_load_recent_media_for_selected_instagram_account(
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["username"] == "feed_profile"
-    assert result["followers_count"] == 42
-    assert result["media_count"] == 7
-    assert result["follows_count"] is None
+    assert result["followers_count"] == 420
+    assert result["media_count"] == 70
+    assert result["follows_count"] == 180
     assert result["media"][0]["id"] == "media-1"
     assert result["media"][0]["like_count"] == 12
-    assert calls[0][0].endswith("/17840000000000789/media")
+    assert calls[0][0] == "https://graph.instagram.com/v25.0/me"
+    assert calls[0][1]["fields"] == (
+        "user_id,followers_count,follows_count,media_count"
+    )
     assert calls[0][1]["access_token"] == "feed-access-token"
+    assert calls[1][0].endswith("/17840000000000789/media")
+    await db_session.refresh(account)
+    assert account.follower_count == 420
+    assert account.media_count == 70
     assert "feed-access-token" not in response.text
 
 
@@ -919,7 +939,7 @@ async def test_insights_only_reports_permission_missing_when_meta_identifies_it(
 
 
 @pytest.mark.anyio
-async def test_instagram_profile_metrics_are_fetched_for_the_account_id(
+async def test_instagram_profile_metrics_are_fetched_from_me_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, dict[str, str]]] = []
@@ -931,7 +951,12 @@ async def test_instagram_profile_metrics_are_fetched_for_the_account_id(
             return None
 
         def json(self) -> object:
-            return {"followers_count": 2468, "media_count": 137}
+            return {
+                "user_id": "17840000000000000",
+                "followers_count": 2468,
+                "follows_count": 805,
+                "media_count": 137,
+            }
 
     class FakeClient:
         def __init__(self, **_kwargs):
@@ -950,16 +975,15 @@ async def test_instagram_profile_metrics_are_fetched_for_the_account_id(
     monkeypatch.setattr(oauth.httpx, "AsyncClient", FakeClient)
 
     metrics = await oauth.fetch_instagram_profile_metrics(
-        "17840000000000000",
         "private-test-token",
     )
 
-    assert metrics == (2468, 137)
+    assert metrics == (2468, 805, 137)
     assert calls == [
         (
-            "https://graph.instagram.com/v25.0/17840000000000000",
+            "https://graph.instagram.com/v25.0/me",
             {
-                "fields": "followers_count,media_count",
+                "fields": "user_id,followers_count,follows_count,media_count",
                 "access_token": "private-test-token",
             },
         )

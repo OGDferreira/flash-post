@@ -8,8 +8,12 @@ from sqlalchemy import delete, select
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
+from app.instagram.oauth import (
+    InstagramOAuthError,
+    instagram_api_error_detail,
+    refresh_instagram_long_lived_token,
+)
 from app.instagram.publishing import InstagramPublishingError, publish_media
-from app.instagram.oauth import InstagramOAuthError, refresh_instagram_long_lived_token
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.models import (
     InstagramAccount,
@@ -84,8 +88,13 @@ async def _mark_expired_accounts(now: datetime) -> int:
         return len(expired_accounts)
 
 
-async def _mark_account_as_error(db, account: InstagramAccount) -> None:
+async def _mark_account_as_error(
+    db,
+    account: InstagramAccount,
+    reason: str = "A autorização do Instagram expirou ou deixou de ser válida.",
+) -> None:
     account.status = "error"
+    account.status_reason = reason[:500]
     await db.execute(
         delete(InstagramLoopAccount).where(
             InstagramLoopAccount.account_id == account.id
@@ -109,7 +118,16 @@ async def _update_account_health_after_failure(
     if account is None or account.status != "connected":
         return
     if _is_account_connection_failure(error):
-        await _mark_account_as_error(db, account)
+        reason = (
+            instagram_api_error_detail(error)
+            if isinstance(error, httpx.HTTPStatusError)
+            else str(error)
+        )
+        await _mark_account_as_error(
+            db,
+            account,
+            reason or "A autorização do Instagram foi recusada.",
+        )
         await db.commit()
         return
 
@@ -132,7 +150,11 @@ async def _update_account_health_after_failure(
         len(recent_jobs) > CONSECUTIVE_PUBLICATION_FAILURE_LIMIT
         and all(job_status == "failed" for job_status in recent_jobs)
     ):
-        await _mark_account_as_error(db, account)
+        await _mark_account_as_error(
+            db,
+            account,
+            "A conta foi marcada com erro após falhas consecutivas de publicação.",
+        )
         await db.commit()
 
 
@@ -208,7 +230,11 @@ async def refresh_due_instagram_tokens(now: datetime | None = None) -> int:
                     exc.response.status_code,
                 )
                 if _is_account_connection_failure(exc):
-                    await _mark_account_as_error(db, account)
+                    await _mark_account_as_error(
+                        db,
+                        account,
+                        instagram_api_error_detail(exc),
+                    )
                     await db.commit()
                 continue
             except (httpx.HTTPError, InstagramOAuthError, RuntimeError) as exc:

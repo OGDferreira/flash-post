@@ -17,6 +17,7 @@ class InstagramAccountResponse(BaseModel):
     connected_at: datetime
     error_at: datetime | None
     status: str
+    status_reason: str | None
 
 
 class InstagramAccountsResponse(BaseModel):
@@ -135,4 +136,5 @@ class InstagramAccountFeedResponse(BaseModel):
     followers_count: int | None
     media_count: int | None
     follows_count: int | None
+    profile_metrics_error: str | None
     media: list[InstagramFeedMediaResponse]

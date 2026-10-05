@@ -8,6 +8,8 @@ export type InstagramAnalyticsAccount = {
   queued_posts: number;
   failed_posts: number;
   status: "connected" | "disconnected" | "error";
+  insights_error: string | null;
+  profile_metrics_error: string | null;
   leads: number;
   pix_generated: number;
   pix_paid: number;

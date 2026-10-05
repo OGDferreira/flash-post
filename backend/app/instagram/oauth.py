@@ -247,15 +247,14 @@ async def refresh_instagram_long_lived_token(
 
 
 async def fetch_instagram_profile_metrics(
-    instagram_user_id: str,
     access_token: str,
-) -> tuple[int | None, int | None]:
+) -> tuple[int | None, int | None, int | None]:
     timeout = httpx.Timeout(15.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(
-            f"{INSTAGRAM_GRAPH_ENDPOINT}/{instagram_user_id}",
+            f"{INSTAGRAM_GRAPH_ENDPOINT}/me",
             params={
-                "fields": "followers_count,media_count",
+                "fields": "user_id,followers_count,follows_count,media_count",
                 "access_token": access_token,
             },
         )
@@ -266,6 +265,7 @@ async def fetch_instagram_profile_metrics(
         )
 
     followers_count = profile.get("followers_count")
+    follows_count = profile.get("follows_count")
     media_count = profile.get("media_count")
     return (
         followers_count
@@ -273,12 +273,51 @@ async def fetch_instagram_profile_metrics(
         and not isinstance(followers_count, bool)
         and followers_count >= 0
         else None,
+        follows_count
+        if isinstance(follows_count, int)
+        and not isinstance(follows_count, bool)
+        and follows_count >= 0
+        else None,
         media_count
         if isinstance(media_count, int)
         and not isinstance(media_count, bool)
         and media_count >= 0
         else None,
     )
+
+
+def instagram_api_error_detail(error: Exception) -> str:
+    if isinstance(error, httpx.HTTPStatusError):
+        try:
+            payload = error.response.json()
+        except ValueError:
+            payload = None
+        meta_error = payload.get("error") if isinstance(payload, dict) else None
+        if isinstance(meta_error, dict):
+            code = meta_error.get("code")
+            subcode = meta_error.get("error_subcode")
+            message = next(
+                (
+                    meta_error[key].strip()
+                    for key in ("error_user_msg", "error_user_title", "message")
+                    if isinstance(meta_error.get(key), str)
+                    and meta_error[key].strip()
+                ),
+                None,
+            )
+            details = [f"HTTP {error.response.status_code}"]
+            if isinstance(code, int) and not isinstance(code, bool):
+                details.append(f"Meta {code}")
+            if isinstance(subcode, int) and not isinstance(subcode, bool):
+                details.append(f"subcódigo {subcode}")
+            if message:
+                details.append(message[:350])
+            return " · ".join(details)
+        return f"Meta retornou HTTP {error.response.status_code}."
+    if isinstance(error, InstagramInsightsPermissionError):
+        return f"Permissão ausente: {INSTAGRAM_INSIGHTS_PERMISSION}."
+    message = str(error).strip()
+    return message[:500] if message else type(error).__name__
 
 
 async def fetch_instagram_views(

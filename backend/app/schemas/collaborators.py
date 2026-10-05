@@ -101,11 +101,14 @@ class CollaboratorRankingItem(BaseModel):
     full_name: str
     nickname: str
     connections: int
+    average_daily_connections: Decimal
     position: int
 
 
 class CollaboratorRankingResponse(BaseModel):
     month: str
+    period: str
+    days_in_period: int
     total_connections: int
     collaborators: list[CollaboratorRankingItem]
 

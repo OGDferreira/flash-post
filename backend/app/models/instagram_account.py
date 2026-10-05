@@ -63,6 +63,7 @@ class InstagramAccount(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'connected'")
     )
+    status_reason: Mapped[str | None] = mapped_column()
     has_highlights: Mapped[bool] = mapped_column(
         nullable=False, default=False, server_default=text("false")
     )

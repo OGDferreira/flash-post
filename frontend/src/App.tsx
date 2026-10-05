@@ -14,6 +14,8 @@ import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
 import { AppShell } from "@/layouts/AppShell";
 import { FeaturePlaceholderPage } from "@/pages/FeaturePlaceholderPage";
+import { NotificationsPage } from "@/pages/NotificationsPage";
+import { RankingPage } from "@/pages/RankingPage";
 import { InstagramAccountsPage } from "@/pages/InstagramAccountsPage";
 import { LoopsPage } from "@/pages/LoopsPage";
 import { ProfilePage } from "@/pages/ProfilePage";
@@ -69,7 +71,8 @@ export default function App() {
                     />
                     <Route path="/feature/feed" element={<FeedPage />} />
                     <Route path="/feature/collaborators" element={<CollaboratorsPage />} />
-                    <Route path="/feature/notifications" element={<FeaturePlaceholderPage />} />
+                    <Route path="/feature/notifications" element={<NotificationsPage />} />
+                    <Route path="/feature/ranking" element={<RankingPage />} />
                     <Route path="/feature/settings" element={<SettingsPage />} />
                     <Route path="/feature/:slug" element={<FeaturePlaceholderPage />} />
                   </Route>

@@ -2,6 +2,7 @@ import logging
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 import uuid
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -452,35 +453,87 @@ async def collaborator_ranking(
     access: WorkspaceMemberAccess,
     db: DbSession,
     month: str | None = None,
+    period: Literal["today", "yesterday", "7d", "30d", "all"] = "30d",
 ) -> CollaboratorRankingResponse:
     if access.membership.role not in {
         WorkspaceRole.OWNER.value,
         WorkspaceRole.COLLABORATOR.value,
     }:
         raise HTTPException(status_code=403, detail="Insufficient permissions.")
-    current_month_start = _month_bounds(_utc_now())[2]
-    try:
-        month_date = (
-            date.fromisoformat(f"{month}-01") if month else current_month_start
+    now = _utc_now()
+    current_month_date = _month_bounds(now)[2]
+    response_month = current_month_date
+    if month is not None:
+        try:
+            month_date = date.fromisoformat(f"{month}-01")
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="Informe o mês no formato YYYY-MM.",
+            ) from None
+        if month_date.day != 1:
+            raise HTTPException(
+                status_code=422,
+                detail="Informe o mês no formato YYYY-MM.",
+            )
+        response_month = month_date
+        next_period_date = (
+            date(month_date.year + 1, 1, 1)
+            if month_date.month == 12
+            else date(month_date.year, month_date.month + 1, 1)
         )
-    except ValueError:
-        raise HTTPException(
-            status_code=422,
-            detail="Informe o mês no formato YYYY-MM.",
-        ) from None
-    if month_date.day != 1:
-        raise HTTPException(status_code=422, detail="Informe o mês no formato YYYY-MM.")
-    next_month_date = (
-        date(month_date.year + 1, 1, 1)
-        if month_date.month == 12
-        else date(month_date.year, month_date.month + 1, 1)
-    )
-    month_start = datetime.combine(
-        month_date, time.min, tzinfo=_BRAZIL_TIME_ZONE
-    ).astimezone(timezone.utc)
-    month_end = datetime.combine(
-        next_month_date, time.min, tzinfo=_BRAZIL_TIME_ZONE
-    ).astimezone(timezone.utc)
+        start_date = month_date
+        end_date = next_period_date - timedelta(days=1)
+        period_start = datetime.combine(
+            start_date, time.min, tzinfo=_BRAZIL_TIME_ZONE
+        ).astimezone(timezone.utc)
+        period_end = datetime.combine(
+            next_period_date, time.min, tzinfo=_BRAZIL_TIME_ZONE
+        ).astimezone(timezone.utc)
+        period_label = f"month:{month_date:%Y-%m}"
+        days_in_period = (next_period_date - start_date).days
+    else:
+        today = now.astimezone(_BRAZIL_TIME_ZONE).date()
+        if period == "today":
+            start_date = today
+        elif period == "yesterday":
+            start_date = today - timedelta(days=1)
+        elif period == "7d":
+            start_date = today - timedelta(days=6)
+        elif period == "30d":
+            start_date = today - timedelta(days=29)
+        else:
+            first_connection = await db.scalar(
+                select(func.min(InstagramAccount.first_connected_at)).where(
+                    InstagramAccount.workspace_id == access.workspace.id,
+                    InstagramAccount.first_connected_at.is_not(None),
+                )
+            )
+            start_date = (
+                (
+                    first_connection.replace(tzinfo=timezone.utc)
+                    if first_connection.tzinfo is None
+                    else first_connection
+                )
+                .astimezone(_BRAZIL_TIME_ZONE)
+                .date()
+                if first_connection is not None
+                else today
+            )
+            start_date = min(start_date, today)
+        period_start = datetime.combine(
+            start_date, time.min, tzinfo=_BRAZIL_TIME_ZONE
+        ).astimezone(timezone.utc)
+        if period == "yesterday":
+            period_end = datetime.combine(
+                today, time.min, tzinfo=_BRAZIL_TIME_ZONE
+            ).astimezone(timezone.utc)
+            end_date = today - timedelta(days=1)
+        else:
+            period_end = now
+            end_date = today
+        days_in_period = max((end_date - start_date).days + 1, 1)
+        period_label = period
     display_nickname = case(
         (WorkspaceMember.role == WorkspaceRole.OWNER.value, "chefe"),
         else_=User.nickname,
@@ -497,8 +550,8 @@ async def collaborator_ranking(
             InstagramAccount,
             (InstagramAccount.connected_by_user_id == User.id)
             & (InstagramAccount.workspace_id == access.workspace.id)
-            & (InstagramAccount.first_connected_at >= month_start)
-            & (InstagramAccount.first_connected_at < month_end),
+            & (InstagramAccount.first_connected_at >= period_start)
+            & (InstagramAccount.first_connected_at < period_end),
         )
         .where(
             WorkspaceMember.workspace_id == access.workspace.id,
@@ -516,6 +569,9 @@ async def collaborator_ranking(
             full_name=full_name,
             nickname=nickname,
             connections=connections,
+            average_daily_connections=(
+                Decimal(connections) / Decimal(days_in_period)
+            ).quantize(Decimal("0.01")),
             position=position,
         )
         for position, (user_id, full_name, nickname, connections) in enumerate(
@@ -523,7 +579,9 @@ async def collaborator_ranking(
         )
     ]
     return CollaboratorRankingResponse(
-        month=month_date.strftime("%Y-%m"),
+        month=response_month.strftime("%Y-%m"),
+        period=period_label,
+        days_in_period=days_in_period,
         total_connections=sum(item.connections for item in ranking),
         collaborators=ranking,
     )

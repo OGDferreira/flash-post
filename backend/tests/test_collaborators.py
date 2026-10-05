@@ -119,6 +119,8 @@ async def test_owner_manages_collaborator_goals_and_records_monthly_payout(
     ranking = await client.get("/api/collaborators/ranking")
     assert ranking.status_code == 200, ranking.text
     assert ranking.json()["collaborators"][0]["user_id"] == str(user.id)
+    assert ranking.json()["days_in_period"] == 30
+    assert ranking.json()["collaborators"][0]["average_daily_connections"] == "0.03"
     forbidden_report = await client.get("/api/collaborators")
     forbidden_analytics = await client.get("/api/analytics/summary")
     assert forbidden_report.status_code == 403
@@ -206,6 +208,7 @@ async def test_owner_can_query_historical_monthly_collaborator_rankings(
     assert body["month"] == "2026-08"
     assert body["collaborators"][0]["user_id"] == str(collaborator.id)
     assert body["collaborators"][0]["connections"] == 2
+    assert body["collaborators"][0]["average_daily_connections"] == "0.06"
     owner_ranking = next(
         person for person in body["collaborators"] if person["user_id"] == str(owner_user.id)
     )

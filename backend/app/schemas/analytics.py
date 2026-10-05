@@ -15,6 +15,8 @@ class InstagramAccountAnalytics(BaseModel):
     queued_posts: int
     failed_posts: int
     status: str
+    insights_error: str | None
+    profile_metrics_error: str | None
     leads: int
     pix_generated: int
     pix_paid: int

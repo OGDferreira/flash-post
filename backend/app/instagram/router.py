@@ -22,6 +22,8 @@ from app.core.crypto import decrypt_value, encrypt_value
 from app.core.security import WorkspaceRole
 from app.instagram.oauth import (
     InstagramOAuthError,
+    fetch_instagram_profile_metrics,
+    instagram_api_error_detail,
     build_authorization_url,
     exchange_instagram_authorization_code,
     fetch_meta_app_info,
@@ -112,6 +114,7 @@ async def list_accounts(
                     else None
                 ),
                 status=account.status,
+                status_reason=account.status_reason,
             )
             for account in accounts
         ],
@@ -156,6 +159,7 @@ async def update_account_highlights(
             else None
         ),
         status=account.status,
+        status_reason=account.status_reason,
     )
 
 
@@ -189,6 +193,30 @@ async def get_account_feed(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Não foi possível ler a autorização salva desta conta com segurança.",
         ) from None
+
+    profile_metrics_error = None
+    follows_count = None
+    try:
+        followers_count, follows_count, media_count = (
+            await fetch_instagram_profile_metrics(access_token)
+        )
+        if followers_count is not None:
+            account.follower_count = followers_count
+        if media_count is not None:
+            account.media_count = media_count
+        await db.commit()
+    except (
+        httpx.HTTPError,
+        InstagramOAuthError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
+        profile_metrics_error = instagram_api_error_detail(exc)
+        logger.warning(
+            "Instagram profile metrics unavailable for account %s: %s",
+            account.id,
+            profile_metrics_error,
+        )
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
@@ -290,7 +318,8 @@ async def get_account_feed(
         username=account.username,
         followers_count=account.follower_count,
         media_count=account.media_count,
-        follows_count=None,
+        follows_count=follows_count,
+        profile_metrics_error=profile_metrics_error,
         media=media,
     )
 
@@ -747,6 +776,7 @@ async def instagram_callback(
         account.token_expires_at = expires_at
         account.status = "connected"
         account.connected_at = datetime.now(timezone.utc)
+        account.status_reason = None
     await db.commit()
     return RedirectResponse(_connection_result_page(return_to, "connected"), status_code=303)
 
@@ -781,6 +811,7 @@ async def disconnect_account(
     account.encrypted_access_token = None
     account.status = "disconnected"
     account.app_credential_id = None
+    account.status_reason = "Conta desconectada manualmente."
     await db.commit()
 
     meta_revoked = False

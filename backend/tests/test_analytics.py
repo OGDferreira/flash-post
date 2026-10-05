@@ -157,7 +157,7 @@ async def test_analytics_reports_missing_meta_insights_permission(
         raise InstagramInsightsPermissionError
 
     async def profile_metrics(*_args):
-        return 10, 2
+        return 10, 3, 2
 
     monkeypatch.setattr(
         analytics_router,
@@ -193,10 +193,9 @@ async def test_analytics_refreshes_profile_metrics_and_views_from_meta(
     db_session.add(account)
     await db_session.commit()
 
-    async def profile_metrics(instagram_user_id: str, access_token: str):
-        assert instagram_user_id == account.instagram_user_id
+    async def profile_metrics(access_token: str):
         assert access_token == "token-live_meta_metrics"
-        return 2_468, 137
+        return 2_468, 805, 137
 
     async def views_metrics(*_args):
         return 9_321
