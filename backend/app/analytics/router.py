@@ -15,6 +15,7 @@ from app.instagram.oauth import (
     INSTAGRAM_INSIGHTS_PERMISSION,
     InstagramInsightsPermissionError,
     InstagramOAuthError,
+    fetch_instagram_profile_metrics,
     fetch_instagram_views,
 )
 from app.models import (
@@ -372,6 +373,8 @@ async def get_analytics_summary(
     views_count = 0
     missing_permissions: list[str] = []
     insights_unavailable = False
+    profile_metrics_unavailable = False
+    refreshed_profile_metrics: dict[UUID, tuple[int | None, int | None]] = {}
     for account in accounts:
         counts = job_counts.get(account.id, {})
         shark_counts = event_counts.get(account.id, {})
@@ -381,28 +384,72 @@ async def get_analytics_summary(
         token_expires_at = _utc(account.token_expires_at)
         if account.status == "connected" and _utc(account.token_expires_at) > now:
             active_accounts += 1
-            if include_meta_insights and account.encrypted_access_token is not None:
-                insight_start = period_start or _utc(account.connected_at)
-                insight_start = max(insight_start, _utc(account.connected_at))
-                insight_end = period_end or now
-                if insight_start < insight_end:
+            if include_meta_insights and account.encrypted_access_token is None:
+                profile_metrics_unavailable = True
+                insights_unavailable = True
+            elif include_meta_insights:
+                try:
+                    access_token = decrypt_value(account.encrypted_access_token)
+                except (RuntimeError, ValueError) as exc:
+                    profile_metrics_unavailable = True
+                    insights_unavailable = True
+                    logger.warning(
+                        "Instagram metrics token could not be decrypted for account %s (%s).",
+                        account.id,
+                        type(exc).__name__,
+                    )
+                else:
                     try:
-                        access_token = decrypt_value(account.encrypted_access_token)
-                        views_count += await fetch_instagram_views(
-                            account.instagram_user_id,
-                            access_token,
-                            insight_start,
-                            insight_end,
+                        live_followers, live_media = (
+                            await fetch_instagram_profile_metrics(
+                                account.instagram_user_id, access_token
+                            )
                         )
-                    except InstagramInsightsPermissionError:
-                        missing_permissions.append(INSTAGRAM_INSIGHTS_PERMISSION)
-                    except (httpx.HTTPError, InstagramOAuthError, RuntimeError, ValueError) as exc:
-                        insights_unavailable = True
+                        if live_followers is None or live_media is None:
+                            profile_metrics_unavailable = True
+                        refreshed_profile_metrics[account.id] = (
+                            live_followers
+                            if live_followers is not None
+                            else account.follower_count,
+                            live_media if live_media is not None else account.media_count,
+                        )
+                    except (
+                        httpx.HTTPError,
+                        InstagramOAuthError,
+                        RuntimeError,
+                        ValueError,
+                    ) as exc:
+                        profile_metrics_unavailable = True
                         logger.warning(
-                            "Instagram Insights unavailable for account %s (%s).",
+                            "Instagram profile metrics unavailable for account %s (%s).",
                             account.id,
                             type(exc).__name__,
                         )
+                    insight_start = period_start or _utc(account.connected_at)
+                    insight_start = max(insight_start, _utc(account.connected_at))
+                    insight_end = period_end or now
+                    if insight_start < insight_end:
+                        try:
+                            views_count += await fetch_instagram_views(
+                                account.instagram_user_id,
+                                access_token,
+                                insight_start,
+                                insight_end,
+                            )
+                        except InstagramInsightsPermissionError:
+                            missing_permissions.append(INSTAGRAM_INSIGHTS_PERMISSION)
+                        except (
+                            httpx.HTTPError,
+                            InstagramOAuthError,
+                            RuntimeError,
+                            ValueError,
+                        ) as exc:
+                            insights_unavailable = True
+                            logger.warning(
+                                "Instagram Insights unavailable for account %s (%s).",
+                                account.id,
+                                type(exc).__name__,
+                            )
         elif account.status == "connected" and token_expires_at <= now:
             expired_accounts += 1
         account_metrics.append(
@@ -410,8 +457,12 @@ async def get_analytics_summary(
                 account_id=account.id,
                 username=account.username,
                 profile_picture_url=account.profile_picture_url,
-                follower_count=account.follower_count,
-                media_count=account.media_count,
+                follower_count=refreshed_profile_metrics.get(
+                    account.id, (account.follower_count, account.media_count)
+                )[0],
+                media_count=refreshed_profile_metrics.get(
+                    account.id, (account.follower_count, account.media_count)
+                )[1],
                 published_posts=published,
                 queued_posts=queued,
                 failed_posts=failed,
@@ -423,8 +474,8 @@ async def get_analytics_summary(
             )
         )
 
-    follower_counts = [account.follower_count for account in accounts]
-    media_counts = [account.media_count for account in accounts]
+    follower_counts = [account.follower_count for account in account_metrics]
+    media_counts = [account.media_count for account in account_metrics]
     return InstagramAnalyticsSummary(
         period=period,
         followers_count=(
@@ -442,6 +493,7 @@ async def get_analytics_summary(
         views_count=views_count,
         missing_permissions=sorted(set(missing_permissions)),
         insights_unavailable=insights_unavailable,
+        profile_metrics_unavailable=profile_metrics_unavailable,
         active_accounts=active_accounts,
         errored_accounts=errored_accounts,
         disconnected_accounts=disconnected_accounts,

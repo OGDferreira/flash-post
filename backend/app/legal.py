@@ -56,7 +56,7 @@ _PAGES = {
       <p class="updated">Última atualização: {updated}</p>
       <p>Estes termos se aplicam ao uso do FlashPost. Ao criar uma conta ou utilizar o serviço, você concorda com estas condições. Se não concordar, não utilize o serviço.</p>
       <h2>O serviço</h2>
-      <p>O FlashPost está em desenvolvimento e oferece contas, workspaces, publicação por Loop e métricas operacionais básicas. Recursos podem estar indisponíveis, em teste ou ser alterados. Métricas de Insights da Meta, mensagens e webhooks não estão habilitados na integração atual.</p>
+      <p>O FlashPost está em desenvolvimento e oferece contas, workspaces, publicação por Loop e métricas operacionais básicas. Recursos podem estar indisponíveis, em teste ou ser alterados. Métricas de Insights da Meta dependem da elegibilidade da conta e das permissões concedidas. Mensagens e webhooks da Meta não estão habilitados na integração atual.</p>
       <h2>Conta e segurança</h2>
       <p>Você deve fornecer informações corretas, manter suas credenciais seguras e comunicar uso não autorizado. O OWNER é responsável por gerenciar acesso ao workspace e por ações realizadas por seus membros.</p>
       <h2>Aplicativos Meta e contas Instagram</h2>

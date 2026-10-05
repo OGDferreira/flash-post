@@ -92,6 +92,15 @@ export function AppShell() {
       title: "Permissão Meta não autorizada para esta conta",
       message: `O token da conta não confirmou a permissão ${permission}. Reconecte a conta Instagram para atualizar as permissões concedidas.`,
     })) ?? []),
+    ...(analyticsNotifications.data?.profile_metrics_unavailable
+      ? [
+          {
+            title: "Dados do perfil Instagram indisponíveis",
+            message:
+              "A Meta não atualizou seguidores e mídias de uma ou mais contas. Os últimos valores salvos serão mantidos.",
+          },
+        ]
+      : []),
     ...(analyticsNotifications.data?.insights_unavailable &&
     !analyticsNotifications.data.missing_permissions.length
       ? [

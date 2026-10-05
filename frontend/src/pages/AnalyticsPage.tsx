@@ -107,8 +107,16 @@ export function AnalyticsPage() {
     },
     {
       title: "Visualizações",
-      value: formatCount(summary.data?.views_count),
-      helper: "Informado pelos Insights da Meta",
+      value:
+        summary.data?.insights_unavailable ||
+        summary.data?.missing_permissions.length
+          ? "Não disponível"
+          : formatCount(summary.data?.views_count),
+      helper:
+        summary.data?.insights_unavailable ||
+        summary.data?.missing_permissions.length
+          ? "Verifique a permissão e a resposta da Meta nas notificações"
+          : "Informado pelos Insights da Meta",
       icon: Eye,
     },
     {

@@ -189,12 +189,13 @@ account as disconnected, and attempts to revoke the Meta authorization. If
 Meta does not confirm revocation, the interface tells the OWNER how to finish
 revoking it in Instagram settings.
 The Hub displays each account's profile thumbnail. The workspace **Configurações**
-page is where an OWNER registers, edits, selects, and removes Meta apps. Profile
-follower and media counts are snapshots from the most recent OAuth connection.
-The dashboard aggregates these snapshots and FlashPost publication-job counts
-for the accounts selected by the user. Analytics also requests Meta's views
-metric when the app has the `instagram_business_manage_insights` permission;
-the interface identifies this permission when Meta denies access.
+page is where an OWNER registers, edits, selects, and removes Meta apps. The
+dashboard refreshes follower and media counts from the connected Instagram
+profile and uses the last saved OAuth snapshot if Meta cannot refresh them.
+Analytics also requests the account-level `views` metric (falling back to
+`content_views` when Meta does not support `views` for that account) when the
+app has the `instagram_business_manage_insights` permission; the interface
+identifies this permission when Meta denies access.
 
 Create a Business-type Meta app, add the Instagram product, configure
 Instagram Business Login, and register this exact OAuth redirect URI in Meta:

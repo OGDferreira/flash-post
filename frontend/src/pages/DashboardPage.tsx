@@ -131,8 +131,14 @@ export function DashboardPage() {
   const metricsCards = [
     {
       title: "Total de visualizações",
-      value: formatCount(metrics?.views_count),
-      detail: "Insights recebidos da Meta no período",
+      value:
+        metrics?.insights_unavailable || metrics?.missing_permissions.length
+          ? "Não disponível"
+          : formatCount(metrics?.views_count),
+      detail:
+        metrics?.insights_unavailable || metrics?.missing_permissions.length
+          ? "Consulte as notificações para verificar os Insights da Meta"
+          : "Insights recebidos da Meta no período",
       icon: ChartNoAxesCombined,
       color: "text-[#71c8e8]",
     },
@@ -152,15 +158,25 @@ export function DashboardPage() {
     },
     {
       title: "Seguidores",
-      value: formatCount(metrics?.followers_count),
-      detail: "Snapshot das contas selecionadas",
+      value:
+        metrics?.followers_count == null
+          ? "Não disponível"
+          : formatCount(metrics.followers_count),
+      detail: metrics?.profile_metrics_unavailable
+        ? "Meta indisponível; mostrando último valor salvo"
+        : "Atualizado diretamente pela Meta",
       icon: UsersRound,
       color: "text-[#aab7ff]",
     },
     {
       title: "Mídias nos perfis",
-      value: formatCount(metrics?.media_count),
-      detail: "Snapshot de mídia retornado pela Meta",
+      value:
+        metrics?.media_count == null
+          ? "Não disponível"
+          : formatCount(metrics.media_count),
+      detail: metrics?.profile_metrics_unavailable
+        ? "Meta indisponível; mostrando último valor salvo"
+        : "Atualizado diretamente pela Meta",
       icon: ChartNoAxesCombined,
       color: "text-[#b171ff]",
     },

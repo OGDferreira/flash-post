@@ -919,6 +919,122 @@ async def test_insights_only_reports_permission_missing_when_meta_identifies_it(
 
 
 @pytest.mark.anyio
+async def test_instagram_profile_metrics_are_fetched_for_the_account_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    class FakeResponse:
+        is_error = False
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> object:
+            return {"followers_count": 2468, "media_count": 137}
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url: str, *, params: dict[str, str]):
+            calls.append((url, params))
+            return FakeResponse()
+
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", FakeClient)
+
+    metrics = await oauth.fetch_instagram_profile_metrics(
+        "17840000000000000",
+        "private-test-token",
+    )
+
+    assert metrics == (2468, 137)
+    assert calls == [
+        (
+            "https://graph.instagram.com/v25.0/17840000000000000",
+            {
+                "fields": "followers_count,media_count",
+                "access_token": "private-test-token",
+            },
+        )
+    ]
+
+
+@pytest.mark.anyio
+async def test_instagram_views_fall_back_to_content_views_and_use_local_dates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, str]] = []
+
+    class FakeResponse:
+        def __init__(self, payload: object, status_code: int = 200):
+            self.payload = payload
+            self.is_error = status_code >= 400
+            self.status_code = status_code
+            self.request = oauth.httpx.Request("GET", "https://graph.instagram.com/insights")
+
+        def json(self) -> object:
+            return self.payload
+
+        def raise_for_status(self) -> None:
+            if self.is_error:
+                response = oauth.httpx.Response(
+                    self.status_code,
+                    request=self.request,
+                    json=self.payload,
+                )
+                response.raise_for_status()
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, _url: str, *, params: dict[str, str]):
+            calls.append(params)
+            if params["metric"] == "views":
+                return FakeResponse(
+                    {"error": {"code": 100, "message": "Unsupported metric"}},
+                    status_code=400,
+                )
+            return FakeResponse(
+                {
+                    "data": [
+                        {
+                            "name": "content_views",
+                            "values": [{"value": 150}, {"value": 275}],
+                        }
+                    ]
+                }
+            )
+
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", FakeClient)
+
+    views = await oauth.fetch_instagram_views(
+        "17840000000000000",
+        "private-test-token",
+        datetime(2026, 10, 1, 3, tzinfo=timezone.utc),
+        datetime(2026, 10, 3, 3, tzinfo=timezone.utc),
+    )
+
+    assert views == 425
+    assert [call["metric"] for call in calls] == ["views", "content_views"]
+    assert all(call["since"] == "2026-10-01" for call in calls)
+    assert all(call["until"] == "2026-10-02" for call in calls)
+
+
+@pytest.mark.anyio
 async def test_instagram_oauth_exchanges_code_for_long_lived_token_and_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

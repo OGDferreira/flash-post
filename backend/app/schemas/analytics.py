@@ -50,6 +50,7 @@ class InstagramAnalyticsSummary(BaseModel):
     views_count: int
     missing_permissions: list[str]
     insights_unavailable: bool
+    profile_metrics_unavailable: bool
     active_accounts: int
     errored_accounts: int
     disconnected_accounts: int

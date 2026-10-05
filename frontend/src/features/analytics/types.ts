@@ -21,6 +21,7 @@ export type InstagramAnalyticsSummary = {
   views_count: number;
   missing_permissions: string[];
   insights_unavailable: boolean;
+  profile_metrics_unavailable: boolean;
   active_accounts: number;
   errored_accounts: number;
   disconnected_accounts: number;

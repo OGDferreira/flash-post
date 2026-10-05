@@ -156,6 +156,14 @@ async def test_analytics_reports_missing_meta_insights_permission(
     async def permission_denied(*_args):
         raise InstagramInsightsPermissionError
 
+    async def profile_metrics(*_args):
+        return 10, 2
+
+    monkeypatch.setattr(
+        analytics_router,
+        "fetch_instagram_profile_metrics",
+        profile_metrics,
+    )
     monkeypatch.setattr(analytics_router, "fetch_instagram_views", permission_denied)
     await _login(client)
     response = await client.get(
@@ -171,6 +179,87 @@ async def test_analytics_reports_missing_meta_insights_permission(
         "instagram_business_manage_insights"
     ]
     assert response.json()["insights_unavailable"] is False
+
+
+@pytest.mark.anyio
+async def test_analytics_refreshes_profile_metrics_and_views_from_meta(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+    account = _account(workspace.id, "live_meta_metrics", 100, 10)
+    db_session.add(account)
+    await db_session.commit()
+
+    async def profile_metrics(instagram_user_id: str, access_token: str):
+        assert instagram_user_id == account.instagram_user_id
+        assert access_token == "token-live_meta_metrics"
+        return 2_468, 137
+
+    async def views_metrics(*_args):
+        return 9_321
+
+    monkeypatch.setattr(
+        analytics_router,
+        "fetch_instagram_profile_metrics",
+        profile_metrics,
+    )
+    monkeypatch.setattr(analytics_router, "fetch_instagram_views", views_metrics)
+    await _login(client)
+
+    response = await client.get(
+        "/api/analytics/summary",
+        params={"account_ids": str(account.id), "include_meta_insights": "true"},
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["followers_count"] == 2_468
+    assert result["media_count"] == 137
+    assert result["views_count"] == 9_321
+    assert result["profile_metrics_unavailable"] is False
+    assert result["accounts"][0]["follower_count"] == 2_468
+    assert result["accounts"][0]["media_count"] == 137
+
+
+@pytest.mark.anyio
+async def test_analytics_uses_saved_profile_snapshot_when_meta_refresh_fails(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+    account = _account(workspace.id, "cached_meta_metrics", 850, 42)
+    db_session.add(account)
+    await db_session.commit()
+
+    async def profile_metrics(*_args):
+        raise RuntimeError("Meta profile request failed")
+
+    async def views_metrics(*_args):
+        return 0
+
+    monkeypatch.setattr(
+        analytics_router,
+        "fetch_instagram_profile_metrics",
+        profile_metrics,
+    )
+    monkeypatch.setattr(analytics_router, "fetch_instagram_views", views_metrics)
+    await _login(client)
+
+    response = await client.get(
+        "/api/analytics/summary",
+        params={"account_ids": str(account.id), "include_meta_insights": "true"},
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["followers_count"] == 850
+    assert result["media_count"] == 42
+    assert result["profile_metrics_unavailable"] is True
 
 
 @pytest.mark.anyio
