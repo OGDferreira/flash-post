@@ -15,6 +15,7 @@ from app.instagram.oauth import (
     INSTAGRAM_INSIGHTS_PERMISSION,
     InstagramInsightsPermissionError,
     InstagramOAuthError,
+    fetch_instagram_account_insights,
     fetch_instagram_profile_metrics,
     fetch_instagram_views,
     instagram_api_error_detail,
@@ -379,6 +380,8 @@ async def get_analytics_summary(
     ] = {}
     profile_metric_errors: dict[UUID, str] = {}
     insights_errors: dict[UUID, str] = {}
+    account_insights: dict[UUID, dict[str, int | None]] = {}
+    account_insight_errors: dict[UUID, dict[str, str]] = {}
     for account in accounts:
         counts = job_counts.get(account.id, {})
         shark_counts = event_counts.get(account.id, {})
@@ -465,17 +468,35 @@ async def get_analytics_summary(
                     insight_end = period_end or now
                     if insight_start < insight_end:
                         try:
-                            views_count += await fetch_instagram_views(
-                                account.instagram_user_id,
-                                access_token,
-                                insight_start,
-                                insight_end,
-                            )
+                            if account_ids is not None:
+                                (
+                                    account_insights[account.id],
+                                    account_insight_errors[account.id],
+                                ) = await fetch_instagram_account_insights(
+                                    account.instagram_user_id,
+                                    access_token,
+                                    insight_start,
+                                    insight_end,
+                                )
+                                views_count += account_insights[account.id].get(
+                                    "views"
+                                ) or 0
+                            else:
+                                views_count += await fetch_instagram_views(
+                                    account.instagram_user_id,
+                                    access_token,
+                                    insight_start,
+                                    insight_end,
+                                )
                         except InstagramInsightsPermissionError:
                             missing_permissions.append(INSTAGRAM_INSIGHTS_PERMISSION)
                             insights_errors[account.id] = instagram_api_error_detail(
                                 InstagramInsightsPermissionError()
                             )
+                            if account_ids is not None:
+                                account_insight_errors[account.id] = {
+                                    "all": insights_errors[account.id]
+                                }
                         except (
                             httpx.HTTPError,
                             InstagramOAuthError,
@@ -502,10 +523,16 @@ async def get_analytics_summary(
                     account.id,
                     (account.follower_count, None, account.media_count),
                 )[0],
+                follows_count=refreshed_profile_metrics.get(
+                    account.id,
+                    (account.follower_count, None, account.media_count),
+                )[1],
                 media_count=refreshed_profile_metrics.get(
                     account.id,
                     (account.follower_count, None, account.media_count),
                 )[2],
+                insights=account_insights.get(account.id, {}),
+                insights_metric_errors=account_insight_errors.get(account.id, {}),
                 published_posts=published,
                 queued_posts=queued,
                 failed_posts=failed,

@@ -68,22 +68,23 @@ export function AnalyticsPage() {
     retry: false,
   });
   const accountMetrics = summary.data?.accounts[0];
-  const viewsUnavailable =
-    !selectedAccountId ||
-    !summary.data ||
-    summary.data.insights_unavailable ||
-    summary.data.missing_permissions.length > 0;
-  const metrics = [
+  const appMetrics = [
     {
       title: "Seguidores",
       value: formatCount(accountMetrics?.follower_count),
-      helper: "Informado pela Meta na última autorização",
+      helper: accountMetrics?.profile_metrics_error ?? "Informado pela Meta",
+      icon: UsersRound,
+    },
+    {
+      title: "Seguindo",
+      value: formatCount(accountMetrics?.follows_count),
+      helper: accountMetrics?.profile_metrics_error ?? "Informado pela Meta",
       icon: UsersRound,
     },
     {
       title: "Posts no perfil",
       value: formatCount(accountMetrics?.media_count),
-      helper: "Total informado pela Meta na última autorização",
+      helper: accountMetrics?.profile_metrics_error ?? "Informado pela Meta",
       icon: BarChart3,
     },
     {
@@ -105,39 +106,61 @@ export function AnalyticsPage() {
       icon: AlertTriangle,
     },
     {
-      title: "Impressões",
-      value: "—",
-      helper: "Requer leitura dos Insights da Meta",
-      icon: Eye,
+      title: "Leads Sharkbot",
+      value: formatCount(accountMetrics?.leads),
+      helper: "Recebidos no período",
+      icon: UsersRound,
     },
     {
-      title: "Visualizações",
-      value: viewsUnavailable ? "—" : formatCount(summary.data?.views_count),
-      helper:
-        viewsUnavailable
-          ? "Verifique a permissão e a resposta da Meta nas notificações"
-          : "Informado pelos Insights da Meta",
-      icon: Eye,
-    },
-    {
-      title: "Curtidas",
-      value: "—",
-      helper: "Requer leitura dos Insights da Meta",
+      title: "Pix gerados",
+      value: formatCount(accountMetrics?.pix_generated),
+      helper: "Iniciados no período",
       icon: BarChart3,
     },
     {
-      title: "Comentários",
-      value: "—",
-      helper: "Requer leitura dos Insights da Meta",
-      icon: BarChart3,
+      title: "Pix pagos",
+      value: formatCount(accountMetrics?.pix_paid),
+      helper: "Aprovados no período",
+      icon: CircleCheck,
     },
     {
-      title: "Compartilhamentos",
-      value: "—",
-      helper: "Requer leitura dos Insights de cada publicação",
+      title: "Valor faturado",
+      value:
+        accountMetrics?.pix_paid_amount == null
+          ? "—"
+          : new Intl.NumberFormat("pt-BR", {
+              style: "currency",
+              currency: "BRL",
+            }).format(Number(accountMetrics.pix_paid_amount)),
+      helper: "Pix pagos no período, horário de Brasília",
       icon: BarChart3,
     },
   ];
+  const metaInsightMetrics = [
+    { key: "views", title: "Visualizações", icon: Eye },
+    { key: "reach", title: "Alcance", icon: Eye },
+    { key: "impressions", title: "Impressões", icon: Eye },
+    { key: "accounts_engaged", title: "Contas engajadas", icon: UsersRound },
+    { key: "total_interactions", title: "Interações totais", icon: BarChart3 },
+    { key: "likes", title: "Curtidas", icon: CircleCheck },
+    { key: "comments", title: "Comentários", icon: BarChart3 },
+    { key: "shares", title: "Compartilhamentos", icon: BarChart3 },
+    { key: "saves", title: "Salvamentos", icon: BarChart3 },
+    { key: "profile_views", title: "Visitas ao perfil", icon: Eye },
+    { key: "website_clicks", title: "Cliques no site", icon: BarChart3 },
+    { key: "profile_links_taps", title: "Toques em links do perfil", icon: BarChart3 },
+    { key: "replies", title: "Respostas", icon: BarChart3 },
+  ].map(({ key, title, icon }) => ({
+    title,
+    value: formatCount(accountMetrics?.insights[key] ?? null),
+    helper:
+      accountMetrics?.insights_metric_errors[key] ??
+      accountMetrics?.insights_metric_errors.all ??
+      accountMetrics?.insights_error ??
+      "Insights da Meta no período selecionado",
+    icon,
+  }));
+  const metrics = [...appMetrics, ...metaInsightMetrics];
 
   if (accounts.isLoading) return <LoadingState label="Carregando contas para Analytics" />;
   if (accounts.error || !accounts.data) {
@@ -260,10 +283,10 @@ export function AnalyticsPage() {
                 </div>
               </section>
               <p className="rounded-lg border border-[#27334a] bg-[#10141b] px-4 py-3 text-xs leading-5 text-[#94a3b8]">
-                Visualizações são consultadas nos Insights da Meta para o período selecionado; se a
-                API não as retornar, o valor aparece como “—” e os detalhes ficam nas notificações.
-                As métricas que a integração ainda não consulta não são estimadas. Seguidores e
-                publicações do perfil usam os valores mais recentes disponíveis.
+                Os Insights são consultados diretamente na Meta para o período selecionado. Um
+                “—” indica que a API não disponibilizou aquela métrica para esta conta; o motivo
+                aparece no próprio card. Métricas de perfil e do FlashPost são exibidas separadas
+                das métricas fornecidas pela Meta.
               </p>
             </>
           )}

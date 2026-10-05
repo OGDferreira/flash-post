@@ -199,7 +199,11 @@ async def test_analytics_reports_missing_meta_insights_permission(
         "fetch_instagram_profile_metrics",
         profile_metrics,
     )
-    monkeypatch.setattr(analytics_router, "fetch_instagram_views", permission_denied)
+    monkeypatch.setattr(
+        analytics_router,
+        "fetch_instagram_account_insights",
+        permission_denied,
+    )
     await _login(client)
     response = await client.get(
         "/api/analytics/summary",
@@ -232,15 +236,19 @@ async def test_analytics_refreshes_profile_metrics_and_views_from_meta(
         assert access_token == "token-live_meta_metrics"
         return 2_468, 805, 137
 
-    async def views_metrics(*_args):
-        return 9_321
+    async def account_insights(*_args):
+        return {"views": 9_321, "reach": 7_654}, {}
 
     monkeypatch.setattr(
         analytics_router,
         "fetch_instagram_profile_metrics",
         profile_metrics,
     )
-    monkeypatch.setattr(analytics_router, "fetch_instagram_views", views_metrics)
+    monkeypatch.setattr(
+        analytics_router,
+        "fetch_instagram_account_insights",
+        account_insights,
+    )
     await _login(client)
 
     response = await client.get(
@@ -255,7 +263,10 @@ async def test_analytics_refreshes_profile_metrics_and_views_from_meta(
     assert result["views_count"] == 9_321
     assert result["profile_metrics_unavailable"] is False
     assert result["accounts"][0]["follower_count"] == 2_468
+    assert result["accounts"][0]["follows_count"] == 805
     assert result["accounts"][0]["media_count"] == 137
+    assert result["accounts"][0]["insights"]["views"] == 9_321
+    assert result["accounts"][0]["insights"]["reach"] == 7_654
 
 
 @pytest.mark.anyio
@@ -273,15 +284,19 @@ async def test_analytics_uses_saved_profile_snapshot_when_meta_refresh_fails(
     async def profile_metrics(*_args):
         raise RuntimeError("Meta profile request failed")
 
-    async def views_metrics(*_args):
-        return 0
+    async def account_insights(*_args):
+        return {"views": 0}, {}
 
     monkeypatch.setattr(
         analytics_router,
         "fetch_instagram_profile_metrics",
         profile_metrics,
     )
-    monkeypatch.setattr(analytics_router, "fetch_instagram_views", views_metrics)
+    monkeypatch.setattr(
+        analytics_router,
+        "fetch_instagram_account_insights",
+        account_insights,
+    )
     await _login(client)
 
     response = await client.get(

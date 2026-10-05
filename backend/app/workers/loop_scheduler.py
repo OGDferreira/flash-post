@@ -34,6 +34,22 @@ def _utc_datetime(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
+async def _remove_failed_loop_account(db, job: InstagramPublicationJob) -> None:
+    await db.execute(
+        delete(InstagramLoopAccount).where(
+            InstagramLoopAccount.loop_id == job.loop_id,
+            InstagramLoopAccount.account_id == job.account_id,
+        )
+    )
+    await db.execute(
+        delete(InstagramPublicationJob).where(
+            InstagramPublicationJob.loop_id == job.loop_id,
+            InstagramPublicationJob.account_id == job.account_id,
+            InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
+        )
+    )
+
+
 def _is_account_connection_failure(error: Exception) -> bool:
     if isinstance(error, InstagramPublishingError):
         if error.status_code in {401, 403} or error.meta_error_code in {102, 190}:
@@ -294,6 +310,7 @@ async def process_one_queued_publication() -> bool:
         ):
             job.status = "failed"
             job.last_error = "The connected account or selected media is no longer available."
+            await _remove_failed_loop_account(db, job)
             await db.commit()
             logger.warning("Publication job %s failed preflight checks.", job.id)
             return True
@@ -306,6 +323,7 @@ async def process_one_queued_publication() -> bool:
                 await _mark_account_as_error(db, account)
             job.status = "failed"
             job.last_error = "The connected account or selected media is no longer available."
+            await _remove_failed_loop_account(db, job)
             await db.commit()
             logger.warning("Publication job %s failed account health checks.", job.id)
             return True
@@ -316,6 +334,7 @@ async def process_one_queued_publication() -> bool:
         except (RuntimeError, ValueError) as exc:
             job.status = "failed"
             job.last_error = "Server-side credentials could not be read securely."
+            await _remove_failed_loop_account(db, job)
             await db.commit()
             logger.error(
                 "Publication job %s could not load credentials (%s).",
@@ -354,6 +373,7 @@ async def process_one_queued_publication() -> bool:
                     if isinstance(exc, (InstagramPublishingError, SupabaseStorageError))
                     else "A network error interrupted the publication; verify Instagram before retrying."
                 )
+                await _remove_failed_loop_account(db, job)
                 await db.commit()
                 await _update_account_health_after_failure(db, account_id, exc)
         logger.error(
@@ -398,6 +418,7 @@ async def fail_stale_publication_jobs(now: datetime | None = None) -> int:
             job.last_error = (
                 "The worker stopped during publication; verify Instagram before retrying."
             )
+            await _remove_failed_loop_account(db, job)
         await db.commit()
     if stale_jobs:
         logger.error("Marked %s stale publication jobs for manual review.", len(stale_jobs))

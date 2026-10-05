@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -60,70 +60,23 @@ function AnimatedMetricValue({
   loading: boolean;
   formatValue: (value: number) => string;
 }) {
-  const [displayValue, setDisplayValue] = useState(0);
-  const displayValueRef = useRef(0);
-
-  useEffect(() => {
-    let frame = 0;
-    let lastFrameTime = 0;
-    const startValue = displayValueRef.current;
-    const startTime = performance.now();
-    const prefersReducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-
-    if (target === null && !loading) return;
-    if (prefersReducedMotion) {
-      if (target !== null) {
-        displayValueRef.current = target;
-        setDisplayValue(target);
-      }
-      return;
-    }
-
-    const update = (now: number) => {
-      if (now - lastFrameTime < 32) {
-        frame = window.requestAnimationFrame(update);
-        return;
-      }
-      lastFrameTime = now;
-
-      if (target === null) {
-        const progress = Math.min((now - startTime) / 15_000, 1);
-        const easedProgress = progress * progress;
-        const nextValue = startValue + (96 - startValue) * easedProgress;
-        displayValueRef.current = nextValue;
-        setDisplayValue(nextValue);
-        if (progress < 1) frame = window.requestAnimationFrame(update);
-        return;
-      }
-
-      const duration = startValue === target ? 0 : 650;
-      const progress =
-        duration === 0 ? 1 : Math.min((now - startTime) / duration, 1);
-      const easedProgress = 1 - (1 - progress) ** 3;
-      const nextValue = startValue + (target - startValue) * easedProgress;
-      displayValueRef.current = nextValue;
-      setDisplayValue(nextValue);
-      if (progress < 1) frame = window.requestAnimationFrame(update);
-    };
-
-    frame = window.requestAnimationFrame(update);
-    return () => window.cancelAnimationFrame(frame);
-  }, [loading, target]);
-
-  if (target === null && !loading) return <>—</>;
+  if (target !== null) return <span className="tabular-nums">{formatValue(target)}</span>;
+  if (!loading) return <>—</>;
 
   return (
     <span
-      aria-label={
-        target === null
-          ? "Carregando métrica; valor animado provisório"
-          : formatValue(target)
-      }
-      className={target === null ? "tabular-nums opacity-70" : "tabular-nums"}
+      aria-label="Carregando métrica"
+      className="inline-flex items-center gap-1.5 align-middle"
+      role="status"
     >
-      {formatValue(displayValue)}
+      {[0, 1, 2].map((dot) => (
+        <span
+          aria-hidden="true"
+          className="size-2 rounded-full bg-current motion-safe:animate-pulse motion-reduce:animate-none"
+          key={dot}
+          style={{ animationDelay: `${dot * 180}ms` }}
+        />
+      ))}
     </span>
   );
 }

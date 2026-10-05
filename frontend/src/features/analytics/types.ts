@@ -3,7 +3,10 @@ export type InstagramAnalyticsAccount = {
   username: string;
   profile_picture_url: string | null;
   follower_count: number | null;
+  follows_count: number | null;
   media_count: number | null;
+  insights: Record<string, number | null>;
+  insights_metric_errors: Record<string, string>;
   published_posts: number;
   queued_posts: number;
   failed_posts: number;

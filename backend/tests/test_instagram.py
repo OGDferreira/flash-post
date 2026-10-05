@@ -1059,6 +1059,61 @@ async def test_instagram_views_fall_back_to_content_views_and_use_local_dates(
 
 
 @pytest.mark.anyio
+async def test_instagram_account_insights_fetch_supported_metrics_for_local_period(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, str]] = []
+
+    class FakeResponse:
+        def __init__(self, metric_name: str):
+            self.metric_name = metric_name
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> object:
+            return {
+                "data": [
+                    {
+                        "name": self.metric_name,
+                        "total_value": {"value": 17},
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, _url: str, *, params: dict[str, str]):
+            calls.append(params)
+            return FakeResponse(params["metric"])
+
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", FakeClient)
+
+    metrics, errors = await oauth.fetch_instagram_account_insights(
+        "17840000000000000",
+        "private-test-token",
+        datetime(2026, 10, 1, 3, tzinfo=timezone.utc),
+        datetime(2026, 10, 3, 3, tzinfo=timezone.utc),
+    )
+
+    assert metrics["views"] == 17
+    assert metrics["reach"] == 17
+    assert metrics["profile_links_taps"] == 17
+    assert not errors
+    assert len(calls) == 13
+    assert all(call["since"] == "2026-10-01" for call in calls)
+    assert all(call["until"] == "2026-10-02" for call in calls)
+
+
+@pytest.mark.anyio
 async def test_instagram_oauth_exchanges_code_for_long_lived_token_and_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

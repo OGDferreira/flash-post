@@ -249,7 +249,7 @@ async def _validate_selected_accounts(
     accounts = await _workspace_accounts(workspace_id, db, account_ids)
     if len(accounts) != len(account_ids):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Select only connected Instagram accounts with unexpired tokens.",
         )
     return accounts
@@ -275,7 +275,7 @@ async def _validate_selected_media(
     media = list((await db.scalars(query.order_by(InstagramMedia.created_at, InstagramMedia.id))).all())
     if len(media) != len(media_ids):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Select only media in this workspace that matches the loop publication type.",
         )
     assigned_media_ids = set(
@@ -621,10 +621,44 @@ async def update_loop_status(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    restarting = payload.enabled and loop.status != "active"
     loop.status = "active" if payload.enabled else "paused"
     now = utc_now()
     loop.next_run_at = now if payload.enabled else None
     if payload.enabled:
+        if restarting:
+            failed_account_ids = set(
+                (
+                    await db.scalars(
+                        select(InstagramPublicationJob.account_id).where(
+                            InstagramPublicationJob.loop_id == loop.id,
+                            InstagramPublicationJob.status == "failed",
+                        )
+                    )
+                ).all()
+            )
+            if failed_account_ids:
+                await db.execute(
+                    InstagramLoopAccount.__table__.delete().where(
+                        InstagramLoopAccount.loop_id == loop.id,
+                        InstagramLoopAccount.account_id.in_(failed_account_ids),
+                    )
+                )
+                await db.execute(
+                    InstagramPublicationJob.__table__.delete().where(
+                        InstagramPublicationJob.loop_id == loop.id,
+                        InstagramPublicationJob.account_id.in_(failed_account_ids),
+                        InstagramPublicationJob.status.in_(
+                            ("waiting_for_media", "queued")
+                        ),
+                    )
+                )
+            await db.execute(
+                InstagramPublicationJob.__table__.delete().where(
+                    InstagramPublicationJob.loop_id == loop.id,
+                    InstagramPublicationJob.status == "failed",
+                )
+            )
         accounts = (
             await db.scalars(
                 select(InstagramAccount)

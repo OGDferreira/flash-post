@@ -10,7 +10,10 @@ class InstagramAccountAnalytics(BaseModel):
     username: str
     profile_picture_url: str | None
     follower_count: int | None
+    follows_count: int | None
     media_count: int | None
+    insights: dict[str, int | None]
+    insights_metric_errors: dict[str, str]
     published_posts: int
     queued_posts: int
     failed_posts: int

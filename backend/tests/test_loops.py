@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.workers.loop_scheduler import (
     CONSECUTIVE_PUBLICATION_FAILURE_LIMIT,
+    _remove_failed_loop_account,
     _update_account_health_after_failure,
 )
 
@@ -1080,3 +1081,119 @@ async def test_pausing_loop_stops_queued_job_and_prevents_delete_during_publish(
         headers={"X-CSRF-Token": csrf},
     )
     assert delete_response.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_restarting_loop_clears_its_failed_publication_history(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = _active_account(workspace.id, "restart_failure_account")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Restart failure reset",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        post_type="images",
+        repeat_media=True,
+        status="paused",
+    )
+    db_session.add_all([account, loop])
+    await db_session.flush()
+    job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=loop.id,
+        account_id=account.id,
+        scheduled_for=datetime.now(timezone.utc) - timedelta(minutes=5),
+        status="failed",
+        attempts=1,
+        last_error="A previous publication failed.",
+    )
+    db_session.add(job)
+    await db_session.flush()
+    db_session.add(InstagramLoopAccount(loop_id=loop.id, account_id=account.id))
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    csrf = await _csrf(client)
+
+    response = await client.patch(
+        f"/api/loops/{loop.id}/status",
+        headers={"X-CSRF-Token": csrf},
+        json={"enabled": True},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["failed_count"] == 0
+    assert (
+        await db_session.scalar(
+            select(InstagramPublicationJob).where(
+                InstagramPublicationJob.id == job.id
+            )
+        )
+        is None
+    )
+    assert (
+        await db_session.scalar(
+            select(InstagramLoopAccount).where(
+                InstagramLoopAccount.loop_id == loop.id,
+                InstagramLoopAccount.account_id == account.id,
+            )
+        )
+        is None
+    )
+
+
+@pytest.mark.anyio
+async def test_failed_publication_detaches_account_and_discards_pending_loop_jobs(
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = _active_account(workspace.id, "failed_loop_account")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Detach failed account",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        post_type="images",
+        repeat_media=True,
+        status="active",
+    )
+    db_session.add_all([account, loop])
+    await db_session.flush()
+    now = datetime.now(timezone.utc)
+    failed_job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=loop.id,
+        account_id=account.id,
+        scheduled_for=now,
+        status="failed",
+        attempts=1,
+        last_error="Instagram rejected the publication.",
+    )
+    pending_job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=loop.id,
+        account_id=account.id,
+        scheduled_for=now + timedelta(minutes=10),
+        status="queued",
+    )
+    db_session.add_all([failed_job, pending_job])
+    await db_session.flush()
+    db_session.add(InstagramLoopAccount(loop_id=loop.id, account_id=account.id))
+    await db_session.commit()
+
+    await _remove_failed_loop_account(db_session, failed_job)
+    await db_session.commit()
+
+    association = await db_session.scalar(
+        select(InstagramLoopAccount).where(
+            InstagramLoopAccount.loop_id == loop.id,
+            InstagramLoopAccount.account_id == account.id,
+        )
+    )
+    assert association is None
+    assert await db_session.get(InstagramPublicationJob, pending_job.id) is None
+    assert await db_session.get(InstagramPublicationJob, failed_job.id) is not None

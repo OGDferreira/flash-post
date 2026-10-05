@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -402,6 +403,172 @@ async def fetch_instagram_views(
     if last_http_error is not None:
         raise last_http_error
     raise InstagramOAuthError("Meta did not return a supported Instagram views metric.")
+
+
+async def fetch_instagram_account_insights(
+    instagram_user_id: str,
+    access_token: str,
+    since: datetime,
+    until: datetime,
+) -> tuple[dict[str, int | None], dict[str, str]]:
+    metric_names = (
+        "views",
+        "reach",
+        "impressions",
+        "accounts_engaged",
+        "total_interactions",
+        "likes",
+        "comments",
+        "shares",
+        "saves",
+        "profile_views",
+        "website_clicks",
+        "profile_links_taps",
+        "replies",
+    )
+    local_start = since.astimezone(BRAZIL_TIME_ZONE).date().isoformat()
+    local_end = (
+        (until - timedelta(microseconds=1))
+        .astimezone(BRAZIL_TIME_ZONE)
+        .date()
+        .isoformat()
+    )
+    metrics: dict[str, int | None] = {}
+    errors: dict[str, str] = {}
+    permission_missing = False
+    semaphore = asyncio.Semaphore(4)
+    timeout = httpx.Timeout(15.0)
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async def fetch_metric(
+            metric_name: str,
+        ) -> tuple[str, int | None, str | None, bool]:
+            async with semaphore:
+                try:
+                    response = await client.get(
+                        f"{INSTAGRAM_GRAPH_ENDPOINT}/{instagram_user_id}/insights",
+                        params={
+                            "metric": metric_name,
+                            "period": "day",
+                            "since": local_start,
+                            "until": local_end,
+                            "access_token": access_token,
+                        },
+                    )
+                    response.raise_for_status()
+                    payload = _object(
+                        response.json(),
+                        "Meta returned an invalid Instagram Insights response.",
+                    )
+                    data = payload.get("data")
+                    metric = next(
+                        (
+                            item
+                            for item in data
+                            if isinstance(item, dict)
+                            and item.get("name") == metric_name
+                        ),
+                        None,
+                    ) if isinstance(data, list) else None
+                    if metric is None:
+                        return (
+                            metric_name,
+                            None,
+                            "A Meta não retornou esta métrica para o período.",
+                            False,
+                        )
+
+                    total_value = metric.get("total_value")
+                    direct_value = (
+                        total_value.get("value")
+                        if isinstance(total_value, dict)
+                        else None
+                    )
+                    if (
+                        isinstance(direct_value, int)
+                        and not isinstance(direct_value, bool)
+                        and direct_value >= 0
+                    ):
+                        return metric_name, direct_value, None, False
+
+                    values = metric.get("values")
+                    if not isinstance(values, list):
+                        return (
+                            metric_name,
+                            None,
+                            "A Meta não retornou valores para esta métrica.",
+                            False,
+                        )
+                    total = 0
+                    found_value = False
+                    for item in values:
+                        value = item.get("value") if isinstance(item, dict) else None
+                        if (
+                            isinstance(value, int)
+                            and not isinstance(value, bool)
+                            and value >= 0
+                        ):
+                            total += value
+                            found_value = True
+                    if not found_value:
+                        return (
+                            metric_name,
+                            None,
+                            "A Meta não retornou valores numéricos para esta métrica.",
+                            False,
+                        )
+                    return metric_name, total, None, False
+                except httpx.HTTPError as exc:
+                    detail = instagram_api_error_detail(exc)
+                    permission_error = INSTAGRAM_INSIGHTS_PERMISSION in detail
+                    if isinstance(exc, httpx.HTTPStatusError):
+                        try:
+                            payload = exc.response.json()
+                        except ValueError:
+                            payload = None
+                        meta_error = (
+                            payload.get("error")
+                            if isinstance(payload, dict)
+                            else None
+                        )
+                        code = (
+                            meta_error.get("code")
+                            if isinstance(meta_error, dict)
+                            else None
+                        )
+                        message = (
+                            meta_error.get("message")
+                            if isinstance(meta_error, dict)
+                            else None
+                        )
+                        permission_error = permission_error or (
+                            code in {10, 200}
+                            and isinstance(message, str)
+                            and "permission" in message.casefold()
+                        )
+                    return metric_name, None, detail, permission_error
+                except (InstagramOAuthError, ValueError) as exc:
+                    return metric_name, None, instagram_api_error_detail(exc), False
+
+        results = await asyncio.gather(
+            *(fetch_metric(metric_name) for metric_name in metric_names)
+        )
+
+        if results[0][1] is None:
+            content_views = await fetch_metric("content_views")
+            if content_views[1] is not None:
+                results[0] = ("views", content_views[1], None, False)
+            elif results[0][2] and content_views[2]:
+                errors["views"] = content_views[2]
+
+    for metric_name, value, error, missing_permission in results:
+        metrics[metric_name] = value
+        permission_missing = permission_missing or missing_permission
+        if error:
+            errors[metric_name] = error
+    if permission_missing:
+        raise InstagramInsightsPermissionError
+    return metrics, errors
 
 
 class InstagramInsightsPermissionError(InstagramOAuthError):

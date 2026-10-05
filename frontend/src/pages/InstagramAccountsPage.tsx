@@ -182,7 +182,7 @@ export function InstagramAccountsPage() {
   const activeAccountCount = accounts.data.accounts.filter(isInstagramAccountActive).length;
   const issueAccountCount = accounts.data.accounts.length - activeAccountCount;
   const unassignedAccountCount = accounts.data.accounts.filter(
-    (account) => !account.profile_folder_id,
+    (account) => !account.profile_folder_id && isInstagramAccountActive(account),
   ).length;
   const visibleAccounts = accounts.data.accounts.filter((account) => {
     const active = isInstagramAccountActive(account);
@@ -319,7 +319,9 @@ export function InstagramAccountsPage() {
             </button>
             {(folders.data?.folders ?? []).map((folder) => {
               const count = accounts.data.accounts.filter(
-                (account) => account.profile_folder_id === folder.id,
+                (account) =>
+                  account.profile_folder_id === folder.id &&
+                  isInstagramAccountActive(account),
               ).length;
               return (
                 <button

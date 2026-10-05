@@ -529,10 +529,35 @@ export function LoopsPage() {
                   .filter((folder) => folder.accounts.length > 0)
                   .map((folder) => (
                     <section key={folder.id}>
-                      <h4 className="mb-2 flex items-center gap-2 text-xs text-[#94a3b8]">
-                        <Folder size={13} style={{ color: folder.color }} />
-                        {folder.label} ({folder.accounts.length})
-                      </h4>
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="flex items-center gap-2 text-xs text-[#94a3b8]">
+                          <Folder size={13} style={{ color: folder.color }} />
+                          {folder.label} ({folder.accounts.length})
+                        </h4>
+                        <button
+                          className="text-[11px] font-medium text-[#8af2fa] hover:text-white disabled:opacity-50"
+                          disabled={!loops.data.can_manage}
+                          onClick={() => {
+                            const folderAccountIds = folder.accounts.map(({ id }) => id);
+                            const allSelected = folderAccountIds.every((id) =>
+                              form.account_ids.includes(id),
+                            );
+                            setForm((current) => ({
+                              ...current,
+                              account_ids: allSelected
+                                ? current.account_ids.filter(
+                                    (id) => !folderAccountIds.includes(id),
+                                  )
+                                : [...new Set([...current.account_ids, ...folderAccountIds])],
+                            }));
+                          }}
+                          type="button"
+                        >
+                          {folder.accounts.every(({ id }) => form.account_ids.includes(id))
+                            ? "Desmarcar pasta"
+                            : "Selecionar pasta"}
+                        </button>
+                      </div>
                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         {folder.accounts.map((account) => {
                           const checked = form.account_ids.includes(account.id);
