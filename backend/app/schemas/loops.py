@@ -61,6 +61,7 @@ class InstagramLoopResponse(BaseModel):
     last_run_at: datetime | None
     accounts: list[InstagramLoopAccountResponse]
     media_ids: list[UUID]
+    media_names: list[str]
     media_count: int
     waiting_for_media_count: int
     published_today_count: int

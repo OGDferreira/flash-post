@@ -373,7 +373,7 @@ async def test_loop_accepts_more_than_24_videos(
 
 
 @pytest.mark.anyio
-async def test_removing_media_from_loop_keeps_workspace_file_and_other_loop_link(
+async def test_loop_media_is_private_unless_the_loop_is_cloned(
     client: AsyncClient,
     db_session: AsyncSession,
     owner,
@@ -390,16 +390,6 @@ async def test_removing_media_from_loop_keeps_workspace_file_and_other_loop_link
         repeat_media=True,
         status="active",
     )
-    second_loop = InstagramLoop(
-        workspace_id=workspace.id,
-        name="Second loop",
-        interval_min_minutes=10,
-        interval_max_minutes=20,
-        daily_limit_per_account=24,
-        post_type="reels",
-        repeat_media=True,
-        status="active",
-    )
     media = InstagramMedia(
         workspace_id=workspace.id,
         storage_path=f"{workspace.id}/loop-media/removal.mp4",
@@ -408,13 +398,12 @@ async def test_removing_media_from_loop_keeps_workspace_file_and_other_loop_link
         media_type="video",
         size_bytes=100,
     )
-    db_session.add_all([account, first_loop, second_loop, media])
+    db_session.add_all([account, first_loop, media])
     await db_session.flush()
     db_session.add_all(
         [
             InstagramLoopAccount(loop_id=first_loop.id, account_id=account.id),
             InstagramLoopMedia(loop_id=first_loop.id, media_id=media.id),
-            InstagramLoopMedia(loop_id=second_loop.id, media_id=media.id),
         ]
     )
     queued_job = InstagramPublicationJob(
@@ -430,6 +419,60 @@ async def test_removing_media_from_loop_keeps_workspace_file_and_other_loop_link
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
 
+    cloned = await client.post(
+        f"/api/loops/{first_loop.id}/clone",
+        headers={"X-CSRF-Token": token},
+    )
+    assert cloned.status_code == 201, cloned.text
+    clone_id = uuid.UUID(cloned.json()["id"])
+    assert cloned.json()["status"] == "paused"
+    assert cloned.json()["media_names"] == ["removal.mp4"]
+
+    duplicate = await client.post(
+        "/api/loops",
+        headers={"X-CSRF-Token": token},
+        json={
+            "name": "Uncloned duplicate",
+            "interval_min_minutes": 10,
+            "interval_max_minutes": 20,
+            "post_type": "reels",
+            "repeat_media": True,
+            "account_ids": [str(account.id)],
+            "media_ids": [str(media.id)],
+        },
+    )
+    assert duplicate.status_code == 409
+    assert "Clone o loop" in duplicate.json()["detail"]
+
+    empty_loop = await client.post(
+        "/api/loops",
+        headers={"X-CSRF-Token": token},
+        json={
+            "name": "Loop sem mídias",
+            "interval_min_minutes": 10,
+            "interval_max_minutes": 20,
+            "post_type": "reels",
+            "repeat_media": True,
+            "account_ids": [str(account.id)],
+            "media_ids": [],
+        },
+    )
+    assert empty_loop.status_code == 201, empty_loop.text
+    update_duplicate = await client.put(
+        f"/api/loops/{empty_loop.json()['id']}",
+        headers={"X-CSRF-Token": token},
+        json={
+            "name": "Loop sem mídias",
+            "interval_min_minutes": 10,
+            "interval_max_minutes": 20,
+            "post_type": "reels",
+            "repeat_media": True,
+            "account_ids": [str(account.id)],
+            "media_ids": [str(media.id)],
+        },
+    )
+    assert update_duplicate.status_code == 409
+
     response = await client.delete(
         f"/api/loops/{first_loop.id}/media/{media.id}",
         headers={"X-CSRF-Token": token},
@@ -438,7 +481,7 @@ async def test_removing_media_from_loop_keeps_workspace_file_and_other_loop_link
     assert response.status_code == 204
     assert await db_session.get(InstagramMedia, media.id) is not None
     assert await db_session.get(InstagramLoopMedia, (first_loop.id, media.id)) is None
-    assert await db_session.get(InstagramLoopMedia, (second_loop.id, media.id)) is not None
+    assert await db_session.get(InstagramLoopMedia, (clone_id, media.id)) is not None
     await db_session.refresh(queued_job)
     assert queued_job.status == "waiting_for_media"
     assert queued_job.media_id is None

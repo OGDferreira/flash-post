@@ -167,7 +167,7 @@ async def test_owner_can_query_historical_monthly_collaborator_rankings(
     owner,
     collaborator,
 ) -> None:
-    _owner_user, workspace = owner
+    owner_user, workspace = owner
     connection_time = datetime(2026, 8, 15, 15, tzinfo=timezone.utc)
     for index in range(2):
         db_session.add(
@@ -182,6 +182,18 @@ async def test_owner_can_query_historical_monthly_collaborator_rankings(
                 status="connected",
             )
         )
+    db_session.add(
+        InstagramAccount(
+            workspace_id=workspace.id,
+            connected_by_user_id=owner_user.id,
+            first_connected_at=connection_time + timedelta(days=2),
+            instagram_user_id="historical-owner-ranking",
+            username="owner_ranking",
+            encrypted_access_token=encrypt_value("owner-ranking-token"),
+            token_expires_at=connection_time + timedelta(days=60),
+            status="connected",
+        )
+    )
     await db_session.commit()
     await _login(client, "owner@example.com", "correct horse battery staple")
 
@@ -192,9 +204,15 @@ async def test_owner_can_query_historical_monthly_collaborator_rankings(
     assert historical.status_code == 200, historical.text
     body = historical.json()
     assert body["month"] == "2026-08"
-    assert body["total_connections"] == 2
     assert body["collaborators"][0]["user_id"] == str(collaborator.id)
     assert body["collaborators"][0]["connections"] == 2
+    owner_ranking = next(
+        person for person in body["collaborators"] if person["user_id"] == str(owner_user.id)
+    )
+    assert owner_ranking["nickname"] == "chefe"
+    assert owner_ranking["connections"] == 1
+    assert owner_ranking["position"] == 2
+    assert body["total_connections"] == 3
 
     invalid = await client.get(
         "/api/collaborators/ranking",

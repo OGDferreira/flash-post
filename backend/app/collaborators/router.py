@@ -5,7 +5,7 @@ import uuid
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, WorkspaceMemberAccess, require_csrf
@@ -481,11 +481,15 @@ async def collaborator_ranking(
     month_end = datetime.combine(
         next_month_date, time.min, tzinfo=_BRAZIL_TIME_ZONE
     ).astimezone(timezone.utc)
+    display_nickname = case(
+        (WorkspaceMember.role == WorkspaceRole.OWNER.value, "chefe"),
+        else_=User.nickname,
+    )
     result = await db.execute(
         select(
             User.id,
             User.full_name,
-            User.nickname,
+            display_nickname.label("nickname"),
             func.count(InstagramAccount.id).label("connections"),
         )
         .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
@@ -498,10 +502,13 @@ async def collaborator_ranking(
         )
         .where(
             WorkspaceMember.workspace_id == access.workspace.id,
-            WorkspaceMember.role == WorkspaceRole.COLLABORATOR.value,
+            WorkspaceMember.role.in_(
+                (WorkspaceRole.OWNER.value, WorkspaceRole.COLLABORATOR.value)
+            ),
+            WorkspaceMember.status == "ACTIVE",
         )
-        .group_by(User.id, User.full_name, User.nickname)
-        .order_by(func.count(InstagramAccount.id).desc(), User.nickname, User.id)
+        .group_by(User.id, User.full_name, display_nickname)
+        .order_by(func.count(InstagramAccount.id).desc(), display_nickname, User.id)
     )
     ranking = [
         CollaboratorRankingItem(

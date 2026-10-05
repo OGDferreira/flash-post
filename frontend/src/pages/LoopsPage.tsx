@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Clock3,
+  Copy,
   Image as ImageIcon,
   Infinity,
   Pause,
@@ -50,6 +51,7 @@ type InstagramLoop = {
   last_run_at: string | null;
   accounts: LoopAccount[];
   media_ids: string[];
+  media_names: string[];
   media_count: number;
   waiting_for_media_count: number;
   published_today_count: number;
@@ -197,6 +199,11 @@ export function LoopsPage() {
       }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
   });
+  const cloneLoop = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest<InstagramLoop>(`/api/loops/${id}/clone`, { method: "POST" }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
+  });
   const deleteLoop = useMutation({
     mutationFn: (id: string) => apiRequest(`/api/loops/${id}`, { method: "DELETE" }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
@@ -250,6 +257,14 @@ export function LoopsPage() {
       ),
     [loops.data?.loops, tab],
   );
+  const mediaAssignedToOtherLoops = new Set(
+    (loops.data?.loops ?? [])
+      .filter((loop) => loop.id !== editingId)
+      .flatMap((loop) => loop.media_ids),
+  );
+  const selectableMedia = (media.data?.media ?? []).filter(
+    (item) => !mediaAssignedToOtherLoops.has(item.id) || form.media_ids.includes(item.id),
+  );
 
   if (loops.isLoading) return <LoadingState label="Carregando loops" />;
   if (loops.error || !loops.data) {
@@ -259,6 +274,7 @@ export function LoopsPage() {
   const mutationError = [
     apiErrorMessage(saveLoop.error, "Não foi possível salvar o loop."),
     apiErrorMessage(changeStatus.error, "Não foi possível alterar o estado do loop."),
+    apiErrorMessage(cloneLoop.error, "Não foi possível clonar o loop."),
     apiErrorMessage(deleteLoop.error, "Não foi possível remover o loop."),
     apiErrorMessage(removeLoopMedia.error, "Não foi possível remover a mídia deste loop."),
     apiErrorMessage(uploadMedia.error, "Não foi possível enviar a mídia."),
@@ -630,9 +646,13 @@ export function LoopsPage() {
               <p className="rounded-lg border border-[#27334a] bg-[#090b0f] p-3 text-sm text-[#94a3b8]">
                 Nenhuma mídia enviada. Envie um arquivo para começar a montar o pool.
               </p>
+            ) : selectableMedia.length === 0 ? (
+              <p className="rounded-lg border border-[#27334a] bg-[#090b0f] p-3 text-sm text-[#94a3b8]">
+                Todas as mídias já pertencem a outros loops. Clone um loop para reutilizar as mídias dele.
+              </p>
             ) : (
               <div className="grid gap-2 sm:grid-cols-2">
-                {media.data.media.map((item) => {
+                {selectableMedia.map((item) => {
                   const checked = form.media_ids.includes(item.id);
                   const compatible = mediaFitsLoop(item, form.post_type);
                   return (
@@ -826,16 +846,37 @@ export function LoopsPage() {
                     Próxima execução: {formatDate(loop.next_run_at)}
                   </p>
                   <p className="mt-1 text-xs text-[#f2d48a]">
-                    Mídias: {loop.media_count} {loop.media_count === 1 ? "arquivo" : "arquivos"} ·{" "}
+                    {loop.media_count} {loop.media_count === 1 ? "mídia" : "mídias"} ·{" "}
                     {loop.waiting_for_media_count}{" "}
                     {loop.waiting_for_media_count === 1
                       ? "publicação aguardando mídia"
                       : "publicações aguardando mídia"} ·{" "}
                     {loop.published_today_count} publicados hoje · Falhas: {loop.failed_count}
                   </p>
+                  {loop.media_names.length > 0 && (
+                    <ul aria-label={`Mídias de ${loop.name}`} className="mt-2 list-inside list-disc space-y-1 text-xs text-[#cbd5e1]">
+                      {loop.media_names.map((name, index) => (
+                        <li className="break-all" key={`${loop.media_ids[index]}-${name}`}>
+                          {name}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 {loops.data.can_manage && (
                   <div className="flex shrink-0 items-start gap-2">
+                    {loops.data.can_configure && (
+                      <button
+                        className="grid size-9 place-items-center rounded-lg border border-[#27334a] text-[#cbd5e1] hover:bg-[#10141b] disabled:opacity-50"
+                        type="button"
+                        aria-label={`Clonar ${loop.name}`}
+                        title="Clonar loop"
+                        disabled={cloneLoop.isPending}
+                        onClick={() => cloneLoop.mutate(loop.id)}
+                      >
+                        <Copy size={15} />
+                      </button>
+                    )}
                     <button
                       className="grid size-9 place-items-center rounded-lg border border-[#27334a] text-[#cbd5e1] hover:bg-[#10141b]"
                       type="button"

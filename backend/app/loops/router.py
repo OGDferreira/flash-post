@@ -95,13 +95,13 @@ async def _loop_response(
             InstagramPublicationJob.status == "failed",
         )
     )
-    selected_media_ids = list(
+    selected_media = list(
         (
             await db.scalars(
-                select(InstagramLoopMedia.media_id)
+                select(InstagramMedia)
                 .join(
-                    InstagramMedia,
-                    InstagramMedia.id == InstagramLoopMedia.media_id,
+                    InstagramLoopMedia,
+                    InstagramLoopMedia.media_id == InstagramMedia.id,
                 )
                 .where(
                     InstagramLoopMedia.loop_id == loop.id,
@@ -129,8 +129,9 @@ async def _loop_response(
             )
             for account in accounts
         ],
-        media_ids=selected_media_ids,
-        media_count=len(selected_media_ids),
+        media_ids=[item.id for item in selected_media],
+        media_names=[item.filename for item in selected_media],
+        media_count=len(selected_media),
         waiting_for_media_count=waiting_count or 0,
         published_today_count=published_count or 0,
         failed_count=failed_count or 0,
@@ -243,6 +244,7 @@ async def _validate_selected_media(
     media_ids: list[uuid.UUID] | None,
     post_type: str,
     db: DbSession,
+    loop_id: uuid.UUID | None = None,
 ) -> list[InstagramMedia]:
     if not media_ids:
         return []
@@ -259,6 +261,35 @@ async def _validate_selected_media(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Select only media in this workspace that matches the loop publication type.",
+        )
+    assigned_media_ids = set(
+        (
+            await db.scalars(
+                select(InstagramLoopMedia.media_id)
+                .join(InstagramLoop, InstagramLoop.id == InstagramLoopMedia.loop_id)
+                .where(
+                    InstagramLoop.workspace_id == workspace_id,
+                    InstagramLoopMedia.media_id.in_(media_ids),
+                )
+            )
+        ).all()
+    )
+    current_loop_media_ids = set()
+    if loop_id is not None:
+        current_loop_media_ids = set(
+            (
+                await db.scalars(
+                    select(InstagramLoopMedia.media_id).where(
+                        InstagramLoopMedia.loop_id == loop_id,
+                        InstagramLoopMedia.media_id.in_(media_ids),
+                    )
+                )
+            ).all()
+        )
+    if assigned_media_ids - current_loop_media_ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Uma ou mais mídias já estão em outro loop. Clone o loop para reutilizá-las.",
         )
     return media
 
@@ -326,6 +357,65 @@ async def create_loop(
     return await _loop_response(loop, db, now)
 
 
+@router.post(
+    "/{loop_id}/clone",
+    response_model=InstagramLoopResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_csrf)],
+)
+async def clone_loop(
+    loop_id: uuid.UUID,
+    access: OwnerAccess,
+    db: DbSession,
+) -> InstagramLoopResponse:
+    source = await db.scalar(
+        select(InstagramLoop).where(
+            InstagramLoop.id == loop_id,
+            InstagramLoop.workspace_id == access.workspace.id,
+        )
+    )
+    if source is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+
+    now = utc_now()
+    clone_suffix = " (cópia)"
+    clone = InstagramLoop(
+        workspace_id=source.workspace_id,
+        name=f"{source.name[:120 - len(clone_suffix)]}{clone_suffix}",
+        interval_min_minutes=source.interval_min_minutes,
+        interval_max_minutes=source.interval_max_minutes,
+        post_type=source.post_type,
+        repeat_media=source.repeat_media,
+        status="paused",
+        next_run_at=None,
+    )
+    db.add(clone)
+    await db.flush()
+
+    account_ids = (
+        await db.scalars(
+            select(InstagramLoopAccount.account_id).where(
+                InstagramLoopAccount.loop_id == source.id
+            )
+        )
+    ).all()
+    media_ids = (
+        await db.scalars(
+            select(InstagramLoopMedia.media_id).where(
+                InstagramLoopMedia.loop_id == source.id
+            )
+        )
+    ).all()
+    for account_id in account_ids:
+        db.add(InstagramLoopAccount(loop_id=clone.id, account_id=account_id))
+    for media_id in media_ids:
+        db.add(InstagramLoopMedia(loop_id=clone.id, media_id=media_id))
+
+    await db.commit()
+    await db.refresh(clone)
+    return await _loop_response(clone, db, now)
+
+
 @router.put(
     "/{loop_id}",
     response_model=InstagramLoopResponse,
@@ -365,6 +455,7 @@ async def update_loop(
             payload.media_ids,
             payload.post_type,
             db,
+            loop_id=loop.id,
         )
         if payload.media_ids is not None
         else None

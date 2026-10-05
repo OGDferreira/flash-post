@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, CircleDollarSign, Plus, Save, UsersRound } from "lucide-react";
+import { BarChart3, CircleDollarSign, Medal, Plus, Save, UsersRound } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { ApiError, apiRequest, type CollaboratorReport } from "@/services/api";
@@ -9,6 +9,18 @@ type CollaboratorsResponse = {
   collaborators: CollaboratorReport[];
   owner_connections_today: number;
   team_connections_today: number;
+};
+
+type CollaboratorRankingResponse = {
+  month: string;
+  total_connections: number;
+  collaborators: {
+    user_id: string;
+    full_name: string;
+    nickname: string;
+    connections: number;
+    position: number;
+  }[];
 };
 
 type CollaboratorDraft = {
@@ -80,6 +92,12 @@ export function CollaboratorsPage() {
     refetchInterval: 30_000,
     retry: false,
   });
+  const ranking = useQuery({
+    queryKey: ["collaborators", "ranking"],
+    queryFn: () => apiRequest<CollaboratorRankingResponse>("/api/collaborators/ranking"),
+    refetchInterval: 60_000,
+    retry: false,
+  });
   const create = useMutation({
     mutationFn: () =>
       apiRequest<CollaboratorsResponse>("/api/collaborators", {
@@ -134,7 +152,7 @@ export function CollaboratorsPage() {
         </p>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <article className="dashboard-card rounded-xl p-5">
           <p className="text-xs text-[#94a3b8]">Conexões feitas por você hoje</p>
           <p className="mt-2 text-3xl font-semibold text-[#f5f7fb]">
@@ -146,6 +164,33 @@ export function CollaboratorsPage() {
           <p className="mt-2 text-3xl font-semibold text-[#aab7ff]">
             {report.data.team_connections_today}
           </p>
+        </article>
+        <article className="dashboard-card rounded-xl p-5 sm:col-span-2 lg:col-span-1">
+          <div className="flex items-center gap-2">
+            <Medal className="text-[#f2d48a]" size={16} />
+            <h2 className="text-xs font-semibold text-[#edf0f8]">Ranking mensal da equipe</h2>
+          </div>
+          {ranking.isLoading ? (
+            <p className="mt-3 text-xs text-[#94a3b8]">Carregando ranking...</p>
+          ) : ranking.error ? (
+            <p className="mt-3 text-xs text-[#f1a3ad]">Não foi possível carregar o ranking.</p>
+          ) : ranking.data?.collaborators.length ? (
+            <ol className="mt-3 max-h-52 space-y-1.5 overflow-y-auto pr-1">
+              {ranking.data.collaborators.map((person) => (
+                <li className="flex items-center justify-between gap-3 text-xs" key={person.user_id}>
+                  <span className="min-w-0 truncate text-[#cbd5e1]">
+                    <strong className="mr-2 text-[#f2d48a]">#{person.position}</strong>
+                    @{person.nickname}
+                  </span>
+                  <strong className="shrink-0 text-[#f5f7fb]">
+                    {person.connections} {person.connections === 1 ? "conta" : "contas"}
+                  </strong>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="mt-3 text-xs text-[#94a3b8]">Ainda não há conexões neste mês.</p>
+          )}
         </article>
       </section>
 
