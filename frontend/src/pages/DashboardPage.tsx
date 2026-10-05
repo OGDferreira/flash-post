@@ -63,14 +63,14 @@ function MetricCard({
 }) {
   return (
     <article className="dashboard-card dashboard-metric-card">
-      <span className={`dashboard-metric-icon ${color}`}>
-        <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
-      </span>
-      <p className="dashboard-metric-value">{value}</p>
-      <div className="min-w-0">
+      <div className="dashboard-metric-heading">
+        <span className={`dashboard-metric-icon ${color}`}>
+          <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
+        </span>
         <h2 className="dashboard-metric-title">{title}</h2>
-        <p className="dashboard-metric-detail">{detail}</p>
       </div>
+      <p className="dashboard-metric-value">{value}</p>
+      <p className="dashboard-metric-detail">{detail}</p>
     </article>
   );
 }
