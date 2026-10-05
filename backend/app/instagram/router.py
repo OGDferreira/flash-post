@@ -106,6 +106,11 @@ async def list_accounts(
                 media_count=account.media_count,
                 token_expires_at=_utc_datetime(account.token_expires_at),
                 connected_at=_utc_datetime(account.connected_at),
+                error_at=(
+                    _utc_datetime(account.updated_at)
+                    if account.status == "error"
+                    else None
+                ),
                 status=account.status,
             )
             for account in accounts
@@ -145,6 +150,11 @@ async def update_account_highlights(
         media_count=account.media_count,
         token_expires_at=_utc_datetime(account.token_expires_at),
         connected_at=_utc_datetime(account.connected_at),
+        error_at=(
+            _utc_datetime(account.updated_at)
+            if account.status == "error"
+            else None
+        ),
         status=account.status,
     )
 

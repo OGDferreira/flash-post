@@ -106,8 +106,41 @@ async def test_instagram_accounts_are_workspace_scoped_and_tokens_are_not_return
     payload = response.json()
     assert payload["can_manage"] is True
     assert [account["username"] for account in payload["accounts"]] == ["flashpost_demo"]
+    assert payload["accounts"][0]["connected_at"]
+    assert payload["accounts"][0]["error_at"] is None
     assert "private-access-token" not in response.text
     assert "encrypted_access_token" not in response.text
+
+
+@pytest.mark.anyio
+async def test_errored_account_response_includes_error_timestamp(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    connected_at = datetime.now(timezone.utc) - timedelta(days=2, hours=3)
+    error_at = datetime.now(timezone.utc) - timedelta(days=1, hours=1)
+    account = InstagramAccount(
+        workspace_id=workspace.id,
+        instagram_user_id="17840000000000002",
+        username="errored_connection",
+        connected_at=connected_at,
+        updated_at=error_at,
+        status="error",
+        token_expires_at=error_at + timedelta(days=30),
+    )
+    db_session.add(account)
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+
+    response = await client.get("/api/instagram/accounts")
+
+    assert response.status_code == 200, response.text
+    result = response.json()["accounts"][0]
+    assert result["status"] == "error"
+    assert datetime.fromisoformat(result["connected_at"]) == connected_at
+    assert datetime.fromisoformat(result["error_at"]) == error_at
 
 
 @pytest.mark.anyio
@@ -477,10 +510,13 @@ async def test_owner_can_create_color_folder_and_assign_accounts(
     assert [item["username"] for item in assigned.json()["accounts"]] == [
         "folder_test_account"
     ]
+    assert assigned.json()["accounts"][0]["connected_at"]
+    assert assigned.json()["accounts"][0]["error_at"] is None
 
     listed = await client.get("/api/instagram/folders")
     assert listed.status_code == 200
     assert listed.json()["accounts"][0]["profile_folder_id"] == folder_id
+    assert listed.json()["folders"][0]["accounts"][0]["connected_at"]
     assert listed.json()["folders"][0]["color"] == "#ff3399"
 
     deleted = await client.delete(

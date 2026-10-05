@@ -4,6 +4,10 @@ import { Folder, Pencil, Plus, Save, Trash2, Users, X } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { InstagramAvatar } from "@/components/InstagramAvatar";
+import {
+  formatAccountConnectedAt,
+  formatConnectedDuration,
+} from "@/features/instagram/accountDates";
 import { ApiError, apiRequest } from "@/services/api";
 
 type ProfileFolderAccount = {
@@ -12,6 +16,8 @@ type ProfileFolderAccount = {
   username: string;
   profile_picture_url: string | null;
   status: "connected" | "disconnected" | "error";
+  connected_at: string;
+  error_at: string | null;
 };
 
 type ProfileFolder = {
@@ -256,7 +262,7 @@ export function ProfileFoldersPage() {
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {folder.accounts.map((account) => (
                   <div
-                    className="flex min-h-10 min-w-0 items-center gap-2 rounded-lg border bg-[#101923] px-2.5 py-1.5 text-sm text-[#e6eaf2]"
+                    className="flex min-w-0 items-start gap-2 rounded-lg border bg-[#101923] px-2.5 py-2 text-sm text-[#e6eaf2]"
                     key={account.id}
                     style={{ borderColor: `${folder.color}99` }}
                   >
@@ -265,10 +271,18 @@ export function ProfileFoldersPage() {
                       src={account.profile_picture_url}
                       username={account.username}
                     />
-                    <span className="truncate">@{account.username}</span>
-                    {account.status === "error" && (
-                      <span className="ml-auto text-[10px] text-[#f1a3ad]">erro</span>
-                    )}
+                    <div className="min-w-0">
+                      <p className="truncate">@{account.username}</p>
+                      <p className="mt-0.5 text-[10px] text-[#94a3b8]">
+                        Conectada em {formatAccountConnectedAt(account.connected_at)}
+                      </p>
+                      {account.status === "error" && (
+                        <p className="mt-0.5 text-[10px] text-[#f1a3ad]">
+                          Duração antes do erro:{" "}
+                          {formatConnectedDuration(account.connected_at, account.error_at)}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 ))}
                 {folder.accounts.length === 0 && (
@@ -400,8 +414,8 @@ export function ProfileFoldersPage() {
             {folderData.accounts
               .filter((account) => !account.profile_folder_id)
               .map((account) => (
-                <span
-                  className="inline-flex items-center gap-2 rounded-lg border border-[#27334a] bg-[#101923] px-2.5 py-1.5 text-xs text-[#cbd5e1]"
+                <div
+                  className="inline-flex items-start gap-2 rounded-lg border border-[#27334a] bg-[#101923] px-2.5 py-1.5 text-xs text-[#cbd5e1]"
                   key={account.id}
                 >
                   <InstagramAvatar
@@ -409,8 +423,19 @@ export function ProfileFoldersPage() {
                     src={account.profile_picture_url}
                     username={account.username}
                   />
-                  @{account.username}
-                </span>
+                  <div>
+                    <p>@{account.username}</p>
+                    <p className="mt-0.5 text-[10px] text-[#94a3b8]">
+                      Conectada em {formatAccountConnectedAt(account.connected_at)}
+                    </p>
+                    {account.status === "error" && (
+                      <p className="mt-0.5 text-[10px] text-[#f1a3ad]">
+                        Duração antes do erro:{" "}
+                        {formatConnectedDuration(account.connected_at, account.error_at)}
+                      </p>
+                    )}
+                  </div>
+                </div>
               ))}
           </div>
         )}

@@ -18,12 +18,19 @@ import {
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { ApiError, apiRequest } from "@/services/api";
+import {
+  formatAccountConnectedAt,
+  formatConnectedDuration,
+} from "@/features/instagram/accountDates";
 
 type LoopAccount = {
   id: string;
   profile_folder_id: string | null;
   username: string;
   token_expires_at: string;
+  connected_at: string;
+  error_at: string | null;
+  status: "connected" | "disconnected" | "error";
 };
 
 type InstagramMedia = {
@@ -893,12 +900,21 @@ export function LoopsPage() {
                   </p>
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {loop.accounts.map((account) => (
-                      <span
+                      <div
                         className="rounded bg-[#101923] px-2 py-1 text-xs text-[#cbd5e1]"
                         key={account.id}
                       >
-                        @{account.username}
-                      </span>
+                        <p>@{account.username}</p>
+                        <p className="mt-0.5 text-[10px] text-[#94a3b8]">
+                          Conectada em {formatAccountConnectedAt(account.connected_at)}
+                        </p>
+                        {account.status === "error" && (
+                          <p className="mt-0.5 text-[10px] text-[#f1a3ad]">
+                            Duração antes do erro:{" "}
+                            {formatConnectedDuration(account.connected_at, account.error_at)}
+                          </p>
+                        )}
+                      </div>
                     ))}
                   </div>
                   <p className="mt-3 text-xs text-[#94a3b8]">

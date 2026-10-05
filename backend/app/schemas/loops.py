@@ -48,6 +48,9 @@ class InstagramLoopAccountResponse(BaseModel):
     profile_folder_id: UUID | None
     username: str
     token_expires_at: datetime
+    connected_at: datetime
+    error_at: datetime | None
+    status: str
 
 
 class InstagramLoopResponse(BaseModel):

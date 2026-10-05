@@ -15,6 +15,7 @@ class InstagramAccountResponse(BaseModel):
     media_count: int | None
     token_expires_at: datetime
     connected_at: datetime
+    error_at: datetime | None
     status: str
 
 

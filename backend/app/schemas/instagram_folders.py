@@ -11,6 +11,8 @@ class InstagramProfileFolderAccount(BaseModel):
     username: str
     profile_picture_url: str | None
     status: str
+    connected_at: datetime
+    error_at: datetime | None
 
 
 class InstagramProfileFolderResponse(BaseModel):

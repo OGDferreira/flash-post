@@ -127,6 +127,13 @@ async def _loop_response(
                 profile_folder_id=account.profile_folder_id,
                 username=account.username,
                 token_expires_at=_utc_datetime(account.token_expires_at),
+                connected_at=_utc_datetime(account.connected_at),
+                error_at=(
+                    _utc_datetime(account.updated_at)
+                    if account.status == "error"
+                    else None
+                ),
+                status=account.status,
             )
             for account in accounts
         ],
@@ -166,6 +173,13 @@ async def list_loops(
                 profile_folder_id=account.profile_folder_id,
                 username=account.username,
                 token_expires_at=_utc_datetime(account.token_expires_at),
+                connected_at=_utc_datetime(account.connected_at),
+                error_at=(
+                    _utc_datetime(account.updated_at)
+                    if account.status == "error"
+                    else None
+                ),
+                status=account.status,
             )
             for account in accounts
         ],

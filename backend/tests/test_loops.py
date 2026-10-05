@@ -87,6 +87,9 @@ async def test_owner_can_create_and_read_a_loop(
         <= datetime.now(timezone.utc) + timedelta(seconds=5)
     )
     assert [item["id"] for item in result["accounts"]] == [str(account.id)]
+    assert result["accounts"][0]["connected_at"]
+    assert result["accounts"][0]["status"] == "connected"
+    assert result["accounts"][0]["error_at"] is None
     assert result["waiting_for_media_count"] == 0
     assert result["published_today_count"] == 0
     assert result["media_count"] == 0

@@ -13,6 +13,10 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { InstagramAvatar } from "@/components/InstagramAvatar";
+import {
+  formatAccountConnectedAt,
+  formatConnectedDuration,
+} from "@/features/instagram/accountDates";
 import { ApiError, apiRequest } from "@/services/api";
 import { useAuth } from "@/features/auth/AuthProvider";
 
@@ -23,6 +27,7 @@ type InstagramAccount = {
   profile_picture_url: string | null;
   token_expires_at: string;
   connected_at: string;
+  error_at: string | null;
   status: "connected" | "disconnected" | "error";
 };
 
@@ -436,6 +441,15 @@ export function InstagramAccountsPage() {
                       {active ? <Check size={13} /> : <Clock3 size={13} />}
                       {label}
                     </p>
+                    <p className="mt-1 text-xs text-[#94a3b8]">
+                      Conectada em {formatAccountConnectedAt(account.connected_at)}
+                    </p>
+                    {account.status === "error" && (
+                      <p className="mt-1 text-xs text-[#f1a3ad]">
+                        Permaneceu conectada por{" "}
+                        {formatConnectedDuration(account.connected_at, account.error_at)} antes do erro
+                      </p>
+                    )}
                   </div>
                 </div>
                 {(accounts.data.can_connect || accounts.data.can_manage) && (

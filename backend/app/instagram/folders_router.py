@@ -1,5 +1,5 @@
 import uuid
-from datetime import timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
@@ -18,6 +18,10 @@ from app.schemas.instagram_folders import (
 router = APIRouter(prefix="/api/instagram/folders", tags=["Instagram profile folders"])
 
 
+def _utc_datetime(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
 def _account_response(account: InstagramAccount) -> InstagramProfileFolderAccount:
     return InstagramProfileFolderAccount(
         id=account.id,
@@ -25,6 +29,10 @@ def _account_response(account: InstagramAccount) -> InstagramProfileFolderAccoun
         username=account.username,
         profile_picture_url=account.profile_picture_url,
         status=account.status,
+        connected_at=_utc_datetime(account.connected_at),
+        error_at=(
+            _utc_datetime(account.updated_at) if account.status == "error" else None
+        ),
     )
 
 
@@ -42,11 +50,7 @@ async def _folder_response(
             .order_by(InstagramAccount.username)
         )
     ).all()
-    created_at = (
-        folder.created_at.replace(tzinfo=timezone.utc)
-        if folder.created_at.tzinfo is None
-        else folder.created_at
-    )
+    created_at = _utc_datetime(folder.created_at)
     return InstagramProfileFolderResponse(
         id=folder.id,
         name=folder.name,
