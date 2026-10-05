@@ -95,6 +95,7 @@ export type User = {
   full_name: string;
   avatar_url: string | null;
   role: "SUPER_ADMIN" | "OWNER" | "COLLABORATOR" | "USER";
+  workspace_role: "OWNER" | "COLLABORATOR" | null;
   is_active: boolean;
   is_verified: boolean;
   is_approved: boolean;

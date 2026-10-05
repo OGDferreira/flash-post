@@ -158,8 +158,10 @@ async def test_login_normalizes_email_and_auth_me_excludes_password_hash(
 
     assert result["user"]["id"] == str(user.id)
     assert result["user"]["role"] == "OWNER"
+    assert result["user"]["workspace_role"] == "OWNER"
     assert response.status_code == 200
     assert response.json()["email"] == "owner@example.com"
+    assert response.json()["workspace_role"] == "OWNER"
     assert "password_hash" not in response.json()
     assert "password" not in response.json()
 
@@ -401,6 +403,8 @@ async def test_super_admin_can_approve_new_owner_without_changing_existing_user_
         "owner@example.com",
         "correct horse battery staple",
     )
+    assert admin_auth["user"]["role"] == "SUPER_ADMIN"
+    assert admin_auth["user"]["workspace_role"] == "OWNER"
     approval = await client.post(
         f"/api/admin/users/{pending_id}/approve",
         headers={"X-CSRF-Token": admin_auth["csrf_token"]},

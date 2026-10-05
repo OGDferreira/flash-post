@@ -84,6 +84,7 @@ class UserResponse(BaseModel):
     full_name: str
     avatar_url: str | None
     role: str
+    workspace_role: str | None
     is_active: bool
     is_verified: bool
     is_approved: bool

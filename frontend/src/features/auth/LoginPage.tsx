@@ -41,7 +41,11 @@ export function LoginPage() {
         requestedPath?.startsWith("/") && !requestedPath.startsWith("//")
           ? requestedPath
           : signedInUser.role === "SUPER_ADMIN"
-            ? "/admin"
+            ? signedInUser.workspace_role === "OWNER"
+              ? "/dashboard"
+              : signedInUser.workspace_role === "COLLABORATOR"
+                ? "/feature/accounts"
+                : "/admin"
             : "/dashboard";
       navigate(destination, { replace: true });
     },
@@ -53,7 +57,15 @@ export function LoginPage() {
   if (user) {
     return (
       <Navigate
-        to={user.role === "SUPER_ADMIN" ? "/admin" : "/dashboard"}
+        to={
+          user.role === "SUPER_ADMIN"
+            ? user.workspace_role === "OWNER"
+              ? "/dashboard"
+              : user.workspace_role === "COLLABORATOR"
+                ? "/feature/accounts"
+                : "/admin"
+            : "/dashboard"
+        }
         replace
       />
     );

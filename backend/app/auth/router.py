@@ -70,6 +70,7 @@ def _user_response(user: User, membership: WorkspaceMember | None) -> UserRespon
             else user.avatar_url
         ),
         role=_user_role(user, membership),
+        workspace_role=membership.role if membership is not None else None,
         is_active=user.is_active,
         is_verified=user.is_verified,
         is_approved=user.is_approved,

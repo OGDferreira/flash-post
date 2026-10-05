@@ -19,6 +19,8 @@ type ProfileValues = z.infer<typeof profileSchema>;
 
 export function ProfilePage() {
   const { user } = useAuth();
+  const hasWorkspaceAccess =
+    user?.role !== "SUPER_ADMIN" || user.workspace_role !== null;
   const queryClient = useQueryClient();
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export function ProfilePage() {
   const workspace = useQuery({
     queryKey: ["workspace"],
     queryFn: () => apiRequest<Workspace>("/api/workspace"),
-    enabled: user?.role !== "SUPER_ADMIN",
+    enabled: hasWorkspaceAccess,
     retry: false,
   });
   const form = useForm<ProfileValues>({
@@ -105,14 +107,14 @@ export function ProfilePage() {
 
   if (
     profile.isLoading ||
-    (user?.role !== "SUPER_ADMIN" && workspace.isLoading)
+    (hasWorkspaceAccess && workspace.isLoading)
   ) {
     return <LoadingState label="Carregando perfil" />;
   }
   if (profile.error || !profile.data) {
     return <ErrorState message="Não foi possível carregar seu perfil." />;
   }
-  if (user?.role !== "SUPER_ADMIN" && (workspace.error || !workspace.data)) {
+  if (hasWorkspaceAccess && (workspace.error || !workspace.data)) {
     return <ErrorState message="Não foi possível carregar o workspace do perfil." />;
   }
 
@@ -128,7 +130,7 @@ export function ProfilePage() {
             ? "Não foi possível enviar a imagem de perfil."
             : null);
   const workspaceName =
-    user?.role === "SUPER_ADMIN"
+    !hasWorkspaceAccess
       ? "Acesso global"
       : workspace.data?.name ?? "—";
 

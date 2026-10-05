@@ -111,7 +111,11 @@ RETURNING id, email, platform_role;
 
 This updates only the role; do not replace or recreate the user. Render
 environment variables configure the application but do not change database
-account roles.
+account roles. A `SUPER_ADMIN` who also has an active OWNER membership sees
+the regular workspace dashboard, accounts, loops, metrics, and a separate
+administration section in the same navigation. Only accounts with the
+`SUPER_ADMIN` platform role can see or open that section; approving a new
+customer OWNER does not grant platform-admin access.
 
 ## Database and migrations
 

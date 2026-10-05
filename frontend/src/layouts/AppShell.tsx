@@ -20,7 +20,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/AuthProvider";
 import { setCsrfToken, apiRequest } from "@/services/api";
@@ -55,8 +55,14 @@ const collaboratorLinks = [
   { label: "Loops", to: "/feature/loops", icon: Infinity },
 ];
 
-export function AppShell({ admin = false }: { admin?: boolean }) {
+export function AppShell() {
   const { user } = useAuth();
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith("/admin");
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const workspaceRole =
+    isSuperAdmin ? user.workspace_role : user?.role;
+  const hasWorkspaceOwnerAccess = workspaceRole === "OWNER";
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
@@ -69,7 +75,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
       apiRequest<InstagramAnalyticsSummary>(
         "/api/analytics/summary?period=7d&include_meta_insights=true",
       ),
-    enabled: !admin && user?.role === "OWNER",
+    enabled: hasWorkspaceOwnerAccess,
     retry: false,
     refetchInterval: 300_000,
   });
@@ -106,8 +112,14 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
       navigate("/login", { replace: true });
     },
   });
-  const links = admin ? adminLinks : ownerLinks;
-  const visibleLinks = !admin && user?.role === "COLLABORATOR" ? collaboratorLinks : links;
+  const workspaceLinks =
+    workspaceRole === "COLLABORATOR" ? collaboratorLinks : ownerLinks;
+  const visibleLinkGroups = [
+    ...(hasWorkspaceOwnerAccess || workspaceRole === "COLLABORATOR"
+      ? [{ title: "Workspace", links: workspaceLinks }]
+      : []),
+    ...(isSuperAdmin ? [{ title: "Administração", links: adminLinks }] : []),
+  ];
   useEffect(() => {
     const showToast = (event: Event) => {
       const message = (event as CustomEvent<string>).detail;
@@ -131,7 +143,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
   );
   const greeting =
     hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
-  const pageHeading = admin
+  const pageHeading = isAdminRoute
     ? "Painel da plataforma"
     : `${greeting}, ${user?.nickname ?? "bem-vindo"} · ${new Intl.DateTimeFormat(
         "pt-BR",
@@ -152,7 +164,15 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
       <div className="flex h-[72px] items-center justify-between border-b border-[#202838] px-5 lg:px-3 lg:group-hover:px-5">
         <Link
           className="flex items-center gap-3 lg:gap-0 lg:group-hover:gap-3"
-          to={admin ? "/admin" : "/dashboard"}
+          to={
+            hasWorkspaceOwnerAccess
+              ? "/dashboard"
+              : workspaceRole === "COLLABORATOR"
+                ? "/feature/accounts"
+                : isSuperAdmin
+                  ? "/admin"
+                  : "/dashboard"
+          }
           onClick={() => setMobileOpen(false)}
         >
           <span className="grid size-9 place-items-center rounded-xl border border-[#33447c] bg-[#11182d] text-sm font-bold text-[#9baaff]">
@@ -171,7 +191,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
         </button>
       </div>
 
-      {admin && (
+      {isAdminRoute && (
         <div className="mx-4 mt-5 flex items-center gap-2 overflow-hidden rounded-lg border border-[#27334a] bg-[#10141b] px-3 py-2 text-xs font-medium text-[#aeb9ce] lg:group-hover:mx-3">
           <Shield className="shrink-0 text-[#8295ff]" size={14} />
           <span className="max-w-[180px] overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[180px] lg:group-hover:opacity-100">
@@ -181,26 +201,40 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
       )}
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        {visibleLinks.map(({ label, to, icon: Icon }) => (
-          <NavLink
-            end={to === "/admin" || to === "/dashboard"}
-            key={to}
-            to={to}
-            title={label}
-            onClick={() => setMobileOpen(false)}
-            className={({ isActive }) =>
-              `flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm transition-colors ${
-                isActive
-                  ? "bg-[#151b2d] font-medium text-[#dfe4ff]"
-                  : "text-[#94a3b8] hover:bg-[#12151b] hover:text-[#f5f7fb]"
-              }`
-            }
+        {visibleLinkGroups.map((group, groupIndex) => (
+          <section
+            className={groupIndex ? "mt-4 border-t border-[#202838] pt-3" : ""}
+            key={group.title}
           >
-            <Icon className="shrink-0" size={17} strokeWidth={1.8} />
-            <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[170px] lg:group-hover:opacity-100">
-              {label}
-            </span>
-          </NavLink>
+            {visibleLinkGroups.length > 1 && (
+              <h2 className="mb-2 overflow-hidden px-3 text-[10px] font-medium uppercase tracking-[0.12em] text-[#64748b] opacity-100 transition-all lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[170px] lg:group-hover:opacity-100">
+                {group.title}
+              </h2>
+            )}
+            <div className="space-y-1">
+              {group.links.map(({ label, to, icon: Icon }) => (
+                <NavLink
+                  end={to === "/admin" || to === "/dashboard"}
+                  key={to}
+                  to={to}
+                  title={label}
+                  onClick={() => setMobileOpen(false)}
+                  className={({ isActive }) =>
+                    `flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm transition-colors ${
+                      isActive
+                        ? "bg-[#151b2d] font-medium text-[#dfe4ff]"
+                        : "text-[#94a3b8] hover:bg-[#12151b] hover:text-[#f5f7fb]"
+                    }`
+                  }
+                >
+                  <Icon className="shrink-0" size={17} strokeWidth={1.8} />
+                  <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[170px] lg:group-hover:opacity-100">
+                    {label}
+                  </span>
+                </NavLink>
+              ))}
+            </div>
+          </section>
         ))}
       </nav>
 
@@ -276,7 +310,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
             </button>
             <div>
               <p className="text-xs text-[#64748b]">
-                {admin ? "FlashPost / Administração" : "FlashPost / Workspace"}
+                {isAdminRoute ? "FlashPost / Administração" : "FlashPost / Workspace"}
               </p>
               <h1 className="mt-0.5 max-w-[calc(100vw-170px)] truncate text-sm font-medium text-[#e6eaf2]">
                 {pageHeading}

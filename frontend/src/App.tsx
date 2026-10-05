@@ -77,7 +77,7 @@ export default function App() {
             </Route>
             </Route>
             <Route element={<RequireSuperAdmin />}>
-              <Route element={<AppShell admin />}>
+              <Route element={<AppShell />}>
                 <Route path="/admin" element={<AdminOverviewPage />} />
                 <Route path="/admin/users" element={<AdminUsersPage />} />
                 <Route path="/admin/workspaces" element={<AdminWorkspacesPage />} />
@@ -95,7 +95,9 @@ export default function App() {
 
 function WorkspaceDashboard() {
   const { user } = useAuth();
-  if (user?.role === "COLLABORATOR") {
+  const workspaceRole =
+    user?.role === "SUPER_ADMIN" ? user.workspace_role : user?.role;
+  if (workspaceRole === "COLLABORATOR") {
     return (
       <Suspense fallback={<LoadingState label="Carregando seu painel" />}>
         <CollaboratorDashboardPage />
@@ -112,7 +114,9 @@ function WorkspaceDashboard() {
 function RequireWorkspaceUser() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingState label="Verificando permissões" />;
-  if (user?.role !== "OWNER" && user?.role !== "COLLABORATOR") {
+  const workspaceRole =
+    user?.role === "SUPER_ADMIN" ? user.workspace_role : user?.role;
+  if (workspaceRole !== "OWNER" && workspaceRole !== "COLLABORATOR") {
     return <Navigate to="/" replace />;
   }
   return <Outlet />;
@@ -121,20 +125,25 @@ function RequireWorkspaceUser() {
 function RequireWorkspaceOwner() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingState label="Verificando permissões" />;
-  if (user?.role !== "OWNER") return <Navigate to="/dashboard" replace />;
+  const isWorkspaceOwner =
+    user?.role === "OWNER" ||
+    (user?.role === "SUPER_ADMIN" && user.workspace_role === "OWNER");
+  if (!isWorkspaceOwner) return <Navigate to="/dashboard" replace />;
   return <Outlet />;
 }
 
 function RequireCollaboratorAccess() {
   const { user } = useAuth();
   const location = useLocation();
+  const workspaceRole =
+    user?.role === "SUPER_ADMIN" ? user.workspace_role : user?.role;
   const collaboratorRoutes = [
     "/dashboard",
     "/feature/accounts",
     "/feature/loops",
   ];
   if (
-    user?.role === "COLLABORATOR" &&
+    workspaceRole === "COLLABORATOR" &&
     !collaboratorRoutes.includes(location.pathname)
   ) {
     return <Navigate to="/feature/accounts" replace />;
@@ -169,7 +178,11 @@ function HomeRedirect() {
     <Navigate
       to={
         user.role === "SUPER_ADMIN"
-          ? "/admin"
+          ? user.workspace_role === "OWNER"
+            ? "/dashboard"
+            : user.workspace_role === "COLLABORATOR"
+              ? "/feature/accounts"
+              : "/admin"
           : user.role === "COLLABORATOR"
             ? "/feature/accounts"
             : "/dashboard"
