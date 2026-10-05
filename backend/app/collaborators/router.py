@@ -250,6 +250,7 @@ async def _member_report(
     return CollaboratorReportItem(
         member_id=member.id,
         user_id=user.id,
+        membership_started_at=member.created_at,
         access_status=member.status,
         full_name=user.full_name,
         nickname=user.nickname,

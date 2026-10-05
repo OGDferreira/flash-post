@@ -142,6 +142,41 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
 
 
 @pytest.mark.anyio
+async def test_fast_analytics_summary_skips_live_meta_requests(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+    db_session.add(_account(workspace.id, "fast_summary_profile", 321, 24))
+    await db_session.commit()
+
+    async def unexpected_meta_request(*_args):
+        raise AssertionError("Fast analytics must not wait for Meta API requests.")
+
+    monkeypatch.setattr(
+        analytics_router,
+        "fetch_instagram_profile_metrics",
+        unexpected_meta_request,
+    )
+    monkeypatch.setattr(
+        analytics_router,
+        "fetch_instagram_views",
+        unexpected_meta_request,
+    )
+    await _login(client)
+
+    response = await client.get("/api/analytics/summary", params={"period": "7d"})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["insights_checked"] is False
+    assert response.json()["followers_count"] == 321
+    assert response.json()["media_count"] == 24
+    assert response.json()["views_count"] == 0
+
+
+@pytest.mark.anyio
 async def test_analytics_reports_missing_meta_insights_permission(
     client: AsyncClient,
     db_session: AsyncSession,

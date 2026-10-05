@@ -8,7 +8,6 @@ import {
   ChevronDown,
   CircleDollarSign,
   Clapperboard,
-  Download,
   Folder,
   Home,
   Infinity,
@@ -57,6 +56,37 @@ const collaboratorLinks = [
   { label: "Loops", to: "/feature/loops", icon: Infinity },
 ];
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+const INSTALL_PROMPT_DISMISSED_UNTIL_KEY = "flashpost-install-prompt-dismissed-until";
+const INSTALL_PROMPT_SNOOZE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function isInstallPromptSnoozed() {
+  try {
+    return (
+      Number(window.localStorage.getItem(INSTALL_PROMPT_DISMISSED_UNTIL_KEY)) >
+      Date.now()
+    );
+  } catch (error) {
+    console.warn("FlashPost could not read the install-prompt preference.", error);
+    return false;
+  }
+}
+
+function snoozeInstallPrompt() {
+  try {
+    window.localStorage.setItem(
+      INSTALL_PROMPT_DISMISSED_UNTIL_KEY,
+      String(Date.now() + INSTALL_PROMPT_SNOOZE_MS),
+    );
+  } catch (error) {
+    console.warn("FlashPost could not save the install-prompt preference.", error);
+  }
+}
+
 export function AppShell() {
   const { user } = useAuth();
   const location = useLocation();
@@ -71,16 +101,21 @@ export function AppShell() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [isIosDevice, setIsIosDevice] = useState(false);
+  const [installPrompt, setInstallPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const analyticsNotifications = useQuery({
-    queryKey: ["analytics", "summary", "7d", null, null],
+    queryKey: ["analytics", "summary", "fast", "7d", null, null],
     queryFn: () =>
       apiRequest<InstagramAnalyticsSummary>(
-        "/api/analytics/summary?period=7d&include_meta_insights=true",
+        "/api/analytics/summary?period=7d",
       ),
     enabled: hasWorkspaceOwnerAccess,
     retry: false,
+    staleTime: 60_000,
     refetchInterval: 300_000,
   });
   const notificationItems = [
@@ -156,11 +191,62 @@ export function AppShell() {
   }, []);
   useEffect(() => {
     const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
-    setIsStandalone(
+    const installed =
       window.matchMedia("(display-mode: standalone)").matches ||
-        navigatorWithStandalone.standalone === true,
-    );
+      navigatorWithStandalone.standalone === true;
+    const isIos =
+      /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const isMobile =
+      isIos || /Android/i.test(navigator.userAgent);
+
+    setIsStandalone(installed);
+    setIsMobileDevice(isMobile);
+    setIsIosDevice(isIos);
+    if (!isMobile || installed || isInstallPromptSnoozed()) return;
+
+    const timer = window.setTimeout(() => setInstallGuideOpen(true), 2500);
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const onAppInstalled = () => {
+      setIsStandalone(true);
+      setInstallPrompt(null);
+      setInstallGuideOpen(false);
+      snoozeInstallPrompt();
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onAppInstalled);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onAppInstalled);
+    };
   }, []);
+
+  const dismissInstallGuide = () => {
+    setInstallGuideOpen(false);
+    snoozeInstallPrompt();
+  };
+
+  const installApp = async () => {
+    if (!installPrompt) {
+      dismissInstallGuide();
+      return;
+    }
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    setInstallPrompt(null);
+    if (choice.outcome === "accepted") {
+      setIsStandalone(true);
+      setInstallGuideOpen(false);
+      snoozeInstallPrompt();
+      return;
+    }
+    dismissInstallGuide();
+  };
   const hour = Number(
     new Intl.DateTimeFormat("en-US", {
       hour: "numeric",
@@ -345,17 +431,6 @@ export function AppShell() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {!isStandalone && (
-              <button
-                aria-label="Instruções para instalar o FlashPost"
-                className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[#34446f] bg-[#11182d] px-3 text-xs font-medium text-[#c3ccff] hover:bg-[#171e31]"
-                onClick={() => setInstallGuideOpen(true)}
-                type="button"
-              >
-                <Download size={14} />
-                <span className="hidden sm:inline">Instalar app</span>
-              </button>
-            )}
             <div className="relative">
               <button
                 aria-label={
@@ -454,10 +529,10 @@ export function AppShell() {
           </NavLink>
         ))}
       </nav>
-      {installGuideOpen && (
+      {installGuideOpen && isMobileDevice && !isStandalone && (
         <div
           className="fixed inset-0 z-[80] grid items-end bg-black/70 p-3 sm:items-center sm:justify-items-center"
-          onClick={() => setInstallGuideOpen(false)}
+          onClick={dismissInstallGuide}
         >
           <section
             aria-labelledby="install-guide-title"
@@ -478,31 +553,63 @@ export function AppShell() {
               <button
                 aria-label="Fechar instruções"
                 className="grid size-9 shrink-0 place-items-center rounded-lg text-[#94a3b8] hover:bg-[#151922]"
-                onClick={() => setInstallGuideOpen(false)}
+                onClick={dismissInstallGuide}
                 type="button"
               >
                 <X size={17} />
               </button>
             </div>
-            <ol className="mt-4 space-y-3 text-sm leading-6 text-[#cbd5e1]">
-              <li className="flex gap-3">
-                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs text-[#aab7ff]">1</span>
-                Abra o FlashPost no Safari do iPhone.
-              </li>
-              <li className="flex gap-3">
-                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs text-[#aab7ff]">2</span>
-                Toque em <Share className="mt-1 inline shrink-0 text-[#aab7ff]" size={15} />{" "}
-                Compartilhar.
-              </li>
-              <li className="flex gap-3">
-                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs text-[#aab7ff]">3</span>
-                Escolha “Adicionar à Tela de Início” e confirme em “Adicionar”.
-              </li>
-            </ol>
+            {isIosDevice ? (
+              <ol className="mt-4 space-y-3 text-sm leading-6 text-[#cbd5e1]">
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs text-[#aab7ff]">1</span>
+                  No Safari, toque em <Share className="mt-1 inline shrink-0 text-[#aab7ff]" size={15} />{" "}
+                  Compartilhar.
+                </li>
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs text-[#aab7ff]">2</span>
+                  Escolha “Adicionar à Tela de Início” e confirme em “Adicionar”.
+                </li>
+              </ol>
+            ) : (
+              <p className="mt-4 text-sm leading-6 text-[#cbd5e1]">
+                {installPrompt
+                  ? "Adicione o FlashPost à tela inicial para abrir em modo de aplicativo."
+                  : "Abra o menu do navegador e escolha “Instalar app” ou “Adicionar à tela inicial”."}
+              </p>
+            )}
             <p className="mt-4 rounded-lg border border-[#27334a] bg-[#0d1015] p-3 text-xs leading-5 text-[#94a3b8]">
-              Depois de adicionar, abra o ícone FlashPost pela tela de início. O app
-              abrirá em modo próprio, sem a barra de endereço do navegador.
+              {isIosDevice
+                ? "Depois de adicionar, abra o ícone FlashPost pela tela de início. O app abrirá sem a barra de endereço."
+                : "A instalação mantém sua sessão e abre o FlashPost numa janela própria."}
             </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="min-h-10 rounded-lg px-3 text-sm text-[#94a3b8] hover:bg-[#151922]"
+                onClick={dismissInstallGuide}
+                type="button"
+              >
+                Agora não
+              </button>
+              {!isIosDevice && installPrompt && (
+                <button
+                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#586eff] px-4 text-sm font-semibold text-white hover:bg-[#7187ff]"
+                  onClick={() => void installApp()}
+                  type="button"
+                >
+                  Instalar
+                </button>
+              )}
+              {!isIosDevice && !installPrompt && (
+                <button
+                  className="min-h-10 rounded-lg bg-[#586eff] px-4 text-sm font-semibold text-white hover:bg-[#7187ff]"
+                  onClick={dismissInstallGuide}
+                  type="button"
+                >
+                  Entendi
+                </button>
+              )}
+            </div>
           </section>
         </div>
       )}

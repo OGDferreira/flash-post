@@ -76,6 +76,7 @@ class CollaboratorAccountEarning(BaseModel):
 class CollaboratorReportItem(BaseModel):
     member_id: UUID
     user_id: UUID
+    membership_started_at: datetime
     access_status: Literal["ACTIVE", "SUSPENDED"]
     full_name: str
     nickname: str

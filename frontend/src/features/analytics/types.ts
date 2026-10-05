@@ -21,6 +21,7 @@ export type InstagramAnalyticsSummary = {
   followers_count: number | null;
   media_count: number | null;
   views_count: number;
+  insights_checked: boolean;
   missing_permissions: string[];
   insights_unavailable: boolean;
   profile_metrics_unavailable: boolean;

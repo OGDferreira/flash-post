@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -11,7 +11,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { LoadingState } from "@/components/PageState";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { apiRequest } from "@/services/api";
 
@@ -48,15 +47,100 @@ function formatMoney(value: number): string {
   }).format(value);
 }
 
+function formatPercent(value: number): string {
+  return `${Math.round(value)}%`;
+}
+
+function AnimatedMetricValue({
+  target,
+  loading,
+  formatValue,
+}: {
+  target: number | null;
+  loading: boolean;
+  formatValue: (value: number) => string;
+}) {
+  const [displayValue, setDisplayValue] = useState(0);
+  const displayValueRef = useRef(0);
+
+  useEffect(() => {
+    let frame = 0;
+    let lastFrameTime = 0;
+    const startValue = displayValueRef.current;
+    const startTime = performance.now();
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    if (target === null && !loading) return;
+    if (prefersReducedMotion) {
+      if (target !== null) {
+        displayValueRef.current = target;
+        setDisplayValue(target);
+      }
+      return;
+    }
+
+    const update = (now: number) => {
+      if (now - lastFrameTime < 32) {
+        frame = window.requestAnimationFrame(update);
+        return;
+      }
+      lastFrameTime = now;
+
+      if (target === null) {
+        const progress = Math.min((now - startTime) / 15_000, 1);
+        const easedProgress = progress * progress;
+        const nextValue = startValue + (96 - startValue) * easedProgress;
+        displayValueRef.current = nextValue;
+        setDisplayValue(nextValue);
+        if (progress < 1) frame = window.requestAnimationFrame(update);
+        return;
+      }
+
+      const duration = startValue === target ? 0 : 650;
+      const progress =
+        duration === 0 ? 1 : Math.min((now - startTime) / duration, 1);
+      const easedProgress = 1 - (1 - progress) ** 3;
+      const nextValue = startValue + (target - startValue) * easedProgress;
+      displayValueRef.current = nextValue;
+      setDisplayValue(nextValue);
+      if (progress < 1) frame = window.requestAnimationFrame(update);
+    };
+
+    frame = window.requestAnimationFrame(update);
+    return () => window.cancelAnimationFrame(frame);
+  }, [loading, target]);
+
+  if (target === null && !loading) return <>—</>;
+
+  return (
+    <span
+      aria-label={
+        target === null
+          ? "Carregando métrica; valor animado provisório"
+          : formatValue(target)
+      }
+      className={target === null ? "tabular-nums opacity-70" : "tabular-nums"}
+    >
+      {formatValue(displayValue)}
+    </span>
+  );
+}
+
 function MetricCard({
   title,
-  value,
+  target,
+  loading,
+  formatValue = formatCount,
   detail,
   icon: Icon,
   color,
 }: {
   title: string;
-  value: string;
+  target: number | null;
+  loading: boolean;
+  formatValue?: (value: number) => string;
   detail: string;
   icon: LucideIcon;
   color: string;
@@ -69,7 +153,13 @@ function MetricCard({
         </span>
         <h2 className="dashboard-metric-title">{title}</h2>
       </div>
-      <p className="dashboard-metric-value">{value}</p>
+      <p className="dashboard-metric-value">
+        <AnimatedMetricValue
+          formatValue={formatValue}
+          loading={loading}
+          target={target}
+        />
+      </p>
       <p className="dashboard-metric-detail">{detail}</p>
     </article>
   );
@@ -83,12 +173,13 @@ export function DashboardPage() {
     queryKey: [
       "analytics",
       "summary",
+      "fast",
       period,
       period === "custom" ? startDate : null,
       period === "custom" ? endDate : null,
     ],
     queryFn: () => {
-      const query = new URLSearchParams({ period, include_meta_insights: "true" });
+      const query = new URLSearchParams({ period });
       if (period === "custom") {
         query.set("start_date", startDate);
         query.set("end_date", endDate);
@@ -96,8 +187,36 @@ export function DashboardPage() {
       return apiRequest<InstagramAnalyticsSummary>(`/api/analytics/summary?${query}`);
     },
     retry: false,
+    staleTime: 60_000,
+    placeholderData: (previousData) => previousData,
   });
-  const metrics = summary.data;
+  const metaSummary = useQuery({
+    queryKey: [
+      "analytics",
+      "summary",
+      "meta",
+      period,
+      period === "custom" ? startDate : null,
+      period === "custom" ? endDate : null,
+    ],
+    queryFn: () => {
+      const query = new URLSearchParams({
+        period,
+        include_meta_insights: "true",
+      });
+      if (period === "custom") {
+        query.set("start_date", startDate);
+        query.set("end_date", endDate);
+      }
+      return apiRequest<InstagramAnalyticsSummary>(`/api/analytics/summary?${query}`);
+    },
+    enabled: Boolean(summary.data && summary.data.active_accounts > 0),
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const metrics = metaSummary.data ?? summary.data;
+  const metricCount = (value: number | null | undefined) =>
+    metrics ? formatCount(value) : "—";
   const pixGenerated = metrics?.pix_generated ?? 0;
   const pixPaid = metrics?.pix_paid ?? 0;
   const pixConversion =
@@ -108,6 +227,7 @@ export function DashboardPage() {
     (metrics?.expired_accounts ?? 0);
   const viewsUnavailable =
     !metrics ||
+    !metrics.insights_checked ||
     metrics.active_accounts === 0 ||
     metrics.insights_unavailable ||
     metrics.missing_permissions.length > 0;
@@ -136,37 +256,47 @@ export function DashboardPage() {
   const metricsCards = [
     {
       title: "Total de visualizações",
-      value:
-        viewsUnavailable
-          ? "—"
-          : formatCount(metrics?.views_count),
+      target: viewsUnavailable ? null : metrics?.views_count ?? null,
+      loading:
+        !viewsUnavailable
+          ? false
+          : Boolean(
+              metrics?.active_accounts &&
+                metaSummary.isFetching &&
+                !metaSummary.error &&
+                !metrics.insights_checked,
+            ),
       detail:
         viewsUnavailable
-          ? "Consulte as notificações para verificar os Insights da Meta"
+          ? metaSummary.isFetching
+            ? "Consultando a Meta; número animado provisório"
+            : metaSummary.error
+              ? "A Meta não retornou os Insights; consulte as notificações"
+              : "Consulte as notificações para verificar os Insights da Meta"
           : "Insights recebidos da Meta no período",
       icon: ChartNoAxesCombined,
       color: "text-[#71c8e8]",
     },
     {
       title: "Contas ativas",
-      value: formatCount(metrics?.active_accounts),
+      target: metrics?.active_accounts ?? null,
+      loading: summary.isFetching && !summary.data,
       detail: "Com autorização válida",
       icon: UsersRound,
       color: "text-[#8295ff]",
     },
     {
       title: "Colaboradores ativos",
-      value: formatCount(metrics?.active_collaborators),
+      target: metrics?.active_collaborators ?? null,
+      loading: summary.isFetching && !summary.data,
       detail: "Membros ativos deste workspace",
       icon: UsersRound,
       color: "text-[#71c8e8]",
     },
     {
       title: "Seguidores",
-      value:
-        metrics?.followers_count == null
-          ? "—"
-          : formatCount(metrics.followers_count),
+      target: metrics?.followers_count ?? null,
+      loading: summary.isFetching && !summary.data,
       detail: metrics?.profile_metrics_unavailable
         ? "Meta indisponível; mostrando último valor salvo"
         : "Atualizado diretamente pela Meta",
@@ -175,10 +305,8 @@ export function DashboardPage() {
     },
     {
       title: "Mídias nos perfis",
-      value:
-        metrics?.media_count == null
-          ? "—"
-          : formatCount(metrics.media_count),
+      target: metrics?.media_count ?? null,
+      loading: summary.isFetching && !summary.data,
       detail: metrics?.profile_metrics_unavailable
         ? "Meta indisponível; mostrando último valor salvo"
         : "Atualizado diretamente pela Meta",
@@ -187,63 +315,74 @@ export function DashboardPage() {
     },
     {
       title: "Posts no período",
-      value: formatCount(metrics?.published_posts),
+      target: metrics?.published_posts ?? null,
+      loading: summary.isFetching && !summary.data,
       detail: "Publicados pelo FlashPost",
       icon: CircleCheck,
       color: "text-[#76c8a0]",
     },
     {
       title: "Na fila",
-      value: formatCount(metrics?.queued_posts),
+      target: metrics?.queued_posts ?? null,
+      loading: summary.isFetching && !summary.data,
       detail: "Aguardando processamento",
       icon: Clock3,
       color: "text-[#f2d48a]",
     },
     {
       title: "Falhas",
-      value: formatCount(metrics?.failed_posts),
+      target: metrics?.failed_posts ?? null,
+      loading: summary.isFetching && !summary.data,
       detail: "Publicações que precisam de atenção",
       icon: AlertTriangle,
       color: "text-[#f16f82]",
     },
     {
       title: "Contas com erro",
-      value: formatCount(accountsWithIssues),
+      target: metrics ? accountsWithIssues : null,
+      loading: summary.isFetching && !summary.data,
       detail: "Desconectadas ou com autorização expirada",
       icon: UserRoundX,
       color: "text-[#f16f82]",
     },
     {
       title: "Leads Sharkbot",
-      value: formatCount(metrics?.leads),
+      target: metrics?.leads ?? null,
+      loading: summary.isFetching && !summary.data,
       detail: "Recebidos no período",
       icon: UsersRound,
       color: "text-[#71c8e8]",
     },
     {
       title: "Pix gerados",
-      value: formatCount(metrics?.pix_generated),
+      target: metrics?.pix_generated ?? null,
+      loading: summary.isFetching && !summary.data,
       detail: "Pagamentos iniciados no período",
       icon: Wallet,
       color: "text-[#f2d48a]",
     },
     {
       title: "Pix pagos",
-      value: formatCount(metrics?.pix_paid),
+      target: metrics?.pix_paid ?? null,
+      loading: summary.isFetching && !summary.data,
       detail: "Pagamentos aprovados no período",
       icon: CircleCheck,
       color: "text-[#76c8a0]",
     },
     {
       title: "Conversão de Pix",
-      value: `${pixConversion}%`,
+      target: metrics ? pixConversion : null,
+      loading: summary.isFetching && !summary.data,
+      formatValue: formatPercent,
       detail: "Pagos em relação aos gerados no período",
       icon: ChartNoAxesCombined,
       color: "text-[#b171ff]",
     },
     {
       title: "Valor faturado",
-      value: formatMoney(Number(metrics?.pix_paid_amount ?? 0)),
+      target: metrics ? Number(metrics.pix_paid_amount) : null,
+      loading: summary.isFetching && !summary.data,
+      formatValue: formatMoney,
       detail: "Pix pagos no período, pelo horário de Brasília",
       icon: Wallet,
       color: "text-[#76c8a0]",
@@ -295,7 +434,13 @@ export function DashboardPage() {
         )}
       </header>
 
-      {summary.isLoading && <LoadingState label="Carregando métricas do dashboard" />}
+      {(summary.isFetching || metaSummary.isFetching) && (
+        <p className="text-xs text-[#64748b]" role="status">
+          {summary.isFetching
+            ? "Atualizando indicadores do painel…"
+            : "Atualizando métricas da Meta em segundo plano…"}
+        </p>
+      )}
 
       <main className="dashboard-layout">
         <section
@@ -373,7 +518,7 @@ export function DashboardPage() {
             </h2>
           </div>
           <p className="mt-4 text-3xl font-semibold tracking-[-0.045em] text-[#f5f7fb]">
-            {formatCount(metrics?.active_accounts)}
+            {metricCount(metrics?.active_accounts)}
             <span className="ml-2 text-sm font-normal tracking-normal text-[#94a3b8]">
               ativas
             </span>
@@ -382,19 +527,19 @@ export function DashboardPage() {
             <li className="flex items-center justify-between gap-3">
               <span className="text-[#f1a3ad]">Com erro</span>
               <span className="font-medium text-[#e6eaf2]">
-                {formatCount(metrics?.errored_accounts)}
+                {metricCount(metrics?.errored_accounts)}
               </span>
             </li>
             <li className="flex items-center justify-between gap-3">
               <span className="text-[#f2d48a]">Desconectadas</span>
               <span className="font-medium text-[#e6eaf2]">
-                {formatCount(metrics?.disconnected_accounts)}
+                {metricCount(metrics?.disconnected_accounts)}
               </span>
             </li>
             <li className="flex items-center justify-between gap-3">
               <span className="text-[#f2d48a]">Autorização expirada</span>
               <span className="font-medium text-[#e6eaf2]">
-                {formatCount(metrics?.expired_accounts)}
+                {metricCount(metrics?.expired_accounts)}
               </span>
             </li>
           </ul>

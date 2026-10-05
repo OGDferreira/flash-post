@@ -50,6 +50,7 @@ class InstagramAnalyticsSummary(BaseModel):
     followers_count: int | None
     media_count: int | None
     views_count: int
+    insights_checked: bool
     missing_permissions: list[str]
     insights_unavailable: bool
     profile_metrics_unavailable: bool

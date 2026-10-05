@@ -536,6 +536,7 @@ async def get_analytics_summary(
             else None
         ),
         views_count=views_count,
+        insights_checked=include_meta_insights,
         missing_permissions=sorted(set(missing_permissions)),
         insights_unavailable=insights_unavailable,
         profile_metrics_unavailable=profile_metrics_unavailable,

@@ -375,11 +375,64 @@ export function CollaboratorsPage() {
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                  <SummaryMetric
+                    label="Colaborador desde"
+                    value={new Intl.DateTimeFormat("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      timeZone: "America/Sao_Paulo",
+                    }).format(new Date(item.membership_started_at))}
+                  />
                   <SummaryMetric label="Conexões hoje" value={String(item.connections_today)} />
                   <SummaryMetric label="Conexões no mês" value={String(item.connections_month)} />
                   <SummaryMetric label="Ganho do dia" value={money(item.earnings_today)} />
                   <SummaryMetric label="Pago no mês" value={money(item.paid_month)} />
+                </div>
+
+                <div className="rounded-lg border border-[#252c3e] bg-[#0a0d13] p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="font-medium text-[#cbd5e1]">Meta mensal de conexões</span>
+                    <span className="text-[#aab7ff]">
+                      {item.connections_month} / {item.monthly_connection_goal || "—"} contas
+                      {item.monthly_connection_goal > 0
+                        ? ` · ${Math.min(
+                            Math.round(
+                              (item.connections_month / item.monthly_connection_goal) * 100,
+                            ),
+                            100,
+                          )}%`
+                        : ""}
+                    </span>
+                  </div>
+                  {item.monthly_connection_goal > 0 ? (
+                    <div
+                      aria-label={`${item.connections_month} de ${item.monthly_connection_goal} contas da meta mensal`}
+                      className="mt-3 h-2 overflow-hidden rounded-full bg-[#202838]"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={item.monthly_connection_goal}
+                      aria-valuenow={Math.min(
+                        item.connections_month,
+                        item.monthly_connection_goal,
+                      )}
+                    >
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[#536dfe] to-[#b171ff]"
+                        style={{
+                          width: `${Math.min(
+                            (item.connections_month / item.monthly_connection_goal) * 100,
+                            100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-[#78839b]">
+                      Ainda não há uma meta mensal definida.
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
@@ -477,11 +530,18 @@ export function CollaboratorsPage() {
                   </div>
                 </div>
 
-                <div className="space-y-2 border-t border-[#202838] pt-4">
-                  <h4 className="text-xs font-medium text-[#cbd5e1]">
-                    Valor salvo por conta conectada
-                  </h4>
-                  {item.account_earnings.length ? (
+                <details className="border-t border-[#202838] pt-4">
+                  <summary className="cursor-pointer list-none text-xs font-medium text-[#cbd5e1] marker:hidden">
+                    <span className="inline-flex items-center gap-2">
+                      <UsersRound className="text-[#8295ff]" size={14} />
+                      Contas vinculadas e valores salvos
+                      <span className="rounded-full border border-[#27334a] px-2 py-0.5 text-[10px] text-[#94a3b8]">
+                        {item.account_earnings.length}
+                      </span>
+                    </span>
+                  </summary>
+                  <div className="mt-3 space-y-2">
+                    {item.account_earnings.length ? (
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-[420px] text-left text-xs">
                         <thead className="text-[#78839b]">
@@ -514,7 +574,8 @@ export function CollaboratorsPage() {
                   <p className="text-xs text-[#78839b]">
                     Ao salvar um novo valor, ele passa a valer para conexões futuras; os valores já salvos não mudam.
                   </p>
-                </div>
+                  </div>
+                </details>
               </article>
             );
           })
