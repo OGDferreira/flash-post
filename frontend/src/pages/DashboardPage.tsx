@@ -11,7 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { ErrorState, LoadingState } from "@/components/PageState";
+import { LoadingState } from "@/components/PageState";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { apiRequest } from "@/services/api";
 
@@ -252,32 +252,7 @@ export function DashboardPage() {
         )}
       </header>
 
-      {summary.error && (
-        <ErrorState message="Não foi possível carregar as métricas deste workspace." />
-      )}
       {summary.isLoading && <LoadingState label="Carregando métricas do dashboard" />}
-      {metrics?.missing_permissions.map((permission) => (
-        <article
-          className="rounded-xl border border-[#6b552b] bg-[#1c180e] p-4 text-sm text-[#f2d48a]"
-          key={permission}
-          role="alert"
-        >
-          <h2 className="font-semibold">Analytics da Meta indisponível</h2>
-          <p className="mt-1">
-            Permissão de API ausente: <code className="font-mono">{permission}</code>.
-            Reconecte as contas e conceda essa permissão no fluxo de autorização do Instagram.
-          </p>
-        </article>
-      ))}
-      {metrics?.insights_unavailable && (
-        <article
-          className="rounded-xl border border-[#6b552b] bg-[#1c180e] p-4 text-sm text-[#f2d48a]"
-          role="status"
-        >
-          Algumas métricas de visualizações não puderam ser carregadas da Meta. Verifique a
-          autorização e tente novamente.
-        </article>
-      )}
 
       <main className="dashboard-layout">
         <section

@@ -820,6 +820,68 @@ def test_instagram_authorization_url_requests_publishing_access() -> None:
     assert parameters["enable_fb_login"] == ["false"]
 
 
+@pytest.mark.parametrize(
+    ("error_code", "error_message", "permission_is_explicit"),
+    [
+        (
+            10,
+            "Missing permission instagram_business_manage_insights",
+            True,
+        ),
+        (10, "Unsupported request for this metric", False),
+        (200, "Unsupported request for this metric", False),
+    ],
+)
+@pytest.mark.anyio
+async def test_insights_only_reports_permission_missing_when_meta_identifies_it(
+    monkeypatch: pytest.MonkeyPatch,
+    error_code: int,
+    error_message: str,
+    permission_is_explicit: bool,
+) -> None:
+    class FakeResponse:
+        is_error = True
+
+        def json(self) -> object:
+            return {"error": {"code": error_code, "message": error_message}}
+
+        def raise_for_status(self) -> None:
+            request = oauth.httpx.Request("GET", "https://graph.instagram.com/insights")
+            response = oauth.httpx.Response(400, request=request)
+            raise oauth.httpx.HTTPStatusError(
+                "Meta Insights request failed",
+                request=request,
+                response=response,
+            )
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", FakeClient)
+    expected_error = (
+        oauth.InstagramInsightsPermissionError
+        if permission_is_explicit
+        else oauth.httpx.HTTPStatusError
+    )
+    with pytest.raises(expected_error):
+        await oauth.fetch_instagram_views(
+            "17840000000000000",
+            "private-test-token",
+            datetime.now(timezone.utc) - timedelta(days=1),
+            datetime.now(timezone.utc),
+        )
+
+
 @pytest.mark.anyio
 async def test_instagram_oauth_exchanges_code_for_long_lived_token_and_profile(
     monkeypatch: pytest.MonkeyPatch,

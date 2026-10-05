@@ -268,12 +268,16 @@ async def fetch_instagram_views(
             except ValueError:
                 payload = None
             error = payload.get("error") if isinstance(payload, dict) else None
-            code = error.get("code") if isinstance(error, dict) else None
-            message = error.get("message") if isinstance(error, dict) else None
-            if code in {10, 200} or (
-                isinstance(message, str)
-                and INSTAGRAM_INSIGHTS_PERMISSION in message
-            ):
+            error_text = (
+                " ".join(
+                    error[field]
+                    for field in ("message", "error_user_title", "error_user_msg")
+                    if isinstance(error.get(field), str)
+                )
+                if isinstance(error, dict)
+                else ""
+            )
+            if INSTAGRAM_INSIGHTS_PERMISSION in error_text:
                 raise InstagramInsightsPermissionError from None
             response.raise_for_status()
         payload = _object(response.json(), "Meta returned an invalid Insights response.")

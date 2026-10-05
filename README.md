@@ -89,6 +89,29 @@ HTTP endpoint.
 To grant `SUPER_ADMIN` to an existing user without changing their password,
 workspace, or related records, use
 `python -m app.cli promote-super-admin <existing-email>`.
+If the Render plan does not include a service Shell, the same single-column
+change can be made in the Supabase Dashboard's **SQL Editor**. First verify the
+existing account:
+
+```sql
+SELECT id, email, platform_role, is_approved
+FROM public.users
+WHERE lower(email) = lower('existing-email');
+```
+
+After confirming this returns exactly the intended existing account, promote
+it and verify the result:
+
+```sql
+UPDATE public.users
+SET platform_role = 'SUPER_ADMIN'
+WHERE lower(email) = lower('existing-email')
+RETURNING id, email, platform_role;
+```
+
+This updates only the role; do not replace or recreate the user. Render
+environment variables configure the application but do not change database
+account roles.
 
 ## Database and migrations
 
@@ -189,9 +212,13 @@ associated with the app that authorized them.
 Never put a customer's App Secret in frontend environment configuration,
 Render environment variables, Git, or chat.
 
-The Instagram Login flow requests both `instagram_business_basic` and
-`instagram_business_content_publish`. Existing accounts must reconnect and
-grant the new permission before publishing. In development, invited app
+The Instagram Login flow requests `instagram_business_basic`,
+`instagram_business_content_publish`, and `instagram_business_manage_insights`.
+Existing accounts must reconnect to grant newly requested permissions; app
+approval alone does not add a permission to tokens issued before consent. The
+notification bell reports a missing Insights permission only when Meta's API
+error explicitly identifies that permission; other Insights failures are
+reported without guessing their cause. In development, invited app
 testers must accept the invitation and grant consent. Meta may also require
 Advanced Access and App Review outside the tester setup. Instagram media
 publishing uses a private Storage object and a signed URL that expires after

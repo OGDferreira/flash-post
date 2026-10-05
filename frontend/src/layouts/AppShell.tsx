@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   Bell,
   Blocks,
   ChartNoAxesCombined,
@@ -23,6 +24,7 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/AuthProvider";
 import { setCsrfToken, apiRequest } from "@/services/api";
+import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 
 const ownerLinks = [
   { label: "Visão geral", to: "/dashboard", icon: Home },
@@ -58,8 +60,43 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const analyticsNotifications = useQuery({
+    queryKey: ["analytics", "summary", "7d", null, null],
+    queryFn: () =>
+      apiRequest<InstagramAnalyticsSummary>(
+        "/api/analytics/summary?period=7d&include_meta_insights=true",
+      ),
+    enabled: !admin && user?.role === "OWNER",
+    retry: false,
+    refetchInterval: 300_000,
+  });
+  const notificationItems = [
+    ...(analyticsNotifications.error
+      ? [
+          {
+            title: "Analytics indisponível",
+            message: "Não foi possível atualizar as métricas. Tente novamente mais tarde.",
+          },
+        ]
+      : []),
+    ...(analyticsNotifications.data?.missing_permissions.map((permission) => ({
+      title: "Permissão Meta não autorizada para esta conta",
+      message: `O token da conta não confirmou a permissão ${permission}. Reconecte a conta Instagram para atualizar as permissões concedidas.`,
+    })) ?? []),
+    ...(analyticsNotifications.data?.insights_unavailable &&
+    !analyticsNotifications.data.missing_permissions.length
+      ? [
+          {
+            title: "Insights da Meta indisponíveis",
+            message:
+              "A Meta não retornou as visualizações. O erro não identifica uma permissão específica.",
+          },
+        ]
+      : []),
+  ];
   const logout = useMutation({
     mutationFn: () => apiRequest("/api/auth/logout", { method: "POST" }),
     onSettled: () => {
@@ -246,9 +283,74 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
               </h1>
             </div>
           </div>
-          <div className="hidden items-center gap-2 rounded-full border border-[#202838] bg-[#0d1015] px-3 py-2 text-xs text-[#94a3b8] transition-colors duration-200 hover:border-[#536dfe]/40 sm:flex">
-            <span className="size-1.5 rounded-full bg-[#2dd4a0]" />
-            Sistema online
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                aria-label={
+                  notificationItems.length
+                    ? `Notificações, ${notificationItems.length} avisos`
+                    : "Notificações"
+                }
+                aria-expanded={notificationsOpen}
+                aria-haspopup="dialog"
+                className="relative grid size-9 place-items-center rounded-full border border-[#202838] bg-[#0d1015] text-[#94a3b8] transition-colors hover:border-[#536dfe]/40 hover:text-white"
+                onClick={() => setNotificationsOpen((open) => !open)}
+                type="button"
+              >
+                <Bell size={16} />
+                {notificationItems.length > 0 && (
+                  <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-[#f16f82] px-1 text-[9px] font-semibold text-[#17090c]">
+                    {notificationItems.length > 9 ? "9+" : notificationItems.length}
+                  </span>
+                )}
+              </button>
+              {notificationsOpen && (
+                <section
+                  aria-label="Notificações"
+                  className="absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-32px))] rounded-xl border border-[#27334a] bg-[#0d1015] p-3 shadow-[0_16px_48px_rgba(0,0,0,.55)]"
+                  role="dialog"
+                >
+                  <div className="flex items-center justify-between border-b border-[#202838] pb-2">
+                    <h2 className="text-sm font-semibold text-[#e6eaf2]">Notificações</h2>
+                    <button
+                      className="text-xs text-[#94a3b8] hover:text-white"
+                      onClick={() => setNotificationsOpen(false)}
+                      type="button"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                  {notificationItems.length ? (
+                    <ul className="max-h-[min(60vh,420px)] divide-y divide-[#202838] overflow-y-auto">
+                      {notificationItems.map((item, index) => (
+                        <li className="flex gap-2.5 py-3" key={`${item.title}-${index}`}>
+                          <AlertTriangle
+                            aria-hidden="true"
+                            className="mt-0.5 shrink-0 text-[#f2d48a]"
+                            size={15}
+                          />
+                          <div>
+                            <h3 className="text-xs font-medium text-[#f2d48a]">{item.title}</h3>
+                            <p className="mt-1 text-xs leading-5 text-[#aeb9ce]">
+                              {item.message}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="py-4 text-xs text-[#94a3b8]">
+                      Nenhum aviso no momento.
+                    </p>
+                  )}
+                </section>
+              )}
+            </div>
+            <div className="flex items-center gap-2 rounded-full border border-[#202838] bg-[#0d1015] px-3 py-2 text-xs text-[#94a3b8]">
+              <span className="size-1.5 rounded-full bg-[#2dd4a0]" />
+              <span className="hidden sm:inline">Sistema online</span>
+              <span className="sm:hidden">Online</span>
+            </div>
           </div>
         </header>
         <main className="min-h-[calc(100vh-72px)] w-full px-5 py-7 sm:px-8 sm:py-9">

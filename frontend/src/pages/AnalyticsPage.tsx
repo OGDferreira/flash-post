@@ -182,18 +182,6 @@ export function AnalyticsPage() {
               {summary.error && (
                 <ErrorState message="Não foi possível carregar as métricas desta conta." />
               )}
-              {summary.data?.missing_permissions.length ? (
-                <section
-                  className="rounded-xl border border-[#6b552b] bg-[#1c180e] p-4 text-sm text-[#f2d48a]"
-                  role="alert"
-                >
-                  <h3 className="font-medium">Permissão necessária para Analytics</h3>
-                  <p className="mt-1 leading-6">
-                    Autorize {summary.data.missing_permissions.join(", ")} no aplicativo Meta
-                    conectado para carregar os Insights.
-                  </p>
-                </section>
-              ) : null}
               {summary.isLoading && <LoadingState label="Carregando dados da conta" />}
               <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                 {metrics.map(({ title, value, helper, icon: Icon }) => (

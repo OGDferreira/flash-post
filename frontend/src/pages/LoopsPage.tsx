@@ -901,31 +901,6 @@ export function LoopsPage() {
                       </span>
                     ))}
                   </div>
-                  <section
-                    aria-label={`Pool de mídias de ${loop.name}`}
-                    className="mt-3 rounded-lg border border-[#202838] bg-[#090b0f] p-3"
-                  >
-                    <h4 className="flex items-center gap-2 text-xs font-medium text-[#cbd5e1]">
-                      <ImageIcon size={14} className="text-[#00c9d8]" />
-                      Pool de mídias ({loop.media_count})
-                    </h4>
-                    {loop.media_names.length > 0 ? (
-                      <ul className="mt-2 space-y-1 text-xs text-[#cbd5e1]">
-                        {loop.media_names.map((name, index) => (
-                          <li
-                            className="break-all"
-                            key={`${loop.media_ids[index]}-${name}`}
-                          >
-                            {name}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-2 text-xs text-[#94a3b8]">
-                        Nenhuma mídia pronta para este loop.
-                      </p>
-                    )}
-                  </section>
                   <p className="mt-3 text-xs text-[#94a3b8]">
                     Próxima execução: {formatDate(loop.next_run_at)}
                   </p>
