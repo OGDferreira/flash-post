@@ -813,7 +813,8 @@ def test_instagram_authorization_url_requests_publishing_access() -> None:
 
     assert urlparse(authorization_url).netloc == "www.instagram.com"
     assert parameters["scope"] == [
-        "instagram_business_basic,instagram_business_content_publish"
+        "instagram_business_basic,instagram_business_content_publish,"
+        "instagram_business_manage_insights"
     ]
     assert parameters["state"] == ["state-value"]
     assert parameters["enable_fb_login"] == ["false"]
@@ -854,7 +855,8 @@ async def test_instagram_oauth_exchanges_code_for_long_lived_token_and_profile(
                             "access_token": "short-token",
                             "permissions": (
                                 "instagram_business_basic,"
-                                "instagram_business_content_publish"
+                                "instagram_business_content_publish,"
+                                "instagram_business_manage_insights"
                             ),
                         }
                     ]

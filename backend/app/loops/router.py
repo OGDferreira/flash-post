@@ -124,6 +124,7 @@ async def _loop_response(
         accounts=[
             InstagramLoopAccountResponse(
                 id=account.id,
+                profile_folder_id=account.profile_folder_id,
                 username=account.username,
                 token_expires_at=_utc_datetime(account.token_expires_at),
             )
@@ -162,6 +163,7 @@ async def list_loops(
         available_accounts=[
             InstagramLoopAccountResponse(
                 id=account.id,
+                profile_folder_id=account.profile_folder_id,
                 username=account.username,
                 token_expires_at=_utc_datetime(account.token_expires_at),
             )

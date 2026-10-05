@@ -1,17 +1,26 @@
 from typing import Annotated
 import re
+import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import DbSession, SuperAdminUser
-from app.models import SystemSetting, User, Workspace, WorkspaceMember
+from app.auth.dependencies import DbSession, SuperAdminUser, require_csrf
+from app.models import (
+    InstagramAccount,
+    InstagramPublicationJob,
+    SystemSetting,
+    User,
+    Workspace,
+    WorkspaceMember,
+)
 from app.schemas.admin import (
     AdminSummary,
     AdminUser,
     AdminUsersPage,
     AdminWorkspace,
+    AdminWorkspaceCollaborator,
     AdminWorkspacesPage,
 )
 
@@ -106,7 +115,12 @@ async def list_users(
             full_name=user.full_name,
             email=user.email,
             role=resolved_role,
-            status="ACTIVE" if user.is_active else "INACTIVE",
+            status=(
+                "PENDING_APPROVAL"
+                if not user.is_approved
+                else "ACTIVE" if user.is_active else "INACTIVE"
+            ),
+            is_approved=user.is_approved,
             workspace_name=workspace,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
@@ -114,6 +128,60 @@ async def list_users(
         for user, resolved_role, workspace in rows
     ]
     return AdminUsersPage(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.post(
+    "/users/{user_id}/approve",
+    response_model=AdminUser,
+    dependencies=[Depends(require_csrf)],
+)
+async def approve_user(
+    user_id: uuid.UUID,
+    _admin: SuperAdminUser,
+    db: DbSession,
+) -> AdminUser:
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    user.is_approved = True
+    await db.commit()
+    membership_role = (
+        select(WorkspaceMember.role)
+        .where(
+            WorkspaceMember.user_id == user.id,
+            WorkspaceMember.status == "ACTIVE",
+        )
+        .order_by(WorkspaceMember.created_at, WorkspaceMember.workspace_id)
+        .limit(1)
+        .scalar_subquery()
+    )
+    workspace_name = (
+        select(Workspace.name)
+        .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+        .where(
+            WorkspaceMember.user_id == user.id,
+            WorkspaceMember.status == "ACTIVE",
+        )
+        .order_by(WorkspaceMember.created_at, WorkspaceMember.workspace_id)
+        .limit(1)
+        .scalar_subquery()
+    )
+    resolved_role = (
+        "SUPER_ADMIN"
+        if user.platform_role == "SUPER_ADMIN"
+        else (await db.scalar(select(membership_role)) or "USER")
+    )
+    return AdminUser(
+        id=user.id,
+        full_name=user.full_name,
+        email=user.email,
+        role=resolved_role,
+        status="ACTIVE" if user.is_active else "INACTIVE",
+        is_approved=user.is_approved,
+        workspace_name=await db.scalar(select(workspace_name)),
+        created_at=user.created_at,
+        last_login_at=user.last_login_at,
+    )
 
 
 @router.get("/workspaces", response_model=AdminWorkspacesPage)
@@ -132,10 +200,50 @@ async def list_workspaces(
         )
         .scalar_subquery()
     )
-    count_query = select(func.count()).select_from(Workspace).join(User, User.id == Workspace.owner_id)
-    workspace_query = (
-        select(Workspace, User, member_count.label("members_count"))
+    connected_count = (
+        select(func.count(InstagramAccount.id))
+        .where(
+            InstagramAccount.workspace_id == Workspace.id,
+            InstagramAccount.status == "connected",
+        )
+        .scalar_subquery()
+    )
+    errored_count = (
+        select(func.count(InstagramAccount.id))
+        .where(
+            InstagramAccount.workspace_id == Workspace.id,
+            InstagramAccount.status == "error",
+        )
+        .scalar_subquery()
+    )
+    active_post_count = (
+        select(func.count(InstagramPublicationJob.id))
+        .where(
+            InstagramPublicationJob.workspace_id == Workspace.id,
+            InstagramPublicationJob.status.in_(
+                ("waiting_for_media", "queued", "publishing")
+            ),
+        )
+        .scalar_subquery()
+    )
+    count_query = (
+        select(func.count())
+        .select_from(Workspace)
         .join(User, User.id == Workspace.owner_id)
+        .where(Workspace.status == "ACTIVE", User.is_approved.is_(True))
+        .where(User.is_active.is_(True))
+    )
+    workspace_query = select(
+        Workspace,
+        User,
+        member_count.label("members_count"),
+        connected_count.label("connected_accounts"),
+        errored_count.label("errored_accounts"),
+        active_post_count.label("active_posts"),
+    ).join(User, User.id == Workspace.owner_id).where(
+        Workspace.status == "ACTIVE",
+        User.is_approved.is_(True),
+        User.is_active.is_(True),
     )
     if q and q.strip():
         search = f"%{q.strip()}%"
@@ -151,6 +259,33 @@ async def list_workspaces(
             .limit(page_size)
         )
     ).all()
+    workspace_ids = [workspace.id for workspace, *_ in rows]
+    collaborator_rows = (
+        await db.execute(
+            select(
+                WorkspaceMember.workspace_id,
+                User.id,
+                User.full_name,
+                User.email,
+            )
+            .join(User, User.id == WorkspaceMember.user_id)
+            .where(
+                WorkspaceMember.workspace_id.in_(workspace_ids),
+                WorkspaceMember.role == "COLLABORATOR",
+                WorkspaceMember.status == "ACTIVE",
+            )
+            .order_by(WorkspaceMember.workspace_id, User.full_name, User.id)
+        )
+    ).all() if workspace_ids else []
+    collaborators_by_workspace: dict[uuid.UUID, list[AdminWorkspaceCollaborator]] = {}
+    for workspace_id, user_id, full_name, email in collaborator_rows:
+        collaborators_by_workspace.setdefault(workspace_id, []).append(
+            AdminWorkspaceCollaborator(
+                id=user_id,
+                full_name=full_name,
+                email=email,
+            )
+        )
     items = [
         AdminWorkspace(
             id=workspace.id,
@@ -160,9 +295,13 @@ async def list_workspaces(
             owner_email=owner.email,
             status=workspace.status,
             members_count=members_count,
+            connected_accounts=connected_accounts,
+            errored_accounts=errored_accounts,
+            active_posts=active_posts,
+            collaborators=collaborators_by_workspace.get(workspace.id, []),
             created_at=workspace.created_at,
         )
-        for workspace, owner, members_count in rows
+        for workspace, owner, members_count, connected_accounts, errored_accounts, active_posts in rows
     ]
     return AdminWorkspacesPage(items=items, total=total, page=page, page_size=page_size)
 

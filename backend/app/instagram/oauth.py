@@ -9,6 +9,7 @@ INSTAGRAM_GRAPH_ENDPOINT = "https://graph.instagram.com/v25.0"
 INSTAGRAM_TOKEN_REFRESH_ENDPOINT = "https://graph.instagram.com/refresh_access_token"
 INSTAGRAM_BASIC_PERMISSION = "instagram_business_basic"
 INSTAGRAM_PUBLISH_PERMISSION = "instagram_business_content_publish"
+INSTAGRAM_INSIGHTS_PERMISSION = "instagram_business_manage_insights"
 
 
 class InstagramOAuthError(ValueError):
@@ -53,7 +54,13 @@ def build_authorization_url(
         "client_id": app_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": ",".join((INSTAGRAM_BASIC_PERMISSION, INSTAGRAM_PUBLISH_PERMISSION)),
+        "scope": ",".join(
+            (
+                INSTAGRAM_BASIC_PERMISSION,
+                INSTAGRAM_PUBLISH_PERMISSION,
+                INSTAGRAM_INSIGHTS_PERMISSION,
+            )
+        ),
         "state": state,
         "enable_fb_login": "false",
     }
@@ -235,6 +242,73 @@ async def refresh_instagram_long_lived_token(
         refreshed_token,
         datetime.now(timezone.utc) + timedelta(seconds=expires_in),
     )
+
+
+async def fetch_instagram_views(
+    instagram_user_id: str,
+    access_token: str,
+    since: datetime,
+    until: datetime,
+) -> int:
+    timeout = httpx.Timeout(15.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.get(
+            f"{INSTAGRAM_GRAPH_ENDPOINT}/{instagram_user_id}/insights",
+            params={
+                "metric": "views",
+                "period": "day",
+                "since": int(since.timestamp()),
+                "until": int(until.timestamp()),
+                "access_token": access_token,
+            },
+        )
+        if response.is_error:
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = None
+            error = payload.get("error") if isinstance(payload, dict) else None
+            code = error.get("code") if isinstance(error, dict) else None
+            message = error.get("message") if isinstance(error, dict) else None
+            if code in {10, 200} or (
+                isinstance(message, str)
+                and INSTAGRAM_INSIGHTS_PERMISSION in message
+            ):
+                raise InstagramInsightsPermissionError from None
+            response.raise_for_status()
+        payload = _object(response.json(), "Meta returned an invalid Insights response.")
+
+    data = payload.get("data")
+    if not isinstance(data, list):
+        raise InstagramOAuthError("Meta returned an invalid Insights response.")
+    metric = next(
+        (
+            item
+            for item in data
+            if isinstance(item, dict) and item.get("name") == "views"
+        ),
+        None,
+    )
+    values = metric.get("values") if isinstance(metric, dict) else None
+    if not isinstance(values, list):
+        raise InstagramOAuthError("Meta did not return the requested views metric.")
+    total = 0
+    for item in values:
+        value = item.get("value") if isinstance(item, dict) else None
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            total += value
+    total_value = metric.get("total_value") if isinstance(metric, dict) else None
+    direct_value = total_value.get("value") if isinstance(total_value, dict) else None
+    if isinstance(direct_value, int) and not isinstance(direct_value, bool) and direct_value >= 0:
+        total = direct_value
+    return total
+
+
+class InstagramInsightsPermissionError(InstagramOAuthError):
+    def __init__(self) -> None:
+        super().__init__(
+            f"Missing Meta permission: {INSTAGRAM_INSIGHTS_PERMISSION}."
+        )
 
 
 async def revoke_instagram_permissions(access_token: str) -> bool:

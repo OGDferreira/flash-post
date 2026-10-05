@@ -1,13 +1,22 @@
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+import logging
 from typing import Literal
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import and_, func, or_, select
 
 from app.auth.dependencies import DbSession, OwnerAccess
+from app.core.crypto import decrypt_value
 from app.core.time import BRAZIL_TIME_ZONE, local_day_bounds_utc, utc_now
+from app.instagram.oauth import (
+    INSTAGRAM_INSIGHTS_PERMISSION,
+    InstagramInsightsPermissionError,
+    InstagramOAuthError,
+    fetch_instagram_views,
+)
 from app.models import (
     InstagramAccount,
     InstagramPublicationJob,
@@ -20,8 +29,8 @@ from app.schemas.analytics import (
     InstagramAccountAnalytics,
     InstagramAnalyticsSummary,
 )
-
 router = APIRouter(prefix="/api/analytics", tags=["Instagram analytics"])
+logger = logging.getLogger(__name__)
 _QUEUED_STATUSES = ("waiting_for_media", "queued", "publishing")
 AnalyticsPeriod = Literal["today", "yesterday", "7d", "30d", "all", "custom"]
 
@@ -38,6 +47,7 @@ async def get_analytics_summary(
     period: AnalyticsPeriod = "7d",
     start_date: date | None = None,
     end_date: date | None = None,
+    include_meta_insights: bool = False,
 ) -> InstagramAnalyticsSummary:
     if period == "custom":
         if start_date is None or end_date is None or end_date < start_date:
@@ -89,6 +99,13 @@ async def get_analytics_summary(
             InstagramAccount.first_connected_at < today_end,
         )
     )
+    active_collaborators = await db.scalar(
+        select(func.count(func.distinct(WorkspaceMember.user_id))).where(
+            WorkspaceMember.workspace_id == access.workspace.id,
+            WorkspaceMember.role == "COLLABORATOR",
+            WorkspaceMember.status == "ACTIVE",
+        )
+    ) or 0
     today = now.astimezone(BRAZIL_TIME_ZONE).date()
     if period == "custom":
         period_start = datetime.combine(
@@ -255,6 +272,9 @@ async def get_analytics_summary(
 
     account_metrics: list[InstagramAccountAnalytics] = []
     active_accounts = 0
+    views_count = 0
+    missing_permissions: list[str] = []
+    insights_unavailable = False
     for account in accounts:
         counts = job_counts.get(account.id, {})
         shark_counts = event_counts.get(account.id, {})
@@ -263,6 +283,28 @@ async def get_analytics_summary(
         failed = counts.get("failed", 0)
         if account.status == "connected" and _utc(account.token_expires_at) > now:
             active_accounts += 1
+            if include_meta_insights and account.encrypted_access_token is not None:
+                insight_start = period_start or _utc(account.connected_at)
+                insight_start = max(insight_start, _utc(account.connected_at))
+                insight_end = period_end or now
+                if insight_start < insight_end:
+                    try:
+                        access_token = decrypt_value(account.encrypted_access_token)
+                        views_count += await fetch_instagram_views(
+                            account.instagram_user_id,
+                            access_token,
+                            insight_start,
+                            insight_end,
+                        )
+                    except InstagramInsightsPermissionError:
+                        missing_permissions.append(INSTAGRAM_INSIGHTS_PERMISSION)
+                    except (httpx.HTTPError, InstagramOAuthError, RuntimeError, ValueError) as exc:
+                        insights_unavailable = True
+                        logger.warning(
+                            "Instagram Insights unavailable for account %s (%s).",
+                            account.id,
+                            type(exc).__name__,
+                        )
         account_metrics.append(
             InstagramAccountAnalytics(
                 account_id=account.id,
@@ -297,7 +339,11 @@ async def get_analytics_summary(
             else 0 if account_ids == []
             else None
         ),
+        views_count=views_count,
+        missing_permissions=sorted(set(missing_permissions)),
+        insights_unavailable=insights_unavailable,
         active_accounts=active_accounts,
+        active_collaborators=active_collaborators,
         published_posts=sum(account.published_posts for account in account_metrics),
         queued_posts=sum(account.queued_posts for account in account_metrics),
         failed_posts=sum(account.failed_posts for account in account_metrics),

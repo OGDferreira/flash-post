@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   Clock3,
+  Folder,
   Link2,
   Search,
   Trash2,
@@ -29,6 +30,10 @@ type InstagramAccountsResponse = {
   can_manage: boolean;
   can_connect: boolean;
   accounts: InstagramAccount[];
+};
+
+type ProfileFoldersResponse = {
+  folders: { id: string; name: string; color: string }[];
 };
 
 type InstagramMetaAppsResponse = {
@@ -64,6 +69,7 @@ export function InstagramAccountsPage() {
   >();
   const [accountFilter, setAccountFilter] = useState<"active" | "issues" | "all">("active");
   const [accountSearch, setAccountSearch] = useState("");
+  const [selectedFolderId, setSelectedFolderId] = useState("all");
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<InstagramAccountsResponse>("/api/instagram/accounts"),
@@ -74,6 +80,11 @@ export function InstagramAccountsPage() {
     queryKey: ["instagram", "apps"],
     queryFn: () => apiRequest<InstagramMetaAppsResponse>("/api/instagram/apps"),
     enabled: accounts.data?.can_manage === true,
+    retry: false,
+  });
+  const folders = useQuery({
+    queryKey: ["instagram", "folders"],
+    queryFn: () => apiRequest<ProfileFoldersResponse>("/api/instagram/folders"),
     retry: false,
   });
   const connect = useMutation({
@@ -165,13 +176,25 @@ export function InstagramAccountsPage() {
         : null;
   const activeAccountCount = accounts.data.accounts.filter(isInstagramAccountActive).length;
   const issueAccountCount = accounts.data.accounts.length - activeAccountCount;
+  const unassignedAccountCount = accounts.data.accounts.filter(
+    (account) => !account.profile_folder_id,
+  ).length;
   const visibleAccounts = accounts.data.accounts.filter((account) => {
     const active = isInstagramAccountActive(account);
     const matchesFilter =
       accountFilter === "all" ||
       (accountFilter === "active" && active) ||
       (accountFilter === "issues" && !active);
-    return matchesFilter && account.username.toLowerCase().includes(accountSearch.toLowerCase());
+    const matchesFolder =
+      selectedFolderId === "all" ||
+      (selectedFolderId === "unassigned"
+        ? !account.profile_folder_id
+        : account.profile_folder_id === selectedFolderId);
+    return (
+      matchesFilter &&
+      matchesFolder &&
+      account.username.toLowerCase().includes(accountSearch.toLowerCase())
+    );
   });
 
   return (
@@ -266,6 +289,65 @@ export function InstagramAccountsPage() {
             <p className="mt-1 text-2xl font-semibold text-[#ffd1a8]">{issueAccountCount}</p>
           </div>
         </div>
+        {folders.error && (
+          <p className="text-sm text-[#f1a3ad]">Não foi possível carregar a organização por pastas.</p>
+        )}
+        <section
+          aria-label="Quantidade de contas por pasta"
+          className="rounded-xl border border-[#27334a] bg-[#0d1015] p-4"
+        >
+          <div className="mb-3 flex items-center gap-2">
+            <Folder size={15} className="text-[#aab7ff]" />
+            <h3 className="text-sm font-medium text-[#e6eaf2]">Contas por pasta</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className={`rounded-full border px-3 py-1.5 text-xs ${
+                selectedFolderId === "all"
+                  ? "border-[#536dfe] bg-[#151b2d] text-white"
+                  : "border-[#27334a] text-[#94a3b8]"
+              }`}
+              onClick={() => setSelectedFolderId("all")}
+              type="button"
+            >
+              Todas ({accounts.data.accounts.length})
+            </button>
+            {(folders.data?.folders ?? []).map((folder) => {
+              const count = accounts.data.accounts.filter(
+                (account) => account.profile_folder_id === folder.id,
+              ).length;
+              return (
+                <button
+                  className={`rounded-full border px-3 py-1.5 text-xs ${
+                    selectedFolderId === folder.id
+                      ? "bg-[#151b2d] text-white"
+                      : "text-[#cbd5e1]"
+                  }`}
+                  key={folder.id}
+                  onClick={() => setSelectedFolderId(folder.id)}
+                  style={{ borderColor: folder.color }}
+                  type="button"
+                >
+                  <span aria-hidden="true" className="mr-1.5" style={{ color: folder.color }}>
+                    ●
+                  </span>
+                  {folder.name} ({count})
+                </button>
+              );
+            })}
+            <button
+              className={`rounded-full border px-3 py-1.5 text-xs ${
+                selectedFolderId === "unassigned"
+                  ? "border-[#536dfe] bg-[#151b2d] text-white"
+                  : "border-[#27334a] text-[#94a3b8]"
+              }`}
+              onClick={() => setSelectedFolderId("unassigned")}
+              type="button"
+            >
+              Sem pasta ({unassignedAccountCount})
+            </button>
+          </div>
+        </section>
         <div className="flex flex-col gap-3 sm:flex-row">
           <label className="flex min-h-11 flex-1 items-center gap-2 rounded-lg border border-[#27334a] bg-[#0d1015] px-3 text-[#94a3b8]">
             <Search size={16} />

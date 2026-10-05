@@ -21,6 +21,8 @@ export function LoginPage() {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const registrationPending =
+    (location.state as { registrationPending?: boolean } | null)?.registrationPending === true;
   const queryClient = useQueryClient();
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -105,6 +107,14 @@ export function LoginPage() {
             <p className="mt-2 text-sm text-[#94a3b8]">
               Use o e-mail e a senha da sua conta.
             </p>
+            {registrationPending && (
+              <p
+                className="mt-4 rounded-lg border border-[#3a3651] bg-[#151426] px-3.5 py-3 text-sm text-[#c8c8ff]"
+                role="status"
+              >
+                Cadastro recebido. Seu acesso será liberado após aprovação do administrador.
+              </p>
+            )}
           </div>
           <form
             className="space-y-5"

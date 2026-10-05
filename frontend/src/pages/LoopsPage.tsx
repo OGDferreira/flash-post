@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Clock3,
   Copy,
+  Folder,
   Image as ImageIcon,
   Infinity,
   Pause,
@@ -20,6 +21,7 @@ import { ApiError, apiRequest } from "@/services/api";
 
 type LoopAccount = {
   id: string;
+  profile_folder_id: string | null;
   username: string;
   token_expires_at: string;
 };
@@ -37,6 +39,10 @@ type InstagramMedia = {
 type InstagramMediaResponse = {
   can_manage: boolean;
   media: InstagramMedia[];
+};
+
+type InstagramFoldersResponse = {
+  folders: { id: string; name: string; color: string }[];
 };
 
 type InstagramLoop = {
@@ -155,6 +161,11 @@ export function LoopsPage() {
   const media = useQuery({
     queryKey: ["instagram-media"],
     queryFn: () => apiRequest<InstagramMediaResponse>("/api/media"),
+    retry: false,
+  });
+  const folders = useQuery({
+    queryKey: ["instagram", "folders"],
+    queryFn: () => apiRequest<InstagramFoldersResponse>("/api/instagram/folders"),
     retry: false,
   });
   const failures = useQuery({
@@ -479,30 +490,119 @@ export function LoopsPage() {
               Cancelar
             </button>
           </div>
+          <fieldset className="space-y-3 rounded-lg border border-[#27334a] bg-[#090b0f] p-3">
+            <legend className="px-1 text-sm font-medium text-[#cbd5e1]">
+              Contas Instagram ({form.account_ids.length} selecionadas)
+            </legend>
+            {loops.data.available_accounts.length === 0 ? (
+              <p className="text-sm text-[#f2d48a]">
+                Não há contas ativas com token válido. Conecte ou reconecte uma conta no Hub de
+                Contas antes de criar o loop.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {[
+                  ...(folders.data?.folders ?? []).map((folder) => ({
+                    id: folder.id,
+                    label: folder.name,
+                    color: folder.color,
+                    accounts: loops.data.available_accounts.filter(
+                      (account) => account.profile_folder_id === folder.id,
+                    ),
+                  })),
+                  {
+                    id: "unassigned",
+                    label: "Sem pasta",
+                    color: "#64748b",
+                    accounts: loops.data.available_accounts.filter(
+                      (account) => !account.profile_folder_id,
+                    ),
+                  },
+                ]
+                  .filter((folder) => folder.accounts.length > 0)
+                  .map((folder) => (
+                    <section key={folder.id}>
+                      <h4 className="mb-2 flex items-center gap-2 text-xs text-[#94a3b8]">
+                        <Folder size={13} style={{ color: folder.color }} />
+                        {folder.label} ({folder.accounts.length})
+                      </h4>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {folder.accounts.map((account) => {
+                          const checked = form.account_ids.includes(account.id);
+                          return (
+                            <label
+                              className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs ${
+                                checked
+                                  ? "border-[#00c9d8] bg-[#0d3036] text-[#e7fdff]"
+                                  : "border-[#27334a] text-[#cbd5e1]"
+                              }`}
+                              key={account.id}
+                              style={checked ? undefined : { borderColor: `${folder.color}66` }}
+                            >
+                              <input
+                                className="accent-[#00c9d8]"
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setForm({
+                                    ...form,
+                                    account_ids: checked
+                                      ? form.account_ids.filter((id) => id !== account.id)
+                                      : [...form.account_ids, account.id],
+                                  })
+                                }
+                              />
+                              @{account.username}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
+              </div>
+            )}
+          </fieldset>
+          <section className="space-y-2 rounded-lg border border-[#27334a] bg-[#090b0f] p-3">
+            <h4 className="flex items-center gap-2 text-sm font-medium text-[#cbd5e1]">
+              Mídias atuais na pool ({form.media_ids.length})
+            </h4>
+            {form.media_ids.length === 0 ? (
+              <p className="text-xs text-[#94a3b8]">Nenhuma mídia selecionada para este loop.</p>
+            ) : (
+              <ul className="max-h-48 space-y-1 overflow-y-auto">
+                {form.media_ids.map((mediaId) => {
+                  const item = media.data?.media.find((entry) => entry.id === mediaId);
+                  return (
+                    <li
+                      className="flex items-center justify-between gap-3 rounded border border-[#202838] px-2 py-1.5 text-xs text-[#cbd5e1]"
+                      key={mediaId}
+                    >
+                      <span className="truncate">{item?.filename ?? "Arquivo indisponível"}</span>
+                      {loops.data.can_configure && (
+                        <button
+                          className="shrink-0 text-[#f1a3ad] hover:text-white"
+                          onClick={() =>
+                            setForm((current) => ({
+                              ...current,
+                              media_ids: current.media_ids.filter((id) => id !== mediaId),
+                            }))
+                          }
+                          type="button"
+                        >
+                          Remover
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+          <details className="rounded-lg border border-[#27334a] bg-[#090b0f]">
+            <summary className="cursor-pointer px-3 py-3 text-sm font-medium text-[#cbd5e1]">
+              Configurações do loop e biblioteca de mídias
+            </summary>
           <fieldset disabled={!loops.data.can_configure} className="space-y-5">
-          {editingId && (
-            <section className="space-y-2 rounded-lg border border-[#27334a] bg-[#090b0f] p-3">
-              <h4 className="text-xs font-medium text-[#cbd5e1]">Mídias deste loop</h4>
-              {form.media_ids.length === 0 ? (
-                <p className="text-xs text-[#94a3b8]">Nenhuma mídia selecionada.</p>
-              ) : (
-                <ul className="space-y-1">
-                  {form.media_ids.map((mediaId) => {
-                    const item = media.data?.media.find((entry) => entry.id === mediaId);
-                    return (
-                      <li
-                        className="truncate text-xs text-[#cbd5e1]"
-                        key={mediaId}
-                        title={item?.filename ?? mediaId}
-                      >
-                        {item?.filename ?? "Arquivo indisponível"}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-          )}
           <label className="grid gap-2 text-sm text-[#cbd5e1]">
             Nome do loop
             <input
@@ -722,48 +822,7 @@ export function LoopsPage() {
           </label>
           </fieldset>
 
-          <fieldset>
-            <legend className="mb-2 text-sm text-[#cbd5e1]">
-              Contas Instagram ({form.account_ids.length} selecionadas)
-            </legend>
-            {loops.data.available_accounts.length === 0 ? (
-              <p className="rounded-lg border border-[#6b552b] bg-[#1c180e] p-3 text-sm text-[#f2d48a]">
-                Não há contas ativas com token válido. Conecte ou reconecte uma conta no Hub de
-                Contas antes de criar o loop.
-              </p>
-            ) : (
-              <div className="grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-                {loops.data.available_accounts.map((account) => {
-                  const checked = form.account_ids.includes(account.id);
-                  return (
-                    <label
-                      className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm ${
-                        checked
-                          ? "border-[#00c9d8] bg-[#0d3036] text-[#e7fdff]"
-                          : "border-[#27334a] bg-[#090b0f] text-[#cbd5e1]"
-                      }`}
-                      key={account.id}
-                    >
-                      <input
-                        className="accent-[#00c9d8]"
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setForm({
-                            ...form,
-                            account_ids: checked
-                              ? form.account_ids.filter((id) => id !== account.id)
-                              : [...form.account_ids, account.id],
-                          })
-                        }
-                      />
-                      @{account.username}
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </fieldset>
+          </details>
           <button
             className="min-h-11 w-full rounded-lg bg-[#00c9d8] px-4 py-2 text-sm font-semibold text-[#062027] hover:bg-[#42dbe5] disabled:cursor-not-allowed disabled:opacity-50"
             type="submit"
@@ -842,26 +901,41 @@ export function LoopsPage() {
                       </span>
                     ))}
                   </div>
+                  <section
+                    aria-label={`Pool de mídias de ${loop.name}`}
+                    className="mt-3 rounded-lg border border-[#202838] bg-[#090b0f] p-3"
+                  >
+                    <h4 className="flex items-center gap-2 text-xs font-medium text-[#cbd5e1]">
+                      <ImageIcon size={14} className="text-[#00c9d8]" />
+                      Pool de mídias ({loop.media_count})
+                    </h4>
+                    {loop.media_names.length > 0 ? (
+                      <ul className="mt-2 space-y-1 text-xs text-[#cbd5e1]">
+                        {loop.media_names.map((name, index) => (
+                          <li
+                            className="break-all"
+                            key={`${loop.media_ids[index]}-${name}`}
+                          >
+                            {name}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-xs text-[#94a3b8]">
+                        Nenhuma mídia pronta para este loop.
+                      </p>
+                    )}
+                  </section>
                   <p className="mt-3 text-xs text-[#94a3b8]">
                     Próxima execução: {formatDate(loop.next_run_at)}
                   </p>
                   <p className="mt-1 text-xs text-[#f2d48a]">
-                    {loop.media_count} {loop.media_count === 1 ? "mídia" : "mídias"} ·{" "}
                     {loop.waiting_for_media_count}{" "}
                     {loop.waiting_for_media_count === 1
                       ? "publicação aguardando mídia"
                       : "publicações aguardando mídia"} ·{" "}
                     {loop.published_today_count} publicados hoje · Falhas: {loop.failed_count}
                   </p>
-                  {loop.media_names.length > 0 && (
-                    <ul aria-label={`Mídias de ${loop.name}`} className="mt-2 list-inside list-disc space-y-1 text-xs text-[#cbd5e1]">
-                      {loop.media_names.map((name, index) => (
-                        <li className="break-all" key={`${loop.media_ids[index]}-${name}`}>
-                          {name}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
                 {loops.data.can_manage && (
                   <div className="flex shrink-0 items-start gap-2">

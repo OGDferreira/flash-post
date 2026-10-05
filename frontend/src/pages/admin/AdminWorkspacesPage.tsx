@@ -8,7 +8,7 @@ import {
   type AdminWorkspace,
   type Page,
 } from "@/services/api";
-import { formatDate, Pagination } from "@/pages/admin/AdminUsersPage";
+import { Pagination } from "@/pages/admin/AdminUsersPage";
 
 export function AdminWorkspacesPage() {
   const [searchDraft, setSearchDraft] = useState("");
@@ -74,31 +74,44 @@ export function AdminWorkspacesPage() {
         <>
           <div className="overflow-hidden rounded-xl border border-[#202838] bg-[#0d1015]">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px] border-collapse text-left">
+              <table className="w-full min-w-[1050px] border-collapse text-left">
                 <thead className="border-b border-[#202838] bg-[#0a0d11] text-[11px] uppercase tracking-[0.12em] text-[#64748b]">
                   <tr>
+                    <th className="px-5 py-3.5 font-medium">Chefe autorizado</th>
                     <th className="px-5 py-3.5 font-medium">Workspace</th>
-                    <th className="px-5 py-3.5 font-medium">Owner</th>
-                    <th className="px-5 py-3.5 font-medium">Status</th>
-                    <th className="px-5 py-3.5 font-medium">Membros</th>
-                    <th className="px-5 py-3.5 font-medium">Criado em</th>
+                    <th className="px-5 py-3.5 font-medium">Contas conectadas</th>
+                    <th className="px-5 py-3.5 font-medium">Contas com erro</th>
+                    <th className="px-5 py-3.5 font-medium">Posts em execução</th>
+                    <th className="px-5 py-3.5 font-medium">Colaboradores</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1b2330] text-sm">
                   {workspaces.data.items.map((workspace) => (
                     <tr key={workspace.id} className="hover:bg-[#10141b]">
                       <td className="px-5 py-4">
-                        <p className="font-medium text-[#e6eaf2]">{workspace.name}</p>
-                        <p className="mt-1 text-xs text-[#64748b]">{workspace.slug}</p>
-                      </td>
-                      <td className="px-5 py-4">
-                        <p className="text-[#c7cfdd]">{workspace.owner_name}</p>
+                        <p className="font-medium text-[#e6eaf2]">{workspace.owner_name}</p>
                         <p className="mt-1 text-xs text-[#64748b]">{workspace.owner_email}</p>
                       </td>
-                      <td className="px-5 py-4 text-[#94a3b8]">{workspace.status}</td>
-                      <td className="px-5 py-4 text-[#c7cfdd]">{workspace.members_count}</td>
                       <td className="px-5 py-4 text-[#94a3b8]">
-                        {formatDate(workspace.created_at)}
+                        <p className="text-[#c7cfdd]">{workspace.name}</p>
+                        <p className="mt-1 text-xs text-[#64748b]">{workspace.slug}</p>
+                        <p className="mt-1 text-xs text-[#64748b]">{workspace.members_count} membros · {workspace.status}</p>
+                      </td>
+                      <td className="px-5 py-4 text-[#c7cfdd]">{workspace.connected_accounts}</td>
+                      <td className="px-5 py-4 text-[#f2d48a]">{workspace.errored_accounts}</td>
+                      <td className="px-5 py-4 text-[#c7cfdd]">{workspace.active_posts}</td>
+                      <td className="px-5 py-4">
+                        {workspace.collaborators.length ? (
+                          <ul className="space-y-1 text-xs text-[#c7cfdd]">
+                            {workspace.collaborators.map((person) => (
+                              <li key={person.id}>
+                                {person.full_name} <span className="text-[#64748b]">({person.email})</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-xs text-[#64748b]">Nenhum</span>
+                        )}
                       </td>
                     </tr>
                   ))}

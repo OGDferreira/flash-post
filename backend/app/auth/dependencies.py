@@ -53,7 +53,7 @@ async def require_authenticated_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
 
     user = await db.scalar(select(User).where(User.id == parsed_user_id))
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or not user.is_approved:
         request.session.clear()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
     return user

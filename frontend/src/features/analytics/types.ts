@@ -18,7 +18,11 @@ export type InstagramAnalyticsSummary = {
   period: "today" | "yesterday" | "7d" | "30d" | "all" | "custom";
   followers_count: number | null;
   media_count: number | null;
+  views_count: number;
+  missing_permissions: string[];
+  insights_unavailable: boolean;
   active_accounts: number;
+  active_collaborators: number;
   published_posts: number;
   queued_posts: number;
   failed_posts: number;

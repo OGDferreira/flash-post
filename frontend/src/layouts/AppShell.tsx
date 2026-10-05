@@ -57,6 +57,7 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
   const { user } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const logout = useMutation({
@@ -80,6 +81,10 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
     window.addEventListener("flashpost-toast", showToast);
     return () => window.removeEventListener("flashpost-toast", showToast);
   }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   const hour = Number(
     new Intl.DateTimeFormat("en-US", {
       hour: "numeric",
@@ -91,7 +96,19 @@ export function AppShell({ admin = false }: { admin?: boolean }) {
     hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
   const pageHeading = admin
     ? "Painel da plataforma"
-    : `${greeting}, ${user?.nickname ?? "bem-vindo"}`;
+    : `${greeting}, ${user?.nickname ?? "bem-vindo"} · ${new Intl.DateTimeFormat(
+        "pt-BR",
+        {
+          weekday: "long",
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          timeZone: "America/Sao_Paulo",
+        },
+      ).format(currentTime)}`;
 
   const sidebar = (
     <div className="flex h-full flex-col bg-[#0b0c0e]">

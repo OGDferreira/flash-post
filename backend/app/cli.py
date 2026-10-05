@@ -78,6 +78,7 @@ async def _create_super_admin() -> None:
             platform_role=PlatformRole.SUPER_ADMIN.value,
             is_active=True,
             is_verified=True,
+            is_approved=True,
         )
         db.add(user)
         try:
@@ -108,6 +109,7 @@ async def _create_owner() -> None:
             platform_role=PlatformRole.USER.value,
             is_active=True,
             is_verified=True,
+            is_approved=True,
         )
         db.add(user)
         await db.flush()
@@ -135,12 +137,27 @@ async def _create_owner() -> None:
         print(f"OWNER {user.email} and workspace {workspace.slug} created.")
 
 
-async def _run(action: str) -> None:
+async def _promote_existing_super_admin(email: str) -> None:
+    async with get_session_factory()() as db:
+        user = await db.scalar(select(User).where(func.lower(User.email) == email.casefold()))
+        if user is None:
+            raise ValueError("No existing account was found for that email.")
+        if user.platform_role == PlatformRole.SUPER_ADMIN.value:
+            print("The existing account is already a SUPER_ADMIN. No changes made.")
+            return
+        user.platform_role = PlatformRole.SUPER_ADMIN.value
+        await db.commit()
+        print(f"Existing account {user.email} promoted to SUPER_ADMIN; all other data was preserved.")
+
+
+async def _run(action: str, email: str | None = None) -> None:
     try:
         if action == "create-super-admin":
             await _create_super_admin()
-        else:
+        elif action == "create-owner":
             await _create_owner()
+        elif email is not None:
+            await _promote_existing_super_admin(email)
     finally:
         await dispose_engine()
 
@@ -150,10 +167,15 @@ def main() -> None:
     parser.add_subparsers(dest="action", required=True)
     parser.add_parser("create-super-admin", help="Create a platform SUPER_ADMIN account.")
     parser.add_parser("create-owner", help="Create the first OWNER and workspace.")
+    promote = parser.add_parser(
+        "promote-super-admin",
+        help="Promote an existing account without changing its password or relations.",
+    )
+    promote.add_argument("email", help="Email address of the existing account.")
     args = parser.parse_args()
 
     try:
-        asyncio.run(_run(args.action))
+        asyncio.run(_run(args.action, getattr(args, "email", None)))
     except (ValueError, RuntimeError) as exc:
         print(f"Bootstrap failed: {exc}", file=sys.stderr)
         raise SystemExit(1) from None

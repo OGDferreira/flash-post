@@ -86,6 +86,7 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     is_verified: bool
+    is_approved: bool
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None

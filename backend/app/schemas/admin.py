@@ -18,6 +18,7 @@ class AdminUser(BaseModel):
     email: EmailStr
     role: str
     status: str
+    is_approved: bool
     workspace_name: str | None
     created_at: datetime
     last_login_at: datetime | None
@@ -30,6 +31,12 @@ class AdminUsersPage(BaseModel):
     page_size: int
 
 
+class AdminWorkspaceCollaborator(BaseModel):
+    id: UUID
+    full_name: str
+    email: EmailStr
+
+
 class AdminWorkspace(BaseModel):
     id: UUID
     name: str
@@ -38,6 +45,10 @@ class AdminWorkspace(BaseModel):
     owner_email: EmailStr
     status: str
     members_count: int
+    connected_accounts: int
+    errored_accounts: int
+    active_posts: int
+    collaborators: list[AdminWorkspaceCollaborator]
     created_at: datetime
 
 

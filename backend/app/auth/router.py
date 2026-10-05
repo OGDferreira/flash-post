@@ -72,6 +72,7 @@ def _user_response(user: User, membership: WorkspaceMember | None) -> UserRespon
         role=_user_role(user, membership),
         is_active=user.is_active,
         is_verified=user.is_verified,
+        is_approved=user.is_approved,
         created_at=user.created_at,
         updated_at=user.updated_at,
         last_login_at=user.last_login_at,
@@ -177,7 +178,7 @@ async def register(
         platform_role=PlatformRole.USER.value,
         is_active=True,
         is_verified=False,
-        last_login_at=datetime.now(timezone.utc),
+        is_approved=False,
     )
     db.add(user)
     try:
@@ -206,9 +207,6 @@ async def register(
         ) from None
 
     await db.refresh(user)
-    request.session.clear()
-    request.session["user_id"] = str(user.id)
-    request.session["workspace_id"] = str(workspace.id)
     csrf_token = csrf_token_for(request)
     return AuthResponse(user=_user_response(user, membership), csrf_token=csrf_token)
 
@@ -230,6 +228,12 @@ async def login(payload: LoginRequest, request: Request, db: DbSession) -> AuthR
     if user is None or not user.is_active or not is_valid:
         await limiter.record_failure(rate_key)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email or password is incorrect.")
+    if not user.is_approved:
+        await limiter.record_failure(rate_key)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sua conta aguarda aprovação do administrador.",
+        )
 
     membership = await db.scalar(
         select(WorkspaceMember)

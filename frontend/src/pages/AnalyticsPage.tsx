@@ -59,6 +59,7 @@ export function AnalyticsPage() {
     queryFn: () => {
       const query = new URLSearchParams();
       query.append("account_ids", selectedAccountId);
+      query.set("include_meta_insights", "true");
       return apiRequest<InstagramAnalyticsSummary>(
         `/api/analytics/summary?${query.toString()}`,
       );
@@ -106,8 +107,8 @@ export function AnalyticsPage() {
     },
     {
       title: "Visualizações",
-      value: "Não disponível",
-      helper: "Requer leitura dos Insights da Meta",
+      value: formatCount(summary.data?.views_count),
+      helper: "Informado pelos Insights da Meta",
       icon: Eye,
     },
     {
@@ -181,6 +182,18 @@ export function AnalyticsPage() {
               {summary.error && (
                 <ErrorState message="Não foi possível carregar as métricas desta conta." />
               )}
+              {summary.data?.missing_permissions.length ? (
+                <section
+                  className="rounded-xl border border-[#6b552b] bg-[#1c180e] p-4 text-sm text-[#f2d48a]"
+                  role="alert"
+                >
+                  <h3 className="font-medium">Permissão necessária para Analytics</h3>
+                  <p className="mt-1 leading-6">
+                    Autorize {summary.data.missing_permissions.join(", ")} no aplicativo Meta
+                    conectado para carregar os Insights.
+                  </p>
+                </section>
+              ) : null}
               {summary.isLoading && <LoadingState label="Carregando dados da conta" />}
               <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                 {metrics.map(({ title, value, helper, icon: Icon }) => (

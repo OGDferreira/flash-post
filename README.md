@@ -70,9 +70,11 @@ therefore requires the web service to remain running.
 ### Account creation
 
 The public `/register` page creates a customer `OWNER`, a workspace, and its
-active owner membership, then signs the user in. Nicknames are public display
-names: Unicode text is preserved, whitespace is collapsed, and a separate
-case-folded key enforces platform-wide uniqueness.
+owner membership. New users remain pending and cannot sign in until a platform
+administrator approves them in the Admin area. The approval migration keeps
+existing users approved. Nicknames are public display names: Unicode text is
+preserved, whitespace is collapsed, and a separate case-folded key enforces
+platform-wide uniqueness.
 
 Only a platform administrator is created through the administrative CLI:
 
@@ -84,6 +86,9 @@ The CLI prompts for a name, email, nickname, and password; passwords are typed
 without echo and are never printed. It requests confirmation before creating
 an additional `SUPER_ADMIN`. This administrative operation is not a public
 HTTP endpoint.
+To grant `SUPER_ADMIN` to an existing user without changing their password,
+workspace, or related records, use
+`python -m app.cli promote-super-admin <existing-email>`.
 
 ## Database and migrations
 
@@ -125,11 +130,16 @@ connection.
 Migration `20261003_11` adds account health errors, workspace-specific
 Sharkbot webhook URLs, and timestamped, deduplicated Sharkbot events.
 Migration `20261003_12` adds colored profile folders for organizing Instagram
-accounts. The Loops page shows only published-today and failure counts; owners
-can inspect detailed publication errors in its separate Errors tab. Accounts
-marked with errors are detached from loops and queued jobs, and can be removed
-from the Hub. Removing an errored account permanently deletes its associated
-publication-job history, so review its entries in the Errors tab first.
+accounts. Migration `20261004_13` snapshots the collaborator connection rate
+for each Instagram account. Migration `20261005_14` adds manual user approval;
+existing accounts remain approved by default, while new public registrations
+require approval before login.
+The Loops page displays each loop's connected accounts and current media pool;
+owners can inspect detailed publication errors in its separate Errors tab.
+Accounts marked with errors are detached from loops and queued jobs, and can
+be removed from the Hub. Removing an errored account permanently deletes its
+associated publication-job history, so review its entries in the Errors tab
+first.
 The owner-only **Feed** page lists workspace profiles, loads up to 25 recent
 Instagram media items per selected profile, and shows profile snapshots and
 media engagement returned by Instagram. The **Colaboradores** navigation and
@@ -154,9 +164,10 @@ revoking it in Instagram settings.
 The Hub displays each account's profile thumbnail. The workspace **Configurações**
 page is where an OWNER registers, edits, selects, and removes Meta apps. Profile
 follower and media counts are snapshots from the most recent OAuth connection.
-The dashboard aggregates those snapshots and FlashPost publication-job counts
-for the accounts selected by the user; Meta Insights such as reach, impressions,
-and interactions are not currently queried.
+The dashboard aggregates these snapshots and FlashPost publication-job counts
+for the accounts selected by the user. Analytics also requests Meta's views
+metric when the app has the `instagram_business_manage_insights` permission;
+the interface identifies this permission when Meta denies access.
 
 Create a Business-type Meta app, add the Instagram product, configure
 Instagram Business Login, and register this exact OAuth redirect URI in Meta:
@@ -297,8 +308,8 @@ Initial endpoints:
 | `GET` | `/readiness` | Database readiness check |
 | `GET` | `/api/auth/csrf` | Obtain a CSRF token for the current session |
 | `GET` | `/api/auth/nickname-availability` | Check whether a nickname can be registered |
-| `POST` | `/api/auth/register` | Create an OWNER, workspace, membership, and signed-in session |
-| `POST` | `/api/auth/login` | Sign in |
+| `POST` | `/api/auth/register` | Create a pending OWNER, workspace, and membership |
+| `POST` | `/api/auth/login` | Sign in (approved users only) |
 | `POST` | `/api/auth/logout` | Sign out and rotate the CSRF token |
 | `GET` | `/api/auth/me` | Current authenticated user |
 | `GET`, `PATCH` | `/api/profile` | Read/update profile name, nickname, and avatar URL |
@@ -317,6 +328,7 @@ Initial endpoints:
 | `DELETE` | `/api/loops/{id}` | Delete a loop and its queued intents (OWNER only) |
 | `GET` | `/api/admin/summary` | Real user/workspace totals |
 | `GET` | `/api/admin/users` | Searchable, paginated user list |
+| `POST` | `/api/admin/users/{user_id}/approve` | Approve a pending user |
 | `GET` | `/api/admin/workspaces` | Searchable, paginated workspace list |
 | `GET` | `/api/admin/system/settings` | Non-secret system settings |
 
@@ -380,7 +392,8 @@ backend/tests/     Isolated migration-backed API and security tests
 frontend/src/      React application, layouts, pages, auth, and API client
 ```
 
-Instagram account connection is implemented behind Meta app configuration.
-Publishing, Loops, analytics, Shark, finance, ranking, Redis, workers, and
-other product modules remain out of scope until their requirements are
-defined.
+Instagram account connection, automated Loops and publishing, Dashboard,
+Analytics, and platform administration are implemented behind the configured
+workspace and Meta permissions. Sharkbot integrations are available per
+workspace. Finance, ranking, Redis, and distributed workers remain outside
+this release.

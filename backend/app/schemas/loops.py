@@ -45,6 +45,7 @@ class InstagramLoopCreateRequest(BaseModel):
 
 class InstagramLoopAccountResponse(BaseModel):
     id: UUID
+    profile_folder_id: UUID | None
     username: str
     token_expires_at: datetime
 

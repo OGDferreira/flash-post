@@ -35,7 +35,11 @@ class InstagramAnalyticsSummary(BaseModel):
     period: str
     followers_count: int | None
     media_count: int | None
+    views_count: int
+    missing_permissions: list[str]
+    insights_unavailable: bool
     active_accounts: int
+    active_collaborators: int
     published_posts: int
     queued_posts: int
     failed_posts: int

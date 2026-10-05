@@ -97,6 +97,7 @@ export type User = {
   role: "SUPER_ADMIN" | "OWNER" | "COLLABORATOR" | "USER";
   is_active: boolean;
   is_verified: boolean;
+  is_approved: boolean;
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
@@ -125,6 +126,7 @@ export type AdminUser = {
   email: string;
   role: string;
   status: string;
+  is_approved: boolean;
   workspace_name: string | null;
   created_at: string;
   last_login_at: string | null;
@@ -138,6 +140,10 @@ export type AdminWorkspace = {
   owner_email: string;
   status: string;
   members_count: number;
+  connected_accounts: number;
+  errored_accounts: number;
+  active_posts: number;
+  collaborators: { id: string; full_name: string; email: string }[];
   created_at: string;
 };
 

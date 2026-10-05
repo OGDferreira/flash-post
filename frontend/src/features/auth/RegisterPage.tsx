@@ -77,9 +77,9 @@ export function RegisterPage() {
           nickname: normalizePublicNickname(values.nickname),
         },
       }),
-    onSuccess: ({ user: signedInUser }) => {
-      queryClient.setQueryData(["auth", "me"], signedInUser);
-      navigate("/dashboard", { replace: true });
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ["auth", "me"] });
+      navigate("/login", { replace: true, state: { registrationPending: true } });
     },
   });
 

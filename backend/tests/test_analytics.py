@@ -5,8 +5,15 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analytics import router as analytics_router
 from app.core.crypto import encrypt_value
-from app.models import InstagramAccount, InstagramLoop, InstagramPublicationJob
+from app.instagram.oauth import InstagramInsightsPermissionError
+from app.models import (
+    InstagramAccount,
+    InstagramLoop,
+    InstagramPublicationJob,
+    SharkEvent,
+)
 
 
 async def _login(client: AsyncClient) -> None:
@@ -38,6 +45,7 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
     client: AsyncClient,
     db_session: AsyncSession,
     owner,
+    collaborator,
 ) -> None:
     _user, workspace = owner
     first = _account(workspace.id, "flashpost_one", 120, 16)
@@ -108,6 +116,7 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
     assert result["followers_count"] == 200
     assert result["media_count"] == 25
     assert result["active_accounts"] == 2
+    assert result["active_collaborators"] == 1
     assert result["published_posts"] == 1
     assert result["queued_posts"] == 1
     assert result["failed_posts"] == 1
@@ -130,6 +139,89 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
     today = await client.get("/api/analytics/summary", params={"period": "today"})
     assert today.status_code == 200
     assert today.json()["published_posts"] == 1
+
+
+@pytest.mark.anyio
+async def test_analytics_reports_missing_meta_insights_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+    account = _account(workspace.id, "insights_permission_test", 10, 2)
+    db_session.add(account)
+    await db_session.commit()
+
+    async def permission_denied(*_args):
+        raise InstagramInsightsPermissionError
+
+    monkeypatch.setattr(analytics_router, "fetch_instagram_views", permission_denied)
+    await _login(client)
+    response = await client.get(
+        "/api/analytics/summary",
+        params={
+            "account_ids": str(account.id),
+            "include_meta_insights": "true",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["missing_permissions"] == [
+        "instagram_business_manage_insights"
+    ]
+    assert response.json()["insights_unavailable"] is False
+
+
+@pytest.mark.anyio
+async def test_revenue_period_uses_sao_paulo_local_day_boundaries(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    db_session.add_all(
+        [
+            SharkEvent(
+                workspace_id=workspace.id,
+                event_type="pix_paid",
+                source_event_key="before-local-day",
+                amount="10.00",
+                occurred_at=datetime(2026, 3, 8, 2, 59, tzinfo=timezone.utc),
+            ),
+            SharkEvent(
+                workspace_id=workspace.id,
+                event_type="pix_paid",
+                source_event_key="on-local-day",
+                amount="25.00",
+                occurred_at=datetime(2026, 3, 8, 3, 0, tzinfo=timezone.utc),
+            ),
+            SharkEvent(
+                workspace_id=workspace.id,
+                event_type="pix_paid",
+                source_event_key="after-local-day",
+                amount="40.00",
+                occurred_at=datetime(2026, 3, 9, 3, 0, tzinfo=timezone.utc),
+            ),
+        ]
+    )
+    await db_session.commit()
+    await _login(client)
+
+    response = await client.get(
+        "/api/analytics/summary",
+        params={
+            "period": "custom",
+            "start_date": "2026-03-08",
+            "end_date": "2026-03-08",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["pix_paid_amount"] == "25.00"
+    assert response.json()["daily_revenue"] == [
+        {"day": "2026-03-08", "amount": "25.00"}
+    ]
 
 
 @pytest.mark.anyio

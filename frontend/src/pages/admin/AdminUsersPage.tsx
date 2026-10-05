@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Search } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest, type AdminUser, type Page } from "@/services/api";
 
 export function AdminUsersPage() {
+  const queryClient = useQueryClient();
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -16,6 +17,13 @@ export function AdminUsersPage() {
       apiRequest<Page<AdminUser>>(
         `/api/admin/users?page=${page}&page_size=${pageSize}&q=${encodeURIComponent(search)}`,
       ),
+  });
+  const approveUser = useMutation({
+    mutationFn: (userId: string) =>
+      apiRequest<AdminUser>(`/api/admin/users/${userId}/approve`, { method: "POST" }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+    },
   });
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
@@ -67,9 +75,18 @@ export function AdminUsersPage() {
         <EmptyState message="Nenhum usuário encontrado." />
       ) : (
         <>
+          {approveUser.error && (
+            <ErrorState
+              message={
+                approveUser.error instanceof Error
+                  ? approveUser.error.message
+                  : "Não foi possível aprovar o usuário."
+              }
+            />
+          )}
           <div className="overflow-hidden rounded-xl border border-[#202838] bg-[#0d1015]">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] border-collapse text-left">
+              <table className="w-full min-w-[920px] border-collapse text-left">
                 <thead className="border-b border-[#202838] bg-[#0a0d11] text-[11px] uppercase tracking-[0.12em] text-[#64748b]">
                   <tr>
                     <th className="px-5 py-3.5 font-medium">Usuário</th>
@@ -78,6 +95,7 @@ export function AdminUsersPage() {
                     <th className="px-5 py-3.5 font-medium">Workspace</th>
                     <th className="px-5 py-3.5 font-medium">Criado em</th>
                     <th className="px-5 py-3.5 font-medium">Último login</th>
+                    <th className="px-5 py-3.5 font-medium">Acesso</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1b2330] text-sm">
@@ -89,8 +107,16 @@ export function AdminUsersPage() {
                       </td>
                       <td className="px-5 py-4 text-[#c7cfdd]">{user.role}</td>
                       <td className="px-5 py-4">
-                        <span className="rounded-md border border-[#1d3b37] bg-[#0c1715] px-2 py-1 text-xs text-[#9de6d1]">
-                          {user.status}
+                        <span
+                          className={`rounded-md border px-2 py-1 text-xs ${
+                            user.status === "PENDING_APPROVAL"
+                              ? "border-[#6b552b] bg-[#1c180e] text-[#f2d48a]"
+                              : user.status === "ACTIVE"
+                                ? "border-[#1d3b37] bg-[#0c1715] text-[#9de6d1]"
+                                : "border-[#47252d] bg-[#1a1013] text-[#f1a3ad]"
+                          }`}
+                        >
+                          {user.status === "PENDING_APPROVAL" ? "Aguardando aprovação" : user.status}
                         </span>
                       </td>
                       <td className="px-5 py-4 text-[#94a3b8]">
@@ -101,6 +127,22 @@ export function AdminUsersPage() {
                       </td>
                       <td className="px-5 py-4 text-[#94a3b8]">
                         {user.last_login_at ? formatDate(user.last_login_at) : "Nunca"}
+                      </td>
+                      <td className="px-5 py-4">
+                        {user.is_approved ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-[#9de6d1]">
+                            <Check size={14} /> Aprovado
+                          </span>
+                        ) : (
+                          <button
+                            className="min-h-8 rounded-lg bg-[#536dfe] px-3 text-xs font-medium text-white hover:bg-[#667eea] disabled:opacity-50"
+                            disabled={approveUser.isPending}
+                            onClick={() => approveUser.mutate(user.id)}
+                            type="button"
+                          >
+                            Aprovar acesso
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

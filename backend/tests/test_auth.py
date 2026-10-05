@@ -323,7 +323,7 @@ async def test_profile_avatar_upload_uses_private_storage_and_signed_redirect(
 
 
 @pytest.mark.anyio
-async def test_registration_creates_owner_workspace_membership_and_session(
+async def test_registration_creates_pending_owner_without_signing_in(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     token = await csrf(client)
@@ -345,27 +345,81 @@ async def test_registration_creates_owner_workspace_membership_and_session(
     assert result["user"]["nickname"] == "Gui Ferreira"
     assert result["user"]["role"] == "OWNER"
     assert result["user"]["is_verified"] is False
+    assert result["user"]["is_approved"] is False
     assert "password_hash" not in result["user"]
     assert "password" not in result["user"]
-    assert result["csrf_token"] != token
+    assert result["csrf_token"] == token
 
     current_user = await client.get("/api/auth/me")
     workspace = await client.get("/api/workspace")
-    assert current_user.status_code == 200
-    assert current_user.json()["id"] == result["user"]["id"]
-    assert workspace.status_code == 200
-    assert workspace.json()["name"] == "Operação de Gui Ferreira"
-    assert workspace.json()["slug"] == "gui-ferreira"
-    assert workspace.json()["role"] == "OWNER"
+    assert current_user.status_code == 401
+    assert workspace.status_code == 401
+    login_response = await client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={"email": "guiops@example.com", "password": "a secure password"},
+    )
+    assert login_response.status_code == 403
+    assert login_response.json()["detail"] == "Sua conta aguarda aprovação do administrador."
     user = await db_session.scalar(select(User).where(User.email == "guiops@example.com"))
     assert user is not None
     assert user.platform_role == "USER"
+    assert user.is_approved is False
     assert user.password_hash != "a secure password"
     assert verify_password("a secure password", user.password_hash)
 
 
 @pytest.mark.anyio
-async def test_registration_accepts_unicode_public_nickname(client: AsyncClient) -> None:
+async def test_super_admin_can_approve_new_owner_without_changing_existing_user_data(
+    client: AsyncClient,
+    owner,
+    db_session: AsyncSession,
+) -> None:
+    owner_user, _workspace = owner
+    owner_user.platform_role = "SUPER_ADMIN"
+    original_hash = owner_user.password_hash
+    original_nickname = owner_user.nickname
+    await db_session.commit()
+
+    register_token = await csrf(client)
+    created = await client.post(
+        "/api/auth/register",
+        headers={"X-CSRF-Token": register_token},
+        json={
+            "full_name": "Waiting Owner",
+            "email": "waiting@example.com",
+            "nickname": "Waiting Owner",
+            "password": "a secure password",
+            "confirm_password": "a secure password",
+        },
+    )
+    assert created.status_code == 201, created.text
+    pending_id = created.json()["user"]["id"]
+
+    admin_auth = await login(
+        client,
+        "owner@example.com",
+        "correct horse battery staple",
+    )
+    approval = await client.post(
+        f"/api/admin/users/{pending_id}/approve",
+        headers={"X-CSRF-Token": admin_auth["csrf_token"]},
+    )
+
+    assert approval.status_code == 200, approval.text
+    assert approval.json()["is_approved"] is True
+    assert owner_user.platform_role == "SUPER_ADMIN"
+    assert owner_user.password_hash == original_hash
+    assert owner_user.nickname == original_nickname
+    approved_login = await login(client, "waiting@example.com", "a secure password")
+    assert approved_login["user"]["is_approved"] is True
+
+
+@pytest.mark.anyio
+async def test_registration_accepts_unicode_public_nickname(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
     token = await csrf(client)
     response = await client.post(
         "/api/auth/register",
@@ -382,14 +436,17 @@ async def test_registration_accepts_unicode_public_nickname(client: AsyncClient)
     assert response.status_code == 201, response.text
     assert response.json()["user"]["nickname"] == "João Ads"
     assert response.json()["user"]["nickname"] != response.json()["user"]["nickname"].lower()
-    workspace = await client.get("/api/workspace")
-    assert workspace.json()["name"] == "Operação de João Ads"
-    assert workspace.json()["slug"] == "joao-ads"
+    workspace = await db_session.scalar(
+        select(Workspace).where(Workspace.name == "Operação de João Ads")
+    )
+    assert workspace is not None
+    assert workspace.slug == "joao-ads"
 
 
 @pytest.mark.anyio
 async def test_registration_adds_suffix_when_workspace_slug_is_taken(
     client: AsyncClient,
+    db_session: AsyncSession,
 ) -> None:
     async def create(nickname: str, email: str) -> dict:
         response = await client.post(
@@ -408,11 +465,14 @@ async def test_registration_adds_suffix_when_workspace_slug_is_taken(
 
     await create("00 do Site", "first@example.com")
     await create("00-do-site", "second@example.com")
-    workspace = await client.get("/api/workspace")
+    workspaces = (
+        await db_session.scalars(select(Workspace).order_by(Workspace.slug))
+    ).all()
 
-    assert workspace.status_code == 200
-    assert workspace.json()["name"] == "Operação de 00-do-site"
-    assert workspace.json()["slug"] == "00-do-site-2"
+    assert [(workspace.name, workspace.slug) for workspace in workspaces] == [
+        ("Operação de 00 do Site", "00-do-site"),
+        ("Operação de 00-do-site", "00-do-site-2"),
+    ]
 
 
 @pytest.mark.anyio
