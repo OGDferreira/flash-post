@@ -21,9 +21,12 @@ from app.models import (
     InstagramAccount,
     InstagramPublicationJob,
     SharkEvent,
+    User,
     WorkspaceMember,
 )
 from app.schemas.analytics import (
+    AccountConnectionRank,
+    DailyAccountConnectionMetric,
     DailyPublicationMetric,
     DailyRevenueMetric,
     InstagramAccountAnalytics,
@@ -106,6 +109,7 @@ async def get_analytics_summary(
             WorkspaceMember.status == "ACTIVE",
         )
     ) or 0
+
     today = now.astimezone(BRAZIL_TIME_ZONE).date()
     if period == "custom":
         period_start = datetime.combine(
@@ -152,7 +156,95 @@ async def get_analytics_summary(
     else:
         period_start = None
         period_end = None
+    connection_period_end = period_end or now
+    recent_chart_start = datetime.combine(
+        today - timedelta(days=29),
+        datetime.min.time(),
+        tzinfo=BRAZIL_TIME_ZONE,
+    ).astimezone(timezone.utc)
+    connection_chart_start = max(period_start, recent_chart_start) if period_start else recent_chart_start
+    connection_chart_end = min(connection_period_end, now)
 
+    member_connection_conditions = [
+        InstagramAccount.workspace_id == access.workspace.id,
+        InstagramAccount.connected_by_user_id == User.id,
+        InstagramAccount.first_connected_at.is_not(None),
+        InstagramAccount.first_connected_at < connection_period_end,
+    ]
+    if period_start is not None:
+        member_connection_conditions.append(
+            InstagramAccount.first_connected_at >= period_start
+        )
+    member_connection_count = (
+        select(func.count(InstagramAccount.id))
+        .where(*member_connection_conditions)
+        .correlate(User)
+        .scalar_subquery()
+    )
+    connection_ranking_rows = (
+        await db.execute(
+            select(
+                User.id,
+                User.full_name,
+                WorkspaceMember.role,
+                member_connection_count.label("connected_accounts"),
+            )
+            .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
+            .where(
+                WorkspaceMember.workspace_id == access.workspace.id,
+                WorkspaceMember.role.in_(("OWNER", "COLLABORATOR")),
+                WorkspaceMember.status == "ACTIVE",
+            )
+            .order_by(member_connection_count.desc(), User.full_name, User.id)
+        )
+    ).all()
+    account_connection_ranking = [
+        AccountConnectionRank(
+            user_id=user_id,
+            full_name=full_name,
+            role=role,
+            connected_accounts=connected_accounts,
+        )
+        for user_id, full_name, role, connected_accounts in connection_ranking_rows
+    ]
+
+    connection_dialect = db.get_bind().dialect.name
+    local_connection_date = (
+        func.date(
+            func.timezone("America/Sao_Paulo", InstagramAccount.first_connected_at)
+        )
+        if connection_dialect == "postgresql"
+        else func.date(InstagramAccount.first_connected_at, "-3 hours")
+    )
+    connection_rows = await db.execute(
+        select(
+            local_connection_date,
+            func.count(InstagramAccount.id),
+        )
+        .where(
+            InstagramAccount.workspace_id == access.workspace.id,
+            InstagramAccount.first_connected_at >= connection_chart_start,
+            InstagramAccount.first_connected_at < connection_chart_end,
+        )
+        .group_by(local_connection_date)
+        .order_by(local_connection_date)
+    )
+    connection_counts_by_day = {
+        day.isoformat() if isinstance(day, date) else day: count
+        for day, count in connection_rows
+    }
+    first_chart_day = connection_chart_start.astimezone(BRAZIL_TIME_ZONE).date()
+    last_chart_day = (
+        connection_chart_end - timedelta(microseconds=1)
+    ).astimezone(BRAZIL_TIME_ZONE).date()
+    daily_account_connections = [
+        DailyAccountConnectionMetric(
+            day=day,
+            connected_accounts=connection_counts_by_day.get(day.isoformat(), 0),
+        )
+        for offset in range(max((last_chart_day - first_chart_day).days + 1, 0))
+        if (day := first_chart_day + timedelta(days=offset))
+    ]
     event_conditions = [SharkEvent.workspace_id == access.workspace.id]
     if period_start is not None:
         event_conditions.append(SharkEvent.occurred_at >= period_start)
@@ -272,6 +364,11 @@ async def get_analytics_summary(
 
     account_metrics: list[InstagramAccountAnalytics] = []
     active_accounts = 0
+    errored_accounts = sum(account.status == "error" for account in accounts)
+    disconnected_accounts = sum(
+        account.status == "disconnected" for account in accounts
+    )
+    expired_accounts = 0
     views_count = 0
     missing_permissions: list[str] = []
     insights_unavailable = False
@@ -281,6 +378,7 @@ async def get_analytics_summary(
         published = counts.get("published", 0)
         queued = sum(counts.get(status, 0) for status in _QUEUED_STATUSES)
         failed = counts.get("failed", 0)
+        token_expires_at = _utc(account.token_expires_at)
         if account.status == "connected" and _utc(account.token_expires_at) > now:
             active_accounts += 1
             if include_meta_insights and account.encrypted_access_token is not None:
@@ -305,6 +403,8 @@ async def get_analytics_summary(
                             account.id,
                             type(exc).__name__,
                         )
+        elif account.status == "connected" and token_expires_at <= now:
+            expired_accounts += 1
         account_metrics.append(
             InstagramAccountAnalytics(
                 account_id=account.id,
@@ -343,6 +443,9 @@ async def get_analytics_summary(
         missing_permissions=sorted(set(missing_permissions)),
         insights_unavailable=insights_unavailable,
         active_accounts=active_accounts,
+        errored_accounts=errored_accounts,
+        disconnected_accounts=disconnected_accounts,
+        expired_accounts=expired_accounts,
         active_collaborators=active_collaborators,
         published_posts=sum(account.published_posts for account in account_metrics),
         queued_posts=sum(account.queued_posts for account in account_metrics),
@@ -356,4 +459,6 @@ async def get_analytics_summary(
         accounts=account_metrics,
         daily_publications=daily_publications,
         daily_revenue=daily_revenue,
+        daily_account_connections=daily_account_connections,
+        account_connection_ranking=account_connection_ranking,
     )

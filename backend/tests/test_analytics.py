@@ -174,6 +174,53 @@ async def test_analytics_reports_missing_meta_insights_permission(
 
 
 @pytest.mark.anyio
+async def test_analytics_reports_account_health_team_ranking_and_daily_connections(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    collaborator,
+) -> None:
+    owner_user, workspace = owner
+    now = datetime.now(timezone.utc)
+    accounts = [
+        _account(workspace.id, "active-owner-account", 10, 2),
+        _account(workspace.id, "error-owner-account", 10, 2),
+        _account(workspace.id, "disconnected-collaborator-account", 10, 2),
+        _account(workspace.id, "expired-collaborator-account", 10, 2),
+    ]
+    accounts[0].connected_by_user_id = owner_user.id
+    accounts[0].first_connected_at = now - timedelta(days=2)
+    accounts[1].connected_by_user_id = owner_user.id
+    accounts[1].first_connected_at = now - timedelta(days=1)
+    accounts[1].status = "error"
+    accounts[2].connected_by_user_id = collaborator.id
+    accounts[2].first_connected_at = now - timedelta(days=1)
+    accounts[2].status = "disconnected"
+    accounts[3].connected_by_user_id = collaborator.id
+    accounts[3].first_connected_at = now - timedelta(days=3)
+    accounts[3].token_expires_at = now - timedelta(hours=1)
+    db_session.add_all(accounts)
+    await db_session.commit()
+    await _login(client)
+
+    response = await client.get("/api/analytics/summary", params={"period": "7d"})
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["active_accounts"] == 1
+    assert result["errored_accounts"] == 1
+    assert result["disconnected_accounts"] == 1
+    assert result["expired_accounts"] == 1
+    ranking = {entry["role"]: entry["connected_accounts"] for entry in result["account_connection_ranking"]}
+    assert ranking == {"COLLABORATOR": 2, "OWNER": 2}
+    assert sum(
+        entry["connected_accounts"]
+        for entry in result["daily_account_connections"]
+    ) == 4
+    assert len(result["daily_account_connections"]) == 7
+
+
+@pytest.mark.anyio
 async def test_revenue_period_uses_sao_paulo_local_day_boundaries(
     client: AsyncClient,
     db_session: AsyncSession,

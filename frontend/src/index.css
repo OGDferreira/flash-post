@@ -580,6 +580,15 @@ body {
   box-shadow: 0 0 0 3px rgba(83, 109, 254, 0.12);
 }
 
+.app-sidebar-nav {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.app-sidebar-nav::-webkit-scrollbar {
+  display: none;
+}
+
 .dashboard-history-panel {
   padding: 19px;
 }

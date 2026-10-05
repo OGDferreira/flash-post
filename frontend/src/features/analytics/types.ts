@@ -22,6 +22,9 @@ export type InstagramAnalyticsSummary = {
   missing_permissions: string[];
   insights_unavailable: boolean;
   active_accounts: number;
+  errored_accounts: number;
+  disconnected_accounts: number;
+  expired_accounts: number;
   active_collaborators: number;
   published_posts: number;
   queued_posts: number;
@@ -35,4 +38,11 @@ export type InstagramAnalyticsSummary = {
   accounts: InstagramAnalyticsAccount[];
   daily_publications: { day: string; published_posts: number }[];
   daily_revenue: { day: string; amount: string }[];
+  daily_account_connections: { day: string; connected_accounts: number }[];
+  account_connection_ranking: {
+    user_id: string;
+    full_name: string;
+    role: "OWNER" | "COLLABORATOR";
+    connected_accounts: number;
+  }[];
 };

@@ -31,6 +31,18 @@ class DailyRevenueMetric(BaseModel):
     amount: Decimal
 
 
+class DailyAccountConnectionMetric(BaseModel):
+    day: date
+    connected_accounts: int
+
+
+class AccountConnectionRank(BaseModel):
+    user_id: UUID
+    full_name: str
+    role: str
+    connected_accounts: int
+
+
 class InstagramAnalyticsSummary(BaseModel):
     period: str
     followers_count: int | None
@@ -39,6 +51,9 @@ class InstagramAnalyticsSummary(BaseModel):
     missing_permissions: list[str]
     insights_unavailable: bool
     active_accounts: int
+    errored_accounts: int
+    disconnected_accounts: int
+    expired_accounts: int
     active_collaborators: int
     published_posts: int
     queued_posts: int
@@ -52,3 +67,5 @@ class InstagramAnalyticsSummary(BaseModel):
     accounts: list[InstagramAccountAnalytics]
     daily_publications: list[DailyPublicationMetric]
     daily_revenue: list[DailyRevenueMetric]
+    daily_account_connections: list[DailyAccountConnectionMetric]
+    account_connection_ranking: list[AccountConnectionRank]

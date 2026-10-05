@@ -200,7 +200,7 @@ export function AppShell() {
         </div>
       )}
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
+      <nav className="app-sidebar-nav flex-1 space-y-1 overflow-y-auto px-3 py-5">
         {visibleLinkGroups.map((group, groupIndex) => (
           <section
             className={groupIndex ? "mt-4 border-t border-[#202838] pt-3" : ""}
