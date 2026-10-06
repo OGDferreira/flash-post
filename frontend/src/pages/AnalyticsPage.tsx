@@ -134,18 +134,6 @@ export function AnalyticsPage() {
       helper: "Aprovados no período",
       icon: CircleCheck,
     },
-    {
-      title: "Valor faturado",
-      value:
-        accountMetrics?.pix_paid_amount == null
-          ? "—"
-          : new Intl.NumberFormat("pt-BR", {
-              style: "currency",
-              currency: "BRL",
-            }).format(Number(accountMetrics.pix_paid_amount)),
-      helper: "Pix pagos no período, horário de Brasília",
-      icon: BarChart3,
-    },
   ];
   const metaInsightMetrics = [
     { key: "views", title: "Visualizações", icon: Eye },

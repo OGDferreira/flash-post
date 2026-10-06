@@ -19,6 +19,7 @@ from app.core.config import get_settings
 from app.core.rate_limit import LoginRateLimiter
 from app.collaborators.router import router as collaborators_router
 from app.emails.router import router as emails_router
+from app.finance.router import router as finance_router
 from app.legal import router as legal_router
 from app.instagram.router import router as instagram_router
 from app.instagram.folders_router import router as instagram_folders_router
@@ -128,6 +129,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(analytics_router)
     application.include_router(collaborators_router)
     application.include_router(emails_router)
+    application.include_router(finance_router)
     application.include_router(instagram_router)
     application.include_router(instagram_webhooks_router)
     application.include_router(instagram_folders_router)

@@ -436,7 +436,7 @@ async def get_smokepay_finance(
     ]
     return SmokepayFinanceSummary(
         day=now.astimezone(BRAZIL_TIME_ZONE).date().isoformat(),
-        daily_goal=access.workspace.smokepay_daily_goal,
+        daily_goal=access.workspace.daily_withdrawal_goal,
         gross_total=sum((item.gross_amount for item in by_operation), Decimal("0.00")),
         net_total=sum((item.net_amount for item in by_operation), Decimal("0.00")),
         sale_count=sum(item.sale_count for item in by_operation),
@@ -458,7 +458,7 @@ async def update_smokepay_daily_goal(
     workspace = await db.get(Workspace, access.workspace.id)
     if workspace is None:
         raise HTTPException(status_code=404, detail="Workspace não encontrado.")
-    workspace.smokepay_daily_goal = payload.daily_goal.quantize(Decimal("0.01"))
+    workspace.daily_withdrawal_goal = payload.daily_goal.quantize(Decimal("0.01"))
     await db.commit()
     await db.refresh(workspace)
     return await get_smokepay_finance(access, db)
@@ -541,6 +541,7 @@ async def receive_smokepay_webhook(
             source_event_key=source_key,
             webhook_id=str(event_id)[:160] if event_id is not None else None,
             transaction_id=transaction_id[:160],
+            operation_name=operation.name,
             customer_name=_customer_name(value),
             customer_username=(
                 str(customer.get("username"))[:120]

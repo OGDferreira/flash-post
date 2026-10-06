@@ -209,6 +209,7 @@ class SharkEvent(Base):
     source_event_key: Mapped[str] = mapped_column(String(64), nullable=False)
     webhook_id: Mapped[str | None] = mapped_column(String(160))
     transaction_id: Mapped[str | None] = mapped_column(String(160))
+    operation_name: Mapped[str | None] = mapped_column(String(120))
     customer_name: Mapped[str | None] = mapped_column(String(240))
     customer_username: Mapped[str | None] = mapped_column(String(120))
     bot_name: Mapped[str | None] = mapped_column(String(160))

@@ -163,7 +163,8 @@ existing accounts remain approved by default, while new public registrations
 require approval before login.
 Migration `20261007_19` adds workspace-scoped Smokepay operations and webhook
 credentials, persists gross and split-adjusted net sale values, and stores a
-daily net revenue goal.
+daily withdrawal goal. Migration `20261006_20` adds withdrawal history and
+retains the operation name on each sale for cash-flow history.
 The Loops page displays each loop's connected accounts and current media pool;
 owners can inspect detailed publication errors in its separate Errors tab.
 Accounts marked with errors are detached from loops and queued jobs, and can
@@ -326,9 +327,13 @@ Workspace owners can create and manage multiple Smokepay operations in
 register the full URL displayed by FlashPost in Smokepay and treat it like a
 password. Rotating a key invalidates the previous URL. Approved events are
 deduplicated per operation, and each sale stores its gross amount and the
-net amount calculated with that operation's split at receipt time. The
-dashboard's finance section shows totals for the current São Paulo calendar
-day, a live-polled sales feed, and the workspace's daily net goal.
+net amount calculated with that operation's split at receipt time.
+The **Financeiro** page shows the all-time cash flow: Smokepay net sales are
+inflows, collaborator payments and registered withdrawals are outflows, and
+the balance is net inflows minus those outflows. It includes withdrawal and
+collaborator-payment histories, sales by operation, a live-polled feed, and a
+daily withdrawal goal/progress bar. Session cookies persist for 30 days to
+keep installed PWA sessions available when reopening the app.
 
 The webhook currently expects a JSON payload with a recognizable approved
 event/state (for example `payment.approved`) and a sale amount in currency

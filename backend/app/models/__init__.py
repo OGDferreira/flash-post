@@ -12,6 +12,7 @@ from app.models.smokepay import SmokepayOperation
 from app.models.collaborator_payment import CollaboratorPayment
 from app.models.collaborator_work_day import CollaboratorWorkDay
 from app.models.email_account import EmailAccount
+from app.models.financial_withdrawal import FinancialWithdrawal
 from app.models.instagram_account import InstagramAccount
 from app.models.instagram_app_credential import InstagramAppCredential
 from app.models.instagram_profile_folder import InstagramProfileFolder
@@ -31,6 +32,7 @@ __all__ = [
     "CollaboratorPayment",
     "CollaboratorWorkDay",
     "EmailAccount",
+    "FinancialWithdrawal",
     "InstagramAccount",
     "InstagramAppCredential",
     "InstagramLoop",

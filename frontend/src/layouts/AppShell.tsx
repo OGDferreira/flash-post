@@ -170,7 +170,14 @@ export function AppShell() {
     : workspaceRole === "COLLABORATOR"
       ? collaboratorLinks
       : ownerLinks.filter(({ to }) =>
-          ["/dashboard", "/feature/accounts", "/feature/loops", "/feature/emails", "/feature/collaborators"].includes(to),
+          [
+            "/dashboard",
+            "/feature/accounts",
+            "/feature/loops",
+            "/feature/emails",
+            "/feature/finance",
+            "/feature/collaborators",
+          ].includes(to),
         );
   const visibleLinkGroups = [
     ...(hasWorkspaceOwnerAccess || workspaceRole === "COLLABORATOR"

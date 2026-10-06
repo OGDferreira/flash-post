@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     instagram_publishing_enabled: bool = False
     session_secret: SecretStr | None = None
     master_encryption_key: SecretStr | None = None
-    session_max_age_seconds: Annotated[int, Field(ge=900, le=604800)] = 28800
+    session_max_age_seconds: Annotated[int, Field(ge=900, le=2592000)] = 2592000
     login_max_attempts: Annotated[int, Field(ge=3, le=20)] = 5
     login_window_seconds: Annotated[int, Field(ge=60, le=3600)] = 900
     registration_max_attempts: Annotated[int, Field(ge=3, le=20)] = 5
