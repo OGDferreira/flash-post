@@ -13,6 +13,7 @@ from app.instagram.oauth import (
     instagram_api_error_detail,
     refresh_instagram_long_lived_token,
 )
+from app.instagram.account_state import isolate_inactive_account
 from app.instagram.publishing import InstagramPublishingError, publish_media
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.models import (
@@ -109,20 +110,7 @@ async def _mark_account_as_error(
     account: InstagramAccount,
     reason: str = "A autorização do Instagram expirou ou deixou de ser válida.",
 ) -> None:
-    account.status = "error"
-    account.status_reason = reason[:500]
-    await db.execute(
-        delete(InstagramLoopAccount).where(
-            InstagramLoopAccount.account_id == account.id
-        )
-    )
-    await db.execute(
-        delete(InstagramPublicationJob)
-        .where(
-            InstagramPublicationJob.account_id == account.id,
-            InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
-        )
-    )
+    await isolate_inactive_account(db, account, "error", reason)
 
 
 async def _update_account_health_after_failure(

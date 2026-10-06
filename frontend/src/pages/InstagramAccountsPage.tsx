@@ -74,7 +74,7 @@ export function InstagramAccountsPage() {
   const [disconnectMessage, setDisconnectMessage] = useState<
     { text: string; complete: boolean } | undefined
   >();
-  const [accountFilter, setAccountFilter] = useState<"active" | "issues" | "all">("active");
+  const [accountFilter, setAccountFilter] = useState<"active" | "issues">("active");
   const [accountSearch, setAccountSearch] = useState("");
   const [selectedFolderId, setSelectedFolderId] = useState("all");
   const [showAppSelector, setShowAppSelector] = useState(false);
@@ -118,6 +118,7 @@ export function InstagramAccountsPage() {
       });
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
       void queryClient.invalidateQueries({ queryKey: ["loops"] });
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "folders"] });
     },
   });
   const removeErroredAccount = useMutation({
@@ -193,11 +194,9 @@ export function InstagramAccountsPage() {
   ).length;
   const visibleAccounts = accounts.data.accounts.filter((account) => {
     const active = isInstagramAccountActive(account);
-    const matchesFilter =
-      accountFilter === "all" ||
-      (accountFilter === "active" && active) ||
-      (accountFilter === "issues" && !active);
+    const matchesFilter = accountFilter === "active" ? active : !active;
     const matchesFolder =
+      accountFilter === "issues" ||
       selectedFolderId === "all" ||
       (selectedFolderId === "unassigned"
         ? !account.profile_folder_id
@@ -354,7 +353,7 @@ export function InstagramAccountsPage() {
               onClick={() => setSelectedFolderId("all")}
               type="button"
             >
-              Todas ({accounts.data.accounts.length})
+              Todas ({activeAccountCount})
             </button>
             {(folders.data?.folders ?? []).map((folder) => {
               const count = accounts.data.accounts.filter(
@@ -408,8 +407,7 @@ export function InstagramAccountsPage() {
           <div className="flex rounded-lg border border-[#27334a] bg-[#0d1015] p-1">
             {([
               ["active", `Ativas (${activeAccountCount})`],
-              ["issues", `Com erro (${issueAccountCount})`],
-              ["all", `Todas (${accounts.data.accounts.length})`],
+              ["issues", `Aba Oculta de Erros (${issueAccountCount})`],
             ] as const).map(([filter, label]) => (
               <button
                 className={`rounded-md px-3 py-2 text-xs font-medium transition ${

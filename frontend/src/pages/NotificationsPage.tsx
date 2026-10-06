@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, RefreshCw, WifiOff } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest } from "@/services/api";
@@ -12,6 +12,7 @@ type AccountList = {
     status: "connected" | "disconnected" | "error";
     status_reason: string | null;
     error_at: string | null;
+    connected_at: string;
     token_expires_at: string;
   }[];
 };
@@ -19,6 +20,7 @@ type AccountList = {
 type PublicationFailures = {
   failures: {
     id: string;
+    account_id: string;
     loop_name: string;
     account_username: string;
     media_filename: string | null;
@@ -63,17 +65,27 @@ export function NotificationsPage() {
   });
 
   const hasLoading = accounts.isLoading || failures.isLoading || metrics.isLoading;
-  const affectedAccounts =
-    accounts.data?.accounts.filter((account) => account.status !== "connected") ??
-    [];
   const insightsIssues =
     metrics.data?.accounts.filter(
-      (account) => account.insights_error || account.profile_metrics_error,
+      (account) =>
+        account.status === "connected" &&
+        (account.insights_error || account.profile_metrics_error),
+    ) ?? [];
+  const activeFailures =
+    failures.data?.failures.filter((failure) =>
+      accounts.data?.accounts.some(
+        (account) =>
+          account.id === failure.account_id &&
+          account.status === "connected" &&
+          Date.parse(failure.updated_at) > Date.parse(account.connected_at),
+      ),
     ) ?? [];
   const hasIssues =
-    affectedAccounts.length > 0 ||
     insightsIssues.length > 0 ||
-    (failures.data?.failures.length ?? 0) > 0;
+    activeFailures.length > 0 ||
+    (metrics.data?.missing_permissions.length ?? 0) > 0 ||
+    metrics.data?.insights_unavailable === true ||
+    metrics.data?.profile_metrics_unavailable === true;
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-6">
@@ -86,8 +98,8 @@ export function NotificationsPage() {
             Central de notificações
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#94a3b8]">
-            Diagnósticos detalhados das contas, da API da Meta e das publicações
-            registradas pelo FlashPost.
+            Alertas de métricas da Meta e de publicações recentes. Contas com erro
+            ou desconectadas ficam na aba oculta de erros do Hub de contas.
           </p>
         </div>
         <button
@@ -126,36 +138,6 @@ export function NotificationsPage() {
               Contas, Insights e publicações não reportaram erros recentes.
             </p>
           </div>
-        </section>
-      )}
-
-      {affectedAccounts.length > 0 && (
-        <section className="dashboard-card rounded-xl p-5">
-          <h2 className="flex items-center gap-2 font-semibold text-[#f1a3ad]">
-            <WifiOff size={16} />
-            Contas que precisam de atenção ({affectedAccounts.length})
-          </h2>
-          <ul className="mt-4 divide-y divide-[#202838]">
-            {affectedAccounts.map((account) => (
-              <li className="py-3 first:pt-0 last:pb-0" key={account.id}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-[#e6eaf2]">
-                    @{account.username}
-                  </p>
-                  <span className="text-xs text-[#94a3b8]">
-                    {account.status === "error" ? "Erro" : "Desconectada"}
-                    {account.error_at ? ` · ${dateTime(account.error_at)}` : ""}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs leading-5 text-[#aeb9ce]">
-                  {account.status_reason ??
-                    (account.status === "error"
-                      ? "O registro não contém o motivo detalhado. Verifique os logs do serviço no Render ou reconecte a conta."
-                      : "A conta está desconectada. Reconecte-a para retomar o acesso às métricas e publicações.")}
-                </p>
-              </li>
-            ))}
-          </ul>
         </section>
       )}
 
@@ -204,14 +186,14 @@ export function NotificationsPage() {
         </section>
       )}
 
-      {(failures.data?.failures.length ?? 0) > 0 && (
+      {activeFailures.length > 0 && (
         <section className="dashboard-card rounded-xl p-5">
           <h2 className="flex items-center gap-2 font-semibold text-[#f1a3ad]">
             <AlertTriangle size={16} />
-            Publicações com falha ({failures.data?.failures.length ?? 0})
+            Publicações com falha ({activeFailures.length})
           </h2>
           <ul className="mt-4 divide-y divide-[#202838]">
-            {failures.data?.failures.map((failure) => (
+            {activeFailures.map((failure) => (
               <li className="py-3 first:pt-0 last:pb-0" key={failure.id}>
                 <div className="flex flex-wrap justify-between gap-2">
                   <p className="text-sm font-medium text-[#e6eaf2]">

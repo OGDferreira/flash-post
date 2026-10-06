@@ -30,9 +30,7 @@ def _account_response(account: InstagramAccount) -> InstagramProfileFolderAccoun
         profile_picture_url=account.profile_picture_url,
         status=account.status,
         connected_at=_utc_datetime(account.connected_at),
-        error_at=(
-            _utc_datetime(account.updated_at) if account.status == "error" else None
-        ),
+        error_at=_utc_datetime(account.error_at) if account.error_at else None,
     )
 
 
@@ -46,6 +44,9 @@ async def _folder_response(
             .where(
                 InstagramAccount.workspace_id == folder.workspace_id,
                 InstagramAccount.profile_folder_id == folder.id,
+                InstagramAccount.status == "connected",
+                InstagramAccount.encrypted_access_token.is_not(None),
+                InstagramAccount.token_expires_at > datetime.now(timezone.utc),
             )
             .order_by(InstagramAccount.username)
         )
@@ -89,6 +90,11 @@ async def list_profile_folders(
         await db.scalars(
             select(InstagramAccount)
             .where(InstagramAccount.workspace_id == access.workspace.id)
+            .where(
+                InstagramAccount.status == "connected",
+                InstagramAccount.encrypted_access_token.is_not(None),
+                InstagramAccount.token_expires_at > datetime.now(timezone.utc),
+            )
             .order_by(InstagramAccount.username)
         )
     ).all()
@@ -184,13 +190,16 @@ async def update_profile_folder_accounts(
                 select(InstagramAccount.id).where(
                     InstagramAccount.workspace_id == access.workspace.id,
                     InstagramAccount.id.in_(payload.account_ids),
+                    InstagramAccount.status == "connected",
+                    InstagramAccount.encrypted_access_token.is_not(None),
+                    InstagramAccount.token_expires_at > datetime.now(timezone.utc),
                 )
             )
         ).all()
     ) if payload.account_ids else set()
     if valid_account_ids != set(payload.account_ids):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Uma ou mais contas não pertencem a este workspace.",
         )
     if payload.account_ids:

@@ -28,6 +28,7 @@ from app.instagram.oauth import (
     exchange_instagram_authorization_code,
     revoke_instagram_permissions,
 )
+from app.instagram.account_state import isolate_inactive_account
 from app.models import (
     InstagramAccount,
     InstagramAppCredential,
@@ -107,11 +108,7 @@ async def list_accounts(
                 media_count=account.media_count,
                 token_expires_at=_utc_datetime(account.token_expires_at),
                 connected_at=_utc_datetime(account.connected_at),
-                error_at=(
-                    _utc_datetime(account.updated_at)
-                    if account.status == "error"
-                    else None
-                ),
+                error_at=_utc_datetime(account.error_at) if account.error_at else None,
                 status=account.status,
                 status_reason=account.status_reason,
             )
@@ -152,11 +149,7 @@ async def update_account_highlights(
         media_count=account.media_count,
         token_expires_at=_utc_datetime(account.token_expires_at),
         connected_at=_utc_datetime(account.connected_at),
-        error_at=(
-            _utc_datetime(account.updated_at)
-            if account.status == "error"
-            else None
-        ),
+        error_at=_utc_datetime(account.error_at) if account.error_at else None,
         status=account.status,
         status_reason=account.status_reason,
     )
@@ -758,6 +751,7 @@ async def instagram_callback(
         account.status = "connected"
         account.connected_at = datetime.now(timezone.utc)
         account.status_reason = None
+        account.error_at = None
     await db.commit()
     return RedirectResponse(_connection_result_page(return_to, "connected"), status_code=303)
 
@@ -790,9 +784,10 @@ async def disconnect_account(
         logger.warning("Instagram token could not be decrypted for revocation (%s).", type(exc).__name__)
         access_token = None
     account.encrypted_access_token = None
-    account.status = "disconnected"
     account.app_credential_id = None
-    account.status_reason = "Conta desconectada manualmente."
+    await isolate_inactive_account(
+        db, account, "disconnected", "Conta desconectada manualmente."
+    )
     await db.commit()
 
     meta_revoked = False

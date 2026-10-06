@@ -64,6 +64,7 @@ class InstagramAccount(Base):
         String(20), nullable=False, server_default=text("'connected'")
     )
     status_reason: Mapped[str | None] = mapped_column()
+    error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     has_highlights: Mapped[bool] = mapped_column(
         nullable=False, default=False, server_default=text("false")
     )

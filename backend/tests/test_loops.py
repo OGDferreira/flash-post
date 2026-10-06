@@ -117,6 +117,9 @@ async def test_owner_can_create_and_read_a_loop(
     refreshed = await client.get("/api/loops")
     assert refreshed.status_code == 200
     assert refreshed.json()["loops"][0]["active_accounts_count"] == 1
+    assert [
+        item["username"] for item in refreshed.json()["loops"][0]["accounts"]
+    ] == ["flashpost_demo"]
 
 
 @pytest.mark.anyio
@@ -697,6 +700,7 @@ async def test_authentication_rejection_immediately_marks_account_as_errored(
     )
     await db_session.refresh(account)
     assert account.status == "error"
+    assert account.error_at is not None
     assert await db_session.get(InstagramLoopAccount, (loop.id, account.id)) is None
     assert await db_session.get(InstagramPublicationJob, queued_job.id) is None
 

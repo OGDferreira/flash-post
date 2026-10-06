@@ -84,6 +84,7 @@ class InstagramLoopsResponse(BaseModel):
 
 class InstagramPublicationFailureResponse(BaseModel):
     id: UUID
+    account_id: UUID
     loop_name: str
     account_username: str
     media_filename: str | None

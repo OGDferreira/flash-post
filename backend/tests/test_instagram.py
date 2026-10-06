@@ -16,7 +16,15 @@ from app.main import _SensitiveAccessLogFilter
 from app.instagram import oauth
 from app.instagram import router as instagram_router
 from app.instagram.oauth import InstagramOAuthError
-from app.models import InstagramAccount, InstagramAppCredential, Workspace
+from app.models import (
+    InstagramAccount,
+    InstagramAppCredential,
+    InstagramLoop,
+    InstagramLoopAccount,
+    InstagramProfileFolder,
+    InstagramPublicationJob,
+    Workspace,
+)
 
 
 async def _csrf(client: AsyncClient) -> str:
@@ -126,7 +134,7 @@ async def test_errored_account_response_includes_error_timestamp(
         instagram_user_id="17840000000000002",
         username="errored_connection",
         connected_at=connected_at,
-        updated_at=error_at,
+        error_at=error_at,
         status="error",
         token_expires_at=error_at + timedelta(days=30),
     )
@@ -362,7 +370,45 @@ async def test_owner_can_disconnect_only_an_account_in_their_workspace(
         encrypted_access_token=encrypt_value("private-access-token"),
         token_expires_at=datetime.now(timezone.utc) + timedelta(days=50),
     )
-    db_session.add(account)
+    folder = InstagramProfileFolder(
+        workspace_id=workspace.id,
+        name="Disconnect folder",
+        color="#123456",
+    )
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Disconnect loop",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        daily_limit_per_account=3,
+        post_type="reels",
+        repeat_media=True,
+        status="active",
+    )
+    db_session.add_all([account, folder, loop])
+    await db_session.flush()
+    account.profile_folder_id = folder.id
+    queued_job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=loop.id,
+        account_id=account.id,
+        scheduled_for=datetime.now(timezone.utc),
+        status="queued",
+    )
+    publishing_job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=loop.id,
+        account_id=account.id,
+        scheduled_for=datetime.now(timezone.utc) + timedelta(minutes=1),
+        status="publishing",
+    )
+    db_session.add_all(
+        [
+            InstagramLoopAccount(loop_id=loop.id, account_id=account.id),
+            queued_job,
+            publishing_job,
+        ]
+    )
     await db_session.commit()
 
     async def fake_revoke(_access_token: str) -> bool:
@@ -381,6 +427,11 @@ async def test_owner_can_disconnect_only_an_account_in_their_workspace(
     await db_session.refresh(account)
     assert account.status == "disconnected"
     assert account.encrypted_access_token is None
+    assert account.profile_folder_id is None
+    assert await db_session.get(InstagramLoopAccount, (loop.id, account.id)) is None
+    assert await db_session.get(InstagramPublicationJob, queued_job.id) is None
+    await db_session.refresh(publishing_job)
+    assert publishing_job.status == "failed"
 
 
 @pytest.mark.anyio
@@ -518,6 +569,7 @@ async def test_owner_can_create_color_folder_and_assign_accounts(
         workspace_id=workspace.id,
         instagram_user_id="17840000000000123",
         username="folder_test_account",
+        encrypted_access_token=encrypt_value("folder-access-token"),
         token_expires_at=datetime.now(timezone.utc) + timedelta(days=50),
     )
     db_session.add(account)

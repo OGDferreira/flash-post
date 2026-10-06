@@ -70,16 +70,13 @@ async def _loop_response(
             .where(
                 InstagramLoopAccount.loop_id == loop.id,
                 InstagramAccount.workspace_id == loop.workspace_id,
+                InstagramAccount.status == "connected",
+                InstagramAccount.encrypted_access_token.is_not(None),
+                InstagramAccount.token_expires_at > now,
             )
             .order_by(InstagramAccount.username)
         )
     ).all()
-    active_accounts_count = sum(
-        account.status == "connected"
-        and account.encrypted_access_token is not None
-        and _utc_datetime(account.token_expires_at) > now
-        for account in accounts
-    )
     waiting_count = await db.scalar(
         select(func.count(InstagramPublicationJob.id)).where(
             InstagramPublicationJob.loop_id == loop.id,
@@ -134,16 +131,12 @@ async def _loop_response(
                 username=account.username,
                 token_expires_at=_utc_datetime(account.token_expires_at),
                 connected_at=_utc_datetime(account.connected_at),
-                error_at=(
-                    _utc_datetime(account.updated_at)
-                    if account.status == "error"
-                    else None
-                ),
+                error_at=_utc_datetime(account.error_at) if account.error_at else None,
                 status=account.status,
             )
             for account in accounts
         ],
-        active_accounts_count=active_accounts_count,
+        active_accounts_count=len(accounts),
         media_ids=[item.id for item in selected_media],
         media_names=[item.filename for item in selected_media],
         media_count=len(selected_media),
@@ -181,11 +174,7 @@ async def list_loops(
                 username=account.username,
                 token_expires_at=_utc_datetime(account.token_expires_at),
                 connected_at=_utc_datetime(account.connected_at),
-                error_at=(
-                    _utc_datetime(account.updated_at)
-                    if account.status == "error"
-                    else None
-                ),
+                error_at=_utc_datetime(account.error_at) if account.error_at else None,
                 status=account.status,
             )
             for account in accounts
@@ -235,6 +224,7 @@ async def list_publication_failures(
         failures=[
             InstagramPublicationFailureResponse(
                 id=job.id,
+                account_id=job.account_id,
                 loop_name=loop_name,
                 account_username=username,
                 media_filename=filename,
