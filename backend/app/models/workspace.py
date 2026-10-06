@@ -38,6 +38,9 @@ class Workspace(Base):
     sharkbot_webhook_token: Mapped[str | None] = mapped_column(
         String(128), unique=True, index=True
     )
+    smokepay_daily_goal: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00"), server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

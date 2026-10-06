@@ -26,6 +26,7 @@ from app.instagram.media_router import router as media_router
 from app.instagram.webhooks import router as instagram_webhooks_router
 from app.loops.router import router as loops_router
 from app.shark.router import router as shark_router
+from app.smokepay.router import router as smokepay_router
 from app.workers.scheduler_service import create_scheduler
 
 settings = get_settings()
@@ -43,6 +44,7 @@ class _SensitiveAccessLogFilter(logging.Filter):
                 args[2].split("?", 1)[0] == "/api/instagram/callback"
                 or args[2].split("?", 1)[0] == "/api/instagram/webhook"
                 or args[2].split("?", 1)[0].startswith("/api/sharkbot/webhook/")
+                or args[2].split("?", 1)[0].startswith("/api/webhooks/smokepay/")
             )
         ):
             sanitized_args = list(args)
@@ -53,6 +55,8 @@ class _SensitiveAccessLogFilter(logging.Filter):
                     "/api/instagram/webhook"
                     if args[2].split("?", 1)[0] == "/api/instagram/webhook"
                     else "/api/sharkbot/webhook/[redacted]"
+                    if args[2].split("?", 1)[0].startswith("/api/sharkbot/webhook/")
+                    else "/api/webhooks/smokepay/[redacted]"
                 )
             )
             record.args = tuple(sanitized_args)
@@ -130,6 +134,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(media_router)
     application.include_router(loops_router)
     application.include_router(shark_router)
+    application.include_router(smokepay_router)
     application.include_router(legal_router)
 
     @application.get("/readiness", tags=["health"])

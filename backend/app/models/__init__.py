@@ -8,6 +8,7 @@ class Base(DeclarativeBase):
 
 
 from app.models.system_setting import SystemSetting
+from app.models.smokepay import SmokepayOperation
 from app.models.collaborator_payment import CollaboratorPayment
 from app.models.collaborator_work_day import CollaboratorWorkDay
 from app.models.email_account import EmailAccount
@@ -39,6 +40,7 @@ __all__ = [
     "InstagramProfileFolder",
     "InstagramPublicationJob",
     "SharkEvent",
+    "SmokepayOperation",
     "SystemSetting",
     "User",
     "Workspace",

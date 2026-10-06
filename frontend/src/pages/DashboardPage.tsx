@@ -1,13 +1,15 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ChartNoAxesCombined,
   CircleCheck,
+  BellRing,
   Clock3,
   UserRoundX,
   UsersRound,
   Wallet,
+  Volume2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -119,9 +121,109 @@ function MetricCard({
 }
 
 export function DashboardPage() {
+  const queryClient = useQueryClient();
   const [period, setPeriod] = useState<AnalyticsPeriod>("7d");
   const [startDate, setStartDate] = useState(localDateInputValue);
   const [endDate, setEndDate] = useState(localDateInputValue);
+  const [dailyGoalDraft, setDailyGoalDraft] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundError, setSoundError] = useState<string | null>(null);
+  const seenSaleIds = useRef<Set<string> | null>(null);
+  const smokepayFinance = useQuery({
+    queryKey: ["analytics", "smokepay"],
+    queryFn: () =>
+      apiRequest<{
+        day: string;
+        daily_goal: string;
+        gross_total: string;
+        net_total: string;
+        sale_count: number;
+        operations: {
+          operation_id: string;
+          name: string;
+          split_percent: string;
+          sale_count: number;
+          gross_amount: string;
+          net_amount: string;
+        }[];
+        recent_sales: {
+          id: string;
+          operation_id: string;
+          operation_name: string;
+          transaction_id: string | null;
+          customer_name: string | null;
+          plan_name: string | null;
+          gross_amount: string;
+          net_amount: string;
+          occurred_at: string;
+        }[];
+      }>("/api/analytics/smokepay"),
+    retry: false,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+  const saveDailyGoal = useMutation({
+    mutationFn: (daily_goal: string) =>
+      apiRequest("/api/analytics/smokepay/daily-goal", {
+        method: "PUT",
+        body: { daily_goal },
+      }),
+    onSuccess: async () => {
+      setDailyGoalDraft(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["analytics", "smokepay"],
+      });
+    },
+  });
+  async function playSaleSound() {
+    try {
+      const AudioContextClass =
+        window.AudioContext ??
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!AudioContextClass) {
+        throw new Error("Este navegador não oferece áudio Web Audio.");
+      }
+      const context = new AudioContextClass();
+      await context.resume();
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.35);
+      gain.connect(context.destination);
+      for (const [offset, frequency] of [
+        [0, 880],
+        [0.11, 1320],
+      ]) {
+        const oscillator = context.createOscillator();
+        oscillator.type = "sine";
+        oscillator.frequency.value = frequency;
+        oscillator.connect(gain);
+        oscillator.start(context.currentTime + offset);
+        oscillator.stop(context.currentTime + offset + 0.16);
+      }
+      window.setTimeout(() => void context.close(), 500);
+      setSoundError(null);
+    } catch (error) {
+      console.warn("The sale notification sound could not be played.", error);
+      setSoundError("O navegador bloqueou o som. Interaja com a página e ative-o novamente.");
+    }
+  }
+  useEffect(() => {
+    const sales = smokepayFinance.data?.recent_sales;
+    if (!sales) return;
+    const currentIds = new Set(sales.map((sale) => sale.id));
+    const knownIds = seenSaleIds.current;
+    if (
+      soundEnabled &&
+      knownIds !== null &&
+      [...currentIds].some((saleId) => !knownIds.has(saleId))
+    ) {
+      void playSaleSound();
+    }
+    seenSaleIds.current = currentIds;
+  }, [smokepayFinance.data?.recent_sales, soundEnabled]);
   const summary = useQuery({
     queryKey: [
       "analytics",
@@ -341,6 +443,15 @@ export function DashboardPage() {
       color: "text-[#76c8a0]",
     },
   ];
+  const salesFinance = smokepayFinance.data;
+  const numericNetTotal = Number(salesFinance?.net_total ?? 0);
+  const numericDailyGoal = Number(
+    dailyGoalDraft ?? salesFinance?.daily_goal ?? 0,
+  );
+  const dailyGoalProgress =
+    numericDailyGoal > 0
+      ? Math.min(Math.round((numericNetTotal / numericDailyGoal) * 100), 100)
+      : 0;
 
   return (
     <div className="dashboard-ambient min-h-[calc(100vh-144px)] w-full space-y-6">
@@ -405,6 +516,201 @@ export function DashboardPage() {
           ))}
         </section>
       </main>
+      <section aria-label="Financeiro Smokepay" className="space-y-4">
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#8295ff]">
+              Smokepay · {salesFinance?.day ?? localDateInputValue()}
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-[#f5f7fb]">
+              Vendas de hoje
+            </h2>
+            <p className="mt-1 text-xs text-[#94a3b8]">
+              Atualização automática a cada 5 segundos.
+            </p>
+          </div>
+          <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[#cbd5e1]">
+            <input
+              checked={soundEnabled}
+              onChange={(event) => {
+                setSoundEnabled(event.target.checked);
+                if (event.target.checked) void playSaleSound();
+              }}
+              type="checkbox"
+            />
+            <Volume2 size={14} />
+            Som de nova venda
+          </label>
+        </header>
+        {smokepayFinance.error ? (
+          <article className="rounded-xl border border-[#63343b] bg-[#2b171b] p-4 text-sm text-[#f1a3ad]">
+            Não foi possível atualizar as vendas da Smokepay. Verifique a conexão
+            e tente novamente.
+          </article>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <article className="dashboard-card rounded-xl p-4">
+                <p className="text-xs text-[#94a3b8]">Faturamento bruto</p>
+                <p className="mt-2 text-2xl font-semibold text-[#f5f7fb]">
+                  {formatMoney(Number(salesFinance?.gross_total ?? 0))}
+                </p>
+                <p className="mt-1 text-[11px] text-[#78839b]">
+                  {salesFinance?.sale_count ?? 0} venda(s) aprovada(s) hoje
+                </p>
+              </article>
+              <article className="dashboard-card rounded-xl p-4">
+                <p className="text-xs text-[#94a3b8]">Faturamento líquido</p>
+                <p className="mt-2 text-2xl font-semibold text-[#76c8a0]">
+                  {formatMoney(numericNetTotal)}
+                </p>
+                <p className="mt-1 text-[11px] text-[#78839b]">
+                  Seu valor líquido após os splits configurados
+                </p>
+              </article>
+              <article className="dashboard-card rounded-xl p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-[#94a3b8]">Meta líquida do dia</p>
+                  <p className="text-xs font-semibold text-[#aab7ff]">
+                    {dailyGoalProgress}%
+                  </p>
+                </div>
+                <form
+                  className="mt-2 flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (numericDailyGoal >= 0) {
+                      saveDailyGoal.mutate(numericDailyGoal.toFixed(2));
+                    }
+                  }}
+                >
+                  <input
+                    aria-label="Meta líquida diária em reais"
+                    className="collaborator-input min-w-0 flex-1"
+                    min={0}
+                    onChange={(event) => setDailyGoalDraft(event.target.value)}
+                    placeholder="Defina uma meta"
+                    step="0.01"
+                    type="number"
+                    value={
+                      dailyGoalDraft ??
+                      salesFinance?.daily_goal ??
+                      ""
+                    }
+                  />
+                  <button
+                    className="rounded-lg border border-[#34446f] px-3 text-xs font-medium text-[#c3ccff] disabled:opacity-50"
+                    disabled={saveDailyGoal.isPending || !salesFinance}
+                    type="submit"
+                  >
+                    Salvar
+                  </button>
+                </form>
+                <div
+                  aria-label={`Meta diária atingida: ${dailyGoalProgress}%`}
+                  className="mt-3 h-2 overflow-hidden rounded-full bg-[#202838]"
+                  role="progressbar"
+                  aria-valuemax={100}
+                  aria-valuemin={0}
+                  aria-valuenow={dailyGoalProgress}
+                >
+                  <div
+                    className="h-full rounded-full bg-[#76c8a0] transition-[width]"
+                    style={{ width: `${dailyGoalProgress}%` }}
+                  />
+                </div>
+                {saveDailyGoal.error && (
+                  <p className="mt-2 text-[11px] text-[#f1a3ad]">
+                    Não foi possível salvar a meta diária.
+                  </p>
+                )}
+              </article>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <article className="dashboard-card rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-[#eef1f8]">
+                  Líquido por operação
+                </h3>
+                {salesFinance?.operations.length ? (
+                  <ul className="mt-3 divide-y divide-[#202838]">
+                    {salesFinance.operations.map((operation) => (
+                      <li
+                        className="flex flex-wrap items-center justify-between gap-2 py-3"
+                        key={operation.operation_id}
+                      >
+                        <div>
+                          <p className="text-sm text-[#e6eaf2]">
+                            {operation.name}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-[#78839b]">
+                            Split {operation.split_percent}% · {operation.sale_count} venda(s) · Bruto{" "}
+                            {formatMoney(Number(operation.gross_amount))}
+                          </p>
+                        </div>
+                        <strong className="text-sm text-[#76c8a0]">
+                          {formatMoney(Number(operation.net_amount))}
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-[#94a3b8]">
+                    Cadastre uma operação em Integrações para receber vendas.
+                  </p>
+                )}
+              </article>
+              <article aria-live="polite" className="dashboard-card rounded-xl p-4">
+                <div className="flex items-center gap-2">
+                  <BellRing className="text-[#aab7ff]" size={15} />
+                  <h3 className="text-sm font-semibold text-[#eef1f8]">
+                    Vendas ao vivo
+                  </h3>
+                </div>
+                {salesFinance?.recent_sales.length ? (
+                  <ul className="mt-3 divide-y divide-[#202838]">
+                    {salesFinance.recent_sales.slice(0, 10).map((sale) => (
+                      <li
+                        className="flex items-center justify-between gap-3 py-2.5"
+                        key={sale.id}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium text-[#e6eaf2]">
+                            {sale.customer_name || sale.plan_name || "Venda aprovada"}
+                          </p>
+                          <p className="mt-0.5 truncate text-[10px] text-[#78839b]">
+                            {sale.operation_name} ·{" "}
+                            {new Intl.DateTimeFormat("pt-BR", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              timeZone: "America/Sao_Paulo",
+                            }).format(new Date(sale.occurred_at))}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-right">
+                          <strong className="block text-xs text-[#76c8a0]">
+                            +{formatMoney(Number(sale.net_amount))}
+                          </strong>
+                          <span className="text-[10px] text-[#78839b]">
+                            Bruto {formatMoney(Number(sale.gross_amount))}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-[#94a3b8]">
+                    Aguardando vendas aprovadas.
+                  </p>
+                )}
+                {soundError && (
+                  <p className="mt-2 text-[11px] text-[#f2d48a]">{soundError}</p>
+                )}
+              </article>
+            </div>
+          </>
+        )}
+      </section>
       <section
         aria-label="Resumo da equipe e novas contas"
         className="grid gap-4 xl:grid-cols-3"

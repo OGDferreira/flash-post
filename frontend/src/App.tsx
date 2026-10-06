@@ -19,6 +19,7 @@ import { RankingPage } from "@/pages/RankingPage";
 import { InstagramAccountsPage } from "@/pages/InstagramAccountsPage";
 import { LoopsPage } from "@/pages/LoopsPage";
 import { EmailsPage } from "@/pages/EmailsPage";
+import { IntegrationsPage } from "@/pages/IntegrationsPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { ProfileFoldersPage } from "@/pages/ProfileFoldersPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -76,6 +77,7 @@ export default function App() {
                     <Route path="/feature/notifications" element={<NotificationsPage />} />
                     <Route path="/feature/ranking" element={<RankingPage />} />
                     <Route path="/feature/settings" element={<SettingsPage />} />
+                    <Route path="/feature/integrations" element={<IntegrationsPage />} />
                     <Route path="/feature/:slug" element={<FeaturePlaceholderPage />} />
                   </Route>
                 </Route>

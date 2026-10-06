@@ -161,6 +161,9 @@ accounts. Migration `20261004_13` snapshots the collaborator connection rate
 for each Instagram account. Migration `20261005_14` adds manual user approval;
 existing accounts remain approved by default, while new public registrations
 require approval before login.
+Migration `20261007_19` adds workspace-scoped Smokepay operations and webhook
+credentials, persists gross and split-adjusted net sale values, and stores a
+daily net revenue goal.
 The Loops page displays each loop's connected accounts and current media pool;
 owners can inspect detailed publication errors in its separate Errors tab.
 Accounts marked with errors are detached from loops and queued jobs, and can
@@ -317,6 +320,24 @@ Configurações and register it in Sharkbot; rotating the URL invalidates the ol
 one. The receiver accepts the `payment_created`, `payment_approved`, and
 `user_joined` events used by Auto-Insta-1, including its nested `data` payload,
 and ignores duplicate event deliveries.
+
+Workspace owners can create and manage multiple Smokepay operations in
+**Integrações**. Each operation has a unique endpoint containing a secret key;
+register the full URL displayed by FlashPost in Smokepay and treat it like a
+password. Rotating a key invalidates the previous URL. Approved events are
+deduplicated per operation, and each sale stores its gross amount and the
+net amount calculated with that operation's split at receipt time. The
+dashboard's finance section shows totals for the current São Paulo calendar
+day, a live-polled sales feed, and the workspace's daily net goal.
+
+The webhook currently expects a JSON payload with a recognizable approved
+event/state (for example `payment.approved`) and a sale amount in currency
+units (for example `100.00` means R$ 100,00). It recognizes common event and
+amount keys such as `event`, `event_type`, `status`, `amount`, `value`, and
+`gross_amount`, including nested `data`, `payment`, `transaction`, `sale`, or
+`order` objects. Confirm Smokepay's actual event names, amount units, and
+payload shape with a test delivery before enabling production sales tracking;
+integer values are currently interpreted as whole currency units, not cents.
 
 The Instagram webhook callback is
 `https://flashpost.onrender.com/api/instagram/webhook`. Configure
