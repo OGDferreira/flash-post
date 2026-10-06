@@ -1078,6 +1078,98 @@ async def test_instagram_views_use_supported_total_metric_and_timestamp_range(
 
 
 @pytest.mark.anyio
+async def test_instagram_media_views_sum_video_insights_in_requested_period(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    media_pages = [
+        {
+            "data": [
+                {
+                    "id": "video-a",
+                    "media_type": "VIDEO",
+                    "timestamp": "2026-10-03T12:00:00+00:00",
+                },
+                {
+                    "id": "image-a",
+                    "media_type": "IMAGE",
+                    "timestamp": "2026-10-02T10:00:00+00:00",
+                },
+                {
+                    "id": "video-b",
+                    "media_type": "VIDEO",
+                    "timestamp": "2026-10-02T08:00:00+00:00",
+                },
+            ],
+            "paging": {"cursors": {"after": "page-two"}},
+        },
+        {
+            "data": [
+                {
+                    "id": "video-c",
+                    "media_type": "VIDEO",
+                    "timestamp": "2026-10-01T00:00:00+00:00",
+                },
+                {
+                    "id": "video-old",
+                    "media_type": "VIDEO",
+                    "timestamp": "2026-09-30T23:59:59+00:00",
+                },
+            ],
+            "paging": {"cursors": {"after": "page-three"}},
+        },
+    ]
+    media_calls: list[tuple[str, dict[str, str]]] = []
+
+    class FakeResponse:
+        def __init__(self, payload: object):
+            self.payload = payload
+            self.is_error = False
+            self.request = oauth.httpx.Request(
+                "GET", "https://graph.instagram.com/test"
+            )
+
+        def json(self) -> object:
+            return self.payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url: str, *, params: dict[str, str]):
+            if url.endswith("/media"):
+                return FakeResponse(media_pages.pop(0))
+            media_id = url.rsplit("/", 2)[-2]
+            media_calls.append((media_id, params))
+            count = {"video-a": 100, "video-b": 200, "video-c": 300}[media_id]
+            return FakeResponse(
+                {"data": [{"name": "views", "values": [{"value": count}]}]}
+            )
+
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", FakeClient)
+
+    result = await oauth.fetch_instagram_media_views(
+        "17840000000000000",
+        "private-test-token",
+        datetime(2026, 10, 1, tzinfo=timezone.utc),
+        datetime(2026, 10, 4, tzinfo=timezone.utc),
+    )
+
+    assert result == (600, 3, [])
+    assert len(media_calls) == 3
+    assert all(params["metric"] == "views" for _, params in media_calls)
+    assert all("period" not in params for _, params in media_calls)
+
+
+@pytest.mark.anyio
 async def test_instagram_account_insights_fetch_supported_metrics_for_local_period(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1123,7 +1215,7 @@ async def test_instagram_account_insights_fetch_supported_metrics_for_local_peri
         datetime(2026, 10, 3, 3, tzinfo=timezone.utc),
     )
 
-    assert metrics["views"] == 17
+    assert metrics["views"] is None
     assert metrics["reach"] == 17
     assert metrics["profile_links_taps"] == 17
     assert metrics["impressions"] is None
@@ -1133,7 +1225,8 @@ async def test_instagram_account_insights_fetch_supported_metrics_for_local_peri
         "profile_views": "A Meta não oferece esta métrica neste endpoint.",
         "website_clicks": "A Meta não oferece esta métrica neste endpoint.",
     }
-    assert len(calls) == 11
+    assert len(calls) == 10
+    assert all(call["metric"] != "views" for call in calls)
     assert all(call["period"] == "day" for call in calls)
     assert all(call["metric_type"] == "total_value" for call in calls)
     assert all(

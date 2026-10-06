@@ -1,7 +1,10 @@
 import uuid
+from io import BytesIO
 
 import pytest
 from httpx import AsyncClient
+from openpyxl import Workbook
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import decrypt_value, encrypt_value
@@ -36,6 +39,7 @@ async def test_owner_creates_edits_and_deletes_email_account(
         "email": "Inbox.User@example.com",
         "password": "private-email-password",
         "two_factor_code": "private-2fa-seed",
+        "two_factor_password": "private-2fa-password",
     }
     created = await client.post(
         "/api/emails",
@@ -52,6 +56,7 @@ async def test_owner_creates_edits_and_deletes_email_account(
     assert account.encrypted_two_factor_code != payload["two_factor_code"]
     assert decrypt_value(account.encrypted_password) == payload["password"]
     assert decrypt_value(account.encrypted_two_factor_code) == payload["two_factor_code"]
+    assert decrypt_value(account.encrypted_two_factor_password) == payload["two_factor_password"]
 
     listing = await client.get("/api/emails")
     assert listing.status_code == 200
@@ -85,6 +90,59 @@ async def test_owner_creates_edits_and_deletes_email_account(
     )
     assert deleted.status_code == 204
     assert await db_session.get(EmailAccount, uuid.UUID(item["id"])) is None
+
+
+@pytest.mark.anyio
+async def test_owner_imports_csv_and_xlsx_email_accounts_with_encrypted_2fa_passwords(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    headers = {"X-CSRF-Token": await _csrf(client)}
+    csv_content = (
+        "Fornecedor;E-mail;Senha;Código 2FA;Senha do 2FA\n"
+        "Fornecedor A;first@example.com;email-secret;seed-a;seed-secret-a\n"
+    ).encode("utf-8")
+    csv_import = await client.post(
+        "/api/emails/import",
+        params={"filename": "contas.csv"},
+        headers=headers,
+        content=csv_content,
+    )
+    assert csv_import.status_code == 200, csv_import.text
+    assert csv_import.json() == {"imported_count": 1}
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["Fornecedor", "E-mail", "Senha", "Código 2FA", "Senha do 2FA"])
+    sheet.append(
+        ["Fornecedor B", "second@example.com", "email-secret-b", "seed-b", "seed-secret-b"]
+    )
+    xlsx_content = BytesIO()
+    workbook.save(xlsx_content)
+    xlsx_import = await client.post(
+        "/api/emails/import",
+        params={"filename": "contas.xlsx"},
+        headers=headers,
+        content=xlsx_content.getvalue(),
+    )
+    assert xlsx_import.status_code == 200, xlsx_import.text
+    assert xlsx_import.json() == {"imported_count": 1}
+
+    accounts = (
+        await db_session.scalars(
+            select(EmailAccount).where(EmailAccount.workspace_id == workspace.id)
+        )
+    ).all()
+    assert len(accounts) == 2
+    first = next(account for account in accounts if account.email == "first@example.com")
+    second = next(account for account in accounts if account.email == "second@example.com")
+    assert decrypt_value(first.encrypted_password) == "email-secret"
+    assert decrypt_value(first.encrypted_two_factor_code) == "seed-a"
+    assert decrypt_value(first.encrypted_two_factor_password) == "seed-secret-a"
+    assert decrypt_value(second.encrypted_two_factor_password) == "seed-secret-b"
 
 
 @pytest.mark.anyio

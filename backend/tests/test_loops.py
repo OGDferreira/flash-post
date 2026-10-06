@@ -94,12 +94,28 @@ async def test_owner_can_create_and_read_a_loop(
     assert result["waiting_for_media_count"] == 0
     assert result["published_today_count"] == 0
     assert result["media_count"] == 0
+    assert result["active_accounts_count"] == 1
 
     listing = await client.get("/api/loops")
     assert listing.status_code == 200
     assert listing.json()["loops"][0]["id"] == result["id"]
     assert listing.json()["available_accounts"][0]["username"] == "flashpost_demo"
     assert "publishing_enabled" in listing.json()
+
+    errored_account = _active_account(workspace.id, "flashpost_error")
+    errored_account.status = "error"
+    db_session.add(errored_account)
+    await db_session.flush()
+    db_session.add(
+        InstagramLoopAccount(
+            loop_id=uuid.UUID(result["id"]),
+            account_id=errored_account.id,
+        )
+    )
+    await db_session.commit()
+    refreshed = await client.get("/api/loops")
+    assert refreshed.status_code == 200
+    assert refreshed.json()["loops"][0]["active_accounts_count"] == 1
 
 
 @pytest.mark.anyio

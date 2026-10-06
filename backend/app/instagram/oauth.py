@@ -291,6 +291,28 @@ def instagram_api_error_detail(error: Exception) -> str:
     return message[:500] if message else type(error).__name__
 
 
+def _raise_for_insights_response(response: httpx.Response) -> None:
+    if not response.is_error:
+        return
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    error_text = (
+        " ".join(
+            error[field]
+            for field in ("message", "error_user_title", "error_user_msg")
+            if isinstance(error.get(field), str)
+        )
+        if isinstance(error, dict)
+        else ""
+    )
+    if INSTAGRAM_INSIGHTS_PERMISSION in error_text:
+        raise InstagramInsightsPermissionError from None
+    response.raise_for_status()
+
+
 async def fetch_instagram_views(
     instagram_user_id: str,
     access_token: str,
@@ -314,24 +336,7 @@ async def fetch_instagram_views(
                 "access_token": access_token,
             },
         )
-        if response.is_error:
-            try:
-                payload = response.json()
-            except ValueError:
-                payload = None
-            error = payload.get("error") if isinstance(payload, dict) else None
-            error_text = (
-                " ".join(
-                    error[field]
-                    for field in ("message", "error_user_title", "error_user_msg")
-                    if isinstance(error.get(field), str)
-                )
-                if isinstance(error, dict)
-                else ""
-            )
-            if INSTAGRAM_INSIGHTS_PERMISSION in error_text:
-                raise InstagramInsightsPermissionError from None
-            response.raise_for_status()
+        _raise_for_insights_response(response)
 
         payload = _object(
             response.json(),
@@ -355,6 +360,164 @@ async def fetch_instagram_views(
         raise InstagramOAuthError("Meta did not return a numeric views total.")
 
 
+async def fetch_instagram_media_views(
+    instagram_user_id: str,
+    access_token: str,
+    since: datetime,
+    until: datetime,
+) -> tuple[int, int, list[str]]:
+    start = since.astimezone(timezone.utc)
+    end = until.astimezone(timezone.utc)
+    video_ids: list[str] = []
+    seen_video_ids: set[str] = set()
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+    timeout = httpx.Timeout(15.0)
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        while True:
+            params = {
+                "fields": "id,media_type,timestamp",
+                "limit": "100",
+                "access_token": access_token,
+            }
+            if cursor:
+                params["after"] = cursor
+            response = await client.get(
+                f"{INSTAGRAM_GRAPH_ENDPOINT}/{instagram_user_id}/media",
+                params=params,
+            )
+            _raise_for_insights_response(response)
+            payload = _object(response.json(), "Meta returned an invalid media response.")
+            data = payload.get("data")
+            if not isinstance(data, list):
+                raise InstagramOAuthError("Meta returned an invalid media list.")
+
+            oldest_timestamp: datetime | None = None
+            for item in data:
+                if not isinstance(item, dict):
+                    raise InstagramOAuthError("Meta returned an invalid media record.")
+                media_id = item.get("id")
+                media_type = item.get("media_type")
+                raw_timestamp = item.get("timestamp")
+                if not isinstance(raw_timestamp, str):
+                    continue
+                try:
+                    timestamp = datetime.fromisoformat(
+                        raw_timestamp.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    raise InstagramOAuthError(
+                        "Meta returned an invalid video timestamp."
+                    ) from None
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                timestamp = timestamp.astimezone(timezone.utc)
+                oldest_timestamp = (
+                    timestamp
+                    if oldest_timestamp is None
+                    else min(oldest_timestamp, timestamp)
+                )
+                if media_type != "VIDEO" or not (start <= timestamp < end):
+                    continue
+                if not isinstance(media_id, str):
+                    raise InstagramOAuthError("Meta returned incomplete video metadata.")
+                if media_id not in seen_video_ids:
+                    video_ids.append(media_id)
+                    seen_video_ids.add(media_id)
+
+            paging = payload.get("paging")
+            cursors = paging.get("cursors") if isinstance(paging, dict) else None
+            next_cursor = cursors.get("after") if isinstance(cursors, dict) else None
+            if (
+                not data
+                or (oldest_timestamp is not None and oldest_timestamp < start)
+                or not isinstance(next_cursor, str)
+                or not next_cursor
+                or next_cursor in seen_cursors
+            ):
+                break
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+
+        semaphore = asyncio.Semaphore(5)
+
+        async def media_views(media_id: str) -> tuple[int | None, str | None]:
+            async with semaphore:
+                try:
+                    media_response = await client.get(
+                        f"{INSTAGRAM_GRAPH_ENDPOINT}/{media_id}/insights",
+                        params={
+                            "metric": "views",
+                            "access_token": access_token,
+                        },
+                    )
+                    _raise_for_insights_response(media_response)
+                    media_payload = _object(
+                        media_response.json(),
+                        "Meta returned an invalid media Insights response.",
+                    )
+                    metrics = media_payload.get("data")
+                    if not isinstance(metrics, list):
+                        raise InstagramOAuthError(
+                            "Meta returned an invalid media views metric."
+                        )
+                    metric = next(
+                        (
+                            value
+                            for value in metrics
+                            if isinstance(value, dict) and value.get("name") == "views"
+                        ),
+                        None,
+                    )
+                    if not isinstance(metric, dict):
+                        raise InstagramOAuthError(
+                            "Meta did not return a views metric for this video."
+                        )
+                    total_value = metric.get("total_value")
+                    raw_value = (
+                        total_value.get("value")
+                        if isinstance(total_value, dict)
+                        else metric.get("value")
+                    )
+                    if raw_value is None:
+                        values = metric.get("values")
+                        raw_value = (
+                            values[0].get("value")
+                            if isinstance(values, list)
+                            and values
+                            and isinstance(values[0], dict)
+                            else None
+                        )
+                    if (
+                        isinstance(raw_value, int)
+                        and not isinstance(raw_value, bool)
+                        and raw_value >= 0
+                    ):
+                        return raw_value, None
+                    raise InstagramOAuthError(
+                        "Meta did not return a numeric views total for this video."
+                    )
+                except (
+                    httpx.HTTPError,
+                    InstagramOAuthError,
+                    RuntimeError,
+                    ValueError,
+                ) as exc:
+                    return None, instagram_api_error_detail(exc)
+
+        results = await asyncio.gather(*(media_views(media_id) for media_id in video_ids))
+    successful_values = [
+        value for value, error in results if error is None and value is not None
+    ]
+    errors = [error for _value, error in results if error is not None]
+    return (
+        sum(successful_values),
+        len(video_ids),
+        errors,
+    )
+
+
 async def fetch_instagram_account_insights(
     instagram_user_id: str,
     access_token: str,
@@ -362,7 +525,6 @@ async def fetch_instagram_account_insights(
     until: datetime,
 ) -> tuple[dict[str, int | None], dict[str, str]]:
     supported_metric_names = (
-        "views",
         "reach",
         "accounts_engaged",
         "total_interactions",
@@ -385,6 +547,7 @@ async def fetch_instagram_account_insights(
     )
     metrics: dict[str, int | None] = {
         **{metric_name: None for metric_name in supported_metric_names},
+        "views": None,
         **{metric_name: None for metric_name in unsupported_metrics},
     }
     errors: dict[str, str] = dict(unsupported_metrics)

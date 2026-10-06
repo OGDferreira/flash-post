@@ -122,6 +122,10 @@ async def test_owner_manages_collaborator_goals_and_records_monthly_payout(
     assert sum(
         Decimal(value) for value in dashboard.json()["recent_payments"]
     ) == Decimal("37.50")
+    assert dashboard.json()["account_earnings"][0]["username"] == "new_collab_account"
+    assert Decimal(
+        dashboard.json()["account_earnings"][0]["rate_per_connection"]
+    ) == Decimal("12.50")
     ranking = await client.get("/api/collaborators/ranking")
     assert ranking.status_code == 200, ranking.text
 

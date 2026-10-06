@@ -16,8 +16,8 @@ from app.instagram.oauth import (
     InstagramInsightsPermissionError,
     InstagramOAuthError,
     fetch_instagram_account_insights,
+    fetch_instagram_media_views,
     fetch_instagram_profile_metrics,
-    fetch_instagram_views,
     instagram_api_error_detail,
 )
 from app.models import (
@@ -478,15 +478,35 @@ async def get_analytics_summary(
                                     insight_start,
                                     insight_end,
                                 )
-                                views_count += account_insights[account.id].get(
-                                    "views"
-                                ) or 0
-                            else:
-                                views_count += await fetch_instagram_views(
+                            views, video_count, video_errors = (
+                                await fetch_instagram_media_views(
                                     account.instagram_user_id,
                                     access_token,
                                     insight_start,
                                     insight_end,
+                                )
+                            )
+                            views_count += views
+                            if account_ids is not None:
+                                account_insights.setdefault(account.id, {})[
+                                    "views"
+                                ] = views
+                                if video_errors:
+                                    account_insight_errors.setdefault(
+                                        account.id, {}
+                                    )["views"] = (
+                                        f"Não foi possível consultar visualizações "
+                                        f"de {len(video_errors)} de {video_count} vídeos."
+                                    )
+                            successful_videos = video_count - len(video_errors)
+                            if video_errors and successful_videos == 0:
+                                insights_unavailable = True
+                            if any(
+                                INSTAGRAM_INSIGHTS_PERMISSION in error
+                                for error in video_errors
+                            ):
+                                missing_permissions.append(
+                                    INSTAGRAM_INSIGHTS_PERMISSION
                                 )
                         except InstagramInsightsPermissionError:
                             missing_permissions.append(INSTAGRAM_INSIGHTS_PERMISSION)

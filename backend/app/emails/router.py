@@ -1,9 +1,15 @@
+import csv
+import io
 import logging
+import unicodedata
 import uuid
+from zipfile import BadZipFile
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
+from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy import case, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -26,12 +32,15 @@ from app.schemas.emails import (
     EmailAccountObservationRequest,
     EmailAccountStatusRequest,
     EmailAccountUpdateRequest,
+    EmailAccountsImportResponse,
     EmailAccountsResponse,
 )
 
 router = APIRouter(prefix="/api/emails", tags=["Email account control"])
 logger = logging.getLogger(__name__)
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+MAX_IMPORT_BYTES = 5 * 1024 * 1024
+MAX_IMPORT_ROWS = 2000
 SUPPORTED_IMAGE_TYPES = {
     "image/jpeg": ("jpg", lambda content: content.startswith(b"\xff\xd8\xff")),
     "image/png": ("png", lambda content: content.startswith(b"\x89PNG\r\n\x1a\n")),
@@ -66,6 +75,11 @@ def _response(account: EmailAccount) -> EmailAccountItem:
     try:
         password = decrypt_value(account.encrypted_password)
         two_factor_code = decrypt_value(account.encrypted_two_factor_code)
+        two_factor_password = (
+            decrypt_value(account.encrypted_two_factor_password)
+            if account.encrypted_two_factor_password
+            else ""
+        )
     except ValueError as exc:
         logger.error(
             "Email account credentials could not be decrypted (account_id=%s).",
@@ -84,6 +98,7 @@ def _response(account: EmailAccount) -> EmailAccountItem:
         status=account.status,
         observation=account.observation,
         two_factor_code=two_factor_code,
+        two_factor_password=two_factor_password,
         attachment_url=(
             f"/api/emails/{account.id}/attachment"
             if account.error_attachment_path
@@ -158,6 +173,168 @@ async def list_email_accounts(
     )
 
 
+def _normalize_import_header(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return " ".join(
+        "".join(char for char in text if not unicodedata.combining(char))
+        .strip()
+        .casefold()
+        .replace("-", "")
+        .split()
+    )
+
+
+def _read_import_rows(filename: str, content: bytes) -> list[dict[str, str]]:
+    if filename.casefold().endswith((".xlsx", ".xlsm")):
+        try:
+            workbook = load_workbook(
+                io.BytesIO(content), read_only=True, data_only=True
+            )
+        except (InvalidFileException, OSError, ValueError, KeyError, BadZipFile):
+            raise HTTPException(400, "O arquivo Excel está inválido ou corrompido.") from None
+        sheet = workbook.active
+        values = sheet.iter_rows(values_only=True)
+        headers = next(values, None)
+        if headers is None:
+            workbook.close()
+            return []
+        rows = list(values)
+        workbook.close()
+    elif filename.casefold().endswith(".csv"):
+        try:
+            sample = content.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(400, "O arquivo CSV deve usar codificação UTF-8.") from exc
+        try:
+            dialect = csv.Sniffer().sniff(sample[:4096], delimiters=",;\t")
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.reader(io.StringIO(sample), dialect)
+        headers = next(reader, None)
+        rows = list(reader)
+    else:
+        raise HTTPException(400, "Envie um arquivo CSV ou XLSX.")
+
+    if not headers:
+        raise HTTPException(400, "A planilha não contém a linha de cabeçalho.")
+    indexes = {
+        _normalize_import_header(header): index
+        for index, header in enumerate(headers)
+        if header is not None and str(header).strip()
+    }
+    required = {
+        "fornecedor": "supplier",
+        "email": "email",
+        "senha": "password",
+        "codigo 2fa": "two_factor_code",
+        "senha do 2fa": "two_factor_password",
+    }
+    missing = [header for header in required if header not in indexes]
+    if missing:
+        raise HTTPException(
+            400,
+            "Colunas obrigatórias ausentes: " + ", ".join(missing) + ".",
+        )
+
+    parsed: list[dict[str, str]] = []
+    for line_number, row in enumerate(rows, start=2):
+        if not row or not any(str(value or "").strip() for value in row):
+            continue
+        if len(parsed) >= MAX_IMPORT_ROWS:
+            raise HTTPException(400, f"O limite é de {MAX_IMPORT_ROWS} linhas por importação.")
+        fields = {
+            key: str(row[index] or "").strip() if index < len(row) else ""
+            for header, key in required.items()
+            for index in [indexes[header]]
+        }
+        try:
+            validated = EmailAccountCreateRequest.model_validate(fields)
+            if not validated.two_factor_password:
+                raise ValueError("senha do 2FA vazia")
+        except (ValueError, TypeError):
+            raise HTTPException(
+                400,
+                f"Dados inválidos na linha {line_number}; revise fornecedor, e-mail e credenciais obrigatórias.",
+            ) from None
+        fields["email"] = str(validated.email)
+        fields["supplier"] = validated.supplier
+        parsed.append(fields)
+    if not parsed:
+        raise HTTPException(400, "A planilha não contém linhas válidas para importar.")
+    emails = [row["email"] for row in parsed]
+    if len(emails) != len(set(emails)):
+        raise HTTPException(400, "A planilha contém e-mails repetidos.")
+    return parsed
+
+
+@router.post(
+    "/import",
+    response_model=EmailAccountsImportResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def import_email_accounts(
+    request: Request,
+    access: OwnerAccess,
+    db: DbSession,
+    response: Response,
+    filename: str = Query(..., min_length=1, max_length=255),
+) -> EmailAccountsImportResponse:
+    _set_private_headers(response)
+    chunks: list[bytes] = []
+    total_bytes = 0
+    async for chunk in request.stream():
+        total_bytes += len(chunk)
+        if total_bytes > MAX_IMPORT_BYTES:
+            raise HTTPException(413, "O arquivo deve ter no máximo 5 MB.")
+        chunks.append(chunk)
+    content = b"".join(chunks)
+    try:
+        rows = _read_import_rows(filename, content)
+        existing_emails = (
+            await db.scalars(
+                select(EmailAccount.email).where(
+                    EmailAccount.workspace_id == access.workspace.id,
+                    func.lower(EmailAccount.email).in_(
+                        [row["email"] for row in rows]
+                    ),
+                )
+            )
+        ).all()
+        if existing_emails:
+            raise HTTPException(
+                status_code=409,
+                detail="Uma ou mais contas desta planilha já existem neste workspace.",
+            )
+        accounts = [
+            EmailAccount(
+                workspace_id=access.workspace.id,
+                supplier=row["supplier"],
+                email=row["email"],
+                encrypted_password=encrypt_value(row["password"]),
+                encrypted_two_factor_code=encrypt_value(row["two_factor_code"]),
+                encrypted_two_factor_password=encrypt_value(row["two_factor_password"]),
+                status="available",
+            )
+            for row in rows
+        ]
+    except RuntimeError as exc:
+        logger.error("Email credentials encryption is not configured (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail="O armazenamento seguro de credenciais não está configurado.",
+        ) from None
+    db.add_all(accounts)
+    try:
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível importar as contas de e-mail.",
+        ) from None
+    return EmailAccountsImportResponse(imported_count=len(accounts))
+
+
 @router.post(
     "",
     response_model=EmailAccountItem,
@@ -178,6 +355,11 @@ async def create_email_account(
             email=str(payload.email),
             encrypted_password=encrypt_value(payload.password),
             encrypted_two_factor_code=encrypt_value(payload.two_factor_code),
+            encrypted_two_factor_password=(
+                encrypt_value(payload.two_factor_password)
+                if payload.two_factor_password
+                else None
+            ),
             status="available",
         )
     except RuntimeError as exc:
@@ -220,6 +402,11 @@ async def update_email_account(
         account.email = str(payload.email)
         account.encrypted_password = encrypt_value(payload.password)
         account.encrypted_two_factor_code = encrypt_value(payload.two_factor_code)
+        account.encrypted_two_factor_password = (
+            encrypt_value(payload.two_factor_password)
+            if payload.two_factor_password
+            else None
+        )
         await db.commit()
         await db.refresh(account)
     except RuntimeError:

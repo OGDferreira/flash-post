@@ -25,13 +25,14 @@ type EmailAccount = {
   status: EmailStatus;
   observation: string | null;
   two_factor_code: string;
+  two_factor_password: string;
   attachment_url: string | null;
   created_at: string;
   updated_at: string;
 };
 type EmailForm = Pick<
   EmailAccount,
-  "supplier" | "email" | "password" | "two_factor_code"
+  "supplier" | "email" | "password" | "two_factor_code" | "two_factor_password"
 >;
 type EmailsResponse = {
   can_manage: boolean;
@@ -51,6 +52,7 @@ const emptyForm: EmailForm = {
   email: "",
   password: "",
   two_factor_code: "",
+  two_factor_password: "",
 };
 const statuses: { id: EmailStatus; label: string }[] = [
   { id: "available", label: "Disponível" },
@@ -139,6 +141,8 @@ export function EmailsPage() {
   const [createForm, setCreateForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EmailForm>(emptyForm);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
   const [observationDrafts, setObservationDrafts] = useState<Record<string, string>>({});
   const emails = useQuery({
     queryKey: ["emails"],
@@ -159,6 +163,22 @@ export function EmailsPage() {
       apiRequest<EmailAccount>(`/api/emails/${id}`, { method: "PUT", body: form }),
     onSuccess: async () => {
       setEditingId(null);
+      await refresh();
+    },
+  });
+  const importAccounts = useMutation({
+    mutationFn: ({ file }: { file: File }) =>
+      apiRequest<{ imported_count: number }>(
+        `/api/emails/import?${new URLSearchParams({ filename: file.name })}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+          body: file,
+        },
+      ),
+    onSuccess: async (result) => {
+      setImportFile(null);
+      setImportMessage(`${result.imported_count} conta(s) importada(s).`);
       await refresh();
     },
   });
@@ -261,6 +281,14 @@ export function EmailsPage() {
           required
           value={form.two_factor_code}
         />
+        <input
+          aria-label="Senha do 2FA"
+          autoComplete="new-password"
+          className="collaborator-input min-w-36"
+          onChange={(event) => setForm({ ...form, two_factor_password: event.target.value })}
+          placeholder="Senha do 2FA"
+          value={form.two_factor_password}
+        />
       </>
     );
   }
@@ -288,6 +316,7 @@ export function EmailsPage() {
     errorMessage(changeStatus.error, "Não foi possível atualizar o status."),
     errorMessage(saveObservation.error, "Não foi possível salvar a observação."),
     errorMessage(uploadAttachment.error, "Não foi possível enviar o anexo."),
+    errorMessage(importAccounts.error, "Não foi possível importar a planilha."),
   ].filter(Boolean);
 
   return (
@@ -354,6 +383,42 @@ export function EmailsPage() {
         </details>
       )}
 
+      {emails.data.can_manage && (
+        <details className="dashboard-card rounded-xl p-5">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-[#edf0f8]">
+            <Plus className="text-[#8295ff]" size={16} />
+            Importar planilha de contas
+          </summary>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <input
+              accept=".csv,.xlsx"
+              aria-label="Planilha de contas"
+              className="collaborator-input min-w-56"
+              key={importFile?.name ?? "no-file"}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                setImportFile(event.currentTarget.files?.[0] ?? null);
+                setImportMessage(null);
+              }}
+              type="file"
+            />
+            <button
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white disabled:opacity-50"
+              disabled={!importFile || importAccounts.isPending}
+              onClick={() => {
+                if (importFile) importAccounts.mutate({ file: importFile });
+              }}
+              type="button"
+            >
+              {importAccounts.isPending ? "Importando..." : "Importar"}
+            </button>
+            {importMessage && <p className="text-sm text-[#a9e5c0]">{importMessage}</p>}
+            <p className="basis-full text-xs text-[#94a3b8]">
+              Colunas obrigatórias: Fornecedor, E-mail, Senha, Código 2FA e Senha do 2FA.
+            </p>
+          </div>
+        </details>
+      )}
+
       <section className="dashboard-card space-y-4 rounded-xl p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-3">
           <label className="grid gap-1 text-xs text-[#94a3b8]">
@@ -404,6 +469,7 @@ export function EmailsPage() {
                   <th className="px-3 py-3">Status</th>
                   <th className="px-3 py-3">Observações</th>
                   <th className="px-3 py-3">Código 2FA</th>
+                  <th className="px-3 py-3">Senha do 2FA</th>
                   <th className="px-3 py-3">Anexo/Foto (erro)</th>
                   {emails.data.can_manage && <th className="px-3 py-3">Ações</th>}
                 </tr>
@@ -427,6 +493,9 @@ export function EmailsPage() {
                         <td className="px-3 py-3 text-[#94a3b8]">{account.observation || "—"}</td>
                         <td className="px-2 py-2">
                           <input aria-label="Código 2FA" className="collaborator-input min-w-36" value={editForm.two_factor_code} onChange={(event) => setEditForm({ ...editForm, two_factor_code: event.target.value })} />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input aria-label="Senha do 2FA" className="collaborator-input min-w-36" value={editForm.two_factor_password} onChange={(event) => setEditForm({ ...editForm, two_factor_password: event.target.value })} />
                         </td>
                         <td className="px-3 py-3">{account.attachment_url ? <a className="text-[#aab7ff]" href={account.attachment_url} rel="noreferrer" target="_blank">Ver imagem</a> : "—"}</td>
                         <td className="px-2 py-2">
@@ -474,6 +543,7 @@ export function EmailsPage() {
                           )}
                         </td>
                         <td className="px-3 py-3"><CopyValue label="Código 2FA" value={account.two_factor_code} /></td>
+                        <td className="px-3 py-3"><CopyValue label="Senha do 2FA" value={account.two_factor_password} /></td>
                         <td className="px-3 py-3">
                           <div className="flex min-w-36 items-center gap-2">
                             {account.attachment_url && (
@@ -501,6 +571,7 @@ export function EmailsPage() {
                                     email: account.email,
                                     password: account.password,
                                     two_factor_code: account.two_factor_code,
+                                    two_factor_password: account.two_factor_password,
                                   });
                                 }}
                                 type="button"

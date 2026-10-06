@@ -63,6 +63,7 @@ type InstagramLoop = {
   next_run_at: string | null;
   last_run_at: string | null;
   accounts: LoopAccount[];
+  active_accounts_count: number;
   media_ids: string[];
   media_names: string[];
   media_count: number;
@@ -949,6 +950,12 @@ export function LoopsPage() {
                   </div>
                   <p className="mt-3 text-xs text-[#94a3b8]">
                     Próxima execução: {formatDate(loop.next_run_at)}
+                  </p>
+                  <p className="mt-1 text-xs text-[#a9e5c0]">
+                    {loop.active_accounts_count}{" "}
+                    {loop.active_accounts_count === 1
+                      ? "conta ativa no loop"
+                      : "contas ativas no loop"}
                   </p>
                   <p className="mt-1 text-xs text-[#f2d48a]">
                     {loop.waiting_for_media_count}{" "}

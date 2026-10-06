@@ -172,19 +172,24 @@ Instagram media items per selected profile, and shows profile snapshots and
 media engagement returned by Instagram. The **Colaboradores** navigation and
 management page are also owner-only.
 The workspace **E-mails** page manages supplier, login, password, responsible
-person, status, notes, 2FA code, and private error-image attachments. Passwords
+person, status, notes, 2FA code, 2FA password, and private error-image attachments. Passwords
 and 2FA values are encrypted at rest; authenticated workspace members can view
 and copy them, while only the OWNER can create, edit, or delete rows.
 COLLABORATORs can advance statuses, update notes, and upload JPEG, PNG, or WebP
 error images. The page uses the existing private Supabase Storage bucket and
 requires the standard `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` settings
-for image uploads. Migration `20261006_17` creates the workspace-scoped
-`email_accounts` table.
+for image uploads. Owners can import CSV/XLSX files with the columns
+`Fornecedor`, `E-mail`, `Senha`, `Código 2FA`, and `Senha do 2FA`; imported
+secrets are encrypted before they are stored. Migrations `20261006_17` and
+`20261006_18` create the workspace-scoped email table and encrypted 2FA password
+field.
 Each loop keeps its own media selection, with signed previews and
 per-loop removal in the Loops page. The first eligible publication is queued
 immediately when a loop is created or activated; later publications follow its
 configured interval. The configurable per-account daily limit is removed, but
 the scheduler retains Instagram's 100-publications-per-24-hours safety guard.
+Loop cards show the number of linked accounts that are connected and have a
+non-expired access token.
 
 ## Instagram accounts
 
@@ -201,10 +206,9 @@ The Hub displays each account's profile thumbnail. The workspace **Configuraçõ
 page is where an OWNER registers, edits, selects, and removes Meta apps. The
 dashboard refreshes follower and media counts from the connected Instagram
 profile and uses the last saved OAuth snapshot if Meta cannot refresh them.
-Analytics also requests the account-level `views` metric (falling back to
-`content_views` when Meta does not support `views` for that account) when the
-app has the `instagram_business_manage_insights` permission; the interface
-identifies this permission when Meta denies access.
+Analytics sums the `views` Insights value for each video published in the
+selected period when the app has the `instagram_business_manage_insights`
+permission; the interface identifies this permission when Meta denies access.
 
 Create a **Business-type** Meta app, configure **Instagram API with Instagram
 Login**, and register this exact OAuth redirect URI in the app's **Business

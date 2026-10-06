@@ -324,37 +324,38 @@ export function CollaboratorDashboardPage() {
               <p className="text-sm text-[#94a3b8]">Ainda não há produção neste mês.</p>
             )}
 
-            <section aria-label="Valores das minhas contas" className="mt-3 border-t border-[#202838] pt-3">
-              <h3 className="mb-2 text-xs font-semibold text-[#cbd5e1]">
-                Valores das minhas contas
-              </h3>
-              {Array.isArray(data.account_earnings) && data.account_earnings.length ? (
-                <ul className="space-y-1.5">
-                  {data.account_earnings.map((account) => (
-                    <li
-                      className="flex items-center justify-between gap-2 border-t border-[#202838]/70 py-1.5 text-xs"
-                      key={account.account_id}
-                    >
-                      <span className="min-w-0 truncate text-[#e6eaf2]">
-                        @{account.username}
-                        <span className="ml-2 text-[10px] text-[#78839b]">
-                          {accountDateLabel(account.connected_at)}
-                        </span>
-                      </span>
-                      <strong className="shrink-0 font-medium text-[#f2d48a]">
-                        {money(account.rate_per_connection)}
-                      </strong>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-[#78839b]">
-                  Os valores aparecerão quando suas contas forem conectadas.
-                </p>
-              )}
-            </section>
           </div>
         </section>
+      </section>
+
+      <section aria-label="Valores das minhas contas" className="dashboard-card rounded-xl p-4">
+        <h2 className="mb-3 text-sm font-semibold text-[#eef1f8]">
+          Valores das minhas contas
+        </h2>
+        {Array.isArray(data.account_earnings) && data.account_earnings.length ? (
+          <ul className="grid gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
+            {data.account_earnings.map((account) => (
+              <li
+                className="flex items-center justify-between gap-2 border-t border-[#202838] py-2 text-xs"
+                key={account.account_id}
+              >
+                <span className="min-w-0 truncate text-[#e6eaf2]">
+                  @{account.username}
+                  <span className="ml-2 text-[10px] text-[#78839b]">
+                    {accountDateLabel(account.connected_at)}
+                  </span>
+                </span>
+                <strong className="shrink-0 font-medium text-[#f2d48a]">
+                  {money(account.rate_per_connection)}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-[#78839b]">
+            Os valores aparecerão quando suas contas forem conectadas.
+          </p>
+        )}
       </section>
     </div>
   );

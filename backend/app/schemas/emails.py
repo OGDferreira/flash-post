@@ -15,6 +15,7 @@ class EmailAccountCreateRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=1024)
     two_factor_code: str = Field(min_length=1, max_length=512)
+    two_factor_password: str = Field(default="", max_length=1024)
 
     @field_validator("supplier")
     @classmethod
@@ -59,6 +60,7 @@ class EmailAccountItem(BaseModel):
     status: EmailAccountStatus
     observation: str | None
     two_factor_code: str
+    two_factor_password: str
     attachment_url: str | None
     created_at: datetime
     updated_at: datetime
@@ -81,3 +83,7 @@ class EmailAccountsResponse(BaseModel):
 
 class EmailAccountAttachmentResponse(BaseModel):
     attachment_url: str
+
+
+class EmailAccountsImportResponse(BaseModel):
+    imported_count: int

@@ -162,7 +162,7 @@ async def test_fast_analytics_summary_skips_live_meta_requests(
     )
     monkeypatch.setattr(
         analytics_router,
-        "fetch_instagram_views",
+        "fetch_instagram_media_views",
         unexpected_meta_request,
     )
     await _login(client)
@@ -239,6 +239,9 @@ async def test_analytics_refreshes_profile_metrics_and_views_from_meta(
     async def account_insights(*_args):
         return {"views": 9_321, "reach": 7_654}, {}
 
+    async def media_views(*_args):
+        return 9_321, 3, []
+
     monkeypatch.setattr(
         analytics_router,
         "fetch_instagram_profile_metrics",
@@ -248,6 +251,11 @@ async def test_analytics_refreshes_profile_metrics_and_views_from_meta(
         analytics_router,
         "fetch_instagram_account_insights",
         account_insights,
+    )
+    monkeypatch.setattr(
+        analytics_router,
+        "fetch_instagram_media_views",
+        media_views,
     )
     await _login(client)
 
@@ -287,6 +295,9 @@ async def test_analytics_uses_saved_profile_snapshot_when_meta_refresh_fails(
     async def account_insights(*_args):
         return {"views": 0}, {}
 
+    async def media_views(*_args):
+        return 0, 0, []
+
     monkeypatch.setattr(
         analytics_router,
         "fetch_instagram_profile_metrics",
@@ -296,6 +307,11 @@ async def test_analytics_uses_saved_profile_snapshot_when_meta_refresh_fails(
         analytics_router,
         "fetch_instagram_account_insights",
         account_insights,
+    )
+    monkeypatch.setattr(
+        analytics_router,
+        "fetch_instagram_media_views",
+        media_views,
     )
     await _login(client)
 

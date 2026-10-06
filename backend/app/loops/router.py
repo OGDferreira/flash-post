@@ -74,6 +74,12 @@ async def _loop_response(
             .order_by(InstagramAccount.username)
         )
     ).all()
+    active_accounts_count = sum(
+        account.status == "connected"
+        and account.encrypted_access_token is not None
+        and _utc_datetime(account.token_expires_at) > now
+        for account in accounts
+    )
     waiting_count = await db.scalar(
         select(func.count(InstagramPublicationJob.id)).where(
             InstagramPublicationJob.loop_id == loop.id,
@@ -137,6 +143,7 @@ async def _loop_response(
             )
             for account in accounts
         ],
+        active_accounts_count=active_accounts_count,
         media_ids=[item.id for item in selected_media],
         media_names=[item.filename for item in selected_media],
         media_count=len(selected_media),
