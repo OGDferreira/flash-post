@@ -44,7 +44,7 @@ type ProfileFoldersResponse = {
 type InstagramMetaAppsResponse = {
   selected_app_id: string | null;
   can_manage: boolean;
-  apps: { id: string; display_name: string; meta_app_name: string; app_id: string }[];
+  apps: { id: string; display_name: string; app_id: string }[];
 };
 
 type InstagramDisconnectResponse = {
@@ -271,7 +271,7 @@ export function InstagramAccountsPage() {
             >
               <span className="font-medium text-[#f5f7fb]">{app.display_name}</span>
               <span className="mt-1 text-xs text-[#94a3b8] sm:mt-0">
-                {app.meta_app_name} · ID {app.app_id}
+                Instagram App ID: {app.app_id}
               </span>
             </button>
           ))}

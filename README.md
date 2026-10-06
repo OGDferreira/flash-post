@@ -38,7 +38,7 @@ connections require TLS. The application does not print credentials or
 connection strings. Production startup requires `SESSION_SECRET`, and Docker
 startup requires `DATABASE_URL`. `MASTER_ENCRYPTION_KEY` is checked when
 encryption is used. Instagram App IDs and App Secrets are configured by each
-workspace OWNER in the Contas page and encrypted before database storage.
+workspace OWNER in Configurações and encrypted before database storage.
 The Storage integration uses the private `instagram-media` bucket through the
 backend only; do not add the service-role key or a Supabase publishable key to
 frontend configuration. If a service-role key is ever shown in a screenshot,
@@ -197,8 +197,9 @@ Analytics also requests the account-level `views` metric (falling back to
 app has the `instagram_business_manage_insights` permission; the interface
 identifies this permission when Meta denies access.
 
-Create a Business-type Meta app, add the Instagram product, configure
-Instagram Business Login, and register this exact OAuth redirect URI in Meta:
+Create a **Business-type** Meta app, configure **Instagram API with Instagram
+Login**, and register this exact OAuth redirect URI in the app's **Business
+login settings**:
 
 ```text
 https://flashpost.onrender.com/api/instagram/callback
@@ -207,15 +208,20 @@ https://flashpost.onrender.com/api/instagram/callback
 For local testing, use the local backend URL configured through
 `PUBLIC_BASE_URL`, for example `http://localhost:8000/api/instagram/callback`.
 The URI in Meta must exactly match `PUBLIC_BASE_URL` plus
-`/api/instagram/callback`. In FlashPost, each workspace OWNER registers one or more Meta App IDs and
-App Secrets in the **Aplicativos Meta** area in Configurações, gives each
-app an internal name, and selects which one to use for new connections. The
-FlashPost server validates the credentials with Meta and retrieves the app's
-available public details. The App Secret is encrypted server-side and is
-never returned to the browser after saving. Existing Instagram accounts remain
-associated with the app that authorized them.
-Never put a customer's App Secret in frontend environment configuration,
-Render environment variables, Git, or chat.
+`/api/instagram/callback`. In FlashPost, each workspace OWNER registers one or
+more credentials in **Aplicativos Meta** in Configurações, gives each
+configuration an internal name, and selects the app to use for new connections.
+Use the **Instagram App ID** and **Instagram App Secret** displayed at **App
+Dashboard > Instagram > API setup with Instagram login > Set up Instagram
+business login > Business login settings**. Do not use the general App ID or
+App Secret from **Basic Settings**. FlashPost sends this Instagram App ID as
+OAuth `client_id` and uses the matching Instagram App Secret for the token
+exchange. The secret is encrypted server-side and never returned to the
+browser. Existing connected accounts and their tokens remain associated with
+the app that authorized them; add the correct Instagram Login credentials as
+a separate app instead of replacing credentials for an app that already has
+connected accounts. Never put an App Secret in frontend environment
+configuration, Render environment variables, Git, or chat.
 
 The Instagram Login flow requests `instagram_business_basic`,
 `instagram_business_content_publish`, and `instagram_business_manage_insights`.

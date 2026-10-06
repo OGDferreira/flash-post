@@ -19,35 +19,6 @@ class InstagramOAuthError(ValueError):
     pass
 
 
-async def fetch_meta_app_info(
-    app_id: str,
-    app_secret: str,
-) -> tuple[str, str | None, str | None]:
-    timeout = httpx.Timeout(15.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.get(
-            f"https://graph.facebook.com/v25.0/{app_id}",
-            params={
-                "fields": "id,name,category,link",
-                "access_token": f"{app_id}|{app_secret}",
-            },
-        )
-        response.raise_for_status()
-        payload = _object(response.json(), "Meta returned an invalid app response.")
-
-    returned_id = payload.get("id")
-    name = payload.get("name")
-    category = payload.get("category")
-    link = payload.get("link")
-    if str(returned_id) != app_id or not isinstance(name, str) or not name.strip():
-        raise InstagramOAuthError("Meta did not return a valid app name for this App ID.")
-    return (
-        name.strip()[:160],
-        category.strip()[:120] if isinstance(category, str) and category.strip() else None,
-        link.strip()[:2048] if isinstance(link, str) and link.strip() else None,
-    )
-
-
 def build_authorization_url(
     app_id: str,
     redirect_uri: str,

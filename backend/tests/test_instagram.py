@@ -190,7 +190,7 @@ async def test_collaborator_can_start_connect_but_cannot_manage_meta_apps(
     assert response.json()["can_manage"] is False
     assert response.json()["can_connect"] is True
     assert connect.status_code == 503
-    assert "Meta App ID and App Secret" in connect.json()["detail"]
+    assert "Instagram App ID and App Secret" in connect.json()["detail"]
 
 
 @pytest.mark.anyio
@@ -215,15 +215,10 @@ async def test_owner_can_add_and_read_meta_app_without_secret(
     client: AsyncClient,
     db_session: AsyncSession,
     owner,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
 
-    async def fake_meta_info(_app_id: str, _app_secret: str):
-        return "Meta app name", "Business", "https://www.facebook.com/apps/123456789"
-
-    monkeypatch.setattr(instagram_router, "fetch_meta_app_info", fake_meta_info)
     saved = await client.post(
         "/api/instagram/apps",
         headers={"X-CSRF-Token": token},
@@ -238,8 +233,8 @@ async def test_owner_can_add_and_read_meta_app_without_secret(
     assert "private-meta-secret" not in saved.text
     app = saved.json()["app"]
     assert app["display_name"] == "My publishing app"
-    assert app["meta_app_name"] == "Meta app name"
-    assert app["category"] == "Business"
+    assert app["meta_app_name"] == "My publishing app"
+    assert app["category"] is None
     assert app["is_selected"] is True
 
     stored = await db_session.get(InstagramAppCredential, uuid.UUID(app["id"]))
@@ -722,7 +717,6 @@ async def test_owner_can_rename_and_rotate_meta_app_secret(
     client: AsyncClient,
     db_session: AsyncSession,
     owner,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _user, workspace = owner
     app = InstagramAppCredential(
@@ -738,11 +732,6 @@ async def test_owner_can_rename_and_rotate_meta_app_secret(
     await db_session.commit()
     old_revision = app.revision
 
-    async def fake_meta_info(_app_id: str, app_secret: str):
-        assert app_secret == "new-secret"
-        return "Updated Meta name", "Business", "https://example.com/app"
-
-    monkeypatch.setattr(instagram_router, "fetch_meta_app_info", fake_meta_info)
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
     response = await client.patch(
@@ -753,7 +742,7 @@ async def test_owner_can_rename_and_rotate_meta_app_secret(
 
     assert response.status_code == 200
     assert response.json()["display_name"] == "After"
-    assert response.json()["meta_app_name"] == "Updated Meta name"
+    assert response.json()["meta_app_name"] == "Old Meta name"
     assert "new-secret" not in response.text
     await db_session.refresh(app)
     assert decrypt_value(app.encrypted_app_secret) == "new-secret"

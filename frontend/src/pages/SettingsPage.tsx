@@ -161,7 +161,8 @@ export function SettingsPage() {
         <div>
           <h3 className="font-medium text-[#f5f7fb]">Aplicativos Meta</h3>
           <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
-            O segredo é validado na Meta e criptografado no servidor; nunca é exibido novamente.
+            Cadastre as credenciais de Instagram Business Login. O segredo é criptografado no
+            servidor e nunca é exibido novamente.
           </p>
         </div>
         {mutationMessage && <ErrorState message={mutationMessage} />}
@@ -186,11 +187,7 @@ export function SettingsPage() {
                     )}
                   </div>
                   <p className="mt-1 text-sm text-[#94a3b8]">
-                    {app.meta_app_name} · ID {app.app_id}
-                  </p>
-                  <p className="mt-1 text-xs text-[#64748b]">
-                    {[app.category, app.app_link].filter(Boolean).join(" · ") ||
-                      "Informações adicionais não fornecidas pela Meta"}
+                    Instagram App ID: {app.app_id}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -259,7 +256,7 @@ export function SettingsPage() {
                     />
                   </label>
                   <label className="grid gap-2 text-sm text-[#cbd5e1]">
-                    Novo App Secret (opcional)
+                    Novo Instagram App Secret (opcional)
                     <input
                       autoComplete="new-password"
                       className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
@@ -298,7 +295,7 @@ export function SettingsPage() {
           ))}
           {metaApps.data.apps.length === 0 && (
             <p className="rounded-lg border border-dashed border-[#27334a] px-4 py-3 text-sm text-[#94a3b8]">
-              Nenhum aplicativo cadastrado. Adicione seu app Meta abaixo.
+              Nenhum aplicativo cadastrado. Adicione as credenciais do Instagram Business Login abaixo.
             </p>
           )}
         </div>
@@ -322,10 +319,10 @@ export function SettingsPage() {
             />
           </label>
           <label className="grid gap-2 text-sm text-[#cbd5e1]">
-            App ID
+            Instagram App ID
             <span className="text-xs leading-5 text-[#94a3b8]">
-              Use o App ID de Configurações Básicas no painel da Meta. Não use o ID da API do
-              Instagram.
+              No painel da Meta, use o Instagram App ID em Instagram → API setup with Instagram
+              login → Business login settings. Não use o App ID de Configurações Básicas.
             </span>
             <input
               autoComplete="off"
@@ -339,10 +336,10 @@ export function SettingsPage() {
             />
           </label>
           <label className="grid gap-2 text-sm text-[#cbd5e1]">
-            App Secret
+            Instagram App Secret
             <span className="text-xs leading-5 text-[#94a3b8]">
-              Use o App Secret de Configurações Básicas do mesmo aplicativo Meta acima, não uma
-              chave/ID da API do Instagram.
+              Use o Instagram App Secret na mesma tela Business login settings, não o App Secret
+              de Configurações Básicas.
             </span>
             <input
               autoComplete="new-password"
@@ -352,12 +349,13 @@ export function SettingsPage() {
               required
               value={appSecret}
               onChange={(event) => setAppSecret(event.target.value)}
-              placeholder="Cole a chave secreta do app Meta"
+              placeholder="Cole o Instagram App Secret"
             />
           </label>
           <p className="text-xs leading-5 text-[#64748b] sm:col-span-2">
-            Ao cadastrar, o FlashPost consulta o nome e as informações públicas disponíveis na Meta.
-            O segredo não será retornado nem compartilhado com outros workspaces.
+            O app Meta deve ser do tipo Business e ter o Instagram Business Login configurado.
+            Cadastre o URI de callback exibido pelo FlashPost entre os OAuth redirect URIs nessa
+            mesma configuração. O segredo não é retornado nem compartilhado com outros workspaces.
           </p>
           <div className="flex items-center gap-3 sm:col-span-2">
             <button

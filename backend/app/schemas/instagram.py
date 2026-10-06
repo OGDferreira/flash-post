@@ -36,7 +36,7 @@ class InstagramMetaAppCreateRequest(BaseModel):
     def strip_display_name(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("Enter a name for this Meta app.")
+            raise ValueError("Enter a name for this Instagram Login app.")
         return normalized
 
     @field_validator("app_id", mode="before")
@@ -49,7 +49,7 @@ class InstagramMetaAppCreateRequest(BaseModel):
     def strip_app_secret(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("Enter the Meta App Secret.")
+            raise ValueError("Enter the Instagram App Secret.")
         return normalized
 
 
@@ -64,7 +64,7 @@ class InstagramMetaAppUpdateRequest(BaseModel):
             return None
         normalized = value.strip()
         if not normalized:
-            raise ValueError("Enter a name for this Meta app.")
+            raise ValueError("Enter a name for this Instagram Login app.")
         return normalized
 
     @field_validator("app_secret")
@@ -74,13 +74,13 @@ class InstagramMetaAppUpdateRequest(BaseModel):
             return None
         normalized = value.strip()
         if not normalized:
-            raise ValueError("Enter the Meta App Secret.")
+            raise ValueError("Enter the Instagram App Secret.")
         return normalized
 
     @model_validator(mode="after")
     def require_update_value(self) -> "InstagramMetaAppUpdateRequest":
         if self.display_name is None and self.app_secret is None:
-            raise ValueError("Provide a name or a new App Secret.")
+            raise ValueError("Provide a name or a new Instagram App Secret.")
         return self
 
 

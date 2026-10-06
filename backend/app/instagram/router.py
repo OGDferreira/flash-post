@@ -26,7 +26,6 @@ from app.instagram.oauth import (
     instagram_api_error_detail,
     build_authorization_url,
     exchange_instagram_authorization_code,
-    fetch_meta_app_info,
     revoke_instagram_permissions,
 )
 from app.models import (
@@ -350,26 +349,6 @@ async def _workspace_meta_app(
     )
 
 
-async def _fetch_and_validate_meta_app(
-    app_id: str,
-    app_secret: str,
-) -> tuple[str, str | None, str | None]:
-    try:
-        return await fetch_meta_app_info(app_id, app_secret)
-    except httpx.HTTPStatusError as exc:
-        logger.warning("Meta app lookup was rejected (HTTP %s).", exc.response.status_code)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Meta could not validate this App ID and App Secret.",
-        ) from None
-    except (httpx.HTTPError, InstagramOAuthError) as exc:
-        logger.warning("Meta app lookup failed (%s).", type(exc).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not retrieve app information from Meta. Try again later.",
-        ) from None
-
-
 @router.get("/apps", response_model=InstagramMetaAppsResponse)
 async def list_meta_apps(
     access: WorkspaceMemberAccess,
@@ -420,11 +399,6 @@ async def create_meta_app(
             detail="This Meta App ID is already registered in this workspace.",
         )
 
-    meta_name, category, app_link = await _fetch_and_validate_meta_app(
-        payload.app_id,
-        payload.app_secret,
-    )
-
     existing_selected = await db.scalar(
         select(InstagramAppCredential.id).where(
             InstagramAppCredential.workspace_id == access.workspace.id,
@@ -442,10 +416,10 @@ async def create_meta_app(
     app = InstagramAppCredential(
         workspace_id=access.workspace.id,
         display_name=payload.display_name,
-        meta_app_name=meta_name,
+        meta_app_name=payload.display_name,
         app_id=payload.app_id,
-        category=category,
-        app_link=app_link,
+        category=None,
+        app_link=None,
         encrypted_app_secret=encrypted_secret,
         is_selected=existing_selected is None,
         revision=uuid.uuid4(),
@@ -508,10 +482,6 @@ async def update_meta_app(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Secure credential storage is not configured for this environment.",
             )
-        meta_name, category, app_link = await _fetch_and_validate_meta_app(
-            app.app_id,
-            payload.app_secret,
-        )
         try:
             app.encrypted_app_secret = encrypt_value(payload.app_secret)
         except RuntimeError:
@@ -519,9 +489,6 @@ async def update_meta_app(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Secure credential storage is unavailable.",
             ) from None
-        app.meta_app_name = meta_name
-        app.category = category
-        app.app_link = app_link
         app.revision = uuid.uuid4()
 
     await db.commit()
@@ -600,13 +567,13 @@ async def connect_account(
     if credential is None and app_id is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meta app not found in this workspace.",
+            detail="Instagram Login app not found in this workspace.",
         )
     if credential is None or settings.master_encryption_key is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                "The workspace Meta App ID and App Secret must be configured, and "
+                "The workspace Instagram App ID and App Secret must be configured, and "
                 "secure credential storage must be enabled."
             ),
         )
