@@ -21,7 +21,7 @@ from app.models import (
     InstagramMedia,
     InstagramPublicationJob,
 )
-from app.loops.scheduler import enqueue_loop_publications_now
+from app.loops.scheduler import enqueue_loop_publications_now, next_loop_run_time
 from app.core.security import WorkspaceRole
 from app.schemas.loops import (
     InstagramPublicationFailureResponse,
@@ -365,6 +365,8 @@ async def create_loop(
     await db.flush()
     if loop.status == "active":
         await enqueue_loop_publications_now(db, loop, accounts, now=now)
+        loop.last_run_at = now
+        loop.next_run_at = next_loop_run_time(loop, now)
     await db.commit()
     await db.refresh(loop)
     return await _loop_response(loop, db, now)
@@ -479,7 +481,9 @@ async def update_loop(
     loop.interval_max_minutes = payload.interval_max_minutes
     loop.post_type = payload.post_type
     loop.repeat_media = payload.repeat_media
-    loop.next_run_at = now if loop.status == "active" else None
+    loop.next_run_at = (
+        next_loop_run_time(loop, now) if loop.status == "active" else None
+    )
     await db.execute(
         InstagramLoopAccount.__table__.delete().where(
             InstagramLoopAccount.loop_id == loop.id
@@ -579,11 +583,6 @@ async def update_loop_accounts(
     )
     await db.execute(
         pending_jobs.where(
-            InstagramPublicationJob.account_id.in_(selected_account_ids)
-        ).values(status="waiting_for_media", media_id=None, last_error=None)
-    )
-    await db.execute(
-        pending_jobs.where(
             InstagramPublicationJob.account_id.not_in(selected_account_ids)
         ).values(
             status="failed",
@@ -621,7 +620,9 @@ async def update_loop_status(
     restarting = payload.enabled and loop.status != "active"
     loop.status = "active" if payload.enabled else "paused"
     now = utc_now()
-    loop.next_run_at = now if payload.enabled else None
+    loop.next_run_at = (
+        next_loop_run_time(loop, now) if payload.enabled else None
+    )
     if payload.enabled:
         if restarting:
             failed_account_ids = set(
@@ -673,6 +674,8 @@ async def update_loop_status(
             )
         ).all()
         await enqueue_loop_publications_now(db, loop, list(accounts), now=now)
+        if restarting:
+            loop.last_run_at = now
     else:
         await db.execute(
             InstagramPublicationJob.__table__.update()
@@ -680,7 +683,7 @@ async def update_loop_status(
                 InstagramPublicationJob.loop_id == loop.id,
                 InstagramPublicationJob.status == "queued",
             )
-            .values(status="waiting_for_media", media_id=None)
+            .values(status="waiting_for_media")
         )
     await db.commit()
     await db.refresh(loop)

@@ -59,6 +59,10 @@ class InstagramLoop(Base):
     repeat_media: Mapped[bool] = mapped_column(
         nullable=False, default=True, server_default=text("true")
     )
+    next_media_index: Mapped[int | None] = mapped_column(Integer)
+    next_queue_sequence: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="active", server_default=text("'active'")
     )
@@ -163,6 +167,7 @@ class InstagramPublicationJob(Base):
     media_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("instagram_media.id", ondelete="SET NULL")
     )
+    queue_sequence: Mapped[int | None] = mapped_column(Integer)
     scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(
         String(24),

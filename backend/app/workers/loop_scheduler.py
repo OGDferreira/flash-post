@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
@@ -18,7 +18,6 @@ from app.instagram.publishing import InstagramPublishingError, publish_media
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.models import (
     InstagramAccount,
-    InstagramLoopAccount,
     InstagramMedia,
     InstagramPublicationJob,
 )
@@ -26,6 +25,7 @@ from app.loops.scheduler import enqueue_due_loop_publications
 
 logger = logging.getLogger(__name__)
 STALE_PUBLICATION_AFTER = timedelta(minutes=45)
+MAX_CONCURRENT_PUBLICATIONS = 5
 TOKEN_REFRESH_WINDOW = timedelta(days=10)
 TOKEN_REFRESH_RETRY_INTERVAL = timedelta(hours=12)
 CONSECUTIVE_PUBLICATION_FAILURE_LIMIT = 5
@@ -33,22 +33,6 @@ CONSECUTIVE_PUBLICATION_FAILURE_LIMIT = 5
 
 def _utc_datetime(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
-
-
-async def _remove_failed_loop_account(db, job: InstagramPublicationJob) -> None:
-    await db.execute(
-        delete(InstagramLoopAccount).where(
-            InstagramLoopAccount.loop_id == job.loop_id,
-            InstagramLoopAccount.account_id == job.account_id,
-        )
-    )
-    await db.execute(
-        delete(InstagramPublicationJob).where(
-            InstagramPublicationJob.loop_id == job.loop_id,
-            InstagramPublicationJob.account_id == job.account_id,
-            InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
-        )
-    )
 
 
 def _is_account_connection_failure(error: Exception) -> bool:
@@ -194,13 +178,8 @@ async def _record_publication_failure(
     error_detail = _safe_publication_error(error)
     job.status = "failed"
     job.last_error = error_detail
-    await _remove_failed_loop_account(db, job)
     if account is not None and account.status == "connected":
-        await _mark_account_as_error(
-            db,
-            account,
-            f"Falha na publicação: {error_detail}"[:500],
-        )
+        await _update_account_health_after_failure(db, account_id, error)
     await db.commit()
     logger.error(
         "Publication job %s failed for account %s (%s): %s",
@@ -323,7 +302,11 @@ async def process_one_queued_publication() -> bool:
         job = await db.scalar(
             select(InstagramPublicationJob)
             .where(InstagramPublicationJob.status == "queued")
-            .order_by(InstagramPublicationJob.scheduled_for, InstagramPublicationJob.id)
+            .order_by(
+                InstagramPublicationJob.scheduled_for,
+                func.coalesce(InstagramPublicationJob.queue_sequence, -1),
+                InstagramPublicationJob.id,
+            )
             .with_for_update(skip_locked=True)
             .limit(1)
         )
@@ -347,7 +330,6 @@ async def process_one_queued_publication() -> bool:
         ):
             job.status = "failed"
             job.last_error = "The connected account or selected media is no longer available."
-            await _remove_failed_loop_account(db, job)
             await db.commit()
             logger.error(
                 "Publication job %s could not start: account_exists=%s media_exists=%s.",
@@ -365,7 +347,6 @@ async def process_one_queued_publication() -> bool:
                 await _mark_account_as_error(db, account)
             job.status = "failed"
             job.last_error = "The connected account or selected media is no longer available."
-            await _remove_failed_loop_account(db, job)
             await db.commit()
             logger.error(
                 "Publication job %s skipped because account %s is not connected with a valid token.",
@@ -379,7 +360,6 @@ async def process_one_queued_publication() -> bool:
         except (RuntimeError, ValueError) as exc:
             job.status = "failed"
             job.last_error = "The Instagram access token could not be read securely."
-            await _remove_failed_loop_account(db, job)
             await _mark_account_as_error(
                 db,
                 account,
@@ -468,7 +448,6 @@ async def fail_stale_publication_jobs(now: datetime | None = None) -> int:
             job.last_error = (
                 "The worker stopped during publication; verify Instagram before retrying."
             )
-            await _remove_failed_loop_account(db, job)
         await db.commit()
     if stale_jobs:
         logger.error("Marked %s stale publication jobs for manual review.", len(stale_jobs))
@@ -484,19 +463,26 @@ async def run_loop_scheduler_tick() -> int:
         created_jobs = await enqueue_due_loop_publications(db)
     published_jobs = 0
     if get_settings().instagram_publishing_enabled:
-        while True:
-            try:
-                processed = await process_one_queued_publication()
-            except Exception as exc:
-                logger.error(
-                    "Loop publication worker could not process the next queued job (%s); "
-                    "remaining jobs will be retried on the next scheduler tick.",
-                    type(exc).__name__,
-                )
-                break
-            if not processed:
-                break
-            published_jobs += 1
+        async def drain_queue() -> int:
+            processed_jobs = 0
+            while True:
+                try:
+                    processed = await process_one_queued_publication()
+                except Exception as exc:
+                    logger.error(
+                        "Loop publication worker could not process the next queued job (%s); "
+                        "remaining jobs will be retried on the next scheduler tick.",
+                        type(exc).__name__,
+                    )
+                    return processed_jobs
+                if not processed:
+                    return processed_jobs
+                processed_jobs += 1
+
+        worker_results = await asyncio.gather(
+            *(drain_queue() for _ in range(MAX_CONCURRENT_PUBLICATIONS))
+        )
+        published_jobs = sum(worker_results)
     else:
         logger.warning(
             "Instagram publishing is disabled by INSTAGRAM_PUBLISHING_ENABLED=false; "

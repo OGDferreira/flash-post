@@ -19,7 +19,7 @@ from app.models import (
 )
 from app.workers.loop_scheduler import (
     CONSECUTIVE_PUBLICATION_FAILURE_LIMIT,
-    _remove_failed_loop_account,
+    _mark_account_as_error,
     _record_publication_failure,
     _update_account_health_after_failure,
 )
@@ -86,7 +86,7 @@ async def test_owner_can_create_and_read_a_loop(
     assert "daily_limit_per_account" not in result
     assert (
         datetime.fromisoformat(result["next_run_at"])
-        <= datetime.now(timezone.utc) + timedelta(seconds=5)
+        > datetime.now(timezone.utc)
     )
     assert [item["id"] for item in result["accounts"]] == [str(account.id)]
     assert result["accounts"][0]["connected_at"]
@@ -174,8 +174,8 @@ async def test_new_reel_loop_queues_the_same_first_video_for_every_account(
     ).all()
     assert {job.account_id for job in jobs} == {account.id for account in accounts}
     assert len(jobs) == len(accounts)
-    assert len({job.media_id for job in jobs}) == 1
-    assert jobs[0].media_id in {video.id for video in videos}
+    assert {job.media_id for job in jobs} == {video.id for video in videos}
+    assert len({job.queue_sequence for job in jobs}) == len(jobs)
     assert all(job.status == "queued" for job in jobs)
     assert all(
         job.scheduled_for.replace(tzinfo=timezone.utc)
@@ -193,7 +193,10 @@ async def test_account_added_to_loop_immediately_gets_next_video(
     _user, workspace = owner
     now = datetime.now(timezone.utc)
     existing_account = _active_account(workspace.id, "already_in_loop")
-    added_account = _active_account(workspace.id, "newly_added")
+    added_accounts = [
+        _active_account(workspace.id, "newly_added_a"),
+        _active_account(workspace.id, "newly_added_b"),
+    ]
     loop = InstagramLoop(
         workspace_id=workspace.id,
         name="Add account broadcast",
@@ -215,9 +218,9 @@ async def test_account_added_to_loop_immediately_gets_next_video(
             size_bytes=100,
             created_at=now - timedelta(minutes=2 - index),
         )
-        for index in range(2)
+        for index in range(3)
     ]
-    db_session.add_all([existing_account, added_account, loop, *videos])
+    db_session.add_all([existing_account, *added_accounts, loop, *videos])
     await db_session.flush()
     db_session.add_all(
         [
@@ -245,20 +248,37 @@ async def test_account_added_to_loop_immediately_gets_next_video(
     response = await client.put(
         f"/api/loops/{loop.id}/accounts",
         headers={"X-CSRF-Token": token},
-        json={"account_ids": [str(existing_account.id), str(added_account.id)]},
+        json={
+            "account_ids": [
+                str(existing_account.id),
+                *[str(account.id) for account in added_accounts],
+            ]
+        },
     )
 
     assert response.status_code == 200, response.text
-    job = await db_session.scalar(
-        select(InstagramPublicationJob).where(
-            InstagramPublicationJob.loop_id == loop.id,
-            InstagramPublicationJob.account_id == added_account.id,
+    jobs = (
+        await db_session.scalars(
+            select(InstagramPublicationJob)
+            .where(InstagramPublicationJob.loop_id == loop.id)
+            .where(
+                InstagramPublicationJob.account_id.in_(
+                    [account.id for account in added_accounts]
+                )
+            )
+            .order_by(InstagramPublicationJob.queue_sequence)
         )
+    ).all()
+    assert [job.account_id for job in jobs] == [
+        account.id for account in added_accounts
+    ]
+    assert [job.media_id for job in jobs] == [videos[1].id, videos[2].id]
+    assert all(job.status == "queued" for job in jobs)
+    assert all(
+        job.scheduled_for.replace(tzinfo=timezone.utc)
+        >= now - timedelta(seconds=5)
+        for job in jobs
     )
-    assert job is not None
-    assert job.media_id == videos[1].id
-    assert job.status == "queued"
-    assert job.scheduled_for.replace(tzinfo=timezone.utc) >= now - timedelta(seconds=5)
 
 
 @pytest.mark.anyio
@@ -904,7 +924,7 @@ async def test_scheduler_queues_matching_loop_media(
 
 
 @pytest.mark.anyio
-async def test_scheduler_broadcasts_each_video_to_all_accounts_in_queue_order(
+async def test_scheduler_assigns_next_playlist_item_to_each_account_in_order(
     db_session: AsyncSession,
     owner,
 ) -> None:
@@ -935,7 +955,7 @@ async def test_scheduler_broadcasts_each_video_to_all_accounts_in_queue_order(
             size_bytes=100,
             created_at=now - timedelta(minutes=2 - index),
         )
-        for index in range(2)
+        for index in range(3)
     ]
     db_session.add_all([*accounts, loop, *videos])
     await db_session.flush()
@@ -958,12 +978,15 @@ async def test_scheduler_broadcasts_each_video_to_all_accounts_in_queue_order(
         await db_session.scalars(
             select(InstagramPublicationJob)
             .where(InstagramPublicationJob.loop_id == loop.id)
-            .order_by(InstagramPublicationJob.account_id)
+            .order_by(InstagramPublicationJob.queue_sequence)
         )
     ).all()
     assert first_count == len(accounts)
     assert {job.account_id for job in first_jobs} == {account.id for account in accounts}
-    assert {job.media_id for job in first_jobs} == {videos[0].id}
+    assert [job.media_id for job in first_jobs] == [
+        videos[0].id,
+        videos[1].id,
+    ]
 
     for job in first_jobs:
         job.status = "published"
@@ -977,13 +1000,86 @@ async def test_scheduler_broadcasts_each_video_to_all_accounts_in_queue_order(
             select(InstagramPublicationJob).where(
                 InstagramPublicationJob.loop_id == loop.id,
                 InstagramPublicationJob.status == "queued",
-            )
+            ).order_by(InstagramPublicationJob.queue_sequence)
         )
     ).all()
     assert second_count == len(accounts)
     assert len(all_jobs) == len(accounts)
     assert {job.account_id for job in all_jobs} == {account.id for account in accounts}
-    assert {job.media_id for job in all_jobs} == {videos[1].id}
+    assert [job.media_id for job in all_jobs] == [
+        videos[2].id,
+        videos[0].id,
+    ]
+
+
+@pytest.mark.anyio
+async def test_scheduler_catches_up_every_overdue_interval_in_sequence(
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    now = datetime.now(timezone.utc)
+    accounts = [
+        _active_account(workspace.id, "catch_up_one"),
+        _active_account(workspace.id, "catch_up_two"),
+    ]
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Catch up loop",
+        interval_min_minutes=60,
+        interval_max_minutes=60,
+        post_type="reels",
+        repeat_media=True,
+        status="active",
+        next_run_at=now - timedelta(hours=3),
+    )
+    videos = [
+        InstagramMedia(
+            workspace_id=workspace.id,
+            storage_path=f"{workspace.id}/catch-up/{index}.mp4",
+            filename=f"{index}.mp4",
+            mime_type="video/mp4",
+            media_type="video",
+            size_bytes=100,
+            created_at=now - timedelta(minutes=3 - index),
+        )
+        for index in range(3)
+    ]
+    db_session.add_all([*accounts, loop, *videos])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            *[
+                InstagramLoopAccount(loop_id=loop.id, account_id=account.id)
+                for account in accounts
+            ],
+            *[
+                InstagramLoopMedia(loop_id=loop.id, media_id=video.id)
+                for video in videos
+            ],
+        ]
+    )
+    await db_session.commit()
+
+    created_total = 0
+    for _ in range(4):
+        created_total += await enqueue_due_loop_publications(db_session, now=now)
+    jobs = (
+        await db_session.scalars(
+            select(InstagramPublicationJob)
+            .where(InstagramPublicationJob.loop_id == loop.id)
+            .order_by(InstagramPublicationJob.queue_sequence)
+        )
+    ).all()
+    await db_session.refresh(loop)
+
+    assert created_total == 8
+    assert len(jobs) == 8
+    assert [job.media_id for job in jobs] == [
+        videos[index % len(videos)].id for index in range(8)
+    ]
+    assert len({job.account_id for job in jobs[:2]}) == 2
+    assert loop.next_run_at.replace(tzinfo=timezone.utc) == now + timedelta(hours=1)
 
 
 @pytest.mark.anyio
@@ -1093,7 +1189,7 @@ async def test_pausing_loop_stops_queued_job_and_prevents_delete_during_publish(
     assert pause_response.status_code == 200
     await db_session.refresh(job)
     assert job.status == "waiting_for_media"
-    assert job.media_id is None
+    assert job.media_id == media.id
 
     job.status = "publishing"
     await db_session.commit()
@@ -1167,7 +1263,7 @@ async def test_restarting_loop_clears_its_failed_publication_history(
 
 
 @pytest.mark.anyio
-async def test_failed_publication_detaches_account_and_discards_pending_loop_jobs(
+async def test_marking_account_error_detaches_it_and_discards_pending_loop_jobs(
     db_session: AsyncSession,
     owner,
 ) -> None:
@@ -1206,7 +1302,7 @@ async def test_failed_publication_detaches_account_and_discards_pending_loop_job
     db_session.add(InstagramLoopAccount(loop_id=loop.id, account_id=account.id))
     await db_session.commit()
 
-    await _remove_failed_loop_account(db_session, failed_job)
+    await _mark_account_as_error(db_session, account)
     await db_session.commit()
 
     association = await db_session.scalar(
@@ -1221,7 +1317,7 @@ async def test_failed_publication_detaches_account_and_discards_pending_loop_job
 
 
 @pytest.mark.anyio
-async def test_publication_failure_marks_only_that_account_and_preserves_other_queue_jobs(
+async def test_rate_limit_failure_keeps_account_in_loop_and_preserves_other_jobs(
     db_session: AsyncSession,
     owner,
 ) -> None:
@@ -1274,14 +1370,14 @@ async def test_publication_failure_marks_only_that_account_and_preserves_other_q
     )
 
     await db_session.refresh(failed_account)
-    assert failed_account.status == "error"
+    assert failed_account.status == "connected"
     assert await db_session.get(InstagramPublicationJob, failed_job.id) is not None
     assert await db_session.get(InstagramPublicationJob, next_job.id) is not None
     await db_session.refresh(next_job)
     assert next_job.status == "queued"
     assert await db_session.get(
         InstagramLoopAccount, (loop.id, failed_account.id)
-    ) is None
+    ) is not None
     assert await db_session.get(
         InstagramLoopAccount, (loop.id, next_account.id)
     ) is not None
