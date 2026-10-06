@@ -47,8 +47,9 @@ type CollaboratorUpdateDraft = CollaboratorDraft & {
 type WorkDaysResponse = {
   month: string;
   daily_rate: number;
+  total_connections: number;
   total_amount: number;
-  days: { day: string; amount: number; paid: boolean }[];
+  days: { day: string; connections: number; amount: number; paid: boolean }[];
 };
 
 type NewCollaboratorForm = CollaboratorDraft & {
@@ -478,13 +479,24 @@ export function CollaboratorsPage() {
                     </div>
                     <div className="flex h-20 items-end gap-2">
                       {item.recent_days.map((count, index) => (
-                        <div className="flex h-full flex-1 flex-col justify-end gap-1" key={index}>
+                        <div className="flex h-full flex-1 flex-col justify-end gap-1" key={item.recent_dates[index]}>
                           <span className="text-center text-[10px] text-[#78839b]">{count}</span>
                           <div
                             className="min-h-1 rounded-t bg-gradient-to-t from-[#536dfe] to-[#b171ff]"
                             style={{ height: `${Math.max(4, (count / maxDaily) * 58)}px` }}
                           />
                         </div>
+                      ))}
+                    </div>
+                    <div className="mt-1 grid grid-cols-7 gap-2">
+                      {item.recent_dates.map((day) => (
+                        <span className="text-center text-[9px] text-[#78839b]" key={day}>
+                          {new Intl.DateTimeFormat("pt-BR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            timeZone: "UTC",
+                          }).format(new Date(`${day}T00:00:00Z`))}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -673,7 +685,7 @@ function WorkDaysPanel({
         <div>
           <h4 className="text-sm font-medium text-[#e6eaf2]">Dias trabalhados · {collaboratorName}</h4>
           <p className="mt-1 text-xs text-[#78839b]">
-            Cada dia selecionado vale a taxa atual por conta conectada: {money(workDays.data?.daily_rate ?? 0)}.
+            Os dias agrupam o valor das contas conectadas (não acrescentam uma diária). Cada conta usa seu valor salvo.
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-[#94a3b8]">
@@ -728,16 +740,23 @@ function WorkDaysPanel({
                   }}
                   title={
                     workDay?.paid
-                      ? `${date}: pago`
+                      ? `${date}: ${workDay.connections} conta(s), ${money(workDay.amount)}, pago`
                       : workDay
-                        ? `${date}: selecionado, ${money(workDay.amount)}`
+                        ? `${date}: ${workDay.connections} conta(s), ${money(workDay.amount)}`
                         : isFuture
                           ? "Dia futuro"
                           : "Marcar como trabalhado"
                   }
                   type="button"
                 >
-                  {index + 1}
+                  <span className="flex flex-col items-center leading-tight">
+                    <span>{index + 1}</span>
+                    {workDay && (
+                      <span className="mt-0.5 text-[9px] text-[#aab7ff]">
+                        {workDay.connections}
+                      </span>
+                    )}
+                  </span>
                 </button>
               );
             })}
@@ -749,7 +768,7 @@ function WorkDaysPanel({
           )}
           <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-[#202838] pt-3 text-xs">
             <span className="text-[#94a3b8]">
-              {selectedDays.length} dia(s) marcado(s)
+              {selectedDays.length} dia(s) marcado(s) · {workDays.data?.total_connections ?? 0} conta(s)
               {selectedDays.some((item) => item.paid) && " · verde = pago"}
             </span>
             <strong className="text-[#f2d48a]">

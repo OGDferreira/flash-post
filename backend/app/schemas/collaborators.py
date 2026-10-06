@@ -92,6 +92,7 @@ class CollaboratorReportItem(BaseModel):
     paid_month: Decimal
     due_month: Decimal
     projected_month: Decimal
+    recent_dates: list[date]
     recent_days: list[int]
     recent_earnings: list[Decimal]
     account_earnings: list[CollaboratorAccountEarning]
@@ -138,6 +139,7 @@ class CollaboratorDashboardResponse(BaseModel):
     projected_month: Decimal
     daily_progress: int
     monthly_progress: int
+    recent_dates: list[date]
     recent_days: list[int]
     recent_earnings: list[Decimal]
     recent_payments: list[Decimal]
@@ -155,6 +157,7 @@ class CollaboratorWorkDayRequest(BaseModel):
 
 class CollaboratorWorkDayItem(BaseModel):
     day: date
+    connections: int
     amount: Decimal
     paid: bool
 
@@ -162,5 +165,6 @@ class CollaboratorWorkDayItem(BaseModel):
 class CollaboratorWorkDaysResponse(BaseModel):
     month: str
     daily_rate: Decimal
+    total_connections: int
     total_amount: Decimal
     days: list[CollaboratorWorkDayItem]

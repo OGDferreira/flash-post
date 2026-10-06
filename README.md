@@ -171,6 +171,15 @@ The owner-only **Feed** page lists workspace profiles, loads up to 25 recent
 Instagram media items per selected profile, and shows profile snapshots and
 media engagement returned by Instagram. The **Colaboradores** navigation and
 management page are also owner-only.
+The workspace **E-mails** page manages supplier, login, password, responsible
+person, status, notes, 2FA code, and private error-image attachments. Passwords
+and 2FA values are encrypted at rest; authenticated workspace members can view
+and copy them, while only the OWNER can create, edit, or delete rows.
+COLLABORATORs can advance statuses, update notes, and upload JPEG, PNG, or WebP
+error images. The page uses the existing private Supabase Storage bucket and
+requires the standard `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` settings
+for image uploads. Migration `20261006_17` creates the workspace-scoped
+`email_accounts` table.
 Each loop keeps its own media selection, with signed previews and
 per-loop removal in the Loops page. The first eligible publication is queued
 immediately when a loop is created or activated; later publications follow its

@@ -110,6 +110,11 @@ async def _recent_daily_counts(
     return counts
 
 
+def _recent_dates(now: datetime) -> list[date]:
+    today = now.astimezone(_BRAZIL_TIME_ZONE).date()
+    return [today - timedelta(days=offset) for offset in range(6, -1, -1)]
+
+
 async def _earnings_between(
     db: DbSession,
     workspace_id: uuid.UUID,
@@ -143,21 +148,17 @@ async def _recent_daily_earnings(
     db: DbSession,
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
-    member_id: uuid.UUID,
     now: datetime,
     fallback_rate: Decimal,
 ) -> list[Decimal]:
-    today = now.astimezone(_BRAZIL_TIME_ZONE).date()
     amounts = []
-    for offset in range(6, -1, -1):
-        start, end = _day_bounds(today - timedelta(days=offset))
-        connection_earnings = await _earnings_between(
-            db, workspace_id, user_id, start, end, fallback_rate
+    for day in _recent_dates(now):
+        start, end = _day_bounds(day)
+        amounts.append(
+            await _earnings_between(
+                db, workspace_id, user_id, start, end, fallback_rate
+            )
         )
-        workday_earnings = await _workday_amount_between(
-            db, workspace_id, member_id, start, end
-        )
-        amounts.append(connection_earnings + workday_earnings)
     return amounts
 
 
@@ -177,26 +178,6 @@ async def _payments_between(
     if end is not None:
         query = query.where(CollaboratorPayment.paid_at < end)
     amount = await db.scalar(query)
-    return Decimal(str(amount or 0)).quantize(_CENT)
-
-
-async def _workday_amount_between(
-    db: DbSession,
-    workspace_id: uuid.UUID,
-    member_id: uuid.UUID,
-    start: datetime,
-    end: datetime,
-) -> Decimal:
-    start_date = start.astimezone(_BRAZIL_TIME_ZONE).date()
-    end_date = end.astimezone(_BRAZIL_TIME_ZONE).date()
-    amount = await db.scalar(
-        select(func.coalesce(func.sum(CollaboratorWorkDay.amount), 0)).where(
-            CollaboratorWorkDay.workspace_id == workspace_id,
-            CollaboratorWorkDay.workspace_member_id == member_id,
-            CollaboratorWorkDay.work_date >= start_date,
-            CollaboratorWorkDay.work_date < end_date,
-        )
-    )
     return Decimal(str(amount or 0)).quantize(_CENT)
 
 
@@ -236,14 +217,8 @@ async def _member_report(
     earnings_today = await _earnings_between(
         db, workspace_id, user.id, today_start, today_end, rate
     )
-    earnings_today += await _workday_amount_between(
-        db, workspace_id, member.id, today_start, today_end
-    )
     earnings_month = await _earnings_between(
         db, workspace_id, user.id, month_start, month_end, rate
-    )
-    earnings_month += await _workday_amount_between(
-        db, workspace_id, member.id, month_start, month_end
     )
     paid_month = Decimal(
         str(
@@ -299,9 +274,10 @@ async def _member_report(
         paid_month=paid_month,
         due_month=due_month,
         projected_month=projected_month,
+        recent_dates=_recent_dates(now),
         recent_days=await _recent_daily_counts(db, workspace_id, user.id, now),
         recent_earnings=await _recent_daily_earnings(
-            db, workspace_id, user.id, member.id, now, rate
+            db, workspace_id, user.id, now, rate
         ),
         account_earnings=[
             CollaboratorAccountEarning(
@@ -365,6 +341,7 @@ def _dashboard_response(
         daily_progress=daily_progress,
         monthly_progress=monthly_progress,
         recent_days=report.recent_days,
+        recent_dates=report.recent_dates,
         recent_earnings=report.recent_earnings,
         recent_payments=recent_payments,
         account_earnings=report.account_earnings,
@@ -670,21 +647,60 @@ async def _work_days_response(
             .order_by(CollaboratorWorkDay.work_date)
         )
     ).all()
-    return CollaboratorWorkDaysResponse(
-        month=month_start.strftime("%Y-%m"),
-        daily_rate=Decimal(str(member.rate_per_connection)).quantize(_CENT),
-        total_amount=sum(
-            (Decimal(str(item.amount)) for item in work_days),
-            Decimal("0.00"),
-        ).quantize(_CENT),
-        days=[
+    day_bounds_start, _ = _day_bounds(month_start)
+    _, day_bounds_end = _day_bounds(month_end - timedelta(days=1))
+    account_rows = (
+        await db.execute(
+            select(
+                InstagramAccount.first_connected_at,
+                InstagramAccount.collaborator_rate_at_connection,
+            ).where(
+                InstagramAccount.workspace_id == access.workspace.id,
+                InstagramAccount.connected_by_user_id == member.user_id,
+                InstagramAccount.first_connected_at >= day_bounds_start,
+                InstagramAccount.first_connected_at < day_bounds_end,
+            )
+        )
+    ).all()
+    daily_totals: dict[date, tuple[int, Decimal]] = {}
+    daily_rate = Decimal(str(member.rate_per_connection)).quantize(_CENT)
+    for connected_at, saved_rate in account_rows:
+        if connected_at is None:
+            continue
+        local_date = (
+            connected_at.replace(tzinfo=timezone.utc)
+            if connected_at.tzinfo is None
+            else connected_at
+        ).astimezone(_BRAZIL_TIME_ZONE).date()
+        count, amount = daily_totals.get(local_date, (0, Decimal("0.00")))
+        account_rate = (
+            Decimal(str(saved_rate)).quantize(_CENT)
+            if saved_rate is not None
+            else daily_rate
+        )
+        daily_totals[local_date] = (count + 1, amount + account_rate)
+    workday_items = []
+    for item in work_days:
+        connections, amount = daily_totals.get(
+            item.work_date, (0, Decimal("0.00"))
+        )
+        workday_items.append(
             CollaboratorWorkDayItem(
                 day=item.work_date,
-                amount=item.amount,
+                connections=connections,
+                amount=amount.quantize(_CENT),
                 paid=item.paid_at is not None,
             )
-            for item in work_days
-        ],
+        )
+    return CollaboratorWorkDaysResponse(
+        month=month_start.strftime("%Y-%m"),
+        daily_rate=daily_rate,
+        total_connections=sum(item.connections for item in workday_items),
+        total_amount=sum(
+            (item.amount for item in workday_items),
+            Decimal("0.00"),
+        ).quantize(_CENT),
+        days=workday_items,
     )
 
 
@@ -772,7 +788,7 @@ async def save_collaborator_work_days(
                 workspace_id=access.workspace.id,
                 workspace_member_id=member.id,
                 work_date=work_date,
-                amount=member.rate_per_connection,
+                amount=0,
             )
         )
     await db.commit()

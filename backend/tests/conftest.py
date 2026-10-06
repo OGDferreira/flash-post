@@ -56,6 +56,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with engine.begin() as connection:
         from app.models import (
             CollaboratorPayment,
+            EmailAccount,
             InstagramAccount,
             InstagramAppCredential,
             InstagramLoop,
@@ -72,6 +73,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         )
 
         await connection.execute(delete(CollaboratorPayment))
+        await connection.execute(delete(EmailAccount))
         await connection.execute(delete(InstagramPublicationJob))
         await connection.execute(delete(SharkEvent))
         await connection.execute(delete(InstagramLoopMedia))

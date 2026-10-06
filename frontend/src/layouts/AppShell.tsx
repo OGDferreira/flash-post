@@ -7,6 +7,7 @@ import {
   ChartNoAxesCombined,
   ChevronDown,
   CircleDollarSign,
+  Mail,
   Clapperboard,
   Folder,
   Home,
@@ -32,6 +33,7 @@ const ownerLinks = [
   { label: "Contas", to: "/feature/accounts", icon: Users },
   { label: "Pastas de perfis", to: "/feature/profile-folders", icon: Folder },
   { label: "Loops", to: "/feature/loops", icon: Infinity },
+  { label: "E-mails", to: "/feature/emails", icon: Mail },
   { label: "Analytics", to: "/feature/analytics", icon: ChartNoAxesCombined },
   { label: "Financeiro", to: "/feature/finance", icon: CircleDollarSign },
   { label: "Ranking", to: "/feature/ranking", icon: Trophy },
@@ -54,6 +56,7 @@ const collaboratorLinks = [
   { label: "Meu painel", to: "/dashboard", icon: Home },
   { label: "Hub de contas", to: "/feature/accounts", icon: Users },
   { label: "Loops", to: "/feature/loops", icon: Infinity },
+  { label: "E-mails", to: "/feature/emails", icon: Mail },
 ];
 
 type BeforeInstallPromptEvent = Event & {
@@ -167,7 +170,7 @@ export function AppShell() {
     : workspaceRole === "COLLABORATOR"
       ? collaboratorLinks
       : ownerLinks.filter(({ to }) =>
-          ["/dashboard", "/feature/accounts", "/feature/loops", "/feature/collaborators"].includes(to),
+          ["/dashboard", "/feature/accounts", "/feature/loops", "/feature/emails", "/feature/collaborators"].includes(to),
         );
   const visibleLinkGroups = [
     ...(hasWorkspaceOwnerAccess || workspaceRole === "COLLABORATOR"

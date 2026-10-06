@@ -143,7 +143,7 @@ async def test_owner_selects_paid_work_days_and_deletes_collaborator(
             "nickname": "Calendário Colaborador",
             "email": "calendar.collaborator@example.com",
             "password": "safe-calendar-password",
-            "rate_per_connection": "12.50",
+            "rate_per_connection": "1.50",
             "daily_connection_goal": 0,
             "monthly_connection_goal": 0,
             "monthly_bonus": "0.00",
@@ -155,32 +155,61 @@ async def test_owner_selects_paid_work_days_and_deletes_collaborator(
     today = datetime.now(timezone.utc).astimezone(ZoneInfo("America/Sao_Paulo")).date()
     month = today.strftime("%Y-%m")
     path = f"/api/collaborators/{member_id}/work-days?month={month}"
+    user_id = uuid.UUID(item["user_id"])
+    work_dates = [today - timedelta(days=2), today - timedelta(days=1), today]
+    for day, count in zip(work_dates, (7, 39, 2), strict=True):
+        connected_at = datetime(
+            day.year, day.month, day.day, 12, tzinfo=ZoneInfo("America/Sao_Paulo")
+        ).astimezone(timezone.utc)
+        db_session.add_all(
+            [
+                InstagramAccount(
+                    workspace_id=_workspace.id,
+                    connected_by_user_id=user_id,
+                    first_connected_at=connected_at,
+                    collaborator_rate_at_connection=Decimal("1.50"),
+                    instagram_user_id=f"{day.isoformat()}-{index}",
+                    username=f"calendar-{day.day}-{index}",
+                    encrypted_access_token=encrypt_value("test-token"),
+                    token_expires_at=datetime.now(timezone.utc),
+                    status="connected",
+                )
+                for index in range(count)
+            ]
+        )
+    await db_session.commit()
 
     selected = await client.put(
         path,
         headers={"X-CSRF-Token": await _csrf(client)},
-        json={"days": [today.isoformat()]},
+        json={"days": [day.isoformat() for day in work_dates]},
     )
     assert selected.status_code == 200, selected.text
-    assert selected.json()["total_amount"] == "12.50"
+    assert selected.json()["total_connections"] == 48
+    assert selected.json()["total_amount"] == "72.00"
     assert selected.json()["days"] == [
-        {"day": today.isoformat(), "amount": "12.50", "paid": False}
+        {"day": work_dates[0].isoformat(), "connections": 7, "amount": "10.50", "paid": False},
+        {"day": work_dates[1].isoformat(), "connections": 39, "amount": "58.50", "paid": False},
+        {"day": work_dates[2].isoformat(), "connections": 2, "amount": "3.00", "paid": False},
     ]
     report = await client.get("/api/collaborators")
     assert report.status_code == 200, report.text
     collaborator_report = report.json()["collaborators"][0]
-    assert Decimal(collaborator_report["earnings_today"]) == Decimal("12.50")
-    assert Decimal(collaborator_report["earnings_month"]) == Decimal("12.50")
+    assert Decimal(collaborator_report["earnings_today"]) == Decimal("3.00")
+    assert Decimal(collaborator_report["earnings_month"]) == Decimal("72.00")
+    assert collaborator_report["recent_dates"][-3:] == [
+        day.isoformat() for day in work_dates
+    ]
     assert sum(
         Decimal(value) for value in collaborator_report["recent_earnings"]
-    ) == Decimal("12.50")
+    ) == Decimal("72.00")
 
     paid = await client.post(
         f"/api/collaborators/{member_id}/payout",
         headers={"X-CSRF-Token": await _csrf(client)},
     )
     assert paid.status_code == 201, paid.text
-    assert paid.json()["payment"]["amount"] == "12.50"
+    assert paid.json()["payment"]["amount"] == "72.00"
     work_days = await client.get(path)
     assert work_days.json()["days"][0]["paid"] is True
 

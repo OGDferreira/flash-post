@@ -18,6 +18,7 @@ import { NotificationsPage } from "@/pages/NotificationsPage";
 import { RankingPage } from "@/pages/RankingPage";
 import { InstagramAccountsPage } from "@/pages/InstagramAccountsPage";
 import { LoopsPage } from "@/pages/LoopsPage";
+import { EmailsPage } from "@/pages/EmailsPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { ProfileFoldersPage } from "@/pages/ProfileFoldersPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -59,6 +60,7 @@ export default function App() {
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
                   <Route path="/feature/loops" element={<LoopsPage />} />
+                  <Route path="/feature/emails" element={<EmailsPage />} />
                   <Route element={<RequireWorkspaceOwner />}>
                     <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
                     <Route
@@ -144,6 +146,7 @@ function RequireCollaboratorAccess() {
     "/dashboard",
     "/feature/accounts",
     "/feature/loops",
+    "/feature/emails",
   ];
   if (
     workspaceRole === "COLLABORATOR" &&
