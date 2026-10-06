@@ -184,8 +184,106 @@ def _normalize_import_header(value: object) -> str:
     )
 
 
+def _validate_import_rows(
+    rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    if not rows:
+        raise HTTPException(400, "O arquivo não contém linhas para importar.")
+    if len(rows) > MAX_IMPORT_ROWS:
+        raise HTTPException(
+            400,
+            f"O limite é de {MAX_IMPORT_ROWS} linhas por importação.",
+        )
+    validated_rows: list[dict[str, str]] = []
+    for line_number, fields in enumerate(rows, start=1):
+        try:
+            validated = EmailAccountCreateRequest.model_validate(fields)
+        except ValueError:
+            raise HTTPException(
+                400,
+                f"Dados inválidos na linha {line_number}; revise fornecedor, e-mail, senha e código 2FA.",
+            ) from None
+        fields["email"] = str(validated.email)
+        fields["supplier"] = validated.supplier
+        validated_rows.append(fields)
+
+    emails = [row["email"] for row in validated_rows]
+    if len(emails) != len(set(emails)):
+        raise HTTPException(400, "O arquivo contém e-mails repetidos.")
+    return validated_rows
+
+
+def _parse_text_import(content: bytes) -> list[dict[str, str]]:
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(400, "O arquivo TXT deve usar codificação UTF-8.") from exc
+    rows: list[dict[str, str]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        if len(rows) >= MAX_IMPORT_ROWS:
+            raise HTTPException(
+                400,
+                f"O limite é de {MAX_IMPORT_ROWS} linhas por importação.",
+            )
+        values = (
+            line.split("\t")
+            if "\t" in line
+            else line.split(":")
+            if ":" in line
+            else []
+        )
+        if len(values) != 5:
+            raise HTTPException(
+                400,
+                f"Formato inválido na linha {line_number}; use Fornecedor : E-mail : Senha : Código 2FA : Senha 2FA.",
+            )
+        supplier, email, password, two_factor_code, two_factor_password = (
+            value.strip() for value in values
+        )
+        rows.append(
+            {
+                "supplier": supplier,
+                "email": email,
+                "password": password,
+                "two_factor_code": two_factor_code,
+                "two_factor_password": two_factor_password,
+            }
+        )
+    return _validate_import_rows(rows)
+
+
+def _spreadsheet_delimiter(
+    text: str,
+    required_headers: set[str],
+) -> tuple[str, list[str]] | None:
+    first_line = next((line for line in text.splitlines() if line.strip()), "")
+    candidates: list[tuple[int, str, list[str]]] = []
+    for delimiter in (",", ";", "\t"):
+        headers = next(csv.reader([first_line], delimiter=delimiter), [])
+        normalized = [_normalize_import_header(header) for header in headers]
+        score = len(required_headers.intersection(normalized))
+        candidates.append((score, delimiter, normalized))
+    score, delimiter, normalized_headers = max(candidates, key=lambda item: item[0])
+    if score < len(required_headers):
+        return None
+    return delimiter, normalized_headers
+
+
 def _read_import_rows(filename: str, content: bytes) -> list[dict[str, str]]:
-    if filename.casefold().endswith((".xlsx", ".xlsm")):
+    required = {
+        "fornecedor": "supplier",
+        "email": "email",
+        "senha": "password",
+        "codigo 2fa": "two_factor_code",
+        "senha do 2fa": "two_factor_password",
+    }
+    is_excel = (
+        filename.casefold().endswith((".xlsx", ".xlsm"))
+        or content.startswith(b"PK\x03\x04")
+    )
+    if is_excel:
         try:
             workbook = load_workbook(
                 io.BytesIO(content), read_only=True, data_only=True
@@ -200,20 +298,23 @@ def _read_import_rows(filename: str, content: bytes) -> list[dict[str, str]]:
             return []
         rows = list(values)
         workbook.close()
-    elif filename.casefold().endswith(".csv"):
+    else:
         try:
             sample = content.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
-            raise HTTPException(400, "O arquivo CSV deve usar codificação UTF-8.") from exc
-        try:
-            dialect = csv.Sniffer().sniff(sample[:4096], delimiters=",;\t")
-        except csv.Error:
-            dialect = csv.excel
-        reader = csv.reader(io.StringIO(sample), dialect)
+            raise HTTPException(400, "O arquivo deve usar codificação UTF-8.") from exc
+        detected = _spreadsheet_delimiter(sample, set(required))
+        if detected is None:
+            if filename.casefold().endswith((".csv", ".xlsx", ".xlsm")):
+                raise HTTPException(
+                    400,
+                    "Não reconheci os cabeçalhos do arquivo. Confira Fornecedor, E-mail, Senha, Código 2FA e Senha do 2FA.",
+                )
+            return _parse_text_import(content)
+        delimiter, _normalized_headers = detected
+        reader = csv.reader(io.StringIO(sample), delimiter=delimiter)
         headers = next(reader, None)
         rows = list(reader)
-    else:
-        raise HTTPException(400, "Envie um arquivo CSV ou XLSX.")
 
     if not headers:
         raise HTTPException(400, "A planilha não contém a linha de cabeçalho.")
@@ -221,13 +322,6 @@ def _read_import_rows(filename: str, content: bytes) -> list[dict[str, str]]:
         _normalize_import_header(header): index
         for index, header in enumerate(headers)
         if header is not None and str(header).strip()
-    }
-    required = {
-        "fornecedor": "supplier",
-        "email": "email",
-        "senha": "password",
-        "codigo 2fa": "two_factor_code",
-        "senha do 2fa": "two_factor_password",
     }
     missing = [header for header in required if header not in indexes]
     if missing:
@@ -249,8 +343,6 @@ def _read_import_rows(filename: str, content: bytes) -> list[dict[str, str]]:
         }
         try:
             validated = EmailAccountCreateRequest.model_validate(fields)
-            if not validated.two_factor_password:
-                raise ValueError("senha do 2FA vazia")
         except (ValueError, TypeError):
             raise HTTPException(
                 400,
@@ -259,12 +351,7 @@ def _read_import_rows(filename: str, content: bytes) -> list[dict[str, str]]:
         fields["email"] = str(validated.email)
         fields["supplier"] = validated.supplier
         parsed.append(fields)
-    if not parsed:
-        raise HTTPException(400, "A planilha não contém linhas válidas para importar.")
-    emails = [row["email"] for row in parsed]
-    if len(emails) != len(set(emails)):
-        raise HTTPException(400, "A planilha contém e-mails repetidos.")
-    return parsed
+    return _validate_import_rows(parsed)
 
 
 @router.post(
@@ -312,7 +399,11 @@ async def import_email_accounts(
                 email=row["email"],
                 encrypted_password=encrypt_value(row["password"]),
                 encrypted_two_factor_code=encrypt_value(row["two_factor_code"]),
-                encrypted_two_factor_password=encrypt_value(row["two_factor_password"]),
+                encrypted_two_factor_password=(
+                    encrypt_value(row["two_factor_password"])
+                    if row["two_factor_password"]
+                    else None
+                ),
                 status="available",
             )
             for row in rows

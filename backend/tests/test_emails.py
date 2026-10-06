@@ -146,6 +146,72 @@ async def test_owner_imports_csv_and_xlsx_email_accounts_with_encrypted_2fa_pass
 
 
 @pytest.mark.anyio
+async def test_owner_imports_tab_separated_and_colon_separated_txt_accounts(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    content = (
+        "Fornecedor A : first@example.com : email-secret : seed-a : 2fa-secret-a\n"
+        "Fornecedor B\tsecond@example.com\temail-secret-b\tseed-b\t\n"
+    )
+    response = await client.post(
+        "/api/emails/import",
+        params={"filename": "contas.txt"},
+        headers={"X-CSRF-Token": await _csrf(client)},
+        content=content.encode("utf-8"),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"imported_count": 2}
+
+    accounts = (
+        await db_session.scalars(
+            select(EmailAccount).where(EmailAccount.workspace_id == workspace.id)
+        )
+    ).all()
+    assert len(accounts) == 2
+    first = next(account for account in accounts if account.email == "first@example.com")
+    second = next(account for account in accounts if account.email == "second@example.com")
+    assert decrypt_value(first.encrypted_two_factor_password) == "2fa-secret-a"
+    assert second.encrypted_two_factor_password is None
+
+
+@pytest.mark.anyio
+async def test_owner_imports_comma_separated_csv_even_without_file_extension(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    content = (
+        "fornecedor,email,senha,codigo 2fa,senha do 2fa\n"
+        "Fornecedor A,first@example.com,email-secret,seed-a,2fa-secret-a\n"
+        "Fornecedor B,second@example.com,email-secret-b,seed-b,\n"
+    ).encode("utf-8-sig")
+    response = await client.post(
+        "/api/emails/import",
+        params={"filename": "emailss"},
+        headers={"X-CSRF-Token": await _csrf(client)},
+        content=content,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"imported_count": 2}
+    accounts = (
+        await db_session.scalars(
+            select(EmailAccount).where(EmailAccount.workspace_id == workspace.id)
+        )
+    ).all()
+    assert len(accounts) == 2
+    assert {account.email for account in accounts} == {
+        "first@example.com",
+        "second@example.com",
+    }
+
+
+@pytest.mark.anyio
 async def test_collaborator_can_cycle_status_and_update_observation_only(
     client: AsyncClient,
     db_session: AsyncSession,

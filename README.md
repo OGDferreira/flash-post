@@ -180,7 +180,10 @@ error images. The page uses the existing private Supabase Storage bucket and
 requires the standard `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` settings
 for image uploads. Owners can import CSV/XLSX files with the columns
 `Fornecedor`, `E-mail`, `Senha`, `Código 2FA`, and `Senha do 2FA`; imported
-secrets are encrypted before they are stored. Migrations `20261006_17` and
+secrets are encrypted before they are stored. TXT imports accept one account
+per line, with fields separated either by tabs or colons in that same order;
+the 2FA password may be blank. Owners can upload a TXT file or paste its
+contents into the import form. Migrations `20261006_17` and
 `20261006_18` create the workspace-scoped email table and encrypted 2FA password
 field.
 Each loop keeps its own media selection, with signed previews and

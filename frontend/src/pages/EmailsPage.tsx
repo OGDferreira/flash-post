@@ -141,7 +141,9 @@ export function EmailsPage() {
   const [createForm, setCreateForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EmailForm>(emptyForm);
+  const [importMode, setImportMode] = useState<"file" | "text">("file");
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importText, setImportText] = useState("");
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [observationDrafts, setObservationDrafts] = useState<Record<string, string>>({});
   const emails = useQuery({
@@ -167,17 +169,26 @@ export function EmailsPage() {
     },
   });
   const importAccounts = useMutation({
-    mutationFn: ({ file }: { file: File }) =>
+    mutationFn: ({
+      filename,
+      content,
+      contentType,
+    }: {
+      filename: string;
+      content: File | string;
+      contentType: string;
+    }) =>
       apiRequest<{ imported_count: number }>(
-        `/api/emails/import?${new URLSearchParams({ filename: file.name })}`,
+        `/api/emails/import?${new URLSearchParams({ filename })}`,
         {
           method: "POST",
-          headers: { "Content-Type": file.type || "application/octet-stream" },
-          body: file,
+          headers: { "Content-Type": contentType },
+          body: content,
         },
       ),
     onSuccess: async (result) => {
       setImportFile(null);
+      setImportText("");
       setImportMessage(`${result.imported_count} conta(s) importada(s).`);
       await refresh();
     },
@@ -387,34 +398,94 @@ export function EmailsPage() {
         <details className="dashboard-card rounded-xl p-5">
           <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-[#edf0f8]">
             <Plus className="text-[#8295ff]" size={16} />
-            Importar planilha de contas
+            Importar contas por arquivo ou texto
           </summary>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <input
-              accept=".csv,.xlsx"
-              aria-label="Planilha de contas"
-              className="collaborator-input min-w-56"
-              key={importFile?.name ?? "no-file"}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                setImportFile(event.currentTarget.files?.[0] ?? null);
-                setImportMessage(null);
-              }}
-              type="file"
-            />
+          <div className="mt-4 space-y-3">
+            <div aria-label="Forma de importar" className="flex flex-wrap gap-2">
+              <button
+                aria-pressed={importMode === "file"}
+                className={`min-h-9 rounded-lg border px-3 text-sm font-medium ${
+                  importMode === "file"
+                    ? "border-[#536dfe] bg-[#18234a] text-[#d8ddff]"
+                    : "border-[#34446f] text-[#94a3b8]"
+                }`}
+                onClick={() => setImportMode("file")}
+                type="button"
+              >
+                Enviar arquivo TXT
+              </button>
+              <button
+                aria-pressed={importMode === "text"}
+                className={`min-h-9 rounded-lg border px-3 text-sm font-medium ${
+                  importMode === "text"
+                    ? "border-[#536dfe] bg-[#18234a] text-[#d8ddff]"
+                    : "border-[#34446f] text-[#94a3b8]"
+                }`}
+                onClick={() => setImportMode("text")}
+                type="button"
+              >
+                Colar ou escrever texto
+              </button>
+            </div>
+            {importMode === "file" ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  accept=".txt,.csv,.xlsx"
+                  aria-label="Arquivo com contas"
+                  className="collaborator-input min-w-56"
+                  key={importFile?.name ?? "no-file"}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    setImportFile(event.currentTarget.files?.[0] ?? null);
+                    setImportMessage(null);
+                  }}
+                  type="file"
+                />
+                {importFile && (
+                  <span className="text-xs text-[#94a3b8]">{importFile.name}</span>
+                )}
+              </div>
+            ) : (
+              <textarea
+                aria-label="Texto das contas"
+                className="collaborator-input min-h-36 w-full resize-y font-mono text-xs"
+                onChange={(event) => {
+                  setImportText(event.target.value);
+                  setImportMessage(null);
+                }}
+                placeholder={"Fornecedor : email@exemplo.com : senha : codigo 2FA : senha 2FA\nFornecedor : email2@exemplo.com : senha : codigo 2FA : "}
+                value={importText}
+              />
+            )}
+            <p className="text-xs text-[#94a3b8]">
+              Uma conta por linha, nesta ordem: fornecedor : e-mail : senha : código 2FA : senha 2FA.
+              Também aceitamos os campos separados por tabulação. A senha do 2FA pode ficar vazia.
+            </p>
             <button
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white disabled:opacity-50"
-              disabled={!importFile || importAccounts.isPending}
+              disabled={
+                importAccounts.isPending ||
+                (importMode === "file" ? !importFile : !importText.trim())
+              }
               onClick={() => {
-                if (importFile) importAccounts.mutate({ file: importFile });
+                if (importMode === "file" && importFile) {
+                  importAccounts.mutate({
+                    filename: importFile.name,
+                    content: importFile,
+                    contentType: importFile.type || "text/plain",
+                  });
+                } else if (importMode === "text" && importText.trim()) {
+                  importAccounts.mutate({
+                    filename: "contas.txt",
+                    content: importText,
+                    contentType: "text/plain; charset=utf-8",
+                  });
+                }
               }}
               type="button"
             >
               {importAccounts.isPending ? "Importando..." : "Importar"}
             </button>
             {importMessage && <p className="text-sm text-[#a9e5c0]">{importMessage}</p>}
-            <p className="basis-full text-xs text-[#94a3b8]">
-              Colunas obrigatórias: Fornecedor, E-mail, Senha, Código 2FA e Senha do 2FA.
-            </p>
           </div>
         </details>
       )}
