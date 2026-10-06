@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Mapping
 
 import httpx
@@ -9,6 +10,7 @@ from app.models import InstagramAccount, InstagramMedia
 GRAPH_ENDPOINT = "https://graph.instagram.com/v25.0"
 VIDEO_PROCESSING_INTERVAL_SECONDS = 10
 VIDEO_PROCESSING_MAX_ATTEMPTS = 90
+logger = logging.getLogger(__name__)
 
 
 class InstagramPublishingError(RuntimeError):
@@ -89,6 +91,13 @@ async def publish_media(
     access_token: str,
     storage: SupabaseStorage,
 ) -> str:
+    logger.info(
+        "Starting Instagram publication for account %s (Instagram user %s), media %s (%s).",
+        account.username,
+        account.instagram_user_id,
+        media.id,
+        media.media_type,
+    )
     signed_url = await storage.create_signed_url(media.storage_path)
     create_payload: dict[str, str] = {
         "access_token": access_token,
@@ -103,16 +112,27 @@ async def publish_media(
     stage = "media container creation"
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
+            logger.info(
+                "Creating Instagram media container for account %s, media %s.",
+                account.username,
+                media.id,
+            )
             create_response = await client.post(
                 f"{GRAPH_ENDPOINT}/{account.instagram_user_id}/media",
                 data=create_payload,
             )
             create_response.raise_for_status()
             container_id = _response_id(create_response.json())
+            logger.info(
+                "Created Instagram container %s for account %s, media %s.",
+                container_id,
+                account.username,
+                media.id,
+            )
 
             if media.media_type == "video":
                 stage = "video processing status check"
-                for _ in range(VIDEO_PROCESSING_MAX_ATTEMPTS):
+                for attempt in range(1, VIDEO_PROCESSING_MAX_ATTEMPTS + 1):
                     await asyncio.sleep(VIDEO_PROCESSING_INTERVAL_SECONDS)
                     status_response = await client.get(
                         f"{GRAPH_ENDPOINT}/{container_id}",
@@ -128,11 +148,25 @@ async def publish_media(
                         if isinstance(status_payload, dict)
                         else None
                     )
+                    logger.info(
+                        "Instagram container %s processing status for account %s: %s (check %s/%s).",
+                        container_id,
+                        account.username,
+                        status_code,
+                        attempt,
+                        VIDEO_PROCESSING_MAX_ATTEMPTS,
+                    )
                     if status_code == "FINISHED":
                         break
                     if status_code in {"ERROR", "EXPIRED"}:
+                        logger.error(
+                            "Instagram container %s failed processing for account %s: %s.",
+                            container_id,
+                            account.username,
+                            status_code,
+                        )
                         raise InstagramPublishingError(
-                            "Instagram could not process the video container."
+                            f"Instagram could not process the video container (status {status_code})."
                         )
                     if status_code != "IN_PROGRESS":
                         raise InstagramPublishingError(
@@ -144,6 +178,11 @@ async def publish_media(
                     )
 
             stage = "media publication"
+            logger.info(
+                "Publishing Instagram container %s for account %s.",
+                container_id,
+                account.username,
+            )
             publish_response = await client.post(
                 f"{GRAPH_ENDPOINT}/{account.instagram_user_id}/media_publish",
                 data={
@@ -152,15 +191,29 @@ async def publish_media(
                 },
             )
             publish_response.raise_for_status()
-            return _response_id(publish_response.json())
+            published_media_id = _response_id(publish_response.json())
+            logger.info(
+                "Published Instagram container %s as media %s for account %s.",
+                container_id,
+                published_media_id,
+                account.username,
+            )
+            return published_media_id
         except httpx.HTTPStatusError as exc:
+            detail = _publication_error_detail(
+                exc.response,
+                stage,
+                access_token,
+                signed_url,
+            )
+            logger.error(
+                "Instagram publication failed for account %s at %s: %s",
+                account.username,
+                stage,
+                detail,
+            )
             raise InstagramPublishingError(
-                _publication_error_detail(
-                    exc.response,
-                    stage,
-                    access_token,
-                    signed_url,
-                ),
+                detail,
                 status_code=exc.response.status_code,
                 meta_error_code=_meta_error_code(exc.response),
             ) from None

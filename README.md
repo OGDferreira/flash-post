@@ -275,15 +275,22 @@ associate connected accounts with an existing loop, but cannot change its
 publishing settings or media pool. An APScheduler task starts with the FastAPI
 web process and checks the queue and token refreshes once per minute. With
 `INSTAGRAM_PUBLISHING_ENABLED=false`, it only creates queued intents and does
-not send posts. Enable publishing only after rotating any exposed key,
+not send posts; the worker logs this state explicitly on every tick. The
+setting defaults to `false`, so production must explicitly set
+`INSTAGRAM_PUBLISHING_ENABLED=true` before any loop can post. Enable publishing
+only after rotating any exposed key,
 verifying the Project URL, confirming migration `20261003_12` was applied,
 uploading test media, and reconnecting a test account with the publishing
-permission. Once enabled, only queued items with compatible media are sent.
-Failed jobs are not automatically retried because a network failure can happen
-after Instagram has accepted a post. Verify Instagram before uploading the
-same media again; media from an ambiguous, started attempt is not reused
-automatically. A suspended Render web service cannot run its in-process
-scheduler until the service wakes.
+permission. The worker publishes with the encrypted access token stored on
+each Instagram account; it does not substitute the currently selected Meta
+app's token. Reels are sent to `/{ig-user-id}/media`, polled until the
+container reports `FINISHED`, and only then sent to `media_publish`. A failure
+for one account is recorded and that account is marked with an error without
+stopping the remaining account queue. Failed jobs are not automatically
+retried because a network failure can happen after Instagram has accepted a
+post. Verify Instagram before uploading the same media again; media from an
+ambiguous, started attempt is not reused automatically. A suspended Render web
+service cannot run its in-process scheduler until the service wakes.
 An active loop queues its first selected media immediately for each eligible
 account instead of waiting for the first random interval. Accounts added later
 join the current playlist item immediately (or the next item after the last

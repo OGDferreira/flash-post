@@ -20,6 +20,7 @@ from app.models import (
 from app.workers.loop_scheduler import (
     CONSECUTIVE_PUBLICATION_FAILURE_LIMIT,
     _remove_failed_loop_account,
+    _record_publication_failure,
     _update_account_health_after_failure,
 )
 
@@ -1213,3 +1214,70 @@ async def test_failed_publication_detaches_account_and_discards_pending_loop_job
     assert association is None
     assert await db_session.get(InstagramPublicationJob, pending_job.id) is None
     assert await db_session.get(InstagramPublicationJob, failed_job.id) is not None
+
+
+@pytest.mark.anyio
+async def test_publication_failure_marks_only_that_account_and_preserves_other_queue_jobs(
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    failed_account = _active_account(workspace.id, "isolated_failure")
+    next_account = _active_account(workspace.id, "next_account")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Isolated publication failures",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        post_type="images",
+        repeat_media=True,
+        status="active",
+    )
+    db_session.add_all([failed_account, next_account, loop])
+    await db_session.flush()
+    failed_job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=loop.id,
+        account_id=failed_account.id,
+        scheduled_for=datetime.now(timezone.utc),
+        status="publishing",
+        attempts=1,
+    )
+    next_job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=loop.id,
+        account_id=next_account.id,
+        scheduled_for=datetime.now(timezone.utc) + timedelta(seconds=1),
+        status="queued",
+    )
+    db_session.add_all([failed_job, next_job])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            InstagramLoopAccount(loop_id=loop.id, account_id=failed_account.id),
+            InstagramLoopAccount(loop_id=loop.id, account_id=next_account.id),
+        ]
+    )
+    await db_session.commit()
+
+    await _record_publication_failure(
+        db_session,
+        failed_job.id,
+        failed_account.id,
+        InstagramPublishingError(
+            "Instagram rejected media (HTTP 429, code 4). Rate limit reached."
+        ),
+    )
+
+    await db_session.refresh(failed_account)
+    assert failed_account.status == "error"
+    assert await db_session.get(InstagramPublicationJob, failed_job.id) is not None
+    assert await db_session.get(InstagramPublicationJob, next_job.id) is not None
+    await db_session.refresh(next_job)
+    assert next_job.status == "queued"
+    assert await db_session.get(
+        InstagramLoopAccount, (loop.id, failed_account.id)
+    ) is None
+    assert await db_session.get(
+        InstagramLoopAccount, (loop.id, next_account.id)
+    ) is not None

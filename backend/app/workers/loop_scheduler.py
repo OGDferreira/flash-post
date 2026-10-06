@@ -174,6 +174,55 @@ async def _update_account_health_after_failure(
         await db.commit()
 
 
+def _safe_publication_error(error: Exception) -> str:
+    if isinstance(error, (InstagramPublishingError, SupabaseStorageError)):
+        return str(error)[:500]
+    if isinstance(error, httpx.HTTPError):
+        return "A network error interrupted the publication; check the Instagram account before retrying."
+    return "An unexpected error interrupted the publication. Check the worker logs."
+
+
+async def _record_publication_failure(
+    db,
+    job_id,
+    account_id,
+    error: Exception,
+) -> None:
+    job = await db.scalar(
+        select(InstagramPublicationJob).where(
+            InstagramPublicationJob.id == job_id,
+            InstagramPublicationJob.status == "publishing",
+        )
+    )
+    account = await db.get(InstagramAccount, account_id)
+    if job is None:
+        logger.warning(
+            "Publication job %s was no longer active after account %s failed.",
+            job_id,
+            account_id,
+        )
+        return
+
+    error_detail = _safe_publication_error(error)
+    job.status = "failed"
+    job.last_error = error_detail
+    await _remove_failed_loop_account(db, job)
+    if account is not None and account.status == "connected":
+        await _mark_account_as_error(
+            db,
+            account,
+            f"Falha na publicação: {error_detail}"[:500],
+        )
+    await db.commit()
+    logger.error(
+        "Publication job %s failed for account %s (%s): %s",
+        job_id,
+        account_id,
+        type(error).__name__,
+        error_detail,
+    )
+
+
 async def refresh_due_instagram_tokens(now: datetime | None = None) -> int:
     current = now or datetime.now(timezone.utc)
     refreshed_count = 0
@@ -312,7 +361,12 @@ async def process_one_queued_publication() -> bool:
             job.last_error = "The connected account or selected media is no longer available."
             await _remove_failed_loop_account(db, job)
             await db.commit()
-            logger.warning("Publication job %s failed preflight checks.", job.id)
+            logger.error(
+                "Publication job %s could not start: account_exists=%s media_exists=%s.",
+                job.id,
+                account is not None,
+                media is not None,
+            )
             return True
         if (
             account.status != "connected"
@@ -325,20 +379,41 @@ async def process_one_queued_publication() -> bool:
             job.last_error = "The connected account or selected media is no longer available."
             await _remove_failed_loop_account(db, job)
             await db.commit()
-            logger.warning("Publication job %s failed account health checks.", job.id)
+            logger.error(
+                "Publication job %s skipped because account %s is not connected with a valid token.",
+                job.id,
+                account.username,
+            )
             return True
 
         try:
             access_token = decrypt_value(account.encrypted_access_token)
+        except (RuntimeError, ValueError) as exc:
+            job.status = "failed"
+            job.last_error = "The Instagram access token could not be read securely."
+            await _remove_failed_loop_account(db, job)
+            await _mark_account_as_error(
+                db,
+                account,
+                "O token desta conta não pôde ser lido com segurança.",
+            )
+            await db.commit()
+            logger.error(
+                "Publication job %s could not decrypt the account token (%s).",
+                job.id,
+                type(exc).__name__,
+            )
+            return True
+        try:
             storage = SupabaseStorage.from_settings()
         except (RuntimeError, ValueError) as exc:
             job.status = "failed"
-            job.last_error = "Server-side credentials could not be read securely."
-            await _remove_failed_loop_account(db, job)
+            job.last_error = "Server-side media storage credentials are unavailable."
             await db.commit()
             logger.error(
-                "Publication job %s could not load credentials (%s).",
+                "Publication job %s for account %s could not initialize media storage (%s).",
                 job.id,
+                account.username,
                 type(exc).__name__,
             )
             return True
@@ -350,39 +425,20 @@ async def process_one_queued_publication() -> bool:
         job_id = job.id
         account_id = account.id
         media_id = media.id
+        logger.info(
+            "Starting queued publication job %s for account %s (Instagram user %s, app credential %s), media %s.",
+            job_id,
+            account.username,
+            account.instagram_user_id,
+            account.app_credential_id or "legacy/unlinked",
+            media_id,
+        )
 
     try:
         published_media_id = await publish_media(account, media, access_token, storage)
-    except (
-        httpx.HTTPError,
-        InstagramPublishingError,
-        SupabaseStorageError,
-        ValueError,
-    ) as exc:
+    except Exception as exc:
         async with get_session_factory()() as db:
-            job = await db.scalar(
-                select(InstagramPublicationJob).where(
-                    InstagramPublicationJob.id == job_id,
-                    InstagramPublicationJob.status == "publishing",
-                )
-            )
-            if job is not None:
-                job.status = "failed"
-                job.last_error = (
-                    str(exc)[:500]
-                    if isinstance(exc, (InstagramPublishingError, SupabaseStorageError))
-                    else "A network error interrupted the publication; verify Instagram before retrying."
-                )
-                await _remove_failed_loop_account(db, job)
-                await db.commit()
-                await _update_account_health_after_failure(db, account_id, exc)
-        logger.error(
-            "Publication job %s failed while sending account %s media %s (%s).",
-            job_id,
-            account_id,
-            media_id,
-            type(exc).__name__,
-        )
+            await _record_publication_failure(db, job_id, account_id, exc)
         return True
 
     async with get_session_factory()() as db:
@@ -397,7 +453,13 @@ async def process_one_queued_publication() -> bool:
             job.published_media_id = published_media_id
             job.last_error = None
             await db.commit()
-    logger.info("Publication job %s published as Instagram media %s.", job_id, published_media_id)
+    logger.info(
+        "Publication job %s published media %s to account %s (source media %s).",
+        job_id,
+        published_media_id,
+        account_id,
+        media_id,
+    )
     return True
 
 
@@ -426,6 +488,7 @@ async def fail_stale_publication_jobs(now: datetime | None = None) -> int:
 
 
 async def run_loop_scheduler_tick() -> int:
+    logger.info("Starting Loop publication scheduler tick.")
     await _mark_expired_accounts(datetime.now(timezone.utc))
     await fail_stale_publication_jobs()
     refreshed_tokens = await refresh_due_instagram_tokens()
@@ -433,10 +496,24 @@ async def run_loop_scheduler_tick() -> int:
         created_jobs = await enqueue_due_loop_publications(db)
     published_jobs = 0
     if get_settings().instagram_publishing_enabled:
-        while await process_one_queued_publication():
+        while True:
+            try:
+                processed = await process_one_queued_publication()
+            except Exception as exc:
+                logger.error(
+                    "Loop publication worker could not process the next queued job (%s); "
+                    "remaining jobs will be retried on the next scheduler tick.",
+                    type(exc).__name__,
+                )
+                break
+            if not processed:
+                break
             published_jobs += 1
     else:
-        logger.info("Instagram publishing is disabled; queued jobs were not sent.")
+        logger.warning(
+            "Instagram publishing is disabled by INSTAGRAM_PUBLISHING_ENABLED=false; "
+            "queued publications are not being sent."
+        )
     logger.info(
         "Loop scheduler prepared %s jobs, refreshed %s tokens, and processed %s publications.",
         created_jobs,

@@ -14,25 +14,43 @@ _LOOP_TICK_INTERVAL_SECONDS = 60
 async def _run_tick_with_database_lock() -> None:
     engine = get_engine()
     if engine.dialect.name != "postgresql":
-        await run_loop_scheduler_tick()
-        return
-
-    async with engine.connect() as connection:
-        acquired = await connection.scalar(
-            text("SELECT pg_try_advisory_lock(:lock_key)"),
-            {"lock_key": _POSTGRES_ADVISORY_LOCK_KEY},
-        )
-        if not acquired:
-            logger.debug("Another FlashPost instance owns the scheduler lock.")
-            return
-
         try:
             await run_loop_scheduler_tick()
-        finally:
-            await connection.execute(
-                text("SELECT pg_advisory_unlock(:lock_key)"),
+        except Exception as exc:
+            logger.error(
+                "Loop scheduler tick failed before completion (%s); "
+                "the next scheduled tick will retry.",
+                type(exc).__name__,
+            )
+        return
+
+    try:
+        async with engine.connect() as connection:
+            acquired = await connection.scalar(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
                 {"lock_key": _POSTGRES_ADVISORY_LOCK_KEY},
             )
+            if not acquired:
+                logger.debug("Another FlashPost instance owns the scheduler lock.")
+                return
+            try:
+                await run_loop_scheduler_tick()
+            except Exception as exc:
+                logger.error(
+                    "Loop scheduler tick failed before completion (%s); "
+                    "the next scheduled tick will retry.",
+                    type(exc).__name__,
+                )
+            finally:
+                await connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": _POSTGRES_ADVISORY_LOCK_KEY},
+                )
+    except Exception as exc:
+        logger.error(
+            "Loop scheduler could not acquire or release its database lock (%s).",
+            type(exc).__name__,
+        )
 
 
 def create_scheduler() -> AsyncIOScheduler:
