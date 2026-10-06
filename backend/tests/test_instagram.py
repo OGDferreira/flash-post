@@ -256,10 +256,24 @@ async def test_owner_can_add_and_read_meta_app_without_secret(
 
 
 @pytest.mark.anyio
-async def test_collaborator_cannot_read_or_change_workspace_meta_app(
+async def test_collaborator_can_read_but_cannot_manage_workspace_meta_apps(
     client: AsyncClient,
+    db_session: AsyncSession,
     collaborator,
+    owner,
 ) -> None:
+    _owner_user, workspace = owner
+    db_session.add(
+        InstagramAppCredential(
+            workspace_id=workspace.id,
+            display_name="Workspace app",
+            meta_app_name="Meta workspace app",
+            app_id="123456789",
+            encrypted_app_secret=encrypt_value("private-meta-secret"),
+            is_selected=True,
+        )
+    )
+    await db_session.commit()
     await _login(client, "collaborator@example.com", "collaborator password")
     token = await _csrf(client)
 
@@ -274,7 +288,10 @@ async def test_collaborator_cannot_read_or_change_workspace_meta_app(
         },
     )
 
-    assert read.status_code == 403
+    assert read.status_code == 200
+    assert read.json()["can_manage"] is False
+    assert read.json()["apps"][0]["app_id"] == "123456789"
+    assert "private-meta-secret" not in read.text
     assert write.status_code == 403
 
 
@@ -783,13 +800,17 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
     await db_session.commit()
 
     async def fake_exchange(
-        _code: str,
+        code: str,
         _redirect_uri: str,
         app_id: str,
         app_secret: str,
     ):
-        assert app_id == "123456"
-        assert app_secret == "test-app-secret"
+        expected_credentials = (
+            ("654321", "other-app-secret")
+            if code == "second-one-time-code"
+            else ("123456", "test-app-secret")
+        )
+        assert (app_id, app_secret) == expected_credentials
         return (
             "17840000000000000",
             "flashpost_demo",
@@ -836,11 +857,21 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
     first_connected_at = account.first_connected_at
 
     second_token = await _csrf(client)
+    second_app = await db_session.scalar(
+        select(InstagramAppCredential).where(
+            InstagramAppCredential.workspace_id == workspace.id,
+            InstagramAppCredential.app_id == "654321",
+        )
+    )
+    assert second_app is not None
     second_start = await client.post(
-        "/api/instagram/connect",
+        f"/api/instagram/connect?app_id={second_app.id}",
         headers={"X-CSRF-Token": second_token},
     )
     assert second_start.status_code == 200
+    assert parse_qs(urlparse(second_start.json()["authorization_url"]).query)[
+        "client_id"
+    ] == ["654321"]
     second_state = parse_qs(
         urlparse(second_start.json()["authorization_url"]).query
     )["state"][0]
@@ -857,6 +888,7 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
     assert account.media_count == 42
     assert account.encrypted_access_token != "private-access-token"
     assert decrypt_value(account.encrypted_access_token) == "private-access-token"
+    assert account.app_credential_id == second_app.id
 
 
 def test_instagram_authorization_url_requests_publishing_access() -> None:
@@ -1146,11 +1178,6 @@ async def test_instagram_oauth_exchanges_code_for_long_lived_token_and_profile(
                     "data": [
                         {
                             "access_token": "short-token",
-                            "permissions": (
-                                "instagram_business_basic,"
-                                "instagram_business_content_publish,"
-                                "instagram_business_manage_insights"
-                            ),
                         }
                     ]
                 }

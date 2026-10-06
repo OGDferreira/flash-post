@@ -43,6 +43,8 @@ type ProfileFoldersResponse = {
 
 type InstagramMetaAppsResponse = {
   selected_app_id: string | null;
+  can_manage: boolean;
+  apps: { id: string; display_name: string; meta_app_name: string; app_id: string }[];
 };
 
 type InstagramDisconnectResponse = {
@@ -75,6 +77,7 @@ export function InstagramAccountsPage() {
   const [accountFilter, setAccountFilter] = useState<"active" | "issues" | "all">("active");
   const [accountSearch, setAccountSearch] = useState("");
   const [selectedFolderId, setSelectedFolderId] = useState("all");
+  const [showAppSelector, setShowAppSelector] = useState(false);
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<InstagramAccountsResponse>("/api/instagram/accounts"),
@@ -84,7 +87,7 @@ export function InstagramAccountsPage() {
   const metaApps = useQuery({
     queryKey: ["instagram", "apps"],
     queryFn: () => apiRequest<InstagramMetaAppsResponse>("/api/instagram/apps"),
-    enabled: accounts.data?.can_manage === true,
+    enabled: accounts.data?.can_connect === true,
     retry: false,
   });
   const folders = useQuery({
@@ -93,10 +96,14 @@ export function InstagramAccountsPage() {
     retry: false,
   });
   const connect = useMutation({
-    mutationFn: () =>
-      apiRequest<{ authorization_url: string }>("/api/instagram/connect", { method: "POST" }),
+    mutationFn: (appId: string) =>
+      apiRequest<{ authorization_url: string }>(
+        `/api/instagram/connect?app_id=${encodeURIComponent(appId)}`,
+        { method: "POST" },
+      ),
     onSuccess: ({ authorization_url }) => window.location.assign(authorization_url),
   });
+  const startConnection = () => setShowAppSelector(true);
   const disconnect = useMutation({
     mutationFn: (accountId: string) =>
       apiRequest<InstagramDisconnectResponse>(`/api/instagram/accounts/${accountId}`, {
@@ -220,10 +227,10 @@ export function InstagramAccountsPage() {
               <button
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#667eea] disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
-                onClick={() => connect.mutate()}
+                onClick={startConnection}
                 disabled={
-                  (accounts.data.can_manage &&
-                    (!metaApps.data?.selected_app_id || metaApps.isLoading)) ||
+                  !metaApps.data?.apps.length ||
+                  metaApps.isLoading ||
                   connect.isPending
                 }
               >
@@ -231,7 +238,7 @@ export function InstagramAccountsPage() {
                 {connect.isPending ? "Conectando..." : "Conectar conta"}
               </button>
               {accounts.data.can_manage &&
-                !metaApps.data?.selected_app_id &&
+                !metaApps.data?.apps.length &&
                 !metaApps.isLoading &&
                 !metaApps.error && (
                 <Link
@@ -245,6 +252,38 @@ export function InstagramAccountsPage() {
           )}
         </div>
       </header>
+
+      {showAppSelector && (
+        <section className="space-y-3 rounded-xl border border-[#27334a] bg-[#0d1015] p-4">
+          <div>
+            <h3 className="font-medium text-[#f5f7fb]">Escolha o aplicativo Meta</h3>
+            <p className="mt-1 text-sm text-[#94a3b8]">
+              A nova conta será vinculada ao app selecionado. As contas existentes não serão alteradas.
+            </p>
+          </div>
+          {metaApps.data?.apps.map((app) => (
+            <button
+              className="flex w-full flex-col rounded-lg border border-[#27334a] bg-[#090b0f] p-3 text-left transition hover:border-[#536dfe] sm:flex-row sm:items-center sm:justify-between"
+              key={app.id}
+              type="button"
+              disabled={connect.isPending}
+              onClick={() => connect.mutate(app.id)}
+            >
+              <span className="font-medium text-[#f5f7fb]">{app.display_name}</span>
+              <span className="mt-1 text-xs text-[#94a3b8] sm:mt-0">
+                {app.meta_app_name} · ID {app.app_id}
+              </span>
+            </button>
+          ))}
+          <button
+            className="text-sm text-[#aab7ff] hover:text-white"
+            type="button"
+            onClick={() => setShowAppSelector(false)}
+          >
+            Cancelar
+          </button>
+        </section>
+      )}
 
       {callbackMessage && (
         <div
@@ -460,10 +499,10 @@ export function InstagramAccountsPage() {
                       <button
                         className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
                         type="button"
-                        onClick={() => connect.mutate()}
+                        onClick={startConnection}
                         disabled={
                           connect.isPending ||
-                          (accounts.data.can_manage && !metaApps.data?.selected_app_id)
+                          !metaApps.data?.apps.length
                         }
                       >
                         <Link2 size={15} />

@@ -114,25 +114,24 @@ async def exchange_instagram_authorization_code(
         short_lived = _token_data(short_lived_response.json())
         short_token = short_lived.get("access_token")
         permissions = short_lived.get("permissions")
-        if isinstance(permissions, str):
-            granted_permissions = set(permissions.split(","))
-        elif isinstance(permissions, list) and all(
-            isinstance(permission, str) for permission in permissions
-        ):
-            granted_permissions = set(permissions)
-        else:
-            granted_permissions = set()
-        if (
-            not isinstance(short_token, str)
-            or not short_token
-            or not {
+        if not isinstance(short_token, str) or not short_token:
+            raise InstagramOAuthError("Meta did not return an Instagram access token.")
+        if permissions is not None:
+            if isinstance(permissions, str):
+                granted_permissions = set(permissions.split(","))
+            elif isinstance(permissions, list) and all(
+                isinstance(permission, str) for permission in permissions
+            ):
+                granted_permissions = set(permissions)
+            else:
+                granted_permissions = set()
+            if not {
                 INSTAGRAM_BASIC_PERMISSION,
                 INSTAGRAM_PUBLISH_PERMISSION,
-            }.issubset(granted_permissions)
-        ):
-            raise InstagramOAuthError(
-                "The Instagram basic and content publishing permissions are required."
-            )
+            }.issubset(granted_permissions):
+                raise InstagramOAuthError(
+                    "The Instagram basic and content publishing permissions are required."
+                )
 
         long_lived_response = await client.get(
             f"{INSTAGRAM_GRAPH_ENDPOINT}/access_token",

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     public_base_url: str = "https://flashpost.onrender.com"
     allowed_hosts: str = "flashpost.onrender.com,localhost,127.0.0.1,testserver"
+    instagram_webhook_verify_token: SecretStr | None = None
     database_url: SecretStr | None = None
     supabase_url: str | None = None
     supabase_service_role_key: SecretStr | None = None
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "database_url",
+        "instagram_webhook_verify_token",
         "supabase_service_role_key",
         "session_secret",
         "master_encryption_key",

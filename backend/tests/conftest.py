@@ -23,6 +23,7 @@ os.environ["ALLOWED_HOSTS"] = "testserver,localhost"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["SESSION_SECRET"] = "test-only-session-secret-not-for-production"
 os.environ["MASTER_ENCRYPTION_KEY"] = Fernet.generate_key().decode("ascii")
+os.environ["INSTAGRAM_WEBHOOK_VERIFY_TOKEN"] = "test-instagram-webhook-verify-token"
 
 
 @pytest.hookimpl(tryfirst=True)

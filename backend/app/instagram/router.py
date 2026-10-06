@@ -372,7 +372,7 @@ async def _fetch_and_validate_meta_app(
 
 @router.get("/apps", response_model=InstagramMetaAppsResponse)
 async def list_meta_apps(
-    access: OwnerAccess,
+    access: WorkspaceMemberAccess,
     db: DbSession,
 ) -> InstagramMetaAppsResponse:
     apps = (
@@ -384,7 +384,7 @@ async def list_meta_apps(
     ).all()
     selected = next((app.id for app in apps if app.is_selected), None)
     return InstagramMetaAppsResponse(
-        can_manage=True,
+        can_manage=access.membership.role == WorkspaceRole.OWNER.value,
         selected_app_id=selected,
         apps=[_meta_app_response(app) for app in apps],
     )
@@ -581,15 +581,27 @@ async def connect_account(
     request: Request,
     access: WorkspaceMemberAccess,
     db: DbSession,
+    app_id: uuid.UUID | None = Query(default=None),
     return_to: Literal["/dashboard", "/feature/accounts"] = "/feature/accounts",
 ) -> InstagramConnectResponse:
     settings = get_settings()
-    credential = await db.scalar(
-        select(InstagramAppCredential).where(
-            InstagramAppCredential.workspace_id == access.workspace.id,
-            InstagramAppCredential.is_selected.is_(True),
-        )
+    credential_query = select(InstagramAppCredential).where(
+        InstagramAppCredential.workspace_id == access.workspace.id,
     )
+    if app_id is not None:
+        credential_query = credential_query.where(
+            InstagramAppCredential.id == app_id
+        )
+    else:
+        credential_query = credential_query.where(
+            InstagramAppCredential.is_selected.is_(True)
+        )
+    credential = await db.scalar(credential_query)
+    if credential is None and app_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meta app not found in this workspace.",
+        )
     if credential is None or settings.master_encryption_key is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

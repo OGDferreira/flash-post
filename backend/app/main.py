@@ -22,6 +22,7 @@ from app.legal import router as legal_router
 from app.instagram.router import router as instagram_router
 from app.instagram.folders_router import router as instagram_folders_router
 from app.instagram.media_router import router as media_router
+from app.instagram.webhooks import router as instagram_webhooks_router
 from app.loops.router import router as loops_router
 from app.shark.router import router as shark_router
 from app.workers.scheduler_service import create_scheduler
@@ -39,6 +40,7 @@ class _SensitiveAccessLogFilter(logging.Filter):
             and isinstance(args[2], str)
             and (
                 args[2].split("?", 1)[0] == "/api/instagram/callback"
+                or args[2].split("?", 1)[0] == "/api/instagram/webhook"
                 or args[2].split("?", 1)[0].startswith("/api/sharkbot/webhook/")
             )
         ):
@@ -46,7 +48,11 @@ class _SensitiveAccessLogFilter(logging.Filter):
             sanitized_args[2] = (
                 "/api/instagram/callback"
                 if args[2].split("?", 1)[0] == "/api/instagram/callback"
-                else "/api/sharkbot/webhook/[redacted]"
+                else (
+                    "/api/instagram/webhook"
+                    if args[2].split("?", 1)[0] == "/api/instagram/webhook"
+                    else "/api/sharkbot/webhook/[redacted]"
+                )
             )
             record.args = tuple(sanitized_args)
         return True
@@ -117,6 +123,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(analytics_router)
     application.include_router(collaborators_router)
     application.include_router(instagram_router)
+    application.include_router(instagram_webhooks_router)
     application.include_router(instagram_folders_router)
     application.include_router(media_router)
     application.include_router(loops_router)

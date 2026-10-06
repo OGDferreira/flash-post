@@ -322,7 +322,11 @@ export function SettingsPage() {
             />
           </label>
           <label className="grid gap-2 text-sm text-[#cbd5e1]">
-            ID do Aplicativo Meta
+            App ID
+            <span className="text-xs leading-5 text-[#94a3b8]">
+              Use o App ID de Configurações Básicas no painel da Meta. Não use o ID da API do
+              Instagram.
+            </span>
             <input
               autoComplete="off"
               className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
@@ -335,7 +339,11 @@ export function SettingsPage() {
             />
           </label>
           <label className="grid gap-2 text-sm text-[#cbd5e1]">
-            Chave Secreta do Aplicativo
+            App Secret
+            <span className="text-xs leading-5 text-[#94a3b8]">
+              Use o App Secret de Configurações Básicas do mesmo aplicativo Meta acima, não uma
+              chave/ID da API do Instagram.
+            </span>
             <input
               autoComplete="new-password"
               className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"

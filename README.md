@@ -296,11 +296,17 @@ one. The receiver accepts the `payment_created`, `payment_approved`, and
 `user_joined` events used by Auto-Insta-1, including its nested `data` payload,
 and ignores duplicate event deliveries.
 
-Meta webhooks are not configured in this phase. A webhook is a separate HTTPS
-receiver for asynchronous Instagram events such as comments, mentions, story
-expiration, and incoming messages; it is not the OAuth redirect callback.
-FlashPost does not yet implement Meta's webhook verification or event receiver,
-so do not reuse another product's callback URL or verification token here.
+The Instagram webhook callback is
+`https://flashpost.onrender.com/api/instagram/webhook`. Configure
+`INSTAGRAM_WEBHOOK_VERIFY_TOKEN` as a secret environment variable on the Render
+Web Service, then enter that same value in Meta's Verify Token field. The POST
+receiver validates `X-Hub-Signature-256` against the stored App Secrets for
+configured Meta apps and acknowledges valid Instagram event payloads. It
+logs event counts, not message or comment contents. This endpoint is separate
+from the OAuth redirect callback and the workspace-specific Sharkbot webhook.
+Receiving webhook events does not provide Instagram Insights; those metrics
+are queried from Meta's Insights API using each account's authorization and
+the `instagram_business_manage_insights` permission.
 
 Public information pages for Meta app settings:
 
