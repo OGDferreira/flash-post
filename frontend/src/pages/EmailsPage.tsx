@@ -150,6 +150,9 @@ export function EmailsPage() {
     queryKey: ["emails"],
     queryFn: () => apiRequest<EmailsResponse>("/api/emails"),
     retry: false,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["emails"] });
   const createAccount = useMutation({
