@@ -10,6 +10,7 @@ type InstagramMetaApp = {
   display_name: string;
   meta_app_name: string;
   app_id: string;
+  credential_kind: "legacy" | "instagram_business_login";
   category: string | null;
   app_link: string | null;
   is_selected: boolean;
@@ -188,6 +189,11 @@ export function SettingsPage() {
                   </div>
                   <p className="mt-1 text-sm text-[#94a3b8]">
                     Instagram App ID: {app.app_id}
+                  </p>
+                  <p className="mt-1 text-xs text-[#64748b]">
+                    {app.credential_kind === "legacy"
+                      ? "App legado: credenciais e contas vinculadas preservadas."
+                      : "Credenciais de Instagram Business Login."}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">

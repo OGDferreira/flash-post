@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Search } from "lucide-react";
+import { Check, Search, Trash2 } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest, type AdminUser, type Page } from "@/services/api";
@@ -21,6 +21,13 @@ export function AdminUsersPage() {
   const approveUser = useMutation({
     mutationFn: (userId: string) =>
       apiRequest<AdminUser>(`/api/admin/users/${userId}/approve`, { method: "POST" }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+    },
+  });
+  const deleteUser = useMutation({
+    mutationFn: (userId: string) =>
+      apiRequest<void>(`/api/admin/users/${userId}`, { method: "DELETE" }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
     },
@@ -84,6 +91,15 @@ export function AdminUsersPage() {
               }
             />
           )}
+          {deleteUser.error && (
+            <ErrorState
+              message={
+                deleteUser.error instanceof Error
+                  ? deleteUser.error.message
+                  : "Não foi possível excluir o usuário."
+              }
+            />
+          )}
           <div className="overflow-hidden rounded-xl border border-[#202838] bg-[#0d1015]">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[920px] border-collapse text-left">
@@ -95,7 +111,7 @@ export function AdminUsersPage() {
                     <th className="px-5 py-3.5 font-medium">Workspace</th>
                     <th className="px-5 py-3.5 font-medium">Criado em</th>
                     <th className="px-5 py-3.5 font-medium">Último login</th>
-                    <th className="px-5 py-3.5 font-medium">Acesso</th>
+                    <th className="px-5 py-3.5 font-medium">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1b2330] text-sm">
@@ -129,20 +145,42 @@ export function AdminUsersPage() {
                         {user.last_login_at ? formatDate(user.last_login_at) : "Nunca"}
                       </td>
                       <td className="px-5 py-4">
-                        {user.is_approved ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-[#9de6d1]">
-                            <Check size={14} /> Aprovado
-                          </span>
-                        ) : (
-                          <button
-                            className="min-h-8 rounded-lg bg-[#536dfe] px-3 text-xs font-medium text-white hover:bg-[#667eea] disabled:opacity-50"
-                            disabled={approveUser.isPending}
-                            onClick={() => approveUser.mutate(user.id)}
-                            type="button"
-                          >
-                            Aprovar acesso
-                          </button>
-                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {user.is_approved ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-[#9de6d1]">
+                              <Check size={14} /> Aprovado
+                            </span>
+                          ) : (
+                            <button
+                              className="min-h-8 rounded-lg bg-[#536dfe] px-3 text-xs font-medium text-white hover:bg-[#667eea] disabled:opacity-50"
+                              disabled={approveUser.isPending}
+                              onClick={() => approveUser.mutate(user.id)}
+                              type="button"
+                            >
+                              Aprovar acesso
+                            </button>
+                          )}
+                          {user.role !== "SUPER_ADMIN" && (
+                            <button
+                              aria-label={`Excluir ${user.full_name}`}
+                              className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-[#5a3037] px-2.5 text-xs text-[#f1a3ad] hover:bg-[#241216] disabled:opacity-50"
+                              disabled={deleteUser.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Excluir permanentemente o usuário ${user.full_name}? A ação não pode ser desfeita. Contas administradoras e donos de workspace são protegidos.`,
+                                  )
+                                ) {
+                                  deleteUser.mutate(user.id);
+                                }
+                              }}
+                              type="button"
+                            >
+                              <Trash2 size={13} />
+                              Excluir
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

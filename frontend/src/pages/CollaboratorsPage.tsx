@@ -7,6 +7,7 @@ import {
   Medal,
   Plus,
   Save,
+  Trash2,
   UnlockKeyhole,
   UsersRound,
 } from "lucide-react";
@@ -41,6 +42,13 @@ type CollaboratorDraft = {
 
 type CollaboratorUpdateDraft = CollaboratorDraft & {
   apply_rate_to_existing_accounts: boolean;
+};
+
+type WorkDaysResponse = {
+  month: string;
+  daily_rate: number;
+  total_amount: number;
+  days: { day: string; amount: number; paid: boolean }[];
 };
 
 type NewCollaboratorForm = CollaboratorDraft & {
@@ -145,6 +153,11 @@ export function CollaboratorsPage() {
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["collaborators"] }),
   });
+  const removeCollaborator = useMutation({
+    mutationFn: (memberId: string) =>
+      apiRequest<void>(`/api/collaborators/${memberId}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["collaborators"] }),
+  });
 
   if (report.isLoading) return <LoadingState label="Carregando colaboradores" />;
   if (report.error || !report.data) {
@@ -157,6 +170,10 @@ export function CollaboratorsPage() {
   const accessError = displayError(
     accessToggle.error,
     "Não foi possível alterar o acesso do colaborador.",
+  );
+  const removeError = displayError(
+    removeCollaborator.error,
+    "Não foi possível excluir o colaborador.",
   );
 
   return (
@@ -315,6 +332,7 @@ export function CollaboratorsPage() {
         {saveError && <ErrorState message={saveError} />}
         {payoutError && <ErrorState message={payoutError} />}
         {accessError && <ErrorState message={accessError} />}
+        {removeError && <ErrorState message={removeError} />}
         {report.data.collaborators.length === 0 ? (
           <EmptyState message="Ainda não há colaboradores neste workspace." />
         ) : (
@@ -366,6 +384,23 @@ export function CollaboratorsPage() {
                         <UnlockKeyhole size={14} />
                       )}
                       {item.access_status === "ACTIVE" ? "Bloquear acesso" : "Liberar acesso"}
+                    </button>
+                    <button
+                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#5a3037] px-3 text-xs font-semibold text-[#f1a3ad] hover:bg-[#241216] disabled:opacity-50"
+                      disabled={removeCollaborator.isPending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Excluir ${item.full_name} deste workspace? Os dados de pagamento e dias registrados serão removidos; as contas conectadas serão preservadas.`,
+                          )
+                        ) {
+                          removeCollaborator.mutate(item.member_id);
+                        }
+                      }}
+                      type="button"
+                    >
+                      <Trash2 size={14} />
+                      Excluir colaborador
                     </button>
                     <div className="flex items-center gap-2 rounded-lg border border-[#27334a] bg-[#090b0e] px-3 py-2 text-xs">
                       <CircleDollarSign className="text-[#f2d48a]" size={15} />
@@ -530,6 +565,8 @@ export function CollaboratorsPage() {
                   </div>
                 </div>
 
+                <WorkDaysPanel memberId={item.member_id} collaboratorName={item.full_name} />
+
                 <details className="border-t border-[#202838] pt-4">
                   <summary className="cursor-pointer list-none text-xs font-medium text-[#cbd5e1] marker:hidden">
                     <span className="inline-flex items-center gap-2">
@@ -582,6 +619,146 @@ export function CollaboratorsPage() {
         )}
       </section>
     </div>
+  );
+}
+
+function WorkDaysPanel({
+  memberId,
+  collaboratorName,
+}: {
+  memberId: string;
+  collaboratorName: string;
+}) {
+  const queryClient = useQueryClient();
+  const currentMonth = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+  }).format(new Date());
+  const [month, setMonth] = useState(currentMonth);
+  const workDays = useQuery({
+    queryKey: ["collaborators", memberId, "work-days", month],
+    queryFn: () =>
+      apiRequest<WorkDaysResponse>(
+        `/api/collaborators/${memberId}/work-days?month=${month}`,
+      ),
+  });
+  const saveDays = useMutation({
+    mutationFn: (days: string[]) =>
+      apiRequest<WorkDaysResponse>(
+        `/api/collaborators/${memberId}/work-days?month=${month}`,
+        { method: "PUT", body: { days } },
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["collaborators", memberId, "work-days"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["collaborators"] }),
+      ]);
+    },
+  });
+  const [year, monthNumber] = month.split("-").map(Number);
+  const firstWeekday = new Date(year, monthNumber - 1, 1).getDay();
+  const dayCount = new Date(year, monthNumber, 0).getDate();
+  const localToday = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date());
+  const selectedDays = workDays.data?.days ?? [];
+  const daysByDate = new Map(selectedDays.map((item) => [item.day, item]));
+
+  return (
+    <section className="rounded-lg border border-[#252c3e] bg-[#0a0d13] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-medium text-[#e6eaf2]">Dias trabalhados · {collaboratorName}</h4>
+          <p className="mt-1 text-xs text-[#78839b]">
+            Cada dia selecionado vale a taxa atual por conta conectada: {money(workDays.data?.daily_rate ?? 0)}.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-[#94a3b8]">
+          Mês
+          <input
+            aria-label={`Mês dos dias trabalhados de ${collaboratorName}`}
+            className="collaborator-input w-auto"
+            max={currentMonth}
+            onChange={(event) => setMonth(event.target.value)}
+            type="month"
+            value={month}
+          />
+        </label>
+      </div>
+      {workDays.isLoading ? (
+        <p className="mt-4 text-xs text-[#78839b]">Carregando dias...</p>
+      ) : workDays.error ? (
+        <p className="mt-4 text-xs text-[#f1a3ad]">Não foi possível carregar os dias trabalhados.</p>
+      ) : (
+        <>
+          <div className="mt-4 grid grid-cols-7 gap-1 text-center">
+            {["D", "S", "T", "Q", "Q", "S", "S"].map((label, index) => (
+              <span className="py-1 text-[10px] text-[#64748b]" key={`${label}-${index}`}>
+                {label}
+              </span>
+            ))}
+            {Array.from({ length: firstWeekday }, (_, index) => (
+              <span aria-hidden="true" key={`blank-${index}`} />
+            ))}
+            {Array.from({ length: dayCount }, (_, index) => {
+              const date = `${month}-${String(index + 1).padStart(2, "0")}`;
+              const workDay = daysByDate.get(date);
+              const isFuture = date > localToday;
+              return (
+                <button
+                  aria-pressed={Boolean(workDay)}
+                  className={`min-h-9 rounded-md border text-xs disabled:cursor-not-allowed disabled:opacity-45 ${
+                    workDay?.paid
+                      ? "border-[#315843] bg-[#10231a] text-[#a9e5c0]"
+                      : workDay
+                        ? "border-[#536dfe] bg-[#151b2d] text-[#d5dcff]"
+                        : "border-[#202838] text-[#94a3b8] hover:bg-[#171e31]"
+                  }`}
+                  disabled={isFuture || workDay?.paid || saveDays.isPending}
+                  key={date}
+                  onClick={() => {
+                    const nextDays = selectedDays
+                      .filter((item) => !item.paid && item.day !== date)
+                      .map((item) => item.day);
+                    if (!workDay) nextDays.push(date);
+                    saveDays.mutate(nextDays);
+                  }}
+                  title={
+                    workDay?.paid
+                      ? `${date}: pago`
+                      : workDay
+                        ? `${date}: selecionado, ${money(workDay.amount)}`
+                        : isFuture
+                          ? "Dia futuro"
+                          : "Marcar como trabalhado"
+                  }
+                  type="button"
+                >
+                  {index + 1}
+                </button>
+              );
+            })}
+          </div>
+          {saveDays.error && (
+            <p className="mt-3 text-xs text-[#f1a3ad]">
+              {displayError(saveDays.error, "Não foi possível salvar os dias trabalhados.")}
+            </p>
+          )}
+          <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-[#202838] pt-3 text-xs">
+            <span className="text-[#94a3b8]">
+              {selectedDays.length} dia(s) marcado(s)
+              {selectedDays.some((item) => item.paid) && " · verde = pago"}
+            </span>
+            <strong className="text-[#f2d48a]">
+              Total dos dias: {money(workDays.data?.total_amount ?? 0)}
+            </strong>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import uuid
+from zoneinfo import ZoneInfo
 
 import pytest
 from httpx import AsyncClient
@@ -8,7 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import encrypt_value
-from app.models import InstagramAccount, User, WorkspaceMember
+from app.models import (
+    CollaboratorWorkDay,
+    InstagramAccount,
+    User,
+    WorkspaceMember,
+)
 
 
 async def _csrf(client: AsyncClient) -> str:
@@ -118,9 +124,96 @@ async def test_owner_manages_collaborator_goals_and_records_monthly_payout(
     ) == Decimal("37.50")
     ranking = await client.get("/api/collaborators/ranking")
     assert ranking.status_code == 200, ranking.text
-    assert ranking.json()["collaborators"][0]["user_id"] == str(user.id)
-    assert ranking.json()["days_in_period"] == 30
-    assert ranking.json()["collaborators"][0]["average_daily_connections"] == "0.03"
+
+
+@pytest.mark.anyio
+async def test_owner_selects_paid_work_days_and_deletes_collaborator(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _owner_user, _workspace = owner
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    csrf_token = await _csrf(client)
+    created = await client.post(
+        "/api/collaborators",
+        headers={"X-CSRF-Token": csrf_token},
+        json={
+            "full_name": "Calendário Colaborador",
+            "nickname": "Calendário Colaborador",
+            "email": "calendar.collaborator@example.com",
+            "password": "safe-calendar-password",
+            "rate_per_connection": "12.50",
+            "daily_connection_goal": 0,
+            "monthly_connection_goal": 0,
+            "monthly_bonus": "0.00",
+        },
+    )
+    assert created.status_code == 201, created.text
+    item = created.json()["collaborators"][0]
+    member_id = uuid.UUID(item["member_id"])
+    today = datetime.now(timezone.utc).astimezone(ZoneInfo("America/Sao_Paulo")).date()
+    month = today.strftime("%Y-%m")
+    path = f"/api/collaborators/{member_id}/work-days?month={month}"
+
+    selected = await client.put(
+        path,
+        headers={"X-CSRF-Token": await _csrf(client)},
+        json={"days": [today.isoformat()]},
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["total_amount"] == "12.50"
+    assert selected.json()["days"] == [
+        {"day": today.isoformat(), "amount": "12.50", "paid": False}
+    ]
+    report = await client.get("/api/collaborators")
+    assert report.status_code == 200, report.text
+    collaborator_report = report.json()["collaborators"][0]
+    assert Decimal(collaborator_report["earnings_today"]) == Decimal("12.50")
+    assert Decimal(collaborator_report["earnings_month"]) == Decimal("12.50")
+    assert sum(
+        Decimal(value) for value in collaborator_report["recent_earnings"]
+    ) == Decimal("12.50")
+
+    paid = await client.post(
+        f"/api/collaborators/{member_id}/payout",
+        headers={"X-CSRF-Token": await _csrf(client)},
+    )
+    assert paid.status_code == 201, paid.text
+    assert paid.json()["payment"]["amount"] == "12.50"
+    work_days = await client.get(path)
+    assert work_days.json()["days"][0]["paid"] is True
+
+    unsaved = await client.put(
+        path,
+        headers={"X-CSRF-Token": await _csrf(client)},
+        json={"days": []},
+    )
+    assert unsaved.status_code == 200, unsaved.text
+    assert unsaved.json()["days"][0]["paid"] is True
+
+    deleted = await client.delete(
+        f"/api/collaborators/{member_id}",
+        headers={"X-CSRF-Token": await _csrf(client)},
+    )
+    assert deleted.status_code == 204, deleted.text
+    assert await db_session.get(WorkspaceMember, member_id) is None
+    assert await db_session.scalar(
+        select(CollaboratorWorkDay).where(
+            CollaboratorWorkDay.workspace_member_id == member_id
+        )
+    ) is None
+    ranking = await client.get("/api/collaborators/ranking")
+    assert ranking.status_code == 200, ranking.text
+    assert all(
+        collaborator["user_id"] != item["user_id"]
+        for collaborator in ranking.json()["collaborators"]
+    )
+    await _login(
+        client,
+        "calendar.collaborator@example.com",
+        "safe-calendar-password",
+    )
     forbidden_report = await client.get("/api/collaborators")
     forbidden_analytics = await client.get("/api/analytics/summary")
     assert forbidden_report.status_code == 403

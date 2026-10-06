@@ -31,6 +31,17 @@ function formatCount(value: number | null | undefined): string {
     : new Intl.NumberFormat("pt-BR").format(value);
 }
 
+function insightHelper(error: string | undefined): string {
+  if (!error) return "Insights da Meta no período selecionado";
+  if (error.includes("instagram_business_manage_insights")) {
+    return "Permissão necessária: instagram_business_manage_insights";
+  }
+  if (error.includes("descontinuou esta métrica")) {
+    return "Métrica descontinuada pela Meta; consulte Visualizações";
+  }
+  return "Métrica indisponível para esta conta ou período";
+}
+
 export function AnalyticsPage() {
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const accounts = useQuery({
@@ -150,14 +161,15 @@ export function AnalyticsPage() {
     { key: "website_clicks", title: "Cliques no site", icon: BarChart3 },
     { key: "profile_links_taps", title: "Toques em links do perfil", icon: BarChart3 },
     { key: "replies", title: "Respostas", icon: BarChart3 },
+    { key: "reposts", title: "Reposts", icon: BarChart3 },
   ].map(({ key, title, icon }) => ({
     title,
     value: formatCount(accountMetrics?.insights[key] ?? null),
-    helper:
+    helper: insightHelper(
       accountMetrics?.insights_metric_errors[key] ??
       accountMetrics?.insights_metric_errors.all ??
-      accountMetrics?.insights_error ??
-      "Insights da Meta no período selecionado",
+      accountMetrics?.insights_error ?? undefined,
+    ),
     icon,
   }));
   const metrics = [...appMetrics, ...metaInsightMetrics];

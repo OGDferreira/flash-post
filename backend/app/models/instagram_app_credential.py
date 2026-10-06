@@ -33,6 +33,12 @@ class InstagramAppCredential(Base):
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     meta_app_name: Mapped[str] = mapped_column(String(160), nullable=False)
     app_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    credential_kind: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="instagram_business_login",
+        server_default=text("'legacy'"),
+    )
     category: Mapped[str | None] = mapped_column(String(120))
     app_link: Mapped[str | None] = mapped_column(String(2048))
     encrypted_app_secret: Mapped[str] = mapped_column(String(2048), nullable=False)

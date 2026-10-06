@@ -3,11 +3,13 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import DbSession, SuperAdminUser, require_csrf
 from app.models import (
+    CollaboratorPayment,
+    CollaboratorWorkDay,
     InstagramAccount,
     InstagramPublicationJob,
     SystemSetting,
@@ -182,6 +184,77 @@ async def approve_user(
         created_at=user.created_at,
         last_login_at=user.last_login_at,
     )
+
+
+@router.delete(
+    "/users/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_csrf)],
+)
+async def delete_user(
+    user_id: uuid.UUID,
+    admin: SuperAdminUser,
+    db: DbSession,
+) -> None:
+    if user_id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Você não pode excluir o próprio usuário administrador.",
+        )
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    if user.platform_role == "SUPER_ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Não é possível excluir um usuário administrador da plataforma.",
+        )
+    owned_workspace_id = await db.scalar(
+        select(Workspace.id).where(Workspace.owner_id == user.id).limit(1)
+    )
+    owner_membership_id = await db.scalar(
+        select(WorkspaceMember.id)
+        .where(
+            WorkspaceMember.user_id == user.id,
+            WorkspaceMember.role == "OWNER",
+        )
+        .limit(1)
+    )
+    if owned_workspace_id is not None or owner_membership_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Transfira ou remova os workspaces deste usuário antes de excluí-lo.",
+        )
+
+    member_ids = select(WorkspaceMember.id).where(WorkspaceMember.user_id == user.id)
+    await db.execute(
+        delete(CollaboratorWorkDay).where(
+            CollaboratorWorkDay.workspace_member_id.in_(member_ids)
+        )
+    )
+    await db.execute(
+        delete(CollaboratorPayment).where(
+            CollaboratorPayment.workspace_member_id.in_(member_ids)
+        )
+    )
+    await db.execute(
+        update(InstagramAccount)
+        .where(InstagramAccount.connected_by_user_id == user.id)
+        .values(connected_by_user_id=None)
+    )
+    await db.execute(
+        update(CollaboratorPayment)
+        .where(CollaboratorPayment.paid_by_user_id == user.id)
+        .values(paid_by_user_id=None)
+    )
+    await db.execute(
+        update(SystemSetting)
+        .where(SystemSetting.updated_by_user_id == user.id)
+        .values(updated_by_user_id=None)
+    )
+    await db.execute(delete(WorkspaceMember).where(WorkspaceMember.user_id == user.id))
+    await db.delete(user)
+    await db.commit()
 
 
 @router.get("/workspaces", response_model=AdminWorkspacesPage)

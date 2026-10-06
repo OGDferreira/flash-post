@@ -6,7 +6,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import case, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, WorkspaceMemberAccess, require_csrf
@@ -14,6 +14,7 @@ from app.core.nickname import nickname_key
 from app.core.security import WorkspaceRole, hash_password
 from app.models import (
     CollaboratorPayment,
+    CollaboratorWorkDay,
     InstagramAccount,
     User,
     WorkspaceMember,
@@ -30,6 +31,9 @@ from app.schemas.collaborators import (
     CollaboratorReportItem,
     CollaboratorUpdateRequest,
     CollaboratorsResponse,
+    CollaboratorWorkDayItem,
+    CollaboratorWorkDayRequest,
+    CollaboratorWorkDaysResponse,
 )
 
 router = APIRouter(prefix="/api/collaborators", tags=["Collaborators"])
@@ -139,6 +143,7 @@ async def _recent_daily_earnings(
     db: DbSession,
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
+    member_id: uuid.UUID,
     now: datetime,
     fallback_rate: Decimal,
 ) -> list[Decimal]:
@@ -146,11 +151,13 @@ async def _recent_daily_earnings(
     amounts = []
     for offset in range(6, -1, -1):
         start, end = _day_bounds(today - timedelta(days=offset))
-        amounts.append(
-            await _earnings_between(
-                db, workspace_id, user_id, start, end, fallback_rate
-            )
+        connection_earnings = await _earnings_between(
+            db, workspace_id, user_id, start, end, fallback_rate
         )
+        workday_earnings = await _workday_amount_between(
+            db, workspace_id, member_id, start, end
+        )
+        amounts.append(connection_earnings + workday_earnings)
     return amounts
 
 
@@ -170,6 +177,26 @@ async def _payments_between(
     if end is not None:
         query = query.where(CollaboratorPayment.paid_at < end)
     amount = await db.scalar(query)
+    return Decimal(str(amount or 0)).quantize(_CENT)
+
+
+async def _workday_amount_between(
+    db: DbSession,
+    workspace_id: uuid.UUID,
+    member_id: uuid.UUID,
+    start: datetime,
+    end: datetime,
+) -> Decimal:
+    start_date = start.astimezone(_BRAZIL_TIME_ZONE).date()
+    end_date = end.astimezone(_BRAZIL_TIME_ZONE).date()
+    amount = await db.scalar(
+        select(func.coalesce(func.sum(CollaboratorWorkDay.amount), 0)).where(
+            CollaboratorWorkDay.workspace_id == workspace_id,
+            CollaboratorWorkDay.workspace_member_id == member_id,
+            CollaboratorWorkDay.work_date >= start_date,
+            CollaboratorWorkDay.work_date < end_date,
+        )
+    )
     return Decimal(str(amount or 0)).quantize(_CENT)
 
 
@@ -209,8 +236,14 @@ async def _member_report(
     earnings_today = await _earnings_between(
         db, workspace_id, user.id, today_start, today_end, rate
     )
+    earnings_today += await _workday_amount_between(
+        db, workspace_id, member.id, today_start, today_end
+    )
     earnings_month = await _earnings_between(
         db, workspace_id, user.id, month_start, month_end, rate
+    )
+    earnings_month += await _workday_amount_between(
+        db, workspace_id, member.id, month_start, month_end
     )
     paid_month = Decimal(
         str(
@@ -268,7 +301,7 @@ async def _member_report(
         projected_month=projected_month,
         recent_days=await _recent_daily_counts(db, workspace_id, user.id, now),
         recent_earnings=await _recent_daily_earnings(
-            db, workspace_id, user.id, now, rate
+            db, workspace_id, user.id, member.id, now, rate
         ),
         account_earnings=[
             CollaboratorAccountEarning(
@@ -594,6 +627,158 @@ async def collaborator_ranking(
     )
 
 
+def _parse_month(value: str | None) -> tuple[date, date, str]:
+    if value is None:
+        month_start = _month_bounds(_utc_now())[2]
+    else:
+        try:
+            month_start = date.fromisoformat(f"{value}-01")
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="Informe o mês no formato YYYY-MM.",
+            ) from None
+        if month_start.strftime("%Y-%m") != value:
+            raise HTTPException(
+                status_code=422,
+                detail="Informe o mês no formato YYYY-MM.",
+            )
+    month_end = (
+        date(month_start.year + 1, 1, 1)
+        if month_start.month == 12
+        else date(month_start.year, month_start.month + 1, 1)
+    )
+    return month_start, month_end, month_start.strftime("%Y-%m")
+
+
+async def _work_days_response(
+    db: DbSession,
+    access: OwnerAccess,
+    member: WorkspaceMember,
+    month_start: date,
+    month_end: date,
+) -> CollaboratorWorkDaysResponse:
+    work_days = (
+        await db.scalars(
+            select(CollaboratorWorkDay)
+            .where(
+                CollaboratorWorkDay.workspace_id == access.workspace.id,
+                CollaboratorWorkDay.workspace_member_id == member.id,
+                CollaboratorWorkDay.work_date >= month_start,
+                CollaboratorWorkDay.work_date < month_end,
+            )
+            .order_by(CollaboratorWorkDay.work_date)
+        )
+    ).all()
+    return CollaboratorWorkDaysResponse(
+        month=month_start.strftime("%Y-%m"),
+        daily_rate=Decimal(str(member.rate_per_connection)).quantize(_CENT),
+        total_amount=sum(
+            (Decimal(str(item.amount)) for item in work_days),
+            Decimal("0.00"),
+        ).quantize(_CENT),
+        days=[
+            CollaboratorWorkDayItem(
+                day=item.work_date,
+                amount=item.amount,
+                paid=item.paid_at is not None,
+            )
+            for item in work_days
+        ],
+    )
+
+
+@router.get(
+    "/{member_id}/work-days",
+    response_model=CollaboratorWorkDaysResponse,
+)
+async def list_collaborator_work_days(
+    member_id: uuid.UUID,
+    access: OwnerAccess,
+    db: DbSession,
+    month: str | None = None,
+) -> CollaboratorWorkDaysResponse:
+    member = await db.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.id == member_id,
+            WorkspaceMember.workspace_id == access.workspace.id,
+            WorkspaceMember.role == WorkspaceRole.COLLABORATOR.value,
+        )
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="Colaborador não encontrado.")
+    month_start, month_end, _ = _parse_month(month)
+    return await _work_days_response(db, access, member, month_start, month_end)
+
+
+@router.put(
+    "/{member_id}/work-days",
+    response_model=CollaboratorWorkDaysResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def save_collaborator_work_days(
+    member_id: uuid.UUID,
+    payload: CollaboratorWorkDayRequest,
+    access: OwnerAccess,
+    db: DbSession,
+    month: str | None = None,
+) -> CollaboratorWorkDaysResponse:
+    member = await db.scalar(
+        select(WorkspaceMember)
+        .where(
+            WorkspaceMember.id == member_id,
+            WorkspaceMember.workspace_id == access.workspace.id,
+            WorkspaceMember.role == WorkspaceRole.COLLABORATOR.value,
+        )
+        .with_for_update()
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="Colaborador não encontrado.")
+    month_start, month_end, _ = _parse_month(month)
+    selected_days = set(payload.days)
+    if len(selected_days) != len(payload.days):
+        raise HTTPException(status_code=422, detail="Não repita dias selecionados.")
+    if any(day < month_start or day >= month_end for day in selected_days):
+        raise HTTPException(
+            status_code=422,
+            detail="Todos os dias devem pertencer ao mês selecionado.",
+        )
+    local_today = _utc_now().astimezone(_BRAZIL_TIME_ZONE).date()
+    if any(day > local_today for day in selected_days):
+        raise HTTPException(
+            status_code=422,
+            detail="Não é possível registrar dias de trabalho futuros.",
+        )
+
+    records = (
+        await db.scalars(
+            select(CollaboratorWorkDay)
+            .where(
+                CollaboratorWorkDay.workspace_id == access.workspace.id,
+                CollaboratorWorkDay.workspace_member_id == member.id,
+                CollaboratorWorkDay.work_date >= month_start,
+                CollaboratorWorkDay.work_date < month_end,
+            )
+            .with_for_update()
+        )
+    ).all()
+    existing_days = {record.work_date: record for record in records}
+    for work_date, record in existing_days.items():
+        if record.paid_at is None and work_date not in selected_days:
+            await db.delete(record)
+    for work_date in selected_days - existing_days.keys():
+        db.add(
+            CollaboratorWorkDay(
+                workspace_id=access.workspace.id,
+                workspace_member_id=member.id,
+                work_date=work_date,
+                amount=member.rate_per_connection,
+            )
+        )
+    await db.commit()
+    return await _work_days_response(db, access, member, month_start, month_end)
+
+
 @router.patch(
     "/{member_id}",
     response_model=CollaboratorReportItem,
@@ -664,6 +849,39 @@ async def update_collaborator_access(
     return await _member_report(db, access.workspace.id, member, user, _utc_now())
 
 
+@router.delete(
+    "/{member_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_csrf)],
+)
+async def delete_collaborator(
+    member_id: uuid.UUID,
+    access: OwnerAccess,
+    db: DbSession,
+) -> None:
+    member = await db.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.id == member_id,
+            WorkspaceMember.workspace_id == access.workspace.id,
+            WorkspaceMember.role == WorkspaceRole.COLLABORATOR.value,
+        )
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="Colaborador não encontrado.")
+    await db.execute(
+        delete(CollaboratorWorkDay).where(
+            CollaboratorWorkDay.workspace_member_id == member.id
+        )
+    )
+    await db.execute(
+        delete(CollaboratorPayment).where(
+            CollaboratorPayment.workspace_member_id == member.id
+        )
+    )
+    await db.delete(member)
+    await db.commit()
+
+
 @router.post(
     "/{member_id}/payout",
     response_model=CollaboratorPaymentActionResponse,
@@ -706,6 +924,22 @@ async def register_monthly_payout(
         period_start=month_date,
     )
     db.add(payment)
+    month_end = (
+        date(month_date.year + 1, 1, 1)
+        if month_date.month == 12
+        else date(month_date.year, month_date.month + 1, 1)
+    )
+    await db.execute(
+        update(CollaboratorWorkDay)
+        .where(
+            CollaboratorWorkDay.workspace_id == access.workspace.id,
+            CollaboratorWorkDay.workspace_member_id == member.id,
+            CollaboratorWorkDay.work_date >= month_date,
+            CollaboratorWorkDay.work_date < month_end,
+            CollaboratorWorkDay.paid_at.is_(None),
+        )
+        .values(paid_at=now)
+    )
     await db.commit()
     await db.refresh(payment)
     return CollaboratorPaymentActionResponse(

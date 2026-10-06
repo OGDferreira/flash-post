@@ -147,3 +147,20 @@ class CollaboratorDashboardResponse(BaseModel):
 class CollaboratorPaymentActionResponse(BaseModel):
     message: str
     payment: CollaboratorPaymentResponse
+
+
+class CollaboratorWorkDayRequest(BaseModel):
+    days: list[date] = Field(max_length=31)
+
+
+class CollaboratorWorkDayItem(BaseModel):
+    day: date
+    amount: Decimal
+    paid: bool
+
+
+class CollaboratorWorkDaysResponse(BaseModel):
+    month: str
+    daily_rate: Decimal
+    total_amount: Decimal
+    days: list[CollaboratorWorkDayItem]

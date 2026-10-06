@@ -721,6 +721,40 @@ async def test_super_admin_can_view_real_admin_metrics_and_paginated_lists(
 
 
 @pytest.mark.anyio
+async def test_super_admin_deletes_users_but_cannot_delete_self_or_workspace_owner(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    super_admin,
+    owner,
+    collaborator,
+) -> None:
+    await login(client, "superadmin@example.com", "super admin password")
+
+    self_delete = await client.delete(
+        f"/api/admin/users/{super_admin.id}",
+        headers={"X-CSRF-Token": await csrf(client)},
+    )
+    assert self_delete.status_code == 409
+
+    owner_delete = await client.delete(
+        f"/api/admin/users/{owner[0].id}",
+        headers={"X-CSRF-Token": await csrf(client)},
+    )
+    assert owner_delete.status_code == 409
+    assert await db_session.get(User, owner[0].id) is not None
+
+    deleted = await client.delete(
+        f"/api/admin/users/{collaborator.id}",
+        headers={"X-CSRF-Token": await csrf(client)},
+    )
+    assert deleted.status_code == 204, deleted.text
+    assert await db_session.get(User, collaborator.id) is None
+    assert await db_session.scalar(
+        select(WorkspaceMember).where(WorkspaceMember.user_id == collaborator.id)
+    ) is None
+
+
+@pytest.mark.anyio
 async def test_login_rate_limiter_limits_repeated_failures(client: AsyncClient) -> None:
     token = await csrf(client)
     response = None

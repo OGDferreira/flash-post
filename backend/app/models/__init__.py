@@ -9,6 +9,7 @@ class Base(DeclarativeBase):
 
 from app.models.system_setting import SystemSetting
 from app.models.collaborator_payment import CollaboratorPayment
+from app.models.collaborator_work_day import CollaboratorWorkDay
 from app.models.instagram_account import InstagramAccount
 from app.models.instagram_app_credential import InstagramAppCredential
 from app.models.instagram_profile_folder import InstagramProfileFolder
@@ -26,6 +27,7 @@ from app.models.workspace import Workspace, WorkspaceMember
 __all__ = [
     "Base",
     "CollaboratorPayment",
+    "CollaboratorWorkDay",
     "InstagramAccount",
     "InstagramAppCredential",
     "InstagramLoop",

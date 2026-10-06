@@ -234,6 +234,7 @@ async def test_owner_can_add_and_read_meta_app_without_secret(
     app = saved.json()["app"]
     assert app["display_name"] == "My publishing app"
     assert app["meta_app_name"] == "My publishing app"
+    assert app["credential_kind"] == "instagram_business_login"
     assert app["category"] is None
     assert app["is_selected"] is True
 
@@ -768,6 +769,7 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
             display_name="Selected app",
             meta_app_name="Meta selected app",
             app_id="123456",
+            credential_kind="legacy",
             category="Business",
             app_link="https://example.com/app",
             encrypted_app_secret=encrypt_value("test-app-secret"),
@@ -781,6 +783,7 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
             display_name="Not selected",
             meta_app_name="Other Meta app",
             app_id="654321",
+            credential_kind="instagram_business_login",
             encrypted_app_secret=encrypt_value("other-app-secret"),
             is_selected=False,
             revision=uuid.uuid4(),
@@ -1012,29 +1015,22 @@ async def test_instagram_profile_metrics_are_fetched_from_me_endpoint(
 
 
 @pytest.mark.anyio
-async def test_instagram_views_fall_back_to_content_views_and_use_local_dates(
+async def test_instagram_views_use_supported_total_metric_and_timestamp_range(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, str]] = []
 
     class FakeResponse:
-        def __init__(self, payload: object, status_code: int = 200):
+        def __init__(self, payload: object):
             self.payload = payload
-            self.is_error = status_code >= 400
-            self.status_code = status_code
+            self.is_error = False
             self.request = oauth.httpx.Request("GET", "https://graph.instagram.com/insights")
 
         def json(self) -> object:
             return self.payload
 
         def raise_for_status(self) -> None:
-            if self.is_error:
-                response = oauth.httpx.Response(
-                    self.status_code,
-                    request=self.request,
-                    json=self.payload,
-                )
-                response.raise_for_status()
+            return None
 
     class FakeClient:
         def __init__(self, **_kwargs):
@@ -1048,17 +1044,12 @@ async def test_instagram_views_fall_back_to_content_views_and_use_local_dates(
 
         async def get(self, _url: str, *, params: dict[str, str]):
             calls.append(params)
-            if params["metric"] == "views":
-                return FakeResponse(
-                    {"error": {"code": 100, "message": "Unsupported metric"}},
-                    status_code=400,
-                )
             return FakeResponse(
                 {
                     "data": [
                         {
-                            "name": "content_views",
-                            "values": [{"value": 150}, {"value": 275}],
+                            "name": "views",
+                            "total_value": {"value": 425},
                         }
                     ]
                 }
@@ -1074,9 +1065,16 @@ async def test_instagram_views_fall_back_to_content_views_and_use_local_dates(
     )
 
     assert views == 425
-    assert [call["metric"] for call in calls] == ["views", "content_views"]
-    assert all(call["since"] == "2026-10-01" for call in calls)
-    assert all(call["until"] == "2026-10-02" for call in calls)
+    assert len(calls) == 1
+    assert calls[0]["metric"] == "views"
+    assert calls[0]["period"] == "day"
+    assert calls[0]["metric_type"] == "total_value"
+    assert calls[0]["since"] == str(
+        int(datetime(2026, 10, 1, 3, tzinfo=timezone.utc).timestamp())
+    )
+    assert calls[0]["until"] == str(
+        int(datetime(2026, 10, 3, 3, tzinfo=timezone.utc).timestamp()) - 1
+    )
 
 
 @pytest.mark.anyio
@@ -1128,10 +1126,26 @@ async def test_instagram_account_insights_fetch_supported_metrics_for_local_peri
     assert metrics["views"] == 17
     assert metrics["reach"] == 17
     assert metrics["profile_links_taps"] == 17
-    assert not errors
-    assert len(calls) == 13
-    assert all(call["since"] == "2026-10-01" for call in calls)
-    assert all(call["until"] == "2026-10-02" for call in calls)
+    assert metrics["impressions"] is None
+    assert metrics["profile_views"] is None
+    assert errors == {
+        "impressions": "A Meta descontinuou esta métrica; use Visualizações.",
+        "profile_views": "A Meta não oferece esta métrica neste endpoint.",
+        "website_clicks": "A Meta não oferece esta métrica neste endpoint.",
+    }
+    assert len(calls) == 11
+    assert all(call["period"] == "day" for call in calls)
+    assert all(call["metric_type"] == "total_value" for call in calls)
+    assert all(
+        call["since"]
+        == str(int(datetime(2026, 10, 1, 3, tzinfo=timezone.utc).timestamp()))
+        for call in calls
+    )
+    assert all(
+        call["until"]
+        == str(int(datetime(2026, 10, 3, 3, tzinfo=timezone.utc).timestamp()) - 1)
+        for call in calls
+    )
 
 
 @pytest.mark.anyio

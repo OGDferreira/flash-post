@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -89,6 +89,7 @@ class InstagramMetaAppResponse(BaseModel):
     display_name: str
     meta_app_name: str
     app_id: str
+    credential_kind: Literal["legacy", "instagram_business_login"]
     category: str | None
     app_link: str | None
     is_selected: bool
