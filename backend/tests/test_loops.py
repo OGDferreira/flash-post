@@ -18,7 +18,6 @@ from app.models import (
     InstagramPublicationJob,
 )
 from app.workers.loop_scheduler import (
-    CONSECUTIVE_PUBLICATION_FAILURE_LIMIT,
     _mark_account_as_error,
     _record_publication_failure,
     _update_account_health_after_failure,
@@ -81,7 +80,7 @@ async def test_owner_can_create_and_read_a_loop(
     assert response.status_code == 201, response.text
     result = response.json()
     assert result["name"] == "Reels da semana"
-    assert result["repeat_media"] is False
+    assert result["repeat_media"] is True
     assert result["status"] == "active"
     assert "daily_limit_per_account" not in result
     assert (
@@ -322,6 +321,7 @@ async def test_owner_can_view_failed_publication_details_in_error_log(
     assert response.json()["failures"][0]["error"] == (
         "Instagram rejected the publication request (HTTP 400)."
     )
+    assert response.json()["failures"][0]["account_in_loop"] is False
 
 
 @pytest.mark.anyio
@@ -623,18 +623,11 @@ async def test_collaborator_can_only_associate_accounts_with_existing_loops(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("failure_count", "expected_status"),
-    [
-        (CONSECUTIVE_PUBLICATION_FAILURE_LIMIT, "connected"),
-        (CONSECUTIVE_PUBLICATION_FAILURE_LIMIT + 1, "error"),
-    ],
-)
-async def test_account_enters_error_state_after_more_than_five_consecutive_failed_posts(
+@pytest.mark.parametrize("failure_count", [5, 12])
+async def test_account_stays_connected_after_many_isolated_publication_failures(
     db_session: AsyncSession,
     owner,
     failure_count: int,
-    expected_status: str,
 ) -> None:
     _user, workspace = owner
     account = _active_account(workspace.id, f"failure-{failure_count}")
@@ -675,7 +668,7 @@ async def test_account_enters_error_state_after_more_than_five_consecutive_faile
         InstagramPublishingError("Instagram rejected media."),
     )
     await db_session.refresh(account)
-    assert account.status == expected_status
+    assert account.status == "connected"
 
 
 @pytest.mark.anyio

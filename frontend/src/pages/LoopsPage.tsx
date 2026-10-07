@@ -90,6 +90,7 @@ type PublicationFailure = {
   updated_at: string;
   attempts: number;
   error: string;
+  account_in_loop: boolean;
 };
 
 type PublicationFailuresResponse = {
@@ -153,7 +154,7 @@ function formatFileSize(sizeBytes: number): string {
 
 export function LoopsPage() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"continuous" | "limited" | "errors">("continuous");
+  const [tab, setTab] = useState<"continuous" | "errors">("continuous");
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<LoopForm>(emptyForm);
@@ -272,7 +273,7 @@ export function LoopsPage() {
   const visibleLoops = useMemo(
     () =>
       (loops.data?.loops ?? []).filter(
-        (loop) => tab !== "errors" && (tab === "continuous" ? loop.repeat_media : !loop.repeat_media),
+        () => tab !== "errors",
       ),
     [loops.data?.loops, tab],
   );
@@ -401,8 +402,7 @@ export function LoopsPage() {
 
       <div className="flex gap-1 border-b border-[#27334a]">
         {([
-          ["continuous", "Contínuos"],
-          ["limited", "Limitados"],
+          ["continuous", "Loops"],
         ] as const).map(([value, label]) => (
           <button
             className={`border-b-2 px-4 py-3 text-sm ${
@@ -427,7 +427,7 @@ export function LoopsPage() {
           type="button"
           onClick={() => setTab("errors")}
         >
-          Erros ({loops.data.loops.reduce((total, loop) => total + loop.failed_count, 0)})
+          Falhas de Publicação ({loops.data.loops.reduce((total, loop) => total + loop.failed_count, 0)})
         </button>
         )}
       </div>
@@ -439,7 +439,7 @@ export function LoopsPage() {
         ) : failures.data.failures.length === 0 ? (
         <EmptyState message="Nenhuma falha de publicação registrada." />
         ) : (
-        <section aria-label="Log de erros de publicação" className="space-y-3">
+        <section aria-label="Falhas de publicação" className="space-y-3">
           {failures.data.failures.map((failure) => (
             <article
               className="space-y-2 rounded-xl border border-[#47252d] bg-[#130e11] p-4"
@@ -458,6 +458,13 @@ export function LoopsPage() {
                 {failure.attempts} {failure.attempts === 1 ? "tentativa" : "tentativas"}
               </p>
               <p className="break-words text-sm leading-6 text-[#f1a3ad]">{failure.error}</p>
+              <p
+                className={`text-xs ${failure.account_in_loop ? "text-[#7fd9a6]" : "text-[#f2d48a]"}`}
+              >
+                {failure.account_in_loop
+                  ? "A conta continua no loop e tentará o próximo vídeo na próxima rodada."
+                  : "A conta não está mais neste loop. Veja a aba \"Com erro\" em Contas Instagram."}
+              </p>
             </article>
           ))}
         </section>
@@ -848,16 +855,6 @@ export function LoopsPage() {
               </div>
             )}
           </fieldset>
-
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-[#27334a] bg-[#090b0f] p-3 text-sm text-[#cbd5e1]">
-            <input
-              className="size-4 accent-[#00c9d8]"
-              type="checkbox"
-              checked={!form.repeat_media}
-              onChange={(event) => setForm({ ...form, repeat_media: !event.target.checked })}
-            />
-            Limitado: não repetir mídias
-          </label>
           </fieldset>
 
           </details>

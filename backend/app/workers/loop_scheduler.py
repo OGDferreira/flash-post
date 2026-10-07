@@ -28,7 +28,6 @@ STALE_PUBLICATION_AFTER = timedelta(minutes=45)
 MAX_CONCURRENT_PUBLICATIONS = 5
 TOKEN_REFRESH_WINDOW = timedelta(days=10)
 TOKEN_REFRESH_RETRY_INTERVAL = timedelta(hours=12)
-CONSECUTIVE_PUBLICATION_FAILURE_LIMIT = 5
 
 
 def _utc_datetime(value: datetime) -> datetime:
@@ -117,33 +116,7 @@ async def _update_account_health_after_failure(
             reason or "A autorização do Instagram foi recusada.",
         )
         await db.commit()
-        return
-
-    recent_jobs = (
-        await db.scalars(
-            select(InstagramPublicationJob.status)
-            .where(
-                InstagramPublicationJob.account_id == account_id,
-                InstagramPublicationJob.attempts > 0,
-                InstagramPublicationJob.status.in_(("published", "failed")),
-            )
-            .order_by(
-                InstagramPublicationJob.updated_at.desc(),
-                InstagramPublicationJob.id.desc(),
-            )
-            .limit(CONSECUTIVE_PUBLICATION_FAILURE_LIMIT + 1)
-        )
-    ).all()
-    if (
-        len(recent_jobs) > CONSECUTIVE_PUBLICATION_FAILURE_LIMIT
-        and all(job_status == "failed" for job_status in recent_jobs)
-    ):
-        await _mark_account_as_error(
-            db,
-            account,
-            "A conta foi marcada com erro após falhas consecutivas de publicação.",
-        )
-        await db.commit()
+    # Falhas isoladas (soft) não removem a conta do loop.
 
 
 def _safe_publication_error(error: Exception) -> str:

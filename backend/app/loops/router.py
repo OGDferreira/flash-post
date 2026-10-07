@@ -195,6 +195,12 @@ async def list_publication_failures(
                 InstagramLoop.name,
                 InstagramAccount.username,
                 InstagramMedia.filename,
+                select(InstagramLoopAccount.account_id)
+                .where(
+                    InstagramLoopAccount.loop_id == InstagramPublicationJob.loop_id,
+                    InstagramLoopAccount.account_id == InstagramPublicationJob.account_id,
+                )
+                .exists(),
             )
             .join(
                 InstagramLoop,
@@ -232,8 +238,9 @@ async def list_publication_failures(
                 updated_at=_utc_datetime(job.updated_at),
                 attempts=job.attempts,
                 error=job.last_error or "Falha sem detalhes registrados.",
+                account_in_loop=bool(in_loop),
             )
-            for job, loop_name, username, filename in rows
+            for job, loop_name, username, filename, in_loop in rows
         ]
     )
 
@@ -354,7 +361,7 @@ async def create_loop(
         interval_min_minutes=payload.interval_min_minutes,
         interval_max_minutes=payload.interval_max_minutes,
         post_type=payload.post_type,
-        repeat_media=payload.repeat_media,
+        repeat_media=True,
         status="active",
         next_run_at=now,
     )
@@ -400,7 +407,7 @@ async def clone_loop(
         interval_min_minutes=source.interval_min_minutes,
         interval_max_minutes=source.interval_max_minutes,
         post_type=source.post_type,
-        repeat_media=source.repeat_media,
+        repeat_media=True,
         status="paused",
         next_run_at=None,
     )
@@ -480,7 +487,7 @@ async def update_loop(
     loop.interval_min_minutes = payload.interval_min_minutes
     loop.interval_max_minutes = payload.interval_max_minutes
     loop.post_type = payload.post_type
-    loop.repeat_media = payload.repeat_media
+    loop.repeat_media = True
     loop.next_run_at = (
         next_loop_run_time(loop, now) if loop.status == "active" else None
     )

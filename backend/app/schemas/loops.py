@@ -92,6 +92,7 @@ class InstagramPublicationFailureResponse(BaseModel):
     updated_at: datetime
     attempts: int
     error: str
+    account_in_loop: bool
 
 
 class InstagramPublicationFailuresResponse(BaseModel):

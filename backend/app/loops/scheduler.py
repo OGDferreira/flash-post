@@ -113,12 +113,8 @@ async def _reserve_next_loop_media(
         loop.next_media_index = last_index + 1 if last_index is not None else 0
 
     index = loop.next_media_index
-    if loop.repeat_media:
-        selected = pool[index % len(pool)]
-    elif index < len(pool):
-        selected = pool[index]
-    else:
-        return None, None
+    # Pool circular: após o último vídeo, volta ao primeiro.
+    selected = pool[index % len(pool)]
 
     queue_sequence = loop.next_queue_sequence
     loop.next_media_index = index + 1
