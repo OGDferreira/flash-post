@@ -492,8 +492,17 @@ export function LoopsPage() {
                   }
                 >
                   <span>
-                    <span className="block font-medium text-[#f5f7fb]">
+                    <span className="flex flex-wrap items-center gap-2 font-medium text-[#f5f7fb]">
                       @{group.username}
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                          group.inLoop
+                            ? "bg-[#12301f] text-[#7fd9a6]"
+                            : "bg-[#2b2a1a] text-[#f2d48a]"
+                        }`}
+                      >
+                        {group.inLoop ? "Ativa" : "Desativada"}
+                      </span>
                     </span>
                     <span className="block text-xs text-[#94a3b8]">
                       {group.loopNames.join(", ")}
