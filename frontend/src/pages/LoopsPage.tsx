@@ -83,6 +83,7 @@ type InstagramLoopsResponse = {
 
 type PublicationFailure = {
   id: string;
+  account_id: string;
   loop_name: string;
   account_username: string;
   media_filename: string | null;
@@ -96,6 +97,32 @@ type PublicationFailure = {
 type PublicationFailuresResponse = {
   failures: PublicationFailure[];
 };
+
+type FailureAccountGroup = {
+  accountId: string;
+  username: string;
+  loopNames: string[];
+  failures: PublicationFailure[];
+  inLoop: boolean;
+};
+
+function groupFailuresByAccount(failures: PublicationFailure[]): FailureAccountGroup[] {
+  const groups = new Map<string, FailureAccountGroup>();
+  for (const failure of failures) {
+    const group = groups.get(failure.account_id) ?? {
+      accountId: failure.account_id,
+      username: failure.account_username,
+      loopNames: [],
+      failures: [],
+      inLoop: false,
+    };
+    group.failures.push(failure);
+    if (!group.loopNames.includes(failure.loop_name)) group.loopNames.push(failure.loop_name);
+    group.inLoop = group.inLoop || failure.account_in_loop;
+    groups.set(failure.account_id, group);
+  }
+  return [...groups.values()];
+}
 
 type LoopForm = {
   name: string;
@@ -180,10 +207,15 @@ export function LoopsPage() {
   const failures = useQuery({
     queryKey: ["loops", "failures"],
     queryFn: () => apiRequest<PublicationFailuresResponse>("/api/loops/failures"),
-    enabled: tab === "errors" && loops.data?.can_configure === true,
+    enabled: loops.data?.can_configure === true,
     refetchInterval: 60_000,
     retry: false,
   });
+  const failureGroups = useMemo(
+    () => groupFailuresByAccount(failures.data?.failures ?? []),
+    [failures.data?.failures],
+  );
+  const [openFailureAccounts, setOpenFailureAccounts] = useState<Set<string>>(new Set());
 
   const saveLoop = useMutation({
     mutationFn: () => {
@@ -427,7 +459,7 @@ export function LoopsPage() {
           type="button"
           onClick={() => setTab("errors")}
         >
-          Falhas de Publicação ({loops.data.loops.reduce((total, loop) => total + loop.failed_count, 0)})
+          Falhas de Publicação ({failures.data ? failureGroups.length : loops.data.loops.reduce((total, loop) => total + loop.failed_count, 0)})
         </button>
         )}
       </div>
@@ -440,33 +472,77 @@ export function LoopsPage() {
         <EmptyState message="Nenhuma falha de publicação registrada." />
         ) : (
         <section aria-label="Falhas de publicação" className="space-y-3">
-          {failures.data.failures.map((failure) => (
-            <article
-              className="space-y-2 rounded-xl border border-[#47252d] bg-[#130e11] p-4"
-              key={failure.id}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-medium text-[#f5f7fb]">
-                  @{failure.account_username} · {failure.loop_name}
-                </h3>
-                <time className="text-xs text-[#94a3b8]">
-                  {formatDate(failure.updated_at)}
-                </time>
-              </div>
-              <p className="text-xs text-[#94a3b8]">
-                {failure.media_filename ?? "Mídia não identificada"} ·{" "}
-                {failure.attempts} {failure.attempts === 1 ? "tentativa" : "tentativas"}
-              </p>
-              <p className="break-words text-sm leading-6 text-[#f1a3ad]">{failure.error}</p>
-              <p
-                className={`text-xs ${failure.account_in_loop ? "text-[#7fd9a6]" : "text-[#f2d48a]"}`}
+          {failureGroups.map((group) => {
+            const open = openFailureAccounts.has(group.accountId);
+            return (
+              <article
+                className="rounded-xl border border-[#47252d] bg-[#130e11]"
+                key={group.accountId}
               >
-                {failure.account_in_loop
-                  ? "A conta continua no loop e tentará o próximo vídeo na próxima rodada."
-                  : "A conta não está mais neste loop. Veja a aba \"Com erro\" em Contas Instagram."}
-              </p>
-            </article>
-          ))}
+                <button
+                  aria-expanded={open}
+                  className="flex w-full flex-wrap items-center justify-between gap-2 p-4 text-left"
+                  type="button"
+                  onClick={() =>
+                    setOpenFailureAccounts((current) => {
+                      const next = new Set(current);
+                      if (!next.delete(group.accountId)) next.add(group.accountId);
+                      return next;
+                    })
+                  }
+                >
+                  <span>
+                    <span className="block font-medium text-[#f5f7fb]">
+                      @{group.username}
+                    </span>
+                    <span className="block text-xs text-[#94a3b8]">
+                      {group.loopNames.join(", ")}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-3 text-xs">
+                    <span className="rounded-full bg-[#3a1a22] px-2 py-1 text-[#f1a3ad]">
+                      {group.failures.length}{" "}
+                      {group.failures.length === 1 ? "falha" : "falhas"}
+                    </span>
+                    <span className="text-[#94a3b8]">{open ? "Ocultar" : "Ver detalhes"}</span>
+                  </span>
+                </button>
+                {open && (
+                  <div className="space-y-2 border-t border-[#47252d] p-4">
+                    <p
+                      className={`text-xs ${group.inLoop ? "text-[#7fd9a6]" : "text-[#f2d48a]"}`}
+                    >
+                      {group.inLoop
+                        ? "A conta continua no loop e tentará o próximo vídeo na próxima rodada."
+                        : "A conta não está mais em um loop."}
+                    </p>
+                    {group.failures.map((failure) => (
+                      <div
+                        className="space-y-1 rounded-lg border border-[#2a1c21] bg-[#0f0b0d] p-3"
+                        key={failure.id}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="break-all text-sm text-[#f5f7fb]">
+                            {failure.media_filename ?? "Mídia não identificada"}
+                          </span>
+                          <time className="text-xs text-[#94a3b8]">
+                            {formatDate(failure.updated_at)}
+                          </time>
+                        </div>
+                        <p className="text-xs text-[#94a3b8]">
+                          {failure.loop_name} · {failure.attempts}{" "}
+                          {failure.attempts === 1 ? "tentativa" : "tentativas"}
+                        </p>
+                        <p className="break-words text-sm leading-6 text-[#f1a3ad]">
+                          {failure.error}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </article>
+            );
+          })}
         </section>
         )
       ) : (

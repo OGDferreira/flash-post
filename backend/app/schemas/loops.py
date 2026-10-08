@@ -11,7 +11,7 @@ class InstagramLoopCreateRequest(BaseModel):
     interval_max_minutes: Annotated[int, Field(ge=1, le=1440)]
     post_type: Literal["reels", "images", "both"] = "reels"
     repeat_media: bool = True
-    account_ids: Annotated[list[UUID], Field(min_length=1, max_length=100)]
+    account_ids: Annotated[list[UUID], Field(min_length=1, max_length=1000)]
     media_ids: list[UUID] | None = None
 
     @field_validator("name")
@@ -104,7 +104,7 @@ class InstagramLoopStatusRequest(BaseModel):
 
 
 class InstagramLoopAccountsUpdateRequest(BaseModel):
-    account_ids: Annotated[list[UUID], Field(min_length=1, max_length=100)]
+    account_ids: Annotated[list[UUID], Field(min_length=1, max_length=1000)]
 
     @field_validator("account_ids")
     @classmethod

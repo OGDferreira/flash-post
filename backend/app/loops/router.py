@@ -186,7 +186,7 @@ async def list_loops(
 async def list_publication_failures(
     access: OwnerAccess,
     db: DbSession,
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=1000, ge=1, le=2000),
 ) -> InstagramPublicationFailuresResponse:
     rows = (
         await db.execute(
@@ -218,6 +218,7 @@ async def list_publication_failures(
                 InstagramPublicationJob.workspace_id == access.workspace.id,
                 InstagramPublicationJob.status == "failed",
                 InstagramPublicationJob.last_error.is_not(None),
+                InstagramAccount.status == "connected",
             )
             .order_by(
                 InstagramPublicationJob.updated_at.desc(),
