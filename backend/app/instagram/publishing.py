@@ -36,6 +36,16 @@ def _meta_error_code(response: httpx.Response) -> int | None:
     return code if isinstance(code, int) and not isinstance(code, bool) else None
 
 
+def _is_unsupported_node_request(response: httpx.Response) -> bool:
+    if response.status_code != 400 or _meta_error_code(response) != 100:
+        return False
+    try:
+        message = response.json()["error"]["message"]
+    except (ValueError, KeyError, TypeError):
+        return False
+    return isinstance(message, str) and "Unsupported request" in message
+
+
 def _publication_error_detail(
     response: httpx.Response,
     stage: str,
@@ -121,6 +131,16 @@ async def publish_media(
                 f"{GRAPH_ENDPOINT}/{account.instagram_user_id}/media",
                 data=create_payload,
             )
+            if _is_unsupported_node_request(create_response):
+                # The stored ID may not match the token's node; "me" always does.
+                logger.warning(
+                    "Retrying container creation for account %s through /me.",
+                    account.username,
+                )
+                create_response = await client.post(
+                    f"{GRAPH_ENDPOINT}/me/media",
+                    data=create_payload,
+                )
             create_response.raise_for_status()
             container_id = _response_id(create_response.json())
             logger.info(

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 EmailAccountStatus = Literal[
@@ -64,6 +64,22 @@ class EmailAccountItem(BaseModel):
     attachment_url: str | None
     created_at: datetime
     updated_at: datetime
+    import_batch_id: UUID | None = None
+
+
+class EmailAccountsBulkDeleteRequest(BaseModel):
+    ids: list[UUID] = Field(default_factory=list, max_length=2000)
+    import_batch_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def require_target(self) -> "EmailAccountsBulkDeleteRequest":
+        if not self.ids and self.import_batch_id is None:
+            raise ValueError("Informe contas ou um lote para excluir.")
+        return self
+
+
+class EmailAccountsBulkDeleteResponse(BaseModel):
+    deleted_count: int
 
 
 class EmailAccountCounts(BaseModel):

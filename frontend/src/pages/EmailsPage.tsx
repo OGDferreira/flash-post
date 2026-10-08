@@ -29,6 +29,7 @@ type EmailAccount = {
   attachment_url: string | null;
   created_at: string;
   updated_at: string;
+  import_batch_id: string | null;
 };
 type EmailForm = Pick<
   EmailAccount,
@@ -146,6 +147,9 @@ export function EmailsPage() {
   const [importText, setImportText] = useState("");
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [observationDrafts, setObservationDrafts] = useState<Record<string, string>>({});
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchFilter, setBatchFilter] = useState("all");
+  const [textModalOpen, setTextModalOpen] = useState(false);
   const emails = useQuery({
     queryKey: ["emails"],
     queryFn: () => apiRequest<EmailsResponse>("/api/emails"),
@@ -201,6 +205,19 @@ export function EmailsPage() {
       apiRequest<void>(`/api/emails/${id}`, { method: "DELETE" }),
     onSuccess: refresh,
   });
+  const bulkDelete = useMutation({
+    mutationFn: (body: { ids?: string[]; import_batch_id?: string }) =>
+      apiRequest<{ deleted_count: number }>("/api/emails/bulk-delete", {
+        method: "POST",
+        body,
+      }),
+    onSuccess: async (result) => {
+      setSelectedIds(new Set());
+      setBatchFilter("all");
+      setImportMessage(`${result.deleted_count} conta(s) excluída(s).`);
+      await refresh();
+    },
+  });
   const changeStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: EmailStatus }) =>
       apiRequest<EmailAccount>(`/api/emails/${id}/status`, {
@@ -252,6 +269,29 @@ export function EmailsPage() {
           ? account.responsible === null
           : account.responsible === responsibleFilter)),
   );
+
+  const selectedVisible = filteredAccounts.filter((account) => selectedIds.has(account.id));
+  const allVisibleSelected =
+    filteredAccounts.length > 0 && selectedVisible.length === filteredAccounts.length;
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllVisible() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const account of filteredAccounts) {
+        if (allVisibleSelected) next.delete(account.id);
+        else next.add(account.id);
+      }
+      return next;
+    });
+  }
 
   function renderFormFields(
     form: EmailForm,
@@ -327,11 +367,12 @@ export function EmailsPage() {
     errorMessage(createAccount.error, "Não foi possível adicionar a conta."),
     errorMessage(updateAccount.error, "Não foi possível atualizar a conta."),
     errorMessage(deleteAccount.error, "Não foi possível excluir a conta."),
+    errorMessage(bulkDelete.error, "Não foi possível excluir as contas."),
     errorMessage(changeStatus.error, "Não foi possível atualizar o status."),
     errorMessage(saveObservation.error, "Não foi possível salvar a observação."),
     errorMessage(uploadAttachment.error, "Não foi possível enviar o anexo."),
-    errorMessage(importAccounts.error, "Não foi possível importar a planilha."),
   ].filter(Boolean);
+  const importError = errorMessage(importAccounts.error, "Não foi possível importar a planilha.");
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
@@ -370,6 +411,25 @@ export function EmailsPage() {
       {errors.map((error) => (
         <ErrorState key={error} message={error ?? ""} />
       ))}
+      {importError && (
+        <div
+          className="rounded-xl border border-[#63343b] bg-[#2b171b] p-4 text-sm text-[#f1a3ad]"
+          role="alert"
+        >
+          {importError.split(/([^\s,;:()]+@[^\s,;:()]+?)(?=[\s,;:()]|\.(?:\s|$)|$)/g).map((part, index) =>
+            index % 2 === 1 ? (
+              <mark
+                className="rounded bg-[#f5c451] px-1 font-semibold text-[#1c1405]"
+                key={index}
+              >
+                {part}
+              </mark>
+            ) : (
+              part
+            ),
+          )}
+        </div>
+      )}
 
       {emails.data.can_manage && (
         <details className="dashboard-card rounded-xl p-5">
@@ -450,14 +510,50 @@ export function EmailsPage() {
             ) : (
               <textarea
                 aria-label="Texto das contas"
-                className="collaborator-input min-h-36 w-full resize-y font-mono text-xs"
-                onChange={(event) => {
-                  setImportText(event.target.value);
-                  setImportMessage(null);
-                }}
+                className="collaborator-input min-h-36 w-full cursor-pointer resize-y font-mono text-xs"
+                onClick={() => setTextModalOpen(true)}
+                onFocus={() => setTextModalOpen(true)}
                 placeholder={"Fornecedor : email@exemplo.com : senha : codigo 2FA : senha 2FA\nFornecedor : email2@exemplo.com : senha : codigo 2FA : "}
+                readOnly
                 value={importText}
               />
+            )}
+            {textModalOpen && (
+              <div
+                aria-label="Digitar contas"
+                aria-modal="true"
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+                role="dialog"
+              >
+                <div className="flex h-[85vh] w-full max-w-5xl flex-col gap-3 rounded-xl border border-[#34446f] bg-[#0f1320] p-5">
+                  <h2 className="text-sm font-semibold text-[#edf0f8]">
+                    Digite ou cole as contas
+                  </h2>
+                  <textarea
+                    aria-label="Texto das contas (ampliado)"
+                    autoFocus
+                    className="collaborator-input w-full flex-1 resize-none font-mono text-sm"
+                    onChange={(event) => {
+                      setImportText(event.target.value);
+                      setImportMessage(null);
+                    }}
+                    placeholder={"Fornecedor : email@exemplo.com : senha : codigo 2FA : senha 2FA"}
+                    value={importText}
+                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs text-[#94a3b8]">
+                      {importText.split("\n").filter((line) => line.trim()).length} linha(s)
+                    </span>
+                    <button
+                      className="inline-flex min-h-10 items-center rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white"
+                      onClick={() => setTextModalOpen(false)}
+                      type="button"
+                    >
+                      Concluir
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
             <p className="text-xs text-[#94a3b8]">
               Uma conta por linha, nesta ordem: fornecedor : e-mail : senha : código 2FA : senha 2FA.
@@ -529,6 +625,49 @@ export function EmailsPage() {
           </span>
         </div>
 
+        {emails.data.can_manage && (
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="grid gap-1 text-xs text-[#94a3b8]">
+              Lote importado
+              <select
+                className="collaborator-input min-w-64"
+                onChange={(event) => setBatchFilter(event.target.value)}
+                value={batchFilter}
+              >
+                <option value="all">Todos os lotes</option>
+                {batches.map((batch) => (
+                  <option key={batch.id} value={batch.id}>{batch.label}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#5a3037] px-3 text-sm text-[#f1a3ad] hover:bg-[#241216] disabled:opacity-40"
+              disabled={batchFilter === "all" || bulkDelete.isPending}
+              onClick={() => {
+                const batch = batches.find((item) => item.id === batchFilter);
+                if (batch && window.confirm(`Excluir todas as ${batch.count} contas deste lote?`)) {
+                  bulkDelete.mutate({ import_batch_id: batch.id });
+                }
+              }}
+              type="button"
+            >
+              <Trash2 size={14} /> Excluir lote
+            </button>
+            <button
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#5a3037] px-3 text-sm text-[#f1a3ad] hover:bg-[#241216] disabled:opacity-40"
+              disabled={selectedVisible.length === 0 || bulkDelete.isPending}
+              onClick={() => {
+                if (window.confirm(`Excluir ${selectedVisible.length} conta(s) selecionada(s)?`)) {
+                  bulkDelete.mutate({ ids: selectedVisible.map((account) => account.id) });
+                }
+              }}
+              type="button"
+            >
+              <Trash2 size={14} /> Excluir selecionados ({selectedVisible.length})
+            </button>
+          </div>
+        )}
+
         {filteredAccounts.length === 0 ? (
           <EmptyState message="Nenhuma conta corresponde aos filtros." />
         ) : (
@@ -536,6 +675,17 @@ export function EmailsPage() {
             <table className="w-full min-w-[1500px] border-collapse text-left text-xs">
               <thead className="bg-[#11151d] text-[10px] uppercase tracking-[0.1em] text-[#94a3b8]">
                 <tr>
+                  {emails.data.can_manage && (
+                    <th className="px-3 py-3">
+                      <input
+                        aria-label="Selecionar todas"
+                        checked={allVisibleSelected}
+                        onChange={toggleAllVisible}
+                        type="checkbox"
+                      />
+                    </th>
+                  )}
+                  <th className="px-3 py-3">#</th>
                   <th className="px-3 py-3">Fornecedor</th>
                   <th className="px-3 py-3">E-mail</th>
                   <th className="px-3 py-3">Senha</th>
@@ -549,8 +699,19 @@ export function EmailsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#202838]">
-                {filteredAccounts.map((account) => (
+                {filteredAccounts.map((account, accountIndex) => (
                   <tr className="align-top hover:bg-[#10141b]" key={account.id}>
+                    {emails.data.can_manage && (
+                      <td className="px-3 py-3">
+                        <input
+                          aria-label={`Selecionar ${account.email}`}
+                          checked={selectedIds.has(account.id)}
+                          onChange={() => toggleSelected(account.id)}
+                          type="checkbox"
+                        />
+                      </td>
+                    )}
+                    <td className="px-3 py-3 text-[#78839b]">{accountIndex + 1}</td>
                     {editingId === account.id ? (
                       <>
                         <td className="px-2 py-2">

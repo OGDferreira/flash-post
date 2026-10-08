@@ -30,6 +30,8 @@ from app.schemas.emails import (
     EmailAccountCreateRequest,
     EmailAccountItem,
     EmailAccountObservationRequest,
+    EmailAccountsBulkDeleteRequest,
+    EmailAccountsBulkDeleteResponse,
     EmailAccountStatusRequest,
     EmailAccountUpdateRequest,
     EmailAccountsImportResponse,
@@ -106,6 +108,7 @@ def _response(account: EmailAccount) -> EmailAccountItem:
         ),
         created_at=account.created_at,
         updated_at=account.updated_at,
+        import_batch_id=account.import_batch_id,
     )
 
 
@@ -207,9 +210,22 @@ def _validate_import_rows(
         fields["supplier"] = validated.supplier
         validated_rows.append(fields)
 
-    emails = [row["email"] for row in validated_rows]
-    if len(emails) != len(set(emails)):
-        raise HTTPException(400, "O arquivo contém e-mails repetidos.")
+    positions: dict[str, list[int]] = {}
+    for line_number, row in enumerate(validated_rows, start=1):
+        positions.setdefault(row["email"], []).append(line_number)
+    duplicates = {
+        email: lines for email, lines in positions.items() if len(lines) > 1
+    }
+    if duplicates:
+        listed = "; ".join(
+            f"{email} (linhas {', '.join(map(str, lines))})"
+            for email, lines in list(duplicates.items())[:20]
+        )
+        extra = len(duplicates) - 20
+        suffix = f"; e mais {extra}" if extra > 0 else ""
+        raise HTTPException(
+            400, f"O arquivo contém e-mails repetidos: {listed}{suffix}."
+        )
     return validated_rows
 
 
@@ -388,13 +404,16 @@ async def import_email_accounts(
             )
         ).all()
         if existing_emails:
+            listed = ", ".join(sorted(set(existing_emails))[:20])
             raise HTTPException(
                 status_code=409,
-                detail="Uma ou mais contas desta planilha já existem neste workspace.",
+                detail=f"Estes e-mails já existem neste workspace: {listed}.",
             )
+        batch_id = uuid.uuid4()
         accounts = [
             EmailAccount(
                 workspace_id=access.workspace.id,
+                import_batch_id=batch_id,
                 supplier=row["supplier"],
                 email=row["email"],
                 encrypted_password=encrypt_value(row["password"]),
@@ -689,6 +708,44 @@ async def get_email_error_attachment(
             detail="Não foi possível abrir o anexo da conta.",
         ) from None
     return RedirectResponse(signed_url, headers={"Cache-Control": "no-store"})
+
+
+@router.post(
+    "/bulk-delete",
+    response_model=EmailAccountsBulkDeleteResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def bulk_delete_email_accounts(
+    payload: EmailAccountsBulkDeleteRequest,
+    access: OwnerAccess,
+    db: DbSession,
+    response: Response,
+) -> EmailAccountsBulkDeleteResponse:
+    _set_private_headers(response)
+    query = select(EmailAccount).where(
+        EmailAccount.workspace_id == access.workspace.id
+    )
+    if payload.import_batch_id is not None:
+        query = query.where(EmailAccount.import_batch_id == payload.import_batch_id)
+    if payload.ids:
+        query = query.where(EmailAccount.id.in_(payload.ids))
+    accounts = (await db.scalars(query.with_for_update())).all()
+    paths = [a.error_attachment_path for a in accounts if a.error_attachment_path]
+    if paths:
+        storage = _storage_or_http_error()
+        try:
+            for path in paths:
+                await storage.delete(path)
+        except (SupabaseStorageError, httpx.HTTPError) as exc:
+            logger.error("Email attachment deletion failed (%s).", type(exc).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Não foi possível remover os anexos; as contas foram preservadas.",
+            ) from None
+    for account in accounts:
+        await db.delete(account)
+    await db.commit()
+    return EmailAccountsBulkDeleteResponse(deleted_count=len(accounts))
 
 
 @router.delete(
