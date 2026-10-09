@@ -229,7 +229,9 @@ def _validate_import_rows(
     return validated_rows
 
 
-def _parse_text_import(content: bytes) -> list[dict[str, str]]:
+def _parse_text_import(
+    content: bytes, default_supplier: str | None = None
+) -> list[dict[str, str]]:
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
@@ -250,21 +252,28 @@ def _parse_text_import(content: bytes) -> list[dict[str, str]]:
             if ":" in line
             else []
         )
-        if len(values) != 5:
+        values = [value.strip() for value in values]
+        if len(values) == 2:
+            if not default_supplier:
+                raise HTTPException(
+                    400,
+                    f"Linha {line_number} sem fornecedor; informe o fornecedor para importar só e-mail e senha.",
+                )
+            values.insert(0, default_supplier)
+        if not 3 <= len(values) <= 5:
             raise HTTPException(
                 400,
-                f"Formato inválido na linha {line_number}; use Fornecedor : E-mail : Senha : Código 2FA : Senha 2FA.",
+                f"Formato inválido na linha {line_number}; use Fornecedor : E-mail : Senha (os demais campos são opcionais).",
             )
-        supplier, email, password, two_factor_code, two_factor_password = (
-            value.strip() for value in values
-        )
+        values += [""] * (5 - len(values))
+        supplier, email, password, two_factor_code, two_factor_password = values
         rows.append(
             {
                 "supplier": supplier,
                 "email": email,
                 "password": password,
-                "two_factor_code": two_factor_code,
-                "two_factor_password": two_factor_password,
+                "two_factor_code": two_factor_code or "-",
+                "two_factor_password": two_factor_password or "-",
             }
         )
     return _validate_import_rows(rows)
@@ -287,7 +296,9 @@ def _spreadsheet_delimiter(
     return delimiter, normalized_headers
 
 
-def _read_import_rows(filename: str, content: bytes) -> list[dict[str, str]]:
+def _read_import_rows(
+    filename: str, content: bytes, default_supplier: str | None = None
+) -> list[dict[str, str]]:
     required = {
         "fornecedor": "supplier",
         "email": "email",
@@ -326,7 +337,7 @@ def _read_import_rows(filename: str, content: bytes) -> list[dict[str, str]]:
                     400,
                     "Não reconheci os cabeçalhos do arquivo. Confira Fornecedor, E-mail, Senha, Código 2FA e Senha do 2FA.",
                 )
-            return _parse_text_import(content)
+            return _parse_text_import(content, default_supplier)
         delimiter, _normalized_headers = detected
         reader = csv.reader(io.StringIO(sample), delimiter=delimiter)
         headers = next(reader, None)
@@ -381,6 +392,7 @@ async def import_email_accounts(
     db: DbSession,
     response: Response,
     filename: str = Query(..., min_length=1, max_length=255),
+    supplier: str | None = Query(default=None, max_length=120),
 ) -> EmailAccountsImportResponse:
     _set_private_headers(response)
     chunks: list[bytes] = []
@@ -392,7 +404,7 @@ async def import_email_accounts(
         chunks.append(chunk)
     content = b"".join(chunks)
     try:
-        rows = _read_import_rows(filename, content)
+        rows = _read_import_rows(filename, content, (supplier or "").strip() or None)
         existing_emails = (
             await db.scalars(
                 select(EmailAccount.email).where(

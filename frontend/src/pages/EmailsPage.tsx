@@ -150,6 +150,8 @@ export function EmailsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchFilter, setBatchFilter] = useState("all");
   const [textModalOpen, setTextModalOpen] = useState(false);
+  const [supplierPromptOpen, setSupplierPromptOpen] = useState(false);
+  const [bulkSupplier, setBulkSupplier] = useState("");
   const emails = useQuery({
     queryKey: ["emails"],
     queryFn: () => apiRequest<EmailsResponse>("/api/emails"),
@@ -180,13 +182,15 @@ export function EmailsPage() {
       filename,
       content,
       contentType,
+      supplier,
     }: {
       filename: string;
       content: File | string;
       contentType: string;
+      supplier?: string;
     }) =>
       apiRequest<{ imported_count: number }>(
-        `/api/emails/import?${new URLSearchParams({ filename })}`,
+        `/api/emails/import?${new URLSearchParams(supplier ? { filename, supplier } : { filename })}`,
         {
           method: "POST",
           headers: { "Content-Type": contentType },
@@ -313,6 +317,44 @@ export function EmailsPage() {
       }
       return next;
     });
+  }
+
+  function hasLinesWithoutSupplier(text: string) {
+    return text.split(/\r?\n/).some((line) => {
+      if (!line.trim()) return false;
+      const parts = line.includes("\t") ? line.split("\t") : line.split(":");
+      return parts.length === 2;
+    });
+  }
+
+  async function startImport(supplier?: string) {
+    if (importMode === "file" && importFile) {
+      if (
+        supplier === undefined &&
+        /\.txt$/i.test(importFile.name) &&
+        hasLinesWithoutSupplier(await importFile.text())
+      ) {
+        setSupplierPromptOpen(true);
+        return;
+      }
+      importAccounts.mutate({
+        filename: importFile.name,
+        content: importFile,
+        contentType: importFile.type || "text/plain",
+        supplier,
+      });
+    } else if (importMode === "text" && importText.trim()) {
+      if (supplier === undefined && hasLinesWithoutSupplier(importText)) {
+        setSupplierPromptOpen(true);
+        return;
+      }
+      importAccounts.mutate({
+        filename: "contas.txt",
+        content: importText,
+        contentType: "text/plain; charset=utf-8",
+        supplier,
+      });
+    }
   }
 
   function renderFormFields(
@@ -578,8 +620,9 @@ export function EmailsPage() {
               </div>
             )}
             <p className="text-xs text-[#94a3b8]">
-              Uma conta por linha, nesta ordem: fornecedor : e-mail : senha : código 2FA : senha 2FA.
-              Também aceitamos os campos separados por tabulação. A senha do 2FA pode ficar vazia.
+              Uma conta por linha: fornecedor : e-mail : senha. Os demais campos (código 2FA e senha 2FA) são
+              preenchidos com "-" se omitidos. Se enviar só e-mail : senha, perguntaremos o fornecedor e
+              aplicaremos a todas essas linhas. Também aceitamos tabulação.
             </p>
             <button
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white disabled:opacity-50"
@@ -587,25 +630,59 @@ export function EmailsPage() {
                 importAccounts.isPending ||
                 (importMode === "file" ? !importFile : !importText.trim())
               }
-              onClick={() => {
-                if (importMode === "file" && importFile) {
-                  importAccounts.mutate({
-                    filename: importFile.name,
-                    content: importFile,
-                    contentType: importFile.type || "text/plain",
-                  });
-                } else if (importMode === "text" && importText.trim()) {
-                  importAccounts.mutate({
-                    filename: "contas.txt",
-                    content: importText,
-                    contentType: "text/plain; charset=utf-8",
-                  });
-                }
-              }}
+              onClick={() => void startImport()}
               type="button"
             >
               {importAccounts.isPending ? "Importando..." : "Importar"}
             </button>
+            {supplierPromptOpen && (
+              <div
+                aria-label="Informar fornecedor"
+                aria-modal="true"
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+                role="dialog"
+              >
+                <form
+                  className="grid w-full max-w-md gap-3 rounded-xl border border-[#34446f] bg-[#0f1320] p-5"
+                  onSubmit={(event: FormEvent) => {
+                    event.preventDefault();
+                    const supplier = bulkSupplier.trim();
+                    if (!supplier) return;
+                    setSupplierPromptOpen(false);
+                    void startImport(supplier);
+                  }}
+                >
+                  <h2 className="text-sm font-semibold text-[#edf0f8]">Qual o fornecedor?</h2>
+                  <p className="text-xs text-[#94a3b8]">
+                    Algumas linhas têm só e-mail e senha. O fornecedor informado será aplicado a elas.
+                  </p>
+                  <input
+                    autoFocus
+                    className="collaborator-input"
+                    maxLength={120}
+                    onChange={(event) => setBulkSupplier(event.target.value)}
+                    placeholder="Fornecedor"
+                    value={bulkSupplier}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      className="min-h-10 rounded-lg border border-[#34446f] px-4 text-sm text-[#94a3b8]"
+                      onClick={() => setSupplierPromptOpen(false)}
+                      type="button"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      className="min-h-10 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white disabled:opacity-50"
+                      disabled={!bulkSupplier.trim()}
+                      type="submit"
+                    >
+                      Importar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
             {importMessage && <p className="text-sm text-[#a9e5c0]">{importMessage}</p>}
           </div>
         </details>
