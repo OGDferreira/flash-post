@@ -69,6 +69,7 @@ class InstagramLoopResponse(BaseModel):
     media_names: list[str]
     media_count: int
     waiting_for_media_count: int
+    queued_publication_count: int
     published_today_count: int
     failed_count: int
 

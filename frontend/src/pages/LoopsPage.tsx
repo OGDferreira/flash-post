@@ -68,6 +68,7 @@ type InstagramLoop = {
   media_names: string[];
   media_count: number;
   waiting_for_media_count: number;
+  queued_publication_count: number;
   published_today_count: number;
   failed_count: number;
 };
@@ -1040,10 +1041,10 @@ export function LoopsPage() {
                       : "contas ativas no loop"}
                   </p>
                   <p className="mt-1 text-xs text-[#f2d48a]">
-                    {loop.waiting_for_media_count}{" "}
-                    {loop.waiting_for_media_count === 1
-                      ? "publicação aguardando mídia"
-                      : "publicações aguardando mídia"} ·{" "}
+                    {loop.queued_publication_count}{" "}
+                    {loop.queued_publication_count === 1
+                      ? "vídeo na fila"
+                      : "vídeos na fila"} ·{" "}
                     {loop.published_today_count} publicados hoje · Falhas: {loop.failed_count}
                   </p>
                 </div>

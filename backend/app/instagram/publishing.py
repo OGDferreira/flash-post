@@ -36,14 +36,25 @@ def _meta_error_code(response: httpx.Response) -> int | None:
     return code if isinstance(code, int) and not isinstance(code, bool) else None
 
 
-def _is_unsupported_node_request(response: httpx.Response) -> bool:
-    if response.status_code != 400 or _meta_error_code(response) != 100:
-        return False
-    try:
-        message = response.json()["error"]["message"]
-    except (ValueError, KeyError, TypeError):
-        return False
-    return isinstance(message, str) and "Unsupported request" in message
+def _instagram_user_identity(payload: object) -> tuple[str, str]:
+    profile: object = payload
+    if isinstance(payload, Mapping):
+        data = payload.get("data")
+        if isinstance(data, list) and data:
+            profile = data[0]
+    if isinstance(profile, Mapping):
+        user_id = profile.get("user_id") or profile.get("id")
+        username = profile.get("username")
+        if (
+            isinstance(user_id, (int, str))
+            and str(user_id)
+            and isinstance(username, str)
+            and username.strip()
+        ):
+            return str(user_id), username.strip()
+    raise InstagramPublishingError(
+        "Instagram did not return a valid user identity for this access token."
+    )
 
 
 def _publication_error_detail(
@@ -61,6 +72,7 @@ def _publication_error_detail(
     code = error.get("code") if isinstance(error, Mapping) else None
     subcode = error.get("error_subcode") if isinstance(error, Mapping) else None
     error_type = error.get("type") if isinstance(error, Mapping) else None
+    trace_id = payload.get("fbtrace_id") if isinstance(payload, Mapping) else None
     message = error.get("message") if isinstance(error, Mapping) else None
 
     details = []
@@ -70,6 +82,8 @@ def _publication_error_detail(
         details.append(f"code {code}")
     if isinstance(subcode, (str, int)):
         details.append(f"subcode {subcode}")
+    if isinstance(trace_id, str) and trace_id:
+        details.append(f"trace {trace_id[:80]}")
 
     safe_message = message.strip() if isinstance(message, str) else ""
     if access_token:
@@ -119,28 +133,37 @@ async def publish_media(
         create_payload["caption"] = media.caption
 
     timeout = httpx.Timeout(30.0)
-    stage = "media container creation"
+    stage = "account identity verification"
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
+            identity_response = await client.get(
+                f"{GRAPH_ENDPOINT}/me",
+                params={"fields": "user_id,username", "access_token": access_token},
+            )
+            identity_response.raise_for_status()
+            instagram_user_id, token_username = _instagram_user_identity(
+                identity_response.json()
+            )
+            if token_username.casefold() != str(account.username).casefold():
+                raise InstagramPublishingError(
+                    "The saved Instagram token belongs to a different account; reconnect it before publishing."
+                )
+            if instagram_user_id != str(account.instagram_user_id):
+                logger.warning(
+                    "Stored Instagram user ID does not match the token for account %s; "
+                    "using the ID returned by /me.",
+                    account.username,
+                )
+            stage = "media container creation"
             logger.info(
                 "Creating Instagram media container for account %s, media %s.",
                 account.username,
                 media.id,
             )
             create_response = await client.post(
-                f"{GRAPH_ENDPOINT}/{account.instagram_user_id}/media",
+                f"{GRAPH_ENDPOINT}/{instagram_user_id}/media",
                 data=create_payload,
             )
-            if _is_unsupported_node_request(create_response):
-                # The stored ID may not match the token's node; "me" always does.
-                logger.warning(
-                    "Retrying container creation for account %s through /me.",
-                    account.username,
-                )
-                create_response = await client.post(
-                    f"{GRAPH_ENDPOINT}/me/media",
-                    data=create_payload,
-                )
             create_response.raise_for_status()
             container_id = _response_id(create_response.json())
             logger.info(
@@ -204,7 +227,7 @@ async def publish_media(
                 account.username,
             )
             publish_response = await client.post(
-                f"{GRAPH_ENDPOINT}/{account.instagram_user_id}/media_publish",
+                f"{GRAPH_ENDPOINT}/{instagram_user_id}/media_publish",
                 data={
                     "creation_id": container_id,
                     "access_token": access_token,

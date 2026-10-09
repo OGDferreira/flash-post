@@ -125,6 +125,11 @@ async def test_image_publication_creates_and_publishes_instagram_container(
         async def __aexit__(self, *_args):
             return None
 
+        async def get(self, url: str, *, params: dict[str, str]):
+            assert url.endswith("/me")
+            assert params["fields"] == "user_id,username"
+            return FakeResponse({"user_id": "instagram-user-1", "username": "test_account"})
+
         async def post(self, url: str, *, data: dict[str, str]):
             calls.append((url, data))
             return FakeResponse(
@@ -200,7 +205,10 @@ async def test_video_publication_waits_for_processing(
                 {"id": "container-2" if url.endswith("/media") else "published-2"}
             )
 
-        async def get(self, _url: str, *, params: dict[str, str]):
+        async def get(self, url: str, *, params: dict[str, str]):
+            if url.endswith("/me"):
+                assert params["fields"] == "user_id,username"
+                return FakeResponse({"user_id": "instagram-user-2", "username": "test_account"})
             assert params["fields"] == "status_code"
             return FakeResponse({"status_code": next(statuses)})
 
@@ -255,6 +263,11 @@ async def test_publication_error_preserves_meta_reason_without_exposing_credenti
         async def __aexit__(self, *_args):
             return None
 
+        async def get(self, url: str, *, params: dict[str, str]):
+            assert url.endswith("/me")
+            assert params["fields"] == "user_id,username"
+            return httpx.Response(200, json={"user_id": "instagram-user-error", "username": "test_account"}, request=httpx.Request("GET", url))
+
         async def post(self, url: str, *, data: dict[str, str]):
             request = httpx.Request("POST", url)
             return httpx.Response(
@@ -265,7 +278,8 @@ async def test_publication_error_preserves_meta_reason_without_exposing_credenti
                         "type": "OAuthException",
                         "code": 9004,
                         "error_subcode": 2207052,
-                    }
+                    },
+                    "fbtrace_id": "trace-abc123",
                 },
                 request=request,
             )
@@ -304,6 +318,7 @@ async def test_publication_error_preserves_meta_reason_without_exposing_credenti
     assert "HTTP 400" in message
     assert "code 9004" in message
     assert "subcode 2207052" in message
+    assert "trace trace-abc123" in message
     assert "Invalid image URL" in message
     assert "private-access-token" not in message
     assert "signed-secret" not in message

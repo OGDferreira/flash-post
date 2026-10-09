@@ -83,6 +83,14 @@ async def _loop_response(
             InstagramPublicationJob.status == "waiting_for_media",
         )
     )
+    queued_count = await db.scalar(
+        select(func.count(InstagramPublicationJob.id)).where(
+            InstagramPublicationJob.loop_id == loop.id,
+            InstagramPublicationJob.status.in_(
+                ("waiting_for_media", "queued", "publishing")
+            ),
+        )
+    )
     local_day_start, local_day_end = local_day_bounds_utc(now)
     published_count = await db.scalar(
         select(func.count(InstagramPublicationJob.id)).where(
@@ -141,6 +149,7 @@ async def _loop_response(
         media_names=[item.filename for item in selected_media],
         media_count=len(selected_media),
         waiting_for_media_count=waiting_count or 0,
+        queued_publication_count=queued_count or 0,
         published_today_count=published_count or 0,
         failed_count=failed_count or 0,
     )

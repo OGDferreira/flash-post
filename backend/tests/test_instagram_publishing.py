@@ -55,6 +55,9 @@ class _GraphClient:
 
     async def get(self, url: str, params: dict[str, str]) -> _Response:
         self.calls.append(("GET", url))
+        if url.endswith("/me"):
+            assert params["fields"] == "user_id,username"
+            return _Response({"user_id": "instagram-user-123", "username": "loop_account"})
         assert params["fields"] == "status_code"
         return _Response({"status_code": next(self.statuses)})
 
@@ -76,7 +79,7 @@ async def test_video_container_finishes_processing_before_publication(
     monkeypatch.setattr(publishing.asyncio, "sleep", no_wait)
     account = SimpleNamespace(
         username="loop_account",
-        instagram_user_id="instagram-user-123",
+        instagram_user_id="stale-stored-id",
     )
     media = SimpleNamespace(
         id="media-123",
@@ -94,12 +97,14 @@ async def test_video_container_finishes_processing_before_publication(
 
     assert published_id == "published-456"
     assert [method for method, _url in client.calls] == [
+        "GET",
         "POST",
         "GET",
         "GET",
         "POST",
     ]
-    assert client.calls[0][1].endswith("/instagram-user-123/media")
-    assert client.calls[1][1].endswith("/container-123")
+    assert client.calls[0][1].endswith("/me")
+    assert client.calls[1][1].endswith("/instagram-user-123/media")
     assert client.calls[2][1].endswith("/container-123")
-    assert client.calls[3][1].endswith("/instagram-user-123/media_publish")
+    assert client.calls[3][1].endswith("/container-123")
+    assert client.calls[4][1].endswith("/instagram-user-123/media_publish")

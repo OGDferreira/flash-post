@@ -281,6 +281,62 @@ async def test_account_added_to_loop_immediately_gets_next_video(
 
 
 @pytest.mark.anyio
+async def test_loop_queue_count_includes_waiting_queued_and_publishing(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    now = datetime.now(timezone.utc)
+    account = _active_account(workspace.id, "queue_count_account")
+    media = InstagramMedia(
+        workspace_id=workspace.id,
+        storage_path=f"{workspace.id}/queue-count/video.mp4",
+        filename="video.mp4",
+        mime_type="video/mp4",
+        media_type="video",
+        size_bytes=100,
+    )
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Queue count loop",
+        interval_min_minutes=50,
+        interval_max_minutes=60,
+        post_type="reels",
+        repeat_media=True,
+        status="active",
+    )
+    db_session.add_all([account, media, loop])
+    await db_session.flush()
+    db_session.add(InstagramLoopAccount(loop_id=loop.id, account_id=account.id))
+    for index, status_value in enumerate(
+        ("waiting_for_media", "queued", "publishing", "published", "failed")
+    ):
+        db_session.add(
+            InstagramPublicationJob(
+                workspace_id=workspace.id,
+                loop_id=loop.id,
+                account_id=account.id,
+                media_id=None if status_value == "waiting_for_media" else media.id,
+                scheduled_for=now + timedelta(seconds=index),
+                status=status_value,
+                attempts=1 if status_value in {"publishing", "published", "failed"} else 0,
+            )
+        )
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+
+    response = await client.get("/api/loops")
+
+    assert response.status_code == 200, response.text
+    loop_response = next(
+        item for item in response.json()["loops"] if item["id"] == str(loop.id)
+    )
+    assert loop_response["waiting_for_media_count"] == 1
+    assert loop_response["queued_publication_count"] == 3
+
+
+@pytest.mark.anyio
 async def test_owner_can_view_failed_publication_details_in_error_log(
     client: AsyncClient,
     db_session: AsyncSession,
