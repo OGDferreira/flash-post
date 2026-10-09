@@ -261,9 +261,31 @@ export function EmailsPage() {
     () => [...new Set(accounts.map((account) => account.responsible).filter(Boolean))].sort(),
     [accounts],
   );
+  const batches = useMemo(() => {
+    const map = new Map<string, { count: number; firstAt: string }>();
+    for (const account of accounts) {
+      if (!account.import_batch_id) continue;
+      const current = map.get(account.import_batch_id);
+      map.set(account.import_batch_id, {
+        count: (current?.count ?? 0) + 1,
+        firstAt:
+          current && current.firstAt < account.created_at
+            ? current.firstAt
+            : account.created_at,
+      });
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[1].firstAt.localeCompare(b[1].firstAt))
+      .map(([id, info], index) => ({
+        id,
+        count: info.count,
+        label: `Lote ${index + 1} · ${new Date(info.firstAt).toLocaleString("pt-BR")} · ${info.count} conta(s)`,
+      }));
+  }, [accounts]);
   const filteredAccounts = accounts.filter(
     (account) =>
       (statusFilter === "all" || account.status === statusFilter) &&
+      (batchFilter === "all" || account.import_batch_id === batchFilter) &&
       (responsibleFilter === "all" ||
         (responsibleFilter === "__unassigned__"
           ? account.responsible === null
