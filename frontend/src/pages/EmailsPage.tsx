@@ -1,5 +1,6 @@
 import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
 import {
   Check,
   Clipboard,
@@ -582,14 +583,14 @@ export function EmailsPage() {
                 value={importText}
               />
             )}
-            {textModalOpen && (
+            {textModalOpen && createPortal(
               <div
                 aria-label="Digitar contas"
                 aria-modal="true"
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+                className="fixed inset-0 z-[100] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/70 p-4"
                 role="dialog"
               >
-                <div className="flex h-[85vh] w-full max-w-5xl flex-col gap-3 rounded-xl border border-[#34446f] bg-[#0f1320] p-5">
+                <div className="flex h-[85dvh] max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-5xl flex-col gap-3 rounded-xl border border-[#34446f] bg-[#0f1320] p-5">
                   <h2 className="text-sm font-semibold text-[#edf0f8]">
                     Digite ou cole as contas
                   </h2>
@@ -617,7 +618,8 @@ export function EmailsPage() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </div>,
+              document.body,
             )}
             <p className="text-xs text-[#94a3b8]">
               Uma conta por linha: fornecedor : e-mail : senha. Os demais campos (código 2FA e senha 2FA) são
@@ -635,11 +637,11 @@ export function EmailsPage() {
             >
               {importAccounts.isPending ? "Importando..." : "Importar"}
             </button>
-            {supplierPromptOpen && (
+            {supplierPromptOpen && createPortal(
               <div
                 aria-label="Informar fornecedor"
                 aria-modal="true"
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+                className="fixed inset-0 z-[100] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/70 p-4"
                 role="dialog"
               >
                 <form
@@ -681,7 +683,8 @@ export function EmailsPage() {
                     </button>
                   </div>
                 </form>
-              </div>
+              </div>,
+              document.body,
             )}
             {importMessage && <p className="text-sm text-[#a9e5c0]">{importMessage}</p>}
           </div>
