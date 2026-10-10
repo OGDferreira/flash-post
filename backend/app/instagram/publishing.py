@@ -170,39 +170,24 @@ async def publish_media(
     instagram_user_id = str(account.instagram_user_id)
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
-            try:
-                identity_response = await _request_with_retry(
-                    client,
-                    "GET",
-                    f"{GRAPH_ENDPOINT}/me",
-                    params={"fields": "user_id,username", "access_token": access_token},
+            identity_response = await _request_with_retry(
+                client,
+                "GET",
+                f"{GRAPH_ENDPOINT}/me",
+                params={"fields": "user_id,username", "access_token": access_token},
+            )
+            instagram_user_id, token_username = _instagram_user_identity(
+                identity_response.json()
+            )
+            if token_username.casefold() != str(account.username).casefold():
+                raise InstagramPublishingError(
+                    "The saved Instagram token belongs to a different account; reconnect it before publishing."
                 )
-            except httpx.HTTPStatusError as identity_exc:
-                if (
-                    identity_exc.response.status_code != 400
-                    or _meta_error_code(identity_exc.response) != 100
-                ):
-                    raise
-                # A verificação é só uma checagem extra; se o Instagram a recusa,
-                # tentamos publicar com o ID salvo e o erro real aparece depois.
+            if instagram_user_id != str(account.instagram_user_id):
                 logger.warning(
-                    "Instagram identity check was rejected for account %s; publishing with the stored ID.",
+                    "Stored Instagram user ID does not match the token for account %s; "
+                    "using the ID returned by /me.",
                     account.username,
-                )
-                identity_response = None
-            if identity_response is not None:
-                instagram_user_id, token_username = _instagram_user_identity(
-                    identity_response.json()
-                )
-                if token_username.casefold() != str(account.username).casefold():
-                    raise InstagramPublishingError(
-                        "The saved Instagram token belongs to a different account; reconnect it before publishing."
-                    )
-                if instagram_user_id != str(account.instagram_user_id):
-                    logger.warning(
-                        "Stored Instagram user ID does not match the token for account %s; "
-                        "using the ID returned by /me.",
-                        account.username,
                     )
             stage = "media container creation"
             logger.info(

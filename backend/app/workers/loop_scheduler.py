@@ -18,7 +18,6 @@ from app.instagram.publishing import InstagramPublishingError, publish_media
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.models import (
     InstagramAccount,
-    InstagramLoopAccount,
     InstagramMedia,
     InstagramPublicationJob,
 )
@@ -65,6 +64,9 @@ def _is_account_connection_failure(error: Exception) -> bool:
             "invalid oauth access token",
             "token has been invalidated",
             "permission to perform this action",
+            "rejected account identity verification",
+            "unsupported request",
+            "belongs to a different account",
         )
     )
 
@@ -152,21 +154,6 @@ async def _record_publication_failure(
     error_detail = _safe_publication_error(error)
     job.status = "failed"
     job.last_error = error_detail
-    if error_detail.startswith(
-        (
-            "Instagram rejected account identity verification",
-            "Instagram rejected media container creation",
-        )
-    ):
-        # O vídeo nem chegou ao Instagram: a conta tenta o mesmo vídeo na próxima rodada.
-        link = await db.scalar(
-            select(InstagramLoopAccount).where(
-                InstagramLoopAccount.loop_id == job.loop_id,
-                InstagramLoopAccount.account_id == account_id,
-            )
-        )
-        if link is not None and link.next_media_index:
-            link.next_media_index -= 1
     if account is not None and account.status == "connected":
         await _update_account_health_after_failure(db, account_id, error)
     await db.commit()

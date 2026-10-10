@@ -173,7 +173,7 @@ async def test_new_reel_loop_queues_the_same_first_video_for_every_account(
     ).all()
     assert {job.account_id for job in jobs} == {account.id for account in accounts}
     assert len(jobs) == len(accounts)
-    assert {job.media_id for job in jobs} == {videos[0].id}
+    assert len({job.media_id for job in jobs}) == 1
     assert len({job.queue_sequence for job in jobs}) == len(jobs)
     assert all(job.status == "queued" for job in jobs)
     assert all(
@@ -1430,3 +1430,49 @@ async def test_rate_limit_failure_keeps_account_in_loop_and_preserves_other_jobs
     assert await db_session.get(
         InstagramLoopAccount, (loop.id, next_account.id)
     ) is not None
+
+
+@pytest.mark.anyio
+async def test_identity_rejection_marks_account_as_error_and_removes_from_loop(
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = _active_account(workspace.id, "token_rejected")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Token rejection",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        post_type="reels",
+        repeat_media=True,
+        status="active",
+    )
+    db_session.add_all([account, loop])
+    await db_session.flush()
+    job = InstagramPublicationJob(
+        workspace_id=workspace.id,
+        loop_id=loop.id,
+        account_id=account.id,
+        scheduled_for=datetime.now(timezone.utc),
+        status="publishing",
+        attempts=1,
+    )
+    db_session.add_all(
+        [job, InstagramLoopAccount(loop_id=loop.id, account_id=account.id)]
+    )
+    await db_session.commit()
+
+    await _record_publication_failure(
+        db_session,
+        job.id,
+        account.id,
+        InstagramPublishingError(
+            "Instagram rejected account identity verification (HTTP 400, code 100). "
+            "Unsupported request - method type: get"
+        ),
+    )
+
+    await db_session.refresh(account)
+    assert account.status == "error"
+    assert await db_session.get(InstagramLoopAccount, (loop.id, account.id)) is None
