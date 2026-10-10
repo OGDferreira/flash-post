@@ -73,17 +73,33 @@ async def _loop_media_pool(
 async def _reserve_next_loop_media(
     db: AsyncSession,
     loop: InstagramLoop,
+    account_id,
     media_pool: list[InstagramMedia] | None = None,
 ) -> tuple[InstagramMedia | None, int | None]:
+    """Pick the account's own next playlist item; each account loops forever."""
     pool = media_pool if media_pool is not None else await _loop_media_pool(db, loop)
     if not pool:
         return None, None
 
-    if loop.next_media_index is None:
+    link = await db.scalar(
+        select(InstagramLoopAccount)
+        .where(
+            InstagramLoopAccount.loop_id == loop.id,
+            InstagramLoopAccount.account_id == account_id,
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if link is None:
+        return None, None
+
+    if link.next_media_index is None:
+        # Contas já existentes continuam de onde pararam; novas começam do 0.
         last_media_id = await db.scalar(
             select(InstagramPublicationJob.media_id)
             .where(
                 InstagramPublicationJob.loop_id == loop.id,
+                InstagramPublicationJob.account_id == account_id,
                 InstagramPublicationJob.media_id.is_not(None),
                 or_(
                     InstagramPublicationJob.status.in_(
@@ -110,14 +126,14 @@ async def _reserve_next_loop_media(
             ),
             None,
         )
-        loop.next_media_index = last_index + 1 if last_index is not None else 0
+        link.next_media_index = last_index + 1 if last_index is not None else 0
 
-    index = loop.next_media_index
-    # Pool circular: após o último vídeo, volta ao primeiro.
-    selected = pool[index % len(pool)]
+    index = link.next_media_index % len(pool)
+    # Pool circular: após o último vídeo, a conta volta ao primeiro.
+    selected = pool[index]
 
     queue_sequence = loop.next_queue_sequence
-    loop.next_media_index = index + 1
+    link.next_media_index = index + 1
     loop.next_queue_sequence += 1
     return selected, queue_sequence
 
@@ -161,7 +177,7 @@ async def enqueue_loop_publications_now(
             continue
 
         selected_media, queue_sequence = await _reserve_next_loop_media(
-            db, loop, media_pool
+            db, loop, account.id, media_pool
         )
         if selected_media is None:
             continue
@@ -246,7 +262,7 @@ async def _assign_waiting_jobs(db: AsyncSession, current: datetime) -> None:
                 job.status = "queued"
                 continue
             media, queue_sequence = await _reserve_next_loop_media(
-                db, loop, media_pool
+                db, loop, job.account_id, media_pool
             )
             if media is not None:
                 job.media_id = media.id
@@ -315,7 +331,7 @@ async def enqueue_due_loop_publications(
                     continue
 
                 selected_media, queue_sequence = await _reserve_next_loop_media(
-                    db, loop, media_pool
+                    db, loop, account.id, media_pool
                 )
                 db.add(
                     InstagramPublicationJob(

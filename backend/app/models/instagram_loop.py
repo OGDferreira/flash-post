@@ -90,6 +90,7 @@ class InstagramLoopAccount(Base):
         ForeignKey("instagram_accounts.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    next_media_index: Mapped[int | None] = mapped_column(Integer)
 
 
 class InstagramMedia(Base):

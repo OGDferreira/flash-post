@@ -10,6 +10,7 @@ from app.models import InstagramAccount, InstagramMedia
 GRAPH_ENDPOINT = "https://graph.instagram.com/v25.0"
 VIDEO_PROCESSING_INTERVAL_SECONDS = 10
 VIDEO_PROCESSING_MAX_ATTEMPTS = 90
+RETRY_DELAYS_SECONDS = (3, 10, 30)
 logger = logging.getLogger(__name__)
 
 
@@ -34,6 +35,38 @@ def _meta_error_code(response: httpx.Response) -> int | None:
     error = payload.get("error") if isinstance(payload, Mapping) else None
     code = error.get("code") if isinstance(error, Mapping) else None
     return code if isinstance(code, int) and not isinstance(code, bool) else None
+
+
+def _is_transient_response(response: httpx.Response) -> bool:
+    if response.status_code >= 500 or response.status_code == 429:
+        return True
+    return response.status_code == 400 and _meta_error_code(response) in {1, 2, 4, 17, 100}
+
+
+async def _request_with_retry(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    **kwargs,
+) -> httpx.Response:
+    """Retry transient Meta rejections before giving up on the account."""
+    for delay in (*RETRY_DELAYS_SECONDS, None):
+        try:
+            response = await getattr(client, method.lower())(url, **kwargs)
+        except httpx.TransportError:
+            if delay is None:
+                raise
+            await asyncio.sleep(delay)
+            continue
+        if (
+            getattr(response, "status_code", 200) < 400
+            or delay is None
+            or not _is_transient_response(response)
+        ):
+            response.raise_for_status()
+            return response
+        await asyncio.sleep(delay)
+    raise InstagramPublishingError("Instagram request retries were exhausted.")
 
 
 def _instagram_user_identity(payload: object) -> tuple[str, str]:
@@ -134,37 +167,55 @@ async def publish_media(
 
     timeout = httpx.Timeout(30.0)
     stage = "account identity verification"
+    instagram_user_id = str(account.instagram_user_id)
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
-            identity_response = await client.get(
-                f"{GRAPH_ENDPOINT}/me",
-                params={"fields": "user_id,username", "access_token": access_token},
-            )
-            identity_response.raise_for_status()
-            instagram_user_id, token_username = _instagram_user_identity(
-                identity_response.json()
-            )
-            if token_username.casefold() != str(account.username).casefold():
-                raise InstagramPublishingError(
-                    "The saved Instagram token belongs to a different account; reconnect it before publishing."
+            try:
+                identity_response = await _request_with_retry(
+                    client,
+                    "GET",
+                    f"{GRAPH_ENDPOINT}/me",
+                    params={"fields": "user_id,username", "access_token": access_token},
                 )
-            if instagram_user_id != str(account.instagram_user_id):
+            except httpx.HTTPStatusError as identity_exc:
+                if (
+                    identity_exc.response.status_code != 400
+                    or _meta_error_code(identity_exc.response) != 100
+                ):
+                    raise
+                # A verificação é só uma checagem extra; se o Instagram a recusa,
+                # tentamos publicar com o ID salvo e o erro real aparece depois.
                 logger.warning(
-                    "Stored Instagram user ID does not match the token for account %s; "
-                    "using the ID returned by /me.",
+                    "Instagram identity check was rejected for account %s; publishing with the stored ID.",
                     account.username,
                 )
+                identity_response = None
+            if identity_response is not None:
+                instagram_user_id, token_username = _instagram_user_identity(
+                    identity_response.json()
+                )
+                if token_username.casefold() != str(account.username).casefold():
+                    raise InstagramPublishingError(
+                        "The saved Instagram token belongs to a different account; reconnect it before publishing."
+                    )
+                if instagram_user_id != str(account.instagram_user_id):
+                    logger.warning(
+                        "Stored Instagram user ID does not match the token for account %s; "
+                        "using the ID returned by /me.",
+                        account.username,
+                    )
             stage = "media container creation"
             logger.info(
                 "Creating Instagram media container for account %s, media %s.",
                 account.username,
                 media.id,
             )
-            create_response = await client.post(
+            create_response = await _request_with_retry(
+                client,
+                "POST",
                 f"{GRAPH_ENDPOINT}/{instagram_user_id}/media",
                 data=create_payload,
             )
-            create_response.raise_for_status()
             container_id = _response_id(create_response.json())
             logger.info(
                 "Created Instagram container %s for account %s, media %s.",

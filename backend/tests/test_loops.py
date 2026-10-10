@@ -173,7 +173,7 @@ async def test_new_reel_loop_queues_the_same_first_video_for_every_account(
     ).all()
     assert {job.account_id for job in jobs} == {account.id for account in accounts}
     assert len(jobs) == len(accounts)
-    assert {job.media_id for job in jobs} == {video.id for video in videos}
+    assert {job.media_id for job in jobs} == {videos[0].id}
     assert len({job.queue_sequence for job in jobs}) == len(jobs)
     assert all(job.status == "queued" for job in jobs)
     assert all(
@@ -271,7 +271,7 @@ async def test_account_added_to_loop_immediately_gets_next_video(
     assert [job.account_id for job in jobs] == [
         account.id for account in added_accounts
     ]
-    assert [job.media_id for job in jobs] == [videos[1].id, videos[2].id]
+    assert [job.media_id for job in jobs] == [videos[0].id, videos[0].id]
     assert all(job.status == "queued" for job in jobs)
     assert all(
         job.scheduled_for.replace(tzinfo=timezone.utc)
@@ -1034,7 +1034,7 @@ async def test_scheduler_assigns_next_playlist_item_to_each_account_in_order(
     assert {job.account_id for job in first_jobs} == {account.id for account in accounts}
     assert [job.media_id for job in first_jobs] == [
         videos[0].id,
-        videos[1].id,
+        videos[0].id,
     ]
 
     for job in first_jobs:
@@ -1056,8 +1056,8 @@ async def test_scheduler_assigns_next_playlist_item_to_each_account_in_order(
     assert len(all_jobs) == len(accounts)
     assert {job.account_id for job in all_jobs} == {account.id for account in accounts}
     assert [job.media_id for job in all_jobs] == [
-        videos[2].id,
-        videos[0].id,
+        videos[1].id,
+        videos[1].id,
     ]
 
 
@@ -1125,7 +1125,7 @@ async def test_scheduler_catches_up_every_overdue_interval_in_sequence(
     assert created_total == 8
     assert len(jobs) == 8
     assert [job.media_id for job in jobs] == [
-        videos[index % len(videos)].id for index in range(8)
+        videos[(index // 2) % len(videos)].id for index in range(8)
     ]
     assert len({job.account_id for job in jobs[:2]}) == 2
     assert loop.next_run_at.replace(tzinfo=timezone.utc) == now + timedelta(hours=1)
