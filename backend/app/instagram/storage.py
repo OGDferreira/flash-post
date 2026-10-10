@@ -1,3 +1,4 @@
+import asyncio
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -6,6 +7,10 @@ from app.core.config import get_settings
 
 MEDIA_BUCKET = "instagram-media"
 SIGNED_URL_TTL_SECONDS = 4 * 60 * 60
+SIGN_MAX_ATTEMPTS = 4
+SIGN_BACKOFF_SECONDS = 2
+_RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
+_INVISIBLE_CHARS = {"\u200b", "\u200c", "\u200d", "\u2060", "\ufeff", "\u00a0"}
 
 
 class SupabaseStorageError(RuntimeError):
@@ -46,6 +51,18 @@ class SupabaseStorage:
     def _quoted_path(path: str) -> str:
         return "/".join(quote(part, safe="") for part in path.split("/"))
 
+    @staticmethod
+    def normalize_path(path: str) -> str:
+        """Remove espaços invisíveis, barras duplas e barras nas pontas."""
+        cleaned = "".join(
+            ch for ch in path if ch.isprintable() and ch not in _INVISIBLE_CHARS
+        )
+        parts = [part.strip() for part in cleaned.replace("\\", "/").split("/")]
+        parts = [part for part in parts if part]
+        if not parts or any(part in {".", ".."} for part in parts):
+            raise SupabaseStorageError("The media storage path is invalid.")
+        return "/".join(parts)
+
     async def upload(self, path: str, content: bytes, content_type: str) -> None:
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
             response = await client.post(
@@ -63,11 +80,29 @@ class SupabaseStorage:
             )
 
     async def create_signed_url(self, path: str) -> str:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
-            response = await client.post(
-                f"{self.base_url}/storage/v1/object/sign/{MEDIA_BUCKET}/{self._quoted_path(path)}",
-                headers={**self.headers, "Content-Type": "application/json"},
-                json={"expiresIn": SIGNED_URL_TTL_SECONDS},
+        path = self.normalize_path(path)
+        response: httpx.Response | None = None
+        last_error: Exception | None = None
+        for attempt in range(SIGN_MAX_ATTEMPTS):
+            if attempt:
+                await asyncio.sleep(SIGN_BACKOFF_SECONDS * 2 ** (attempt - 1))
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+                    response = await client.post(
+                        f"{self.base_url}/storage/v1/object/sign/{MEDIA_BUCKET}/{self._quoted_path(path)}",
+                        headers={**self.headers, "Content-Type": "application/json"},
+                        json={"expiresIn": SIGNED_URL_TTL_SECONDS},
+                    )
+            except httpx.TransportError as exc:
+                last_error = exc
+                response = None
+                continue
+            if response.status_code in _RETRYABLE_STATUS:
+                continue
+            break
+        if response is None:
+            raise SupabaseStorageError(
+                f"Supabase Storage could not be reached to sign the media URL ({type(last_error).__name__})."
             )
         if response.is_error:
             raise SupabaseStorageError(

@@ -67,6 +67,8 @@ def _is_account_connection_failure(error: Exception) -> bool:
             "rejected account identity verification",
             "unsupported request",
             "belongs to a different account",
+            "account restricted",
+            "has been restricted",
         )
     )
 

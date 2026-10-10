@@ -58,7 +58,7 @@ class _GraphClient:
         if url.endswith("/me"):
             assert params["fields"] == "user_id,username"
             return _Response({"user_id": "instagram-user-123", "username": "loop_account"})
-        assert params["fields"] == "status_code"
+        assert params["fields"] == "status_code,status"
         return _Response({"status_code": next(self.statuses)})
 
 

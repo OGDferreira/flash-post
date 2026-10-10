@@ -76,6 +76,9 @@ export function InstagramAccountsPage() {
   >();
   const [accountFilter, setAccountFilter] = useState<"active" | "issues">("active");
   const [accountSearch, setAccountSearch] = useState("");
+  const [accountSort, setAccountSort] = useState<
+    "connection_asc" | "disconnection_desc" | "connection_desc"
+  >("connection_asc");
   const [selectedFolderId, setSelectedFolderId] = useState("all");
   const [showAppSelector, setShowAppSelector] = useState(false);
   const accounts = useQuery({
@@ -192,21 +195,33 @@ export function InstagramAccountsPage() {
   const unassignedAccountCount = accounts.data.accounts.filter(
     (account) => !account.profile_folder_id && isInstagramAccountActive(account),
   ).length;
-  const visibleAccounts = accounts.data.accounts.filter((account) => {
-    const active = isInstagramAccountActive(account);
-    const matchesFilter = accountFilter === "active" ? active : !active;
-    const matchesFolder =
-      accountFilter === "issues" ||
-      selectedFolderId === "all" ||
-      (selectedFolderId === "unassigned"
-        ? !account.profile_folder_id
-        : account.profile_folder_id === selectedFolderId);
-    return (
-      matchesFilter &&
-      matchesFolder &&
-      account.username.toLowerCase().includes(accountSearch.toLowerCase())
-    );
-  });
+  const visibleAccounts = accounts.data.accounts
+    .filter((account) => {
+      const active = isInstagramAccountActive(account);
+      const matchesFilter = accountFilter === "active" ? active : !active;
+      const matchesFolder =
+        accountFilter === "issues" ||
+        selectedFolderId === "all" ||
+        (selectedFolderId === "unassigned"
+          ? !account.profile_folder_id
+          : account.profile_folder_id === selectedFolderId);
+      return (
+        matchesFilter &&
+        matchesFolder &&
+        account.username.toLowerCase().includes(accountSearch.toLowerCase())
+      );
+    })
+    .sort((first, second) => {
+      const connectedAt = (account: typeof first) => new Date(account.connected_at).getTime();
+      const errorAt = (account: typeof first) =>
+        account.error_at ? new Date(account.error_at).getTime() : Number.NEGATIVE_INFINITY;
+      if (accountSort === "disconnection_desc") {
+        return errorAt(second) - errorAt(first) || connectedAt(first) - connectedAt(second);
+      }
+      return accountSort === "connection_desc"
+        ? connectedAt(second) - connectedAt(first)
+        : connectedAt(first) - connectedAt(second);
+    });
 
   return (
     <div className="mx-auto max-w-4xl space-y-7">
@@ -404,6 +419,16 @@ export function InstagramAccountsPage() {
               aria-label="Buscar conta Instagram por usuário"
             />
           </label>
+          <select
+            className="min-h-11 rounded-lg border border-[#27334a] bg-[#0d1015] px-3 text-xs text-[#f5f7fb] outline-none"
+            value={accountSort}
+            onChange={(event) => setAccountSort(event.target.value as typeof accountSort)}
+            aria-label="Ordenar contas Instagram"
+          >
+            <option value="connection_asc">Ordem de Conexão (mais antigas primeiro)</option>
+            <option value="disconnection_desc">Ordem de Desconexão (caíram recentemente)</option>
+            <option value="connection_desc">Recém-Conectadas (mais novas primeiro)</option>
+          </select>
           <div className="flex rounded-lg border border-[#27334a] bg-[#0d1015] p-1">
             {([
               ["active", `Ativas (${activeAccountCount})`],

@@ -209,7 +209,7 @@ async def test_video_publication_waits_for_processing(
             if url.endswith("/me"):
                 assert params["fields"] == "user_id,username"
                 return FakeResponse({"user_id": "instagram-user-2", "username": "test_account"})
-            assert params["fields"] == "status_code"
+            assert params["fields"] == "status_code,status"
             return FakeResponse({"status_code": next(statuses)})
 
     class FakeStorage:

@@ -8,8 +8,8 @@ from app.instagram.storage import SupabaseStorage
 from app.models import InstagramAccount, InstagramMedia
 
 GRAPH_ENDPOINT = "https://graph.instagram.com/v25.0"
-VIDEO_PROCESSING_INTERVAL_SECONDS = 10
-VIDEO_PROCESSING_MAX_ATTEMPTS = 90
+VIDEO_PROCESSING_INTERVAL_SECONDS = 5
+VIDEO_PROCESSING_MAX_ATTEMPTS = 180
 RETRY_DELAYS_SECONDS = (3, 10, 30)
 logger = logging.getLogger(__name__)
 
@@ -213,17 +213,23 @@ async def publish_media(
                 stage = "video processing status check"
                 for attempt in range(1, VIDEO_PROCESSING_MAX_ATTEMPTS + 1):
                     await asyncio.sleep(VIDEO_PROCESSING_INTERVAL_SECONDS)
-                    status_response = await client.get(
+                    status_response = await _request_with_retry(
+                        client,
+                        "GET",
                         f"{GRAPH_ENDPOINT}/{container_id}",
                         params={
-                            "fields": "status_code",
+                            "fields": "status_code,status",
                             "access_token": access_token,
                         },
                     )
-                    status_response.raise_for_status()
                     status_payload = status_response.json()
                     status_code = (
                         status_payload.get("status_code")
+                        if isinstance(status_payload, dict)
+                        else None
+                    )
+                    status_detail = (
+                        status_payload.get("status")
                         if isinstance(status_payload, dict)
                         else None
                     )
@@ -238,15 +244,26 @@ async def publish_media(
                     if status_code == "FINISHED":
                         break
                     if status_code in {"ERROR", "EXPIRED"}:
+                        detail_text = (
+                            " ".join(status_detail.split())[:300]
+                            if isinstance(status_detail, str)
+                            else ""
+                        ).replace(access_token, "[redacted]")
                         logger.error(
-                            "Instagram container %s failed processing for account %s: %s.",
+                            "Instagram container %s failed processing for account %s: %s %s.",
                             container_id,
                             account.username,
                             status_code,
+                            detail_text,
                         )
-                        raise InstagramPublishingError(
+                        message = (
                             f"Instagram could not process the video container (status {status_code})."
                         )
+                        if detail_text:
+                            message += (
+                                f" {detail_text} (verifique formato, proporção e duração do vídeo)"
+                            )
+                        raise InstagramPublishingError(message[:500])
                     if status_code != "IN_PROGRESS":
                         raise InstagramPublishingError(
                             "Instagram returned an unknown video processing status."
