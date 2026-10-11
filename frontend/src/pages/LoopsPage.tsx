@@ -183,10 +183,6 @@ function fileFitsLoop(file: File, postType: LoopForm["post_type"]): boolean {
   );
 }
 
-function formatFileSize(sizeBytes: number): string {
-  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export function LoopsPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"continuous" | "errors">("continuous");
@@ -196,6 +192,7 @@ export function LoopsPage() {
   const [uploadCaption, setUploadCaption] = useState("");
   const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
   const [uploadingBatch, setUploadingBatch] = useState(false);
+  const [poolSelected, setPoolSelected] = useState<Set<string>>(new Set());
   const loops = useQuery({
     queryKey: ["loops"],
     queryFn: () => apiRequest<InstagramLoopsResponse>("/api/loops"),
@@ -307,31 +304,12 @@ export function LoopsPage() {
       void queryClient.invalidateQueries({ queryKey: ["instagram-media"] });
     },
   });
-  const deleteMedia = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/media/${id}`, { method: "DELETE" }),
-    onSuccess: (_result, id) => {
-      setForm((current) => ({
-        ...current,
-        media_ids: current.media_ids.filter((mediaId) => mediaId !== id),
-      }));
-      void queryClient.invalidateQueries({ queryKey: ["instagram-media"] });
-    },
-  });
-
   const visibleLoops = useMemo(
     () =>
       (loops.data?.loops ?? []).filter(
         () => tab !== "errors",
       ),
     [loops.data?.loops, tab],
-  );
-  const mediaAssignedToOtherLoops = new Set(
-    (loops.data?.loops ?? [])
-      .filter((loop) => loop.id !== editingId)
-      .flatMap((loop) => loop.media_ids),
-  );
-  const selectableMedia = (media.data?.media ?? []).filter(
-    (item) => !mediaAssignedToOtherLoops.has(item.id) || form.media_ids.includes(item.id),
   );
 
   if (loops.isLoading) return <LoadingState label="Carregando loops" />;
@@ -346,7 +324,6 @@ export function LoopsPage() {
     apiErrorMessage(deleteLoop.error, "Não foi possível remover o loop."),
     apiErrorMessage(removeLoopMedia.error, "Não foi possível remover a mídia deste loop."),
     apiErrorMessage(uploadMedia.error, "Não foi possível enviar a mídia."),
-    apiErrorMessage(deleteMedia.error, "Não foi possível remover a mídia."),
   ].find(Boolean);
 
   async function uploadFiles(files: File[]) {
@@ -715,11 +692,52 @@ export function LoopsPage() {
             )}
           </fieldset>
           <section className="space-y-2 rounded-lg border border-[#27334a] bg-[#090b0f] p-3">
-            <h4 className="flex items-center gap-2 text-sm font-medium text-[#cbd5e1]">
-              Mídias atuais na pool ({form.media_ids.length})
+            <h4 className="flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-[#cbd5e1]">
+              <span>Mídias do loop ({form.media_ids.length})</span>
+              {loops.data.can_configure && form.media_ids.length > 0 && (
+                <span className="flex flex-wrap items-center gap-2 text-xs font-normal">
+                  <button
+                    className="text-[#8af2fa] hover:text-white"
+                    type="button"
+                    onClick={() =>
+                      setPoolSelected(
+                        poolSelected.size === form.media_ids.length
+                          ? new Set()
+                          : new Set(form.media_ids),
+                      )
+                    }
+                  >
+                    {poolSelected.size === form.media_ids.length
+                      ? "Limpar seleção"
+                      : "Selecionar todos"}
+                  </button>
+                  <button
+                    className="rounded border border-[#47252d] px-2 py-1 text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-40"
+                    type="button"
+                    disabled={poolSelected.size === 0}
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          `Remover ${poolSelected.size} mídia(s) deste loop?`,
+                        )
+                      )
+                        return;
+                      setForm((current) => ({
+                        ...current,
+                        media_ids: current.media_ids.filter((id) => !poolSelected.has(id)),
+                      }));
+                      setPoolSelected(new Set());
+                    }}
+                  >
+                    Remover selecionados ({poolSelected.size})
+                  </button>
+                </span>
+              )}
             </h4>
             {form.media_ids.length === 0 ? (
-              <p className="text-xs text-[#94a3b8]">Nenhuma mídia selecionada para este loop.</p>
+              <p className="text-xs text-[#94a3b8]">
+                Nenhuma mídia no loop. Envie arquivos do seu computador na seção de configurações.
+              </p>
             ) : (
               <ul className="max-h-48 space-y-1 overflow-y-auto">
                 {form.media_ids.map((mediaId) => {
@@ -729,7 +747,20 @@ export function LoopsPage() {
                       className="flex items-center justify-between gap-3 rounded border border-[#202838] px-2 py-1.5 text-xs text-[#cbd5e1]"
                       key={mediaId}
                     >
-                      <span className="truncate">{item?.filename ?? "Arquivo indisponível"}</span>
+                      {loops.data.can_configure && (
+                        <input
+                          className="accent-[#00c9d8]"
+                          type="checkbox"
+                          aria-label="Selecionar mídia"
+                          checked={poolSelected.has(mediaId)}
+                          onChange={() => {
+                            const next = new Set(poolSelected);
+                            if (!next.delete(mediaId)) next.add(mediaId);
+                            setPoolSelected(next);
+                          }}
+                        />
+                      )}
+                      <span className="flex-1 truncate">{item?.filename ?? "Arquivo indisponível"}</span>
                       {loops.data.can_configure && (
                         <button
                           className="shrink-0 text-[#f1a3ad] hover:text-white"
@@ -893,79 +924,6 @@ export function LoopsPage() {
               Imagens aceitas: JPEG. Vídeos aceitos: MP4. Os arquivos ficam privados e o servidor
               gera uma URL temporária somente durante a publicação.
             </p>
-            {media.isLoading ? (
-              <p className="text-sm text-[#94a3b8]">Carregando mídias...</p>
-            ) : media.error || !media.data ? (
-              <p className="rounded-lg border border-[#47252d] bg-[#1a1013] p-3 text-sm text-[#f1a3ad]">
-                Não foi possível carregar as mídias deste workspace.
-              </p>
-            ) : media.data.media.length === 0 ? (
-              <p className="rounded-lg border border-[#27334a] bg-[#090b0f] p-3 text-sm text-[#94a3b8]">
-                Nenhuma mídia enviada. Envie um arquivo para começar a montar o pool.
-              </p>
-            ) : selectableMedia.length === 0 ? (
-              <p className="rounded-lg border border-[#27334a] bg-[#090b0f] p-3 text-sm text-[#94a3b8]">
-                Todas as mídias já pertencem a outros loops. Clone um loop para reutilizar as mídias dele.
-              </p>
-            ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {selectableMedia.map((item) => {
-                  const checked = form.media_ids.includes(item.id);
-                  const compatible = mediaFitsLoop(item, form.post_type);
-                  return (
-                    <div
-                      className={`flex items-center gap-3 rounded-lg border p-3 ${
-                        checked
-                          ? "border-[#00c9d8] bg-[#0d3036]"
-                          : "border-[#27334a] bg-[#090b0f]"
-                      }`}
-                      key={item.id}
-                    >
-                      <input
-                        className="accent-[#00c9d8]"
-                        type="checkbox"
-                        checked={checked}
-                        disabled={
-                          !compatible ||
-                          !loops.data.can_manage
-                        }
-                        aria-label={`Selecionar ${item.filename}`}
-                        onChange={() =>
-                          setForm((current) => ({
-                            ...current,
-                            media_ids: checked
-                              ? current.media_ids.filter((id) => id !== item.id)
-                              : [...current.media_ids, item.id],
-                          }))
-                        }
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm text-[#f5f7fb]">{item.filename}</p>
-                        <p className="text-xs text-[#94a3b8]">
-                          {item.media_type === "video" ? "MP4" : "JPEG"} · {formatFileSize(item.size_bytes)}
-                          {!compatible && " · incompatível com o tipo selecionado"}
-                        </p>
-                      </div>
-                      {loops.data.can_manage && (
-                        <button
-                          className="grid size-8 shrink-0 place-items-center rounded border border-[#47252d] text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-50"
-                          type="button"
-                          aria-label={`Excluir mídia ${item.filename}`}
-                          disabled={deleteMedia.isPending}
-                          onClick={() => {
-                            if (window.confirm(`Excluir a mídia "${item.filename}"?`)) {
-                              deleteMedia.mutate(item.id);
-                            }
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </fieldset>
           </fieldset>
 
