@@ -72,6 +72,7 @@ type InstagramLoop = {
   waiting_for_media_count: number;
   queued_publication_count: number;
   attempts_count: number;
+  attempts_today_count: number;
   published_today_count: number;
   failed_today_count: number;
   failed_count: number;
@@ -1073,7 +1074,8 @@ export function LoopsPage() {
                     {loop.queued_publication_count === 1
                       ? "vídeo na fila"
                       : "vídeos na fila"} ·{" "}
-                    {loop.attempts_count} tentativas de publicação ·{" "}
+                    {loop.attempts_today_count} tentativas hoje ·{" "}
+                    {loop.attempts_count} tentativas no total ·{" "}
                     {loop.published_today_count} publicados hoje ·{" "}
                     {loop.failed_today_count} falhas hoje
                   </p>
