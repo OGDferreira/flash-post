@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -24,6 +24,11 @@ from app.models import (
 from app.loops.scheduler import enqueue_loop_publications_now, next_loop_run_time
 from app.core.security import WorkspaceRole
 from app.schemas.loops import (
+    InstagramAccountDailyProgress,
+    InstagramAlertsResponse,
+    InstagramLoopHealthResponse,
+    InstagramRetryFailuresRequest,
+    InstagramRetryFailuresResponse,
     InstagramPublicationFailureResponse,
     InstagramPublicationFailuresResponse,
     InstagramLoopAccountResponse,
@@ -77,35 +82,33 @@ async def _loop_response(
             .order_by(InstagramAccount.username)
         )
     ).all()
-    waiting_count = await db.scalar(
-        select(func.count(InstagramPublicationJob.id)).where(
-            InstagramPublicationJob.loop_id == loop.id,
-            InstagramPublicationJob.status == "waiting_for_media",
-        )
-    )
-    queued_count = await db.scalar(
-        select(func.count(InstagramPublicationJob.id)).where(
-            InstagramPublicationJob.loop_id == loop.id,
-            InstagramPublicationJob.status.in_(
-                ("waiting_for_media", "queued", "publishing")
-            ),
-        )
-    )
     local_day_start, local_day_end = local_day_bounds_utc(now)
-    published_count = await db.scalar(
-        select(func.count(InstagramPublicationJob.id)).where(
-            InstagramPublicationJob.loop_id == loop.id,
-            InstagramPublicationJob.status == "published",
-            InstagramPublicationJob.updated_at >= local_day_start,
-            InstagramPublicationJob.updated_at < local_day_end,
+    job = InstagramPublicationJob
+    today = (job.updated_at >= local_day_start) & (job.updated_at < local_day_end)
+    counts = (
+        await db.execute(
+            select(
+                func.count(job.id).filter(job.status == "waiting_for_media"),
+                func.count(job.id).filter(
+                    job.status.in_(("waiting_for_media", "queued", "publishing"))
+                ),
+                func.count(job.id).filter((job.status == "published") & today),
+                func.coalesce(func.sum(job.attempts), 0),
+                func.count(job.id).filter((job.status == "failed") & today),
+                func.count(job.id).filter(job.status == "failed"),
+                func.max(job.updated_at).filter(job.status == "failed"),
+            ).where(job.loop_id == loop.id)
         )
-    )
-    failed_count = await db.scalar(
-        select(func.count(InstagramPublicationJob.id)).where(
-            InstagramPublicationJob.loop_id == loop.id,
-            InstagramPublicationJob.status == "failed",
-        )
-    )
+    ).one()
+    (
+        waiting_count,
+        queued_count,
+        published_count,
+        attempts_count,
+        failed_today_count,
+        failed_count,
+        latest_failed_at,
+    ) = counts
     selected_media = list(
         (
             await db.scalars(
@@ -148,10 +151,16 @@ async def _loop_response(
         media_ids=[item.id for item in selected_media],
         media_names=[item.filename for item in selected_media],
         media_count=len(selected_media),
+        video_count=sum(item.media_type == "video" for item in selected_media),
         waiting_for_media_count=waiting_count or 0,
         queued_publication_count=queued_count or 0,
+        attempts_count=attempts_count or 0,
         published_today_count=published_count or 0,
+        failed_today_count=failed_today_count or 0,
         failed_count=failed_count or 0,
+        latest_failed_at=(
+            _utc_datetime(latest_failed_at) if latest_failed_at else None
+        ),
     )
 
 
@@ -249,9 +258,166 @@ async def list_publication_failures(
                 attempts=job.attempts,
                 error=job.last_error or "Falha sem detalhes registrados.",
                 account_in_loop=bool(in_loop),
+                error_category=job.error_category,
+                loop_id=job.loop_id,
             )
             for job, loop_name, username, filename, in_loop in rows
         ]
+    )
+
+
+DAILY_TARGET_PER_ACCOUNT = 24
+EXPIRY_WARNING_DAYS = 7
+HIGH_FAILURE_RATE = 0.3
+
+
+@router.post(
+    "/failures/retry",
+    response_model=InstagramRetryFailuresResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def retry_publication_failures(
+    payload: InstagramRetryFailuresRequest,
+    access: LoopManagerAccess,
+    db: DbSession,
+) -> InstagramRetryFailuresResponse:
+    job = InstagramPublicationJob
+    query = (
+        select(job)
+        .join(InstagramAccount, InstagramAccount.id == job.account_id)
+        .where(
+            job.workspace_id == access.workspace.id,
+            job.status == "failed",
+            job.media_id.is_not(None),
+            InstagramAccount.status == "connected",
+        )
+        .with_for_update(of=job)
+    )
+    if payload.job_ids:
+        query = query.where(job.id.in_(payload.job_ids))
+    if payload.loop_id:
+        query = query.where(job.loop_id == payload.loop_id)
+    if not payload.job_ids and not payload.loop_id:
+        query = query.where(job.updated_at >= local_day_bounds_utc(utc_now())[0])
+    jobs = (await db.scalars(query.limit(2000))).all()
+    for item in jobs:
+        item.status = "queued"
+        item.attempts = 0
+        item.next_retry_at = None
+        item.last_error = None
+        item.error_category = None
+    await db.commit()
+    return InstagramRetryFailuresResponse(requeued=len(jobs))
+
+
+@router.get("/alerts", response_model=InstagramAlertsResponse)
+async def loop_alerts(
+    access: WorkspaceMemberAccess,
+    db: DbSession,
+) -> InstagramAlertsResponse:
+    now = utc_now()
+    expiring = (
+        await db.scalars(
+            select(InstagramAccount.username)
+            .where(
+                InstagramAccount.workspace_id == access.workspace.id,
+                InstagramAccount.status == "connected",
+                InstagramAccount.token_expires_at > now,
+                InstagramAccount.token_expires_at
+                <= now + timedelta(days=EXPIRY_WARNING_DAYS),
+            )
+            .order_by(InstagramAccount.token_expires_at)
+            .limit(50)
+        )
+    ).all()
+    disconnected = await db.scalar(
+        select(func.count(InstagramAccount.id)).where(
+            InstagramAccount.workspace_id == access.workspace.id,
+            InstagramAccount.status == "error",
+        )
+    )
+    day_start, day_end = local_day_bounds_utc(now)
+    job = InstagramPublicationJob
+    published, failed = (
+        await db.execute(
+            select(
+                func.count(job.id).filter(job.status == "published"),
+                func.count(job.id).filter(job.status == "failed"),
+            ).where(
+                job.workspace_id == access.workspace.id,
+                job.updated_at >= day_start,
+                job.updated_at < day_end,
+            )
+        )
+    ).one()
+    total = published + failed
+    rate = failed / total if total else 0.0
+    return InstagramAlertsResponse(
+        expiring_accounts=list(expiring),
+        expiring_within_days=EXPIRY_WARNING_DAYS,
+        disconnected_count=disconnected or 0,
+        published_today=published,
+        failed_today=failed,
+        failure_rate=round(rate, 3),
+        high_failure_rate=total >= 10 and rate >= HIGH_FAILURE_RATE,
+    )
+
+
+@router.get("/{loop_id}/health", response_model=InstagramLoopHealthResponse)
+async def loop_health(
+    loop_id: uuid.UUID,
+    access: WorkspaceMemberAccess,
+    db: DbSession,
+) -> InstagramLoopHealthResponse:
+    loop = await db.scalar(
+        select(InstagramLoop).where(
+            InstagramLoop.id == loop_id,
+            InstagramLoop.workspace_id == access.workspace.id,
+        )
+    )
+    if loop is None:
+        raise HTTPException(status_code=404, detail="Loop não encontrado.")
+    now = utc_now()
+    day_start, day_end = local_day_bounds_utc(now)
+    job = InstagramPublicationJob
+    rows = (
+        await db.execute(
+            select(
+                InstagramAccount,
+                func.count(job.id).filter(job.status == "published"),
+                func.count(job.id).filter(job.status == "failed"),
+            )
+            .join(InstagramLoopAccount, InstagramLoopAccount.account_id == InstagramAccount.id)
+            .outerjoin(
+                job,
+                (job.account_id == InstagramAccount.id)
+                & (job.loop_id == loop.id)
+                & (job.updated_at >= day_start)
+                & (job.updated_at < day_end),
+            )
+            .where(
+                InstagramLoopAccount.loop_id == loop.id,
+                InstagramAccount.workspace_id == access.workspace.id,
+                InstagramAccount.status == "connected",
+            )
+            .group_by(InstagramAccount.id)
+            .order_by(InstagramAccount.username)
+        )
+    ).all()
+    return InstagramLoopHealthResponse(
+        loop_id=loop.id,
+        target_per_account=DAILY_TARGET_PER_ACCOUNT,
+        accounts=[
+            InstagramAccountDailyProgress(
+                account_id=account.id,
+                username=account.username,
+                published_today=published,
+                failed_today=failed,
+                target=DAILY_TARGET_PER_ACCOUNT,
+                token_expires_at=_utc_datetime(account.token_expires_at),
+            )
+            for account, published, failed in rows
+        ],
     )
 
 

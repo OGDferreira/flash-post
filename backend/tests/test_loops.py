@@ -10,6 +10,7 @@ from app.core.crypto import encrypt_value
 from app.instagram.publishing import InstagramPublishingError
 from app.loops.scheduler import enqueue_due_loop_publications
 from app.models import (
+    DiagnosticsEvent,
     InstagramAccount,
     InstagramLoop,
     InstagramLoopAccount,
@@ -308,7 +309,12 @@ async def test_loop_queue_count_includes_waiting_queued_and_publishing(
     )
     db_session.add_all([account, media, loop])
     await db_session.flush()
-    db_session.add(InstagramLoopAccount(loop_id=loop.id, account_id=account.id))
+    db_session.add_all(
+        [
+            InstagramLoopAccount(loop_id=loop.id, account_id=account.id),
+            InstagramLoopMedia(loop_id=loop.id, media_id=media.id),
+        ]
+    )
     for index, status_value in enumerate(
         ("waiting_for_media", "queued", "publishing", "published", "failed")
     ):
@@ -334,6 +340,8 @@ async def test_loop_queue_count_includes_waiting_queued_and_publishing(
     )
     assert loop_response["waiting_for_media_count"] == 1
     assert loop_response["queued_publication_count"] == 3
+    assert loop_response["video_count"] == 1
+    assert loop_response["attempts_count"] == 3
 
 
 @pytest.mark.anyio
@@ -343,6 +351,7 @@ async def test_owner_can_view_failed_publication_details_in_error_log(
     owner,
 ) -> None:
     _user, workspace = owner
+    failed_at = datetime(2026, 10, 10, 14, 30, tzinfo=timezone.utc)
     account = _active_account(workspace.id, "failure_log_account")
     loop = InstagramLoop(
         workspace_id=workspace.id,
@@ -365,6 +374,7 @@ async def test_owner_can_view_failed_publication_details_in_error_log(
             status="failed",
             attempts=1,
             last_error="Instagram rejected the publication request (HTTP 400).",
+            updated_at=failed_at,
         )
     )
     await db_session.commit()
@@ -378,6 +388,15 @@ async def test_owner_can_view_failed_publication_details_in_error_log(
         "Instagram rejected the publication request (HTTP 400)."
     )
     assert response.json()["failures"][0]["account_in_loop"] is False
+
+    loops_response = await client.get("/api/loops")
+    assert loops_response.status_code == 200, loops_response.text
+    loop_response = next(
+        item for item in loops_response.json()["loops"] if item["id"] == str(loop.id)
+    )
+    assert loop_response["latest_failed_at"] == failed_at.isoformat().replace(
+        "+00:00", "Z"
+    )
 
 
 @pytest.mark.anyio
@@ -1060,6 +1079,51 @@ async def test_scheduler_assigns_next_playlist_item_to_each_account_in_order(
         videos[1].id,
     ]
 
+    for job in all_jobs:
+        job.status = "published"
+        job.updated_at = second_tick
+    third_tick = second_tick + timedelta(minutes=2)
+    loop.next_run_at = third_tick
+    await db_session.commit()
+    third_count = await enqueue_due_loop_publications(db_session, now=third_tick)
+    all_jobs = (
+        await db_session.scalars(
+            select(InstagramPublicationJob)
+            .where(InstagramPublicationJob.loop_id == loop.id)
+            .order_by(InstagramPublicationJob.queue_sequence)
+        )
+    ).all()
+    assert third_count == len(accounts)
+    assert [job.media_id for job in all_jobs[-len(accounts) :]] == [
+        videos[2].id,
+        videos[2].id,
+    ]
+
+    for job in all_jobs[-len(accounts) :]:
+        job.status = "published"
+        job.updated_at = third_tick
+    fourth_tick = third_tick + timedelta(minutes=2)
+    loop.next_run_at = fourth_tick
+    await db_session.commit()
+    fourth_count = await enqueue_due_loop_publications(db_session, now=fourth_tick)
+    all_jobs = (
+        await db_session.scalars(
+            select(InstagramPublicationJob)
+            .where(InstagramPublicationJob.loop_id == loop.id)
+            .order_by(InstagramPublicationJob.queue_sequence)
+        )
+    ).all()
+    assert fourth_count == len(accounts)
+    assert [job.media_id for job in all_jobs[-len(accounts) :]] == [
+        videos[0].id,
+        videos[0].id,
+    ]
+    assert [job.media_id for job in all_jobs] == [
+        videos[index % len(videos)].id
+        for index in range(len(all_jobs) // len(accounts))
+        for _account in accounts
+    ]
+
 
 @pytest.mark.anyio
 async def test_scheduler_catches_up_every_overdue_interval_in_sequence(
@@ -1430,6 +1494,13 @@ async def test_rate_limit_failure_keeps_account_in_loop_and_preserves_other_jobs
     assert await db_session.get(
         InstagramLoopAccount, (loop.id, next_account.id)
     ) is not None
+    diagnostic = await db_session.scalar(
+        select(DiagnosticsEvent).where(
+            DiagnosticsEvent.message.contains(str(failed_job.id))
+        )
+    )
+    assert diagnostic is not None
+    assert diagnostic.source == "server"
 
 
 @pytest.mark.anyio
@@ -1476,3 +1547,5 @@ async def test_identity_rejection_marks_account_as_error_and_removes_from_loop(
     await db_session.refresh(account)
     assert account.status == "error"
     assert await db_session.get(InstagramLoopAccount, (loop.id, account.id)) is None
+
+

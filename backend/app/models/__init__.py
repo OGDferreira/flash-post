@@ -8,6 +8,7 @@ class Base(DeclarativeBase):
 
 
 from app.models.system_setting import SystemSetting
+from app.models.diagnostics_event import DiagnosticsEvent
 from app.models.smokepay import SmokepayOperation
 from app.models.collaborator_payment import CollaboratorPayment
 from app.models.collaborator_work_day import CollaboratorWorkDay
@@ -31,6 +32,7 @@ __all__ = [
     "Base",
     "CollaboratorPayment",
     "CollaboratorWorkDay",
+    "DiagnosticsEvent",
     "EmailAccount",
     "FinancialWithdrawal",
     "InstagramAccount",

@@ -175,7 +175,7 @@ async def test_owner_imports_tab_separated_and_colon_separated_txt_accounts(
     first = next(account for account in accounts if account.email == "first@example.com")
     second = next(account for account in accounts if account.email == "second@example.com")
     assert decrypt_value(first.encrypted_two_factor_password) == "2fa-secret-a"
-    assert second.encrypted_two_factor_password is None
+    assert decrypt_value(second.encrypted_two_factor_password) == "-"
 
 
 @pytest.mark.anyio

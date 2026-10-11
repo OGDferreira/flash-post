@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Bell,
   Blocks,
+  Bug,
   ChartNoAxesCombined,
   ChevronDown,
   CircleDollarSign,
@@ -25,7 +26,7 @@ import {
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/AuthProvider";
-import { setCsrfToken, apiRequest } from "@/services/api";
+import { setCsrfToken, apiRequest, reportClientError } from "@/services/api";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 
 const ownerLinks = [
@@ -33,6 +34,7 @@ const ownerLinks = [
   { label: "Contas", to: "/feature/accounts", icon: Users },
   { label: "Pastas de perfis", to: "/feature/profile-folders", icon: Folder },
   { label: "Loops", to: "/feature/loops", icon: Infinity },
+  { label: "Log de erros", to: "/feature/error-logs", icon: Bug },
   { label: "E-mails", to: "/feature/emails", icon: Mail },
   { label: "Analytics", to: "/feature/analytics", icon: ChartNoAxesCombined },
   { label: "Financeiro", to: "/feature/finance", icon: CircleDollarSign },
@@ -56,6 +58,7 @@ const collaboratorLinks = [
   { label: "Meu painel", to: "/dashboard", icon: Home },
   { label: "Hub de contas", to: "/feature/accounts", icon: Users },
   { label: "Loops", to: "/feature/loops", icon: Infinity },
+  { label: "Log de erros", to: "/feature/error-logs", icon: Bug },
   { label: "E-mails", to: "/feature/emails", icon: Mail },
 ];
 
@@ -174,6 +177,7 @@ export function AppShell() {
             "/dashboard",
             "/feature/accounts",
             "/feature/loops",
+            "/feature/error-logs",
             "/feature/emails",
             "/feature/finance",
             "/feature/collaborators",
@@ -194,6 +198,49 @@ export function AppShell() {
     };
     window.addEventListener("flashpost-toast", showToast);
     return () => window.removeEventListener("flashpost-toast", showToast);
+  }, []);
+  useEffect(() => {
+    const originalConsoleError = console.error.bind(console);
+    const formatError = (value: unknown) => {
+      if (value instanceof Error) {
+        return { message: `${value.name}: ${value.message}`, stack: value.stack };
+      }
+      if (typeof value === "string") return { message: value };
+      try {
+        return { message: JSON.stringify(value) ?? String(value) };
+      } catch {
+        return { message: String(value) };
+      }
+    };
+    const onWindowError = (event: ErrorEvent) => {
+      const details = formatError(event.error ?? event.message);
+      void reportClientError("browser", details.message, details.stack);
+    };
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const details = formatError(event.reason);
+      void reportClientError(
+        "browser",
+        `Unhandled promise rejection: ${details.message}`,
+        details.stack,
+      );
+    };
+    console.error = (...args) => {
+      originalConsoleError(...args);
+      const details = args.map(formatError);
+      const message = details.map(({ message }) => message).join(" ");
+      const stack = details
+        .map(({ stack }) => stack)
+        .filter((value): value is string => Boolean(value))
+        .join("\n");
+      void reportClientError("browser", `console.error: ${message}`, stack);
+    };
+    window.addEventListener("error", onWindowError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      console.error = originalConsoleError;
+      window.removeEventListener("error", onWindowError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
   }, []);
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);

@@ -78,7 +78,7 @@ export function InstagramAccountsPage() {
   const [accountSearch, setAccountSearch] = useState("");
   const [accountSort, setAccountSort] = useState<
     "connection_asc" | "disconnection_desc" | "connection_desc"
-  >("connection_asc");
+  >("connection_desc");
   const [selectedFolderId, setSelectedFolderId] = useState("all");
   const [showAppSelector, setShowAppSelector] = useState(false);
   const accounts = useQuery({

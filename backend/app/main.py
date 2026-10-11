@@ -1,4 +1,6 @@
 import logging
+import traceback
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -14,6 +16,7 @@ from app.admin.router import router as admin_router
 from app.analytics.router import router as analytics_router
 from app.auth.router import router as auth_router
 from app.core.database import dispose_engine, get_session_factory
+from app.diagnostics.router import router as diagnostics_router
 from app.api.health import router as health_router
 from app.core.config import get_settings
 from app.core.rate_limit import LoginRateLimiter
@@ -21,6 +24,7 @@ from app.collaborators.router import router as collaborators_router
 from app.emails.router import router as emails_router
 from app.finance.router import router as finance_router
 from app.legal import router as legal_router
+from app.models import DiagnosticsEvent
 from app.instagram.router import router as instagram_router
 from app.instagram.folders_router import router as instagram_folders_router
 from app.instagram.media_router import router as media_router
@@ -135,6 +139,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(instagram_folders_router)
     application.include_router(media_router)
     application.include_router(loops_router)
+    application.include_router(diagnostics_router)
     application.include_router(shark_router)
     application.include_router(smokepay_router)
     application.include_router(legal_router)
@@ -160,8 +165,14 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
         )
 
     @application.exception_handler(Exception)
-    async def unexpected_error_handler(_request: Request, exc: Exception) -> JSONResponse:
-        logger.error("Unhandled request error (%s).", type(exc).__name__)
+    async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled request error.")
+        request.state.server_error_message = (
+            f"{type(exc).__name__}: {str(exc)[:1500]}"
+        )
+        request.state.server_error_stack = "".join(
+            traceback.format_exception(type(exc), exc, exc.__traceback__)
+        )[-8000:]
         return JSONResponse(
             status_code=500,
             content={"detail": "An unexpected error occurred."},
@@ -170,6 +181,38 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     @application.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
+        if response.status_code >= 500 and request.url.path != "/api/diagnostics/events":
+            workspace_value = request.session.get("workspace_id")
+            if isinstance(workspace_value, str):
+                try:
+                    workspace_id = uuid.UUID(workspace_value)
+                    user_value = request.session.get("user_id")
+                    user_id = (
+                        uuid.UUID(user_value)
+                        if isinstance(user_value, str)
+                        else None
+                    )
+                    async with get_session_factory()() as db:
+                        db.add(
+                            DiagnosticsEvent(
+                                workspace_id=workspace_id,
+                                user_id=user_id,
+                                source="server",
+                                level="error",
+                                message=getattr(
+                                    request.state,
+                                    "server_error_message",
+                                    f"HTTP {response.status_code} response",
+                                )[:2000],
+                                stack=getattr(
+                                    request.state, "server_error_stack", None
+                                ),
+                                path=request.url.path[:500],
+                            )
+                        )
+                        await db.commit()
+                except (ValueError, SQLAlchemyError, RuntimeError):
+                    logger.exception("Could not persist server error diagnostics.")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")

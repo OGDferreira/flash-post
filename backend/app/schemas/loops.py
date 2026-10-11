@@ -68,10 +68,14 @@ class InstagramLoopResponse(BaseModel):
     media_ids: list[UUID]
     media_names: list[str]
     media_count: int
+    video_count: int
     waiting_for_media_count: int
     queued_publication_count: int
+    attempts_count: int
     published_today_count: int
+    failed_today_count: int
     failed_count: int
+    latest_failed_at: datetime | None
 
 
 class InstagramLoopsResponse(BaseModel):
@@ -94,7 +98,42 @@ class InstagramPublicationFailureResponse(BaseModel):
     attempts: int
     error: str
     account_in_loop: bool
+    error_category: str | None = None
+    loop_id: UUID | None = None
 
+
+class InstagramRetryFailuresRequest(BaseModel):
+    job_ids: list[UUID] | None = None
+    loop_id: UUID | None = None
+
+
+class InstagramRetryFailuresResponse(BaseModel):
+    requeued: int
+
+
+class InstagramAccountDailyProgress(BaseModel):
+    account_id: UUID
+    username: str
+    published_today: int
+    failed_today: int
+    target: int
+    token_expires_at: datetime
+
+
+class InstagramLoopHealthResponse(BaseModel):
+    loop_id: UUID
+    target_per_account: int
+    accounts: list[InstagramAccountDailyProgress]
+
+
+class InstagramAlertsResponse(BaseModel):
+    expiring_accounts: list[str]
+    expiring_within_days: int
+    disconnected_count: int
+    published_today: int
+    failed_today: int
+    failure_rate: float
+    high_failure_rate: bool
 
 class InstagramPublicationFailuresResponse(BaseModel):
     failures: list[InstagramPublicationFailureResponse]

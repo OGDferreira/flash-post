@@ -18,6 +18,7 @@ import {
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { ApiError, apiRequest } from "@/services/api";
+import { LoopHealthPanel } from "@/components/LoopHealthPanel";
 import {
   formatAccountConnectedAt,
   formatConnectedDuration,
@@ -67,10 +68,14 @@ type InstagramLoop = {
   media_ids: string[];
   media_names: string[];
   media_count: number;
+  video_count: number;
   waiting_for_media_count: number;
   queued_publication_count: number;
+  attempts_count: number;
   published_today_count: number;
+  failed_today_count: number;
   failed_count: number;
+  latest_failed_at: string | null;
 };
 
 type InstagramLoopsResponse = {
@@ -93,6 +98,7 @@ type PublicationFailure = {
   attempts: number;
   error: string;
   account_in_loop: boolean;
+  error_category?: string | null;
 };
 
 type PublicationFailuresResponse = {
@@ -217,6 +223,14 @@ export function LoopsPage() {
     [failures.data?.failures],
   );
   const [openFailureAccounts, setOpenFailureAccounts] = useState<Set<string>>(new Set());
+  const retryJobs = useMutation({
+    mutationFn: (jobIds: string[]) =>
+      apiRequest<{ requeued: number }>("/api/loops/failures/retry", {
+        method: "POST",
+        body: { job_ids: jobIds },
+      }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
+  });
 
   const saveLoop = useMutation({
     mutationFn: () => {
@@ -526,6 +540,16 @@ export function LoopsPage() {
                         ? "A conta continua no loop e tentará o próximo vídeo na próxima rodada."
                         : "A conta não está mais em um loop."}
                     </p>
+                    {loops.data.can_manage && (
+                      <button
+                        className="rounded-lg border border-[#536dfe] px-3 py-1.5 text-xs text-white hover:bg-[#171d35] disabled:opacity-60"
+                        disabled={retryJobs.isPending}
+                        onClick={() => retryJobs.mutate(group.failures.map((item) => item.id))}
+                        type="button"
+                      >
+                        Tentar novamente ({group.failures.length})
+                      </button>
+                    )}
                     {group.failures.map((failure) => (
                       <div
                         className="space-y-1 rounded-lg border border-[#2a1c21] bg-[#0f0b0d] p-3"
@@ -542,6 +566,7 @@ export function LoopsPage() {
                         <p className="text-xs text-[#94a3b8]">
                           {failure.loop_name} · {failure.attempts}{" "}
                           {failure.attempts === 1 ? "tentativa" : "tentativas"}
+                          {failure.error_category ? ` · ${failure.error_category}` : ""}
                         </p>
                         <p className="break-words text-sm leading-6 text-[#f1a3ad]">
                           {failure.error}
@@ -1039,14 +1064,25 @@ export function LoopsPage() {
                     {loop.active_accounts_count === 1
                       ? "conta ativa no loop"
                       : "contas ativas no loop"}
+                    {" · "}
+                    {loop.video_count}{" "}
+                    {loop.video_count === 1 ? "vídeo no loop" : "vídeos no loop"}
                   </p>
                   <p className="mt-1 text-xs text-[#f2d48a]">
                     {loop.queued_publication_count}{" "}
                     {loop.queued_publication_count === 1
                       ? "vídeo na fila"
                       : "vídeos na fila"} ·{" "}
-                    {loop.published_today_count} publicados hoje · Falhas: {loop.failed_count}
+                    {loop.attempts_count} tentativas de publicação ·{" "}
+                    {loop.published_today_count} publicados hoje ·{" "}
+                    {loop.failed_today_count} falhas hoje
                   </p>
+                  {loop.latest_failed_at && (
+                    <p className="mt-1 text-xs text-[#f1a3ad]">
+                      Última falha: {formatDate(loop.latest_failed_at)}
+                    </p>
+                  )}
+                  <LoopHealthPanel loopId={loop.id} />
                 </div>
                 {loops.data.can_manage && (
                   <div className="flex shrink-0 items-start gap-2">

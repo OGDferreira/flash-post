@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -65,7 +66,7 @@ async def test_smokepay_operation_webhook_applies_split_and_deduplicates_sales(
         "data": {
             "id": "sale-1",
             "amount": "100.00",
-            "approved_at": "2026-10-06T12:00:00-03:00",
+            "approved_at": datetime.now(timezone.utc).isoformat(),
             "customer": {"name": "Comprador exemplo"},
             "product": {"name": "Plano"},
         },

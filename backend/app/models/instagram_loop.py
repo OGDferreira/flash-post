@@ -177,6 +177,8 @@ class InstagramPublicationJob(Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     last_error: Mapped[str | None] = mapped_column(String(500))
+    error_category: Mapped[str | None] = mapped_column(String(32))
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     published_media_id: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

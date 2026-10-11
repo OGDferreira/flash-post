@@ -1,9 +1,11 @@
 import asyncio
 import logging
+import traceback
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
@@ -17,6 +19,7 @@ from app.instagram.account_state import isolate_inactive_account
 from app.instagram.publishing import InstagramPublishingError, publish_media
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.models import (
+    DiagnosticsEvent,
     InstagramAccount,
     InstagramMedia,
     InstagramPublicationJob,
@@ -25,13 +28,52 @@ from app.loops.scheduler import enqueue_due_loop_publications
 
 logger = logging.getLogger(__name__)
 STALE_PUBLICATION_AFTER = timedelta(minutes=45)
-MAX_CONCURRENT_PUBLICATIONS = 5
+MAX_AUTO_ATTEMPTS = 3
+AUTO_RETRY_DELAYS = (timedelta(minutes=1), timedelta(minutes=5))
+FAILURE_RETENTION = timedelta(days=30)
+DIAGNOSTICS_RETENTION = timedelta(days=14)
 TOKEN_REFRESH_WINDOW = timedelta(days=10)
 TOKEN_REFRESH_RETRY_INTERVAL = timedelta(hours=12)
 
 
 def _utc_datetime(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _meta_code_of(error: Exception) -> int | None:
+    if isinstance(error, InstagramPublishingError):
+        return error.meta_error_code
+    if isinstance(error, httpx.HTTPStatusError):
+        try:
+            payload = error.response.json()
+        except ValueError:
+            return None
+        meta_error = payload.get("error") if isinstance(payload, dict) else None
+        code = meta_error.get("code") if isinstance(meta_error, dict) else None
+        return code if isinstance(code, int) else None
+    return None
+
+
+def _classify_failure(error: Exception) -> str:
+    """Categorise by Meta error code first and message text only as fallback."""
+    if _is_account_connection_failure(error):
+        return "token"
+    code = _meta_code_of(error)
+    if code in {4, 17, 32, 613}:
+        return "rate_limit"
+    if isinstance(error, SupabaseStorageError):
+        return "storage"
+    if isinstance(error, httpx.HTTPError):
+        return "network"
+    message = str(error).casefold()
+    if any(
+        marker in message
+        for marker in ("video container", "aspect ratio", "duration", "codec", "status error")
+    ):
+        return "video_format"
+    if code is not None:
+        return "meta_api"
+    return "unknown"
 
 
 def _is_account_connection_failure(error: Exception) -> bool:
@@ -154,11 +196,56 @@ async def _record_publication_failure(
         return
 
     error_detail = _safe_publication_error(error)
-    job.status = "failed"
+    category = _classify_failure(error)
+    now = datetime.now(timezone.utc)
+    if (
+        category != "token"
+        and job.attempts < MAX_AUTO_ATTEMPTS
+        and account is not None
+        and account.status == "connected"
+    ):
+        delay = AUTO_RETRY_DELAYS[min(job.attempts - 1, len(AUTO_RETRY_DELAYS) - 1)]
+        job.status = "queued"
+        job.next_retry_at = now + delay
+    else:
+        job.status = "failed"
+        job.next_retry_at = None
     job.last_error = error_detail
+    job.error_category = category
+    db.add(
+        DiagnosticsEvent(
+            workspace_id=job.workspace_id,
+            source="server",
+            level="error" if job.status == "failed" else "warning",
+            message=(
+                f"[{category}] Publicação {job.id} (tentativa {job.attempts}/{MAX_AUTO_ATTEMPTS}"
+                f"{', nova tentativa agendada' if job.status == 'queued' else ''}) "
+                f"conta {account.username if account else account_id}: "
+                f"{type(error).__name__}: {str(error)[:1500]}"
+            ),
+            stack="".join(
+                traceback.format_exception(type(error), error, error.__traceback__)
+            )[-8000:]
+            if error.__traceback__
+            else None,
+            path="/workers/loop_scheduler",
+            account_id=account_id,
+            loop_id=job.loop_id,
+            job_id=job.id,
+            category=category,
+            meta_code=_meta_code_of(error),
+        )
+    )
     if account is not None and account.status == "connected":
         await _update_account_health_after_failure(db, account_id, error)
-    await db.commit()
+    try:
+        await db.commit()
+    except SQLAlchemyError:
+        logger.exception(
+            "Could not persist publication failure and diagnostics for job %s.",
+            job_id,
+        )
+        raise
     logger.error(
         "Publication job %s failed for account %s (%s): %s",
         job_id,
@@ -279,7 +366,13 @@ async def process_one_queued_publication() -> bool:
     async with get_session_factory()() as db:
         job = await db.scalar(
             select(InstagramPublicationJob)
-            .where(InstagramPublicationJob.status == "queued")
+            .where(
+                InstagramPublicationJob.status == "queued",
+                or_(
+                    InstagramPublicationJob.next_retry_at.is_(None),
+                    InstagramPublicationJob.next_retry_at <= datetime.now(timezone.utc),
+                ),
+            )
             .order_by(
                 InstagramPublicationJob.scheduled_for,
                 func.coalesce(InstagramPublicationJob.queue_sequence, -1),
@@ -398,6 +491,8 @@ async def process_one_queued_publication() -> bool:
             job.status = "published"
             job.published_media_id = published_media_id
             job.last_error = None
+            job.error_category = None
+            job.next_retry_at = None
             await db.commit()
     logger.info(
         "Publication job %s published media %s to account %s (source media %s).",
@@ -432,6 +527,26 @@ async def fail_stale_publication_jobs(now: datetime | None = None) -> int:
     return len(stale_jobs)
 
 
+async def prune_old_records(now: datetime | None = None) -> None:
+    current = now or datetime.now(timezone.utc)
+    try:
+        async with get_session_factory()() as db:
+            await db.execute(
+                delete(InstagramPublicationJob).where(
+                    InstagramPublicationJob.status == "failed",
+                    InstagramPublicationJob.updated_at < current - FAILURE_RETENTION,
+                )
+            )
+            await db.execute(
+                delete(DiagnosticsEvent).where(
+                    DiagnosticsEvent.created_at < current - DIAGNOSTICS_RETENTION
+                )
+            )
+            await db.commit()
+    except SQLAlchemyError:
+        logger.exception("Could not prune old failures and diagnostics.")
+
+
 async def run_loop_scheduler_tick() -> int:
     logger.info("Starting Loop publication scheduler tick.")
     await _mark_expired_accounts(datetime.now(timezone.utc))
@@ -457,10 +572,27 @@ async def run_loop_scheduler_tick() -> int:
                     return processed_jobs
                 processed_jobs += 1
 
+        async with get_session_factory()() as db:
+            queued_now = (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(InstagramPublicationJob)
+                    .where(
+                        InstagramPublicationJob.status == "queued",
+                        or_(
+                            InstagramPublicationJob.next_retry_at.is_(None),
+                            InstagramPublicationJob.next_retry_at
+                            <= datetime.now(timezone.utc),
+                        ),
+                    )
+                )
+            ) or 0
+        # One worker per ready job: there is no fixed concurrency cap.
         worker_results = await asyncio.gather(
-            *(drain_queue() for _ in range(MAX_CONCURRENT_PUBLICATIONS))
+            *(drain_queue() for _ in range(max(queued_now, 1)))
         )
         published_jobs = sum(worker_results)
+        await prune_old_records()
     else:
         logger.warning(
             "Instagram publishing is disabled by INSTAGRAM_PUBLISHING_ENABLED=false; "

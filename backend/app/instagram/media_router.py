@@ -16,6 +16,7 @@ from app.auth.dependencies import (
 )
 from app.core.security import WorkspaceRole
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
+from app.instagram.video_validation import validate_reel_video
 from app.models import InstagramMedia, InstagramPublicationJob
 from app.schemas.media import InstagramMediaListResponse, InstagramMediaResponse
 
@@ -155,6 +156,13 @@ async def upload_media(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="The file contents do not match the selected JPEG or MP4 format.",
         )
+
+    if media_type == "video":
+        problem = validate_reel_video(content)
+        if problem:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=problem
+            )
 
     safe_filename = PurePosixPath(filename.replace("\\", "/")).name.strip()
     if not safe_filename or safe_filename in {".", ".."}:

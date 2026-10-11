@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, type ComponentType } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -14,21 +14,28 @@ import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
 import { AppShell } from "@/layouts/AppShell";
 import { FeaturePlaceholderPage } from "@/pages/FeaturePlaceholderPage";
-import { NotificationsPage } from "@/pages/NotificationsPage";
-import { RankingPage } from "@/pages/RankingPage";
-import { InstagramAccountsPage } from "@/pages/InstagramAccountsPage";
-import { LoopsPage } from "@/pages/LoopsPage";
-import { EmailsPage } from "@/pages/EmailsPage";
-import { IntegrationsPage } from "@/pages/IntegrationsPage";
-import { ProfilePage } from "@/pages/ProfilePage";
-import { ProfileFoldersPage } from "@/pages/ProfileFoldersPage";
-import { SettingsPage } from "@/pages/SettingsPage";
-import { CollaboratorsPage } from "@/pages/CollaboratorsPage";
-import { FeedPage } from "@/pages/FeedPage";
-import { AdminOverviewPage } from "@/pages/admin/AdminOverviewPage";
-import { AdminSystemPage } from "@/pages/admin/AdminSystemPage";
-import { AdminUsersPage } from "@/pages/admin/AdminUsersPage";
-import { AdminWorkspacesPage } from "@/pages/admin/AdminWorkspacesPage";
+
+const lazyPage = <K extends string>(
+  load: () => Promise<Record<K, ComponentType>>,
+  name: K,
+) => lazy(() => load().then((module) => ({ default: module[name] })));
+
+const NotificationsPage = lazyPage(() => import("@/pages/NotificationsPage"), "NotificationsPage");
+const RankingPage = lazyPage(() => import("@/pages/RankingPage"), "RankingPage");
+const InstagramAccountsPage = lazyPage(() => import("@/pages/InstagramAccountsPage"), "InstagramAccountsPage");
+const LoopsPage = lazyPage(() => import("@/pages/LoopsPage"), "LoopsPage");
+const ErrorLogsPage = lazyPage(() => import("@/pages/ErrorLogsPage"), "ErrorLogsPage");
+const EmailsPage = lazyPage(() => import("@/pages/EmailsPage"), "EmailsPage");
+const IntegrationsPage = lazyPage(() => import("@/pages/IntegrationsPage"), "IntegrationsPage");
+const ProfilePage = lazyPage(() => import("@/pages/ProfilePage"), "ProfilePage");
+const ProfileFoldersPage = lazyPage(() => import("@/pages/ProfileFoldersPage"), "ProfileFoldersPage");
+const SettingsPage = lazyPage(() => import("@/pages/SettingsPage"), "SettingsPage");
+const CollaboratorsPage = lazyPage(() => import("@/pages/CollaboratorsPage"), "CollaboratorsPage");
+const FeedPage = lazyPage(() => import("@/pages/FeedPage"), "FeedPage");
+const AdminOverviewPage = lazyPage(() => import("@/pages/admin/AdminOverviewPage"), "AdminOverviewPage");
+const AdminSystemPage = lazyPage(() => import("@/pages/admin/AdminSystemPage"), "AdminSystemPage");
+const AdminUsersPage = lazyPage(() => import("@/pages/admin/AdminUsersPage"), "AdminUsersPage");
+const AdminWorkspacesPage = lazyPage(() => import("@/pages/admin/AdminWorkspacesPage"), "AdminWorkspacesPage");
 
 const DashboardPage = lazy(() =>
   import("@/pages/DashboardPage").then((module) => ({
@@ -55,6 +62,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <Suspense fallback={<LoadingState label="Carregando página" />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
@@ -66,6 +74,7 @@ export default function App() {
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
                   <Route path="/feature/loops" element={<LoopsPage />} />
+                  <Route path="/feature/error-logs" element={<ErrorLogsPage />} />
                   <Route path="/feature/emails" element={<EmailsPage />} />
                   <Route element={<RequireWorkspaceOwner />}>
                     <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
@@ -108,6 +117,7 @@ export default function App() {
           <Route path="/" element={<HomeRedirect />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </Suspense>
       </AuthProvider>
     </BrowserRouter>
   );

@@ -24,9 +24,62 @@ function isRawBody(body: unknown): body is BodyInit {
 }
 
 let csrfToken: string | undefined;
+let diagnosticsQueue: Promise<void> = Promise.resolve();
+const reportedClientErrors = new Map<string, number>();
 
 export function setCsrfToken(token: string | undefined) {
   csrfToken = token;
+}
+
+export function reportClientError(
+  source: "browser" | "client_api",
+  message: string,
+  stack?: string,
+): Promise<void> {
+  if (!message.trim()) return Promise.resolve();
+  const path = window.location.pathname;
+  const dedupeKey = `${source}:${path}:${message}`;
+  const previousReport = reportedClientErrors.get(dedupeKey) ?? 0;
+  if (Date.now() - previousReport < 10_000) return Promise.resolve();
+  reportedClientErrors.set(dedupeKey, Date.now());
+
+  const submit = async () => {
+    try {
+      if (!csrfToken) {
+        const csrfResponse = await fetch("/api/auth/csrf", {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        });
+        if (!csrfResponse.ok) return;
+        const csrfBody = (await csrfResponse.json()) as { csrf_token: string };
+        csrfToken = csrfBody.csrf_token;
+      }
+      await fetch("/api/diagnostics/events", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify({
+          source,
+          level: "error",
+          message: message.slice(0, 2000),
+          stack: stack?.slice(0, 8000) ?? null,
+          path,
+        }),
+      });
+    } catch {
+      // Diagnostics are best-effort and must not trigger a second browser error.
+    }
+    if (reportedClientErrors.size > 200) {
+      const oldestKey = reportedClientErrors.keys().next().value;
+      if (oldestKey) reportedClientErrors.delete(oldestKey);
+    }
+  };
+  diagnosticsQueue = diagnosticsQueue.then(submit, submit);
+  return diagnosticsQueue;
 }
 
 export async function apiRequest<T>(
@@ -76,6 +129,14 @@ export async function apiRequest<T>(
     | { detail?: string; csrf_token?: string }
     | null;
   if (!response.ok) {
+    if (response.status >= 500 && !path.startsWith("/api/diagnostics/")) {
+      const message =
+        body?.detail ?? `The server returned HTTP ${response.status}.`;
+      void reportClientError(
+        "client_api",
+        `${method} ${path.split("?")[0]}: ${message}`,
+      );
+    }
     throw new ApiError(
       response.status,
       body?.detail ?? "The request could not be completed.",
