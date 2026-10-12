@@ -339,7 +339,7 @@ export function DashboardPage() {
           </p>
           <Link
             className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#536dfe] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#667eea]"
-            to="/feature/accounts"
+            to="/feature/accounts?connect=1"
           >
             <Link2 size={16} />
             Conectar conta

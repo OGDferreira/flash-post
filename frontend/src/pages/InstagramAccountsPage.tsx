@@ -107,6 +107,13 @@ export function InstagramAccountsPage() {
     onSuccess: ({ authorization_url }) => window.location.assign(authorization_url),
   });
   const startConnection = () => setShowAppSelector(true);
+  useEffect(() => {
+    if (searchParams.get("connect") !== "1" || !accounts.data) return;
+    if (accounts.data.can_connect) setShowAppSelector(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("connect");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, accounts.data]);
   const disconnect = useMutation({
     mutationFn: (accountId: string) =>
       apiRequest<InstagramDisconnectResponse>(`/api/instagram/accounts/${accountId}`, {
