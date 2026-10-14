@@ -544,7 +544,7 @@ export function AppShell() {
       </div>
       <nav
         aria-label="Navegação principal"
-        className="app-mobile-nav glass-bar fixed inset-x-0 bottom-0 z-30 flex gap-0.5 !border-x-0 !border-b-0 pt-1.5 lg:hidden"
+        className="app-mobile-nav glass-bar fixed z-30 flex gap-0.5 lg:hidden"
       >
         {mobileLinks.map(({ label, to, icon: Icon }) => (
           <NavLink
@@ -553,8 +553,10 @@ export function AppShell() {
             to={to}
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
-              `group/nav flex min-h-[52px] min-w-0 flex-auto flex-col items-center justify-center gap-1 rounded-xl px-0 text-[9px] tracking-[-0.02em] min-[360px]:px-1 min-[360px]:tracking-[-0.01em] min-[360px]:text-[10px] font-medium transition-colors ${
-                isActive ? "text-[#dfe4ff]" : "text-[#8390a8] active:text-[#cbd5e1]"
+              `group/nav flex min-h-[52px] min-w-0 flex-auto flex-col items-center justify-center gap-1 rounded-[20px] px-0 text-[9px] tracking-[-0.02em] min-[360px]:px-1 min-[360px]:tracking-[-0.01em] min-[360px]:text-[10px] font-medium transition-colors ${
+                isActive
+                  ? "bg-gradient-to-b from-[#536dfe]/25 to-[#536dfe]/10 text-[#eef1ff] shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_0_20px_rgba(83,109,254,0.22)]"
+                  : "text-[#8390a8] active:text-[#cbd5e1]"
               }`
             }
           >
@@ -562,9 +564,7 @@ export function AppShell() {
               <>
                 <span
                   className={`grid h-7 w-10 place-items-center rounded-full transition-all duration-200 ${
-                    isActive
-                      ? "bg-[#536dfe]/20 text-[#aab7ff] shadow-[0_0_18px_rgba(83,109,254,0.35)]"
-                      : ""
+                    isActive ? "text-[#b8c3ff]" : ""
                   }`}
                 >
                   <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />

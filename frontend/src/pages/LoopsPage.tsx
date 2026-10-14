@@ -412,9 +412,11 @@ export function LoopsPage() {
         <div className="rounded-lg border border-[#6b552b] bg-[#1c180e] p-4 text-sm text-[#f2d48a]">
           <p className="flex items-start gap-2">
             <AlertTriangle size={17} className="mt-0.5 shrink-0" />
-            As publicações automáticas estão desativadas no servidor. Configure
-            {" "}<code className="break-all font-mono">INSTAGRAM_PUBLISHING_ENABLED=true</code>
-            {" "}no serviço Web do Render e reinicie ou reimplante o serviço para habilitá-las.
+            <span className="min-w-0">
+              As publicações automáticas estão desativadas no servidor. Configure
+              {" "}<code className="break-all font-mono">INSTAGRAM_PUBLISHING_ENABLED=true</code>
+              {" "}no serviço Web do Render e reinicie ou reimplante o serviço para habilitá-las.
+            </span>
           </p>
         </div>
       ) : (
