@@ -3,7 +3,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 import uuid
 from typing import Literal
-from zoneinfo import ZoneInfo
+from app.core.time import BRAZIL_TIME_ZONE
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import case, delete, func, select, update
@@ -38,7 +38,7 @@ from app.schemas.collaborators import (
 
 router = APIRouter(prefix="/api/collaborators", tags=["Collaborators"])
 logger = logging.getLogger(__name__)
-_BRAZIL_TIME_ZONE = ZoneInfo("America/Sao_Paulo")
+_BRAZIL_TIME_ZONE = BRAZIL_TIME_ZONE
 _CENT = Decimal("0.01")
 
 

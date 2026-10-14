@@ -385,7 +385,15 @@ async def test_owner_can_disconnect_only_an_account_in_their_workspace(
         repeat_media=True,
         status="active",
     )
-    db_session.add_all([account, folder, loop])
+    second_loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Disconnect loop 2",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        post_type="reels",
+        status="active",
+    )
+    db_session.add_all([account, folder, loop, second_loop])
     await db_session.flush()
     account.profile_folder_id = folder.id
     queued_job = InstagramPublicationJob(
@@ -397,7 +405,7 @@ async def test_owner_can_disconnect_only_an_account_in_their_workspace(
     )
     publishing_job = InstagramPublicationJob(
         workspace_id=workspace.id,
-        loop_id=loop.id,
+        loop_id=second_loop.id,
         account_id=account.id,
         scheduled_for=datetime.now(timezone.utc) + timedelta(minutes=1),
         status="publishing",

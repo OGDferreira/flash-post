@@ -58,7 +58,15 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
         daily_limit_per_account=8,
         post_type="reels",
     )
-    db_session.add_all([first, second, loop])
+    # A second loop: an account may only have one unfinished job per loop.
+    other_loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Analytics test 2",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        post_type="reels",
+    )
+    db_session.add_all([first, second, loop, other_loop])
     await db_session.flush()
     now = datetime.now(timezone.utc)
     db_session.add_all(
@@ -88,7 +96,7 @@ async def test_analytics_summary_filters_and_aggregates_selected_accounts(
             ),
             InstagramPublicationJob(
                 workspace_id=workspace.id,
-                loop_id=loop.id,
+                loop_id=other_loop.id,
                 account_id=first.id,
                 scheduled_for=now - timedelta(days=9),
                 status="queued",

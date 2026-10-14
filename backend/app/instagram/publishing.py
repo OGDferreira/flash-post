@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 
 import httpx
 
@@ -21,10 +21,25 @@ class InstagramPublishingError(RuntimeError):
         *,
         status_code: int | None = None,
         meta_error_code: int | None = None,
+        stage: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.meta_error_code = meta_error_code
+        self.stage = stage
+
+
+def is_definitive_publish_rejection(error: BaseException) -> bool:
+    """True when Meta clearly refused media_publish (nothing was published).
+
+    Transport errors, timeouts, 5xx/429 and unreadable responses are *not*
+    definitive: the publication may have happened and must be reconciled.
+    """
+    if not isinstance(error, InstagramPublishingError):
+        return False
+    if error.status_code is None:
+        return False
+    return 400 <= error.status_code < 500 and error.status_code != 429
 
 
 def _meta_error_code(response: httpx.Response) -> int | None:
@@ -147,7 +162,14 @@ async def publish_media(
     media: InstagramMedia,
     access_token: str,
     storage: SupabaseStorage,
+    before_publish: Callable[[str], Awaitable[None]] | None = None,
 ) -> str:
+    """Create, wait for and publish a container.
+
+    ``before_publish(container_id)`` runs right before ``media_publish`` and
+    must persist the container so an uncertain answer can be reconciled
+    (see :func:`fetch_container_status`) instead of publishing twice.
+    """
     logger.info(
         "Starting Instagram publication for account %s (Instagram user %s), media %s (%s).",
         account.username,
@@ -274,6 +296,8 @@ async def publish_media(
                     )
 
             stage = "media publication"
+            if before_publish is not None:
+                await before_publish(container_id)
             logger.info(
                 "Publishing Instagram container %s for account %s.",
                 container_id,
@@ -312,4 +336,55 @@ async def publish_media(
                 detail,
                 status_code=exc.response.status_code,
                 meta_error_code=_meta_error_code(exc.response),
+                stage=stage,
             ) from None
+
+
+async def fetch_container_status(
+    instagram_user_id: str, container_id: str, access_token: str
+) -> str | None:
+    """Container ``status_code`` (FINISHED, PUBLISHED, IN_PROGRESS, ERROR,
+    EXPIRED) or None when Meta could not be reached."""
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
+            response = await client.get(
+                f"{GRAPH_ENDPOINT}/{container_id}",
+                params={"fields": "status_code", "access_token": access_token},
+            )
+    except httpx.HTTPError:
+        return None
+    if response.status_code >= 500 or response.status_code == 429:
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    if response.is_error:
+        # 4xx on the container itself: it no longer exists / was never valid.
+        return "ERROR"
+    status_code = payload.get("status_code") if isinstance(payload, Mapping) else None
+    return status_code if isinstance(status_code, str) else None
+
+
+async def publish_existing_container(
+    instagram_user_id: str, container_id: str, access_token: str
+) -> str:
+    """Publish a container that is FINISHED but not yet published.
+
+    Safe to call during reconciliation: a container can be published once.
+    """
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        try:
+            response = await client.post(
+                f"{GRAPH_ENDPOINT}/{instagram_user_id}/media_publish",
+                data={"creation_id": container_id, "access_token": access_token},
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise InstagramPublishingError(
+                f"Instagram rejected media publication (HTTP {exc.response.status_code}).",
+                status_code=exc.response.status_code,
+                meta_error_code=_meta_error_code(exc.response),
+                stage="media publication",
+            ) from None
+        return _response_id(response.json())

@@ -37,6 +37,9 @@ async def isolate_inactive_account(
         .where(
             InstagramPublicationJob.account_id == account.id,
             InstagramPublicationJob.status == "publishing",
+            # Jobs that already called media_publish keep "publishing" so the
+            # reconciler can still confirm whether the video went out.
+            InstagramPublicationJob.publish_requested_at.is_(None),
         )
         .values(status="failed", last_error=reason[:500])
     )

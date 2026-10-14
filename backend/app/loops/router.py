@@ -17,11 +17,19 @@ from app.models import (
     InstagramAccount,
     InstagramLoop,
     InstagramLoopAccount,
+    InstagramLoopAccountState,
     InstagramLoopMedia,
     InstagramMedia,
     InstagramPublicationJob,
 )
-from app.loops.scheduler import enqueue_loop_publications_now, next_loop_run_time
+from app.loops.scheduler import (
+    ACTIVE_JOB_STATUSES,
+    BLOCKED_NEEDS_REVIEW,
+    enqueue_loop_publications_now,
+    loop_media_pool,
+    next_media_index,
+    record_publication_confirmed,
+)
 from app.core.security import WorkspaceRole
 from app.schemas.loops import (
     InstagramAccountDailyProgress,
@@ -85,6 +93,7 @@ async def _loop_response(
     local_day_start, local_day_end = local_day_bounds_utc(now)
     job = InstagramPublicationJob
     today = (job.updated_at >= local_day_start) & (job.updated_at < local_day_end)
+    published_today = (job.published_at >= local_day_start) & (job.published_at < local_day_end)
     counts = (
         await db.execute(
             select(
@@ -92,7 +101,7 @@ async def _loop_response(
                 func.count(job.id).filter(
                     job.status.in_(("waiting_for_media", "queued", "publishing"))
                 ),
-                func.count(job.id).filter((job.status == "published") & today),
+                func.count(job.id).filter((job.status == "published") & published_today),
                 func.coalesce(func.sum(job.attempts), 0),
                 func.coalesce(func.sum(job.attempts).filter(today), 0),
                 func.count(job.id).filter((job.status == "failed") & today),
@@ -132,6 +141,7 @@ async def _loop_response(
         name=loop.name,
         interval_min_minutes=loop.interval_min_minutes,
         interval_max_minutes=loop.interval_max_minutes,
+        daily_limit_per_account=loop.daily_limit_per_account,
         post_type=loop.post_type,
         repeat_media=loop.repeat_media,
         status=loop.status,
@@ -303,14 +313,76 @@ async def retry_publication_failures(
     if not payload.job_ids and not payload.loop_id:
         query = query.where(job.updated_at >= local_day_bounds_utc(utc_now())[0])
     jobs = (await db.scalars(query.limit(2000))).all()
+    requeued = 0
+    now = utc_now()
+    handled: set[tuple] = set()
     for item in jobs:
+        key = (item.loop_id, item.account_id)
+        state = await db.get(InstagramLoopAccountState, key)
+        if state is not None and state.blocked_reason == BLOCKED_NEEDS_REVIEW:
+            # The owner checked Instagram and asked to try again.
+            state.blocked_reason = None
+            state.next_run_at = now
+        if key in handled:
+            await db.delete(item)
+            continue
+        active = await db.scalar(
+            select(job.id)
+            .where(
+                job.loop_id == item.loop_id,
+                job.account_id == item.account_id,
+                job.status.in_(ACTIVE_JOB_STATUSES),
+            )
+            .limit(1)
+        )
+        handled.add(key)
+        if active is not None:
+            # A pending job already covers this account's next video.
+            await db.delete(item)
+            continue
+        # The position never advanced on failure, so this job holds the
+        # account's next video: requeue it rather than queue a new one.
         item.status = "queued"
         item.attempts = 0
         item.next_retry_at = None
         item.last_error = None
         item.error_category = None
+        item.container_id = None
+        item.publish_requested_at = None
+        item.reconcile_attempts = 0
+        item.scheduled_for = now
+        requeued += 1
     await db.commit()
-    return InstagramRetryFailuresResponse(requeued=len(jobs))
+    return InstagramRetryFailuresResponse(requeued=requeued)
+
+
+@router.post(
+    "/jobs/{job_id}/confirm-published",
+    response_model=InstagramRetryFailuresResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def confirm_publication(
+    job_id: uuid.UUID,
+    access: LoopManagerAccess,
+    db: DbSession,
+) -> InstagramRetryFailuresResponse:
+    """The owner saw the video on Instagram: count it and advance the account."""
+    item = await db.scalar(
+        select(InstagramPublicationJob)
+        .where(
+            InstagramPublicationJob.id == job_id,
+            InstagramPublicationJob.workspace_id == access.workspace.id,
+            InstagramPublicationJob.status == "failed",
+        )
+        .with_for_update()
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="Publicação não encontrada.")
+    await record_publication_confirmed(
+        db, item, _utc_datetime(item.publish_requested_at or item.updated_at)
+    )
+    await db.commit()
+    return InstagramRetryFailuresResponse(requeued=0)
 
 
 @router.get("/alerts", response_model=InstagramAlertsResponse)
@@ -381,47 +453,163 @@ async def loop_health(
     if loop is None:
         raise HTTPException(status_code=404, detail="Loop não encontrado.")
     now = utc_now()
+    return InstagramLoopHealthResponse(
+        loop_id=loop.id,
+        target_per_account=loop.daily_limit_per_account,
+        accounts=await _account_loop_states(loop, db, now),
+    )
+
+
+async def _account_loop_states(
+    loop: InstagramLoop, db: DbSession, now: datetime
+) -> list[InstagramAccountDailyProgress]:
+    """What each account is really doing in this loop, from persisted facts:
+    connection, loop status, the account's own schedule/position, the job in
+    flight, today's confirmed publications and the latest failure."""
     day_start, day_end = local_day_bounds_utc(now)
     job = InstagramPublicationJob
-    rows = (
-        await db.execute(
-            select(
-                InstagramAccount,
-                func.count(job.id).filter(job.status == "published"),
-                func.count(job.id).filter(job.status == "failed"),
+    member_ids = set(
+        (
+            await db.scalars(
+                select(InstagramLoopAccount.account_id).where(InstagramLoopAccount.loop_id == loop.id)
             )
-            .join(InstagramLoopAccount, InstagramLoopAccount.account_id == InstagramAccount.id)
-            .outerjoin(
-                job,
-                (job.account_id == InstagramAccount.id)
-                & (job.loop_id == loop.id)
-                & (job.updated_at >= day_start)
-                & (job.updated_at < day_end),
+        ).all()
+    )
+    state_rows = {
+        state.account_id: state
+        for state in (
+            await db.scalars(
+                select(InstagramLoopAccountState).where(InstagramLoopAccountState.loop_id == loop.id)
             )
+        ).all()
+    }
+    account_ids = member_ids | set(state_rows)
+    if not account_ids:
+        return []
+    accounts = (
+        await db.scalars(
+            select(InstagramAccount)
             .where(
-                InstagramLoopAccount.loop_id == loop.id,
-                InstagramAccount.workspace_id == access.workspace.id,
-                InstagramAccount.status == "connected",
+                InstagramAccount.id.in_(account_ids),
+                InstagramAccount.workspace_id == loop.workspace_id,
             )
-            .group_by(InstagramAccount.id)
             .order_by(InstagramAccount.username)
         )
     ).all()
-    return InstagramLoopHealthResponse(
-        loop_id=loop.id,
-        target_per_account=DAILY_TARGET_PER_ACCOUNT,
-        accounts=[
+    pool = await loop_media_pool(db, loop)
+    published_counts = dict(
+        (
+            await db.execute(
+                select(job.account_id, func.count(job.id))
+                .where(
+                    job.loop_id == loop.id,
+                    job.status == "published",
+                    job.published_at >= day_start,
+                    job.published_at < day_end,
+                )
+                .group_by(job.account_id)
+            )
+        ).all()
+    )
+    failed_counts = dict(
+        (
+            await db.execute(
+                select(job.account_id, func.count(job.id))
+                .where(
+                    job.loop_id == loop.id,
+                    job.status == "failed",
+                    job.updated_at >= day_start,
+                    job.updated_at < day_end,
+                )
+                .group_by(job.account_id)
+            )
+        ).all()
+    )
+    active_jobs = {
+        item.account_id: item
+        for item in (
+            await db.scalars(
+                select(job).where(job.loop_id == loop.id, job.status.in_(ACTIVE_JOB_STATUSES))
+            )
+        ).all()
+    }
+    result: list[InstagramAccountDailyProgress] = []
+    for account in accounts:
+        state = state_rows.get(account.id)
+        in_loop = account.id in member_ids
+        last_failure = await db.scalar(
+            select(job)
+            .where(job.loop_id == loop.id, job.account_id == account.id, job.status == "failed")
+            .order_by(job.updated_at.desc(), job.id.desc())
+            .limit(1)
+        )
+        last_published_at = (
+            _utc_datetime(state.last_published_at)
+            if state is not None and state.last_published_at
+            else None
+        )
+        failure_is_latest = last_failure is not None and (
+            last_published_at is None
+            or _utc_datetime(last_failure.updated_at) > last_published_at
+        )
+        token_valid = (
+            account.encrypted_access_token is not None
+            and _utc_datetime(account.token_expires_at) > now
+        )
+        connection = account.status if account.status != "connected" or token_valid else "expired"
+        active = active_jobs.get(account.id)
+        next_run_at = (
+            _utc_datetime(state.next_run_at) if state is not None and state.next_run_at else None
+        )
+        if connection != "connected" or not in_loop:
+            state_name = "disconnected"
+        elif state is not None and state.blocked_reason == BLOCKED_NEEDS_REVIEW:
+            state_name = "needs_review"
+        elif active is not None:
+            state_name = "publishing" if active.status == "publishing" else "queued"
+        elif loop.status != "active":
+            state_name = "loop_paused"
+        elif state is not None and state.blocked_reason in {"daily_limit", "no_media", "instagram_cap"}:
+            state_name = state.blocked_reason
+        elif failure_is_latest:
+            state_name = "failing"
+        elif next_run_at is not None and next_run_at > now:
+            state_name = "scheduled"
+        else:
+            state_name = "due"
+        position = next_media_index(state, pool) if state is not None and pool else 0
+        result.append(
             InstagramAccountDailyProgress(
                 account_id=account.id,
                 username=account.username,
-                published_today=published,
-                failed_today=failed,
-                target=DAILY_TARGET_PER_ACCOUNT,
+                published_today=published_counts.get(account.id, 0),
+                failed_today=failed_counts.get(account.id, 0),
+                target=loop.daily_limit_per_account,
                 token_expires_at=_utc_datetime(account.token_expires_at),
+                state=state_name,
+                connection_status=connection,
+                in_loop=in_loop,
+                next_run_at=next_run_at,
+                last_published_at=last_published_at,
+                next_video_number=(position + 1) if pool else None,
+                playlist_size=len(pool),
+                cycles_completed=state.cycles_completed if state is not None else 0,
+                last_error=last_failure.last_error if failure_is_latest and last_failure else (
+                    account.status_reason if connection != "connected" else None
+                ),
+                last_error_at=(
+                    _utc_datetime(last_failure.updated_at)
+                    if failure_is_latest and last_failure
+                    else (_utc_datetime(account.error_at) if account.error_at else None)
+                ),
+                review_job_id=(
+                    last_failure.id
+                    if state_name == "needs_review" and last_failure is not None
+                    else None
+                ),
             )
-            for account, published, failed in rows
-        ],
-    )
+        )
+    return result
 
 
 async def _validate_selected_accounts(
@@ -539,6 +727,7 @@ async def create_loop(
         name=payload.name,
         interval_min_minutes=payload.interval_min_minutes,
         interval_max_minutes=payload.interval_max_minutes,
+        daily_limit_per_account=payload.daily_limit_per_account,
         post_type=payload.post_type,
         repeat_media=True,
         status="active",
@@ -549,10 +738,7 @@ async def create_loop(
     _save_loop_accounts(loop, accounts, db)
     _save_loop_media(loop, media, db)
     await db.flush()
-    if loop.status == "active":
-        await enqueue_loop_publications_now(db, loop, accounts, now=now)
-        loop.last_run_at = now
-        loop.next_run_at = next_loop_run_time(loop, now)
+    await enqueue_loop_publications_now(db, loop, accounts, now=now)
     await db.commit()
     await db.refresh(loop)
     return await _loop_response(loop, db, now)
@@ -585,6 +771,7 @@ async def clone_loop(
         name=f"{source.name[:120 - len(clone_suffix)]}{clone_suffix}",
         interval_min_minutes=source.interval_min_minutes,
         interval_max_minutes=source.interval_max_minutes,
+        daily_limit_per_account=source.daily_limit_per_account,
         post_type=source.post_type,
         repeat_media=True,
         status="paused",
@@ -665,11 +852,9 @@ async def update_loop(
     now = utc_now()
     loop.interval_min_minutes = payload.interval_min_minutes
     loop.interval_max_minutes = payload.interval_max_minutes
+    loop.daily_limit_per_account = payload.daily_limit_per_account
     loop.post_type = payload.post_type
     loop.repeat_media = True
-    loop.next_run_at = (
-        next_loop_run_time(loop, now) if loop.status == "active" else None
-    )
     await db.execute(
         InstagramLoopAccount.__table__.delete().where(
             InstagramLoopAccount.loop_id == loop.id
@@ -685,36 +870,18 @@ async def update_loop(
         )
         _save_loop_media(loop, media, db)
     await db.flush()
-    await db.execute(
-        InstagramPublicationJob.__table__.update()
-        .where(
-            InstagramPublicationJob.loop_id == loop.id,
-            InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
-            InstagramPublicationJob.account_id.in_(selected_account_ids),
-        )
-        .values(status="waiting_for_media", media_id=None, last_error=None)
+    # Jobs that have not started carry no progress: drop the ones for removed
+    # accounts and, when the playlist changed, the rest too so each account is
+    # re-queued with its own next video. Jobs already publishing are kept.
+    pending = InstagramPublicationJob.__table__.delete().where(
+        InstagramPublicationJob.loop_id == loop.id,
+        InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
     )
-    await db.execute(
-        InstagramPublicationJob.__table__.update()
-        .where(
-            InstagramPublicationJob.loop_id == loop.id,
-            InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
-            InstagramPublicationJob.account_id.not_in(selected_account_ids),
-        )
-        .values(
-            status="failed",
-            media_id=None,
-            last_error="Loop configuration changed before this job started.",
-        )
-    )
-    new_accounts = [account for account in accounts if account.id not in previous_account_ids]
+    if media is None:
+        pending = pending.where(InstagramPublicationJob.account_id.not_in(selected_account_ids))
+    await db.execute(pending)
     if loop.status == "active":
-        await enqueue_loop_publications_now(
-            db,
-            loop,
-            accounts if media is not None else new_accounts,
-            now=now,
-        )
+        await enqueue_loop_publications_now(db, loop, accounts, now=now)
     await db.commit()
     await db.refresh(loop)
     return await _loop_response(loop, db, utc_now())
@@ -763,17 +930,11 @@ async def update_loop_accounts(
     await db.flush()
 
     selected_account_ids = [account.id for account in accounts]
-    pending_jobs = InstagramPublicationJob.__table__.update().where(
-        InstagramPublicationJob.loop_id == loop.id,
-        InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
-    )
     await db.execute(
-        pending_jobs.where(
-            InstagramPublicationJob.account_id.not_in(selected_account_ids)
-        ).values(
-            status="failed",
-            media_id=None,
-            last_error="Loop account configuration changed before this job started.",
+        InstagramPublicationJob.__table__.delete().where(
+            InstagramPublicationJob.loop_id == loop.id,
+            InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
+            InstagramPublicationJob.account_id.not_in(selected_account_ids),
         )
     )
     new_accounts = [account for account in accounts if account.id not in previous_account_ids]
@@ -806,41 +967,15 @@ async def update_loop_status(
     restarting = payload.enabled and loop.status != "active"
     loop.status = "active" if payload.enabled else "paused"
     now = utc_now()
-    loop.next_run_at = (
-        next_loop_run_time(loop, now) if payload.enabled else None
-    )
     if payload.enabled:
         if restarting:
-            failed_account_ids = set(
-                (
-                    await db.scalars(
-                        select(InstagramPublicationJob.account_id).where(
-                            InstagramPublicationJob.loop_id == loop.id,
-                            InstagramPublicationJob.status == "failed",
-                        )
-                    )
-                ).all()
-            )
-            if failed_account_ids:
-                await db.execute(
-                    InstagramLoopAccount.__table__.delete().where(
-                        InstagramLoopAccount.loop_id == loop.id,
-                        InstagramLoopAccount.account_id.in_(failed_account_ids),
-                    )
-                )
-                await db.execute(
-                    InstagramPublicationJob.__table__.delete().where(
-                        InstagramPublicationJob.loop_id == loop.id,
-                        InstagramPublicationJob.account_id.in_(failed_account_ids),
-                        InstagramPublicationJob.status.in_(
-                            ("waiting_for_media", "queued")
-                        ),
-                    )
-                )
+            # Clear the old failure history, except failures that still need a
+            # human to confirm whether the video went out.
             await db.execute(
                 InstagramPublicationJob.__table__.delete().where(
                     InstagramPublicationJob.loop_id == loop.id,
                     InstagramPublicationJob.status == "failed",
+                    func.coalesce(InstagramPublicationJob.error_category, "") != "uncertain",
                 )
             )
         accounts = (
@@ -860,16 +995,14 @@ async def update_loop_status(
             )
         ).all()
         await enqueue_loop_publications_now(db, loop, list(accounts), now=now)
-        if restarting:
-            loop.last_run_at = now
     else:
+        loop.next_run_at = None
+        # Not-started jobs are dropped; each account keeps its position.
         await db.execute(
-            InstagramPublicationJob.__table__.update()
-            .where(
+            InstagramPublicationJob.__table__.delete().where(
                 InstagramPublicationJob.loop_id == loop.id,
-                InstagramPublicationJob.status == "queued",
+                InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
             )
-            .values(status="waiting_for_media")
         )
     await db.commit()
     await db.refresh(loop)
@@ -915,13 +1048,11 @@ async def remove_loop_media(
         )
 
     await db.execute(
-        InstagramPublicationJob.__table__.update()
-        .where(
+        InstagramPublicationJob.__table__.delete().where(
             InstagramPublicationJob.loop_id == loop.id,
             InstagramPublicationJob.media_id == media_id,
-            InstagramPublicationJob.status == "queued",
+            InstagramPublicationJob.status.in_(("waiting_for_media", "queued")),
         )
-        .values(status="waiting_for_media", media_id=None)
     )
     await db.delete(loop_media)
     await db.commit()

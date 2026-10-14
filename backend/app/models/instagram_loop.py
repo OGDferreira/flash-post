@@ -148,6 +148,17 @@ class InstagramPublicationJob(Base):
             "status",
             "scheduled_for",
         ),
+        # At most one unfinished job per account in each loop. This is what
+        # makes concurrent workers/ticks unable to queue the same video twice.
+        Index(
+            "uq_instagram_publication_jobs_active_loop_account",
+            "loop_id",
+            "account_id",
+            unique=True,
+            postgresql_where=text("status IN ('waiting_for_media', 'queued', 'publishing')"),
+            sqlite_where=text("status IN ('waiting_for_media', 'queued', 'publishing')"),
+        ),
+        Index("ix_instagram_publication_jobs_published_at", "account_id", "published_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -180,9 +191,59 @@ class InstagramPublicationJob(Base):
     error_category: Mapped[str | None] = mapped_column(String(32))
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     published_media_id: Mapped[str | None] = mapped_column(String(128))
+    # Publication bookkeeping used to reconcile uncertain Meta responses:
+    # the container is saved and publish_requested_at is set *before*
+    # media_publish is called, so a lost response is never blindly retried.
+    container_id: Mapped[str | None] = mapped_column(String(128))
+    publish_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reconcile_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class InstagramLoopAccountState(Base):
+    """Per-account progress inside a loop.
+
+    Kept apart from ``instagram_loop_accounts`` so that removing an account
+    from a loop (or isolating it after an error) does not lose its place in the
+    sequence: when it comes back it resumes from the next video.
+    """
+
+    __tablename__ = "instagram_loop_account_states"
+    __table_args__ = (Index("ix_instagram_loop_account_states_account", "account_id"),)
+
+    loop_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_loops.id", ondelete="CASCADE"), primary_key=True
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("instagram_accounts.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # Position (0-based) of the next media to publish in the ordered pool.
+    next_position: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    # Last media whose publication was confirmed; used to resync the position
+    # when media are added or removed from the loop.
+    last_media_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_media.id", ondelete="SET NULL")
+    )
+    cycles_completed: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Why the account is not publishing right now (daily_limit, no_media,
+    # instagram_cap, needs_review). None = running normally.
+    blocked_reason: Mapped[str | None] = mapped_column(String(32))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )

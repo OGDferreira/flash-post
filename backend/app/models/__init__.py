@@ -20,6 +20,7 @@ from app.models.instagram_profile_folder import InstagramProfileFolder
 from app.models.instagram_loop import (
     InstagramLoop,
     InstagramLoopAccount,
+    InstagramLoopAccountState,
     InstagramLoopMedia,
     InstagramMedia,
     InstagramPublicationJob,
@@ -42,6 +43,7 @@ __all__ = [
     "InstagramAppCredential",
     "InstagramLoop",
     "InstagramLoopAccount",
+    "InstagramLoopAccountState",
     "InstagramLoopMedia",
     "InstagramMedia",
     "InstagramProfileFolder",

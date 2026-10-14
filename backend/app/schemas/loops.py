@@ -11,6 +11,9 @@ class InstagramLoopCreateRequest(BaseModel):
     interval_max_minutes: Annotated[int, Field(ge=1, le=1440)]
     post_type: Literal["reels", "images", "both"] = "reels"
     repeat_media: bool = True
+    # Max confirmed publications per account per calendar day (app time zone).
+    # Instagram itself allows at most 100 API publications per 24 h.
+    daily_limit_per_account: Annotated[int, Field(ge=1, le=100)] = 100
     account_ids: Annotated[list[UUID], Field(min_length=1, max_length=1000)]
     media_ids: list[UUID] | None = None
 
@@ -39,7 +42,9 @@ class InstagramLoopCreateRequest(BaseModel):
     @model_validator(mode="after")
     def valid_interval(self) -> "InstagramLoopCreateRequest":
         if self.interval_max_minutes < self.interval_min_minutes:
-            raise ValueError("Maximum interval must be greater than or equal to minimum interval.")
+            raise ValueError(
+                "O intervalo máximo precisa ser maior ou igual ao intervalo mínimo."
+            )
         return self
 
 
@@ -58,6 +63,7 @@ class InstagramLoopResponse(BaseModel):
     name: str
     interval_min_minutes: int
     interval_max_minutes: int
+    daily_limit_per_account: int = 100
     post_type: Literal["reels", "images", "both"]
     repeat_media: bool
     status: Literal["active", "paused"]
@@ -119,6 +125,20 @@ class InstagramAccountDailyProgress(BaseModel):
     failed_today: int
     target: int
     token_expires_at: datetime
+    # Real state of the account inside this loop:
+    # publishing | queued | scheduled | due | daily_limit | loop_paused |
+    # disconnected | needs_review | no_media | instagram_cap | failing
+    state: str = "scheduled"
+    connection_status: str = "connected"
+    in_loop: bool = True
+    next_run_at: datetime | None = None
+    last_published_at: datetime | None = None
+    next_video_number: int | None = None
+    playlist_size: int = 0
+    cycles_completed: int = 0
+    last_error: str | None = None
+    last_error_at: datetime | None = None
+    review_job_id: UUID | None = None
 
 
 class InstagramLoopHealthResponse(BaseModel):

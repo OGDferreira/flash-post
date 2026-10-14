@@ -105,7 +105,9 @@ async def test_failed_jobs_can_be_retried_and_alerts_and_health_work(
 
     health = await client.get(f"/api/loops/{job.loop_id}/health")
     assert health.status_code == 200
-    assert health.json()["target_per_account"] == 24
+    loop = await db_session.get(InstagramLoop, job.loop_id)
+    assert health.json()["target_per_account"] == loop.daily_limit_per_account
+    assert health.json()["accounts"][0]["state"] in {"failing", "due", "scheduled"}
     assert health.json()["accounts"][0]["failed_today"] == 1
 
     # Jobs without media cannot be requeued.

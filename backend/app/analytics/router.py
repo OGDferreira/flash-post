@@ -14,7 +14,7 @@ from sqlalchemy import and_, func, or_, select
 
 from app.auth.dependencies import DbSession, OwnerAccess
 from app.core.crypto import decrypt_value
-from app.core.time import BRAZIL_TIME_ZONE, local_day_bounds_utc, utc_now
+from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, local_day_bounds_utc, utc_now
 from app.instagram.oauth import (
     INSTAGRAM_INSIGHTS_PERMISSION,
     InstagramInsightsPermissionError,
@@ -389,7 +389,7 @@ async def get_analytics_summary(
     connection_dialect = db.get_bind().dialect.name
     local_connection_date = (
         func.date(
-            func.timezone("America/Sao_Paulo", InstagramAccount.first_connected_at)
+            func.timezone(APP_TIME_ZONE_NAME, InstagramAccount.first_connected_at)
         )
         if connection_dialect == "postgresql"
         else func.date(InstagramAccount.first_connected_at, "-3 hours")
@@ -511,7 +511,7 @@ async def get_analytics_summary(
 
     dialect = db.get_bind().dialect.name
     local_job_date = (
-        func.date(func.timezone("America/Sao_Paulo", InstagramPublicationJob.updated_at))
+        func.date(func.timezone(APP_TIME_ZONE_NAME, InstagramPublicationJob.updated_at))
         if dialect == "postgresql"
         else func.date(InstagramPublicationJob.updated_at, "-3 hours")
     )
