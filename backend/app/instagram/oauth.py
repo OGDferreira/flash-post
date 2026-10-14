@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 
 import httpx
 
+from app.core.redaction import redact_secrets
 from app.core.time import BRAZIL_TIME_ZONE
 
 INSTAGRAM_AUTHORIZATION_ENDPOINT = "https://www.instagram.com/oauth/authorize"
@@ -287,7 +288,7 @@ def instagram_api_error_detail(error: Exception) -> str:
         return f"Meta retornou HTTP {error.response.status_code}."
     if isinstance(error, InstagramInsightsPermissionError):
         return f"Permissão ausente: {INSTAGRAM_INSIGHTS_PERMISSION}."
-    message = str(error).strip()
+    message = (redact_secrets(str(error)) or "").strip()
     return message[:500] if message else type(error).__name__
 
 

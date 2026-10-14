@@ -25,6 +25,7 @@ from app.models import (
     InstagramPublicationJob,
 )
 from app.loops.scheduler import enqueue_due_loop_publications
+from app.core.redaction import redact_secrets
 
 logger = logging.getLogger(__name__)
 STALE_PUBLICATION_AFTER = timedelta(minutes=45)
@@ -155,7 +156,7 @@ async def _update_account_health_after_failure(
         reason = (
             instagram_api_error_detail(error)
             if isinstance(error, httpx.HTTPStatusError)
-            else str(error)
+            else redact_secrets(str(error))
         )
         await _mark_account_as_error(
             db,
@@ -168,7 +169,7 @@ async def _update_account_health_after_failure(
 
 def _safe_publication_error(error: Exception) -> str:
     if isinstance(error, (InstagramPublishingError, SupabaseStorageError)):
-        return str(error)[:500]
+        return redact_secrets(str(error))[:500]
     if isinstance(error, httpx.HTTPError):
         return "A network error interrupted the publication; check the Instagram account before retrying."
     return "An unexpected error interrupted the publication. Check the worker logs."
@@ -221,11 +222,11 @@ async def _record_publication_failure(
                 f"[{category}] Publicação {job.id} (tentativa {job.attempts}/{MAX_AUTO_ATTEMPTS}"
                 f"{', nova tentativa agendada' if job.status == 'queued' else ''}) "
                 f"conta {account.username if account else account_id}: "
-                f"{type(error).__name__}: {str(error)[:1500]}"
+                f"{type(error).__name__}: {redact_secrets(str(error))[:1500]}"
             ),
-            stack="".join(
+            stack=redact_secrets("".join(
                 traceback.format_exception(type(error), error, error.__traceback__)
-            )[-8000:]
+            ))[-8000:]
             if error.__traceback__
             else None,
             path="/workers/loop_scheduler",

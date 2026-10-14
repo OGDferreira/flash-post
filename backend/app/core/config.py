@@ -1,4 +1,5 @@
 from functools import lru_cache
+import logging
 from pathlib import Path
 import secrets
 from typing import Annotated
@@ -75,6 +76,12 @@ class Settings(BaseSettings):
     def validate_runtime(self) -> None:
         if self.is_production and self.session_secret is None:
             raise RuntimeError("SESSION_SECRET must be configured in production.")
+        if self.is_production and self.master_encryption_key is None:
+            # Not fatal (existing deploys keep booting), but Instagram tokens,
+            # Meta app secrets and e-mail credentials cannot be stored or read.
+            logging.getLogger(__name__).error(
+                "MASTER_ENCRYPTION_KEY is not configured; encrypted credentials are unavailable."
+            )
         if self.instagram_publishing_enabled and (
             self.supabase_url is None or self.supabase_service_role_key is None
         ):

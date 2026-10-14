@@ -20,6 +20,7 @@ from app.diagnostics.router import router as diagnostics_router
 from app.api.health import router as health_router
 from app.core.config import get_settings
 from app.core.rate_limit import LoginRateLimiter
+from app.core.redaction import install_log_redaction, redact_secrets
 from app.collaborators.router import router as collaborators_router
 from app.emails.router import router as emails_router
 from app.finance.router import router as finance_router
@@ -36,6 +37,7 @@ from app.workers.scheduler_service import create_scheduler
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+install_log_redaction()
 
 
 class _SensitiveAccessLogFilter(logging.Filter):
@@ -167,11 +169,11 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     @application.exception_handler(Exception)
     async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled request error.")
-        request.state.server_error_message = (
+        request.state.server_error_message = redact_secrets(
             f"{type(exc).__name__}: {str(exc)[:1500]}"
         )
-        request.state.server_error_stack = "".join(
-            traceback.format_exception(type(exc), exc, exc.__traceback__)
+        request.state.server_error_stack = redact_secrets(
+            "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         )[-8000:]
         return JSONResponse(
             status_code=500,

@@ -254,9 +254,9 @@ async def get_analytics_summary(
     if period_end is not None:
         event_conditions.append(SharkEvent.occurred_at < period_end)
     if account_ids is not None:
-        event_conditions.append(
-            or_(SharkEvent.account_id.in_(selected_ids), SharkEvent.account_id.is_(None))
-        )
+        # Events without an attributed account belong to the workspace total
+        # only; mixing them into a per-account filter inflates the numbers.
+        event_conditions.append(SharkEvent.account_id.in_(selected_ids))
     event_rows = await db.execute(
         select(
             SharkEvent.account_id,

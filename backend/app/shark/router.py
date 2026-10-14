@@ -116,20 +116,32 @@ def _event_batches(payload: Any) -> list[dict[str, Any]]:
     return batches
 
 
-def _event_source_key(event: dict[str, Any], event_type: str) -> str:
+_TRANSACTION_EVENTS = frozenset({"pix_generated", "pix_paid", "pix_pending"})
+
+
+def _event_transaction_id(event: dict[str, Any]) -> str | None:
     data = event.get("data")
     value = data if isinstance(data, dict) else event
     transaction = value.get("transaction")
     transaction = transaction if isinstance(transaction, dict) else {}
     transaction_id = transaction.get("id") or transaction.get("external_id")
+    return str(transaction_id)[:160] if transaction_id else None
+
+
+def _event_source_key(event: dict[str, Any], event_type: str) -> str:
+    """Stable idempotency key for an incoming Sharkbot event.
+
+    Payment events are keyed by transaction, so a resend with a new
+    ``webhook_id`` or timestamp is still recognised as the same payment.
+    Other events fall back to the provider ``webhook_id``/``id`` and, only
+    when no identifier exists, to the full event body.
+    """
+    transaction_id = _event_transaction_id(event)
     explicit_id = event.get("webhook_id") or event.get("id")
-    if explicit_id:
-        material: Any = {
-            "webhook_id": str(explicit_id),
-            "event_type": event_type,
-            "transaction_id": str(transaction_id) if transaction_id else None,
-            "timestamp": event.get("timestamp") or value.get("timestamp"),
-        }
+    if event_type in _TRANSACTION_EVENTS and transaction_id:
+        material: Any = {"event_type": event_type, "transaction_id": transaction_id}
+    elif explicit_id:
+        material = {"event_type": event_type, "webhook_id": str(explicit_id)}
     else:
         material = {"event_type": event_type, "event": event}
     serialized = json.dumps(
@@ -256,6 +268,14 @@ async def receive_sharkbot_webhook(
     request: Request,
     db: DbSession,
 ) -> SharkbotWebhookResponse:
+    if not 16 <= len(webhook_token) <= 128:
+        raise HTTPException(status_code=404, detail="Sharkbot webhook not found.")
+    workspace = await db.scalar(
+        select(Workspace).where(Workspace.sharkbot_webhook_token == webhook_token)
+    )
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Sharkbot webhook not found.")
+
     chunks: list[bytes] = []
     content_size = 0
     async for chunk in request.stream():
@@ -275,12 +295,6 @@ async def receive_sharkbot_webhook(
     events = _event_batches(payload)
     if not events:
         raise HTTPException(status_code=422, detail="No recognizable Sharkbot events found.")
-
-    workspace = await db.scalar(
-        select(Workspace).where(Workspace.sharkbot_webhook_token == webhook_token)
-    )
-    if workspace is None:
-        raise HTTPException(status_code=404, detail="Sharkbot webhook not found.")
 
     accepted = 0
     duplicates = 0
@@ -310,8 +324,20 @@ async def receive_sharkbot_webhook(
             str(part).strip() for part in (first_name, last_name) if part
         ) or None
         webhook_id = event.get("webhook_id")
-        transaction_id = transaction.get("id") or transaction.get("external_id")
+        transaction_id = _event_transaction_id(event)
         source_key = _event_source_key(event, event_type)
+        if event_type in _TRANSACTION_EVENTS and transaction_id:
+            # Also catches events stored before the key scheme was tightened.
+            already_stored = await db.scalar(
+                select(SharkEvent.id).where(
+                    SharkEvent.workspace_id == workspace.id,
+                    SharkEvent.event_type == event_type,
+                    SharkEvent.transaction_id == transaction_id,
+                ).limit(1)
+            )
+            if already_stored is not None:
+                duplicates += 1
+                continue
         account = await _event_account(workspace.id, event, value, db)
         row = SharkEvent(
             workspace_id=workspace.id,
@@ -319,7 +345,7 @@ async def receive_sharkbot_webhook(
             event_type=event_type,
             source_event_key=source_key,
             webhook_id=str(webhook_id)[:160] if webhook_id is not None else None,
-            transaction_id=str(transaction_id)[:160] if transaction_id is not None else None,
+            transaction_id=transaction_id,
             customer_name=customer_name[:240] if customer_name else None,
             customer_username=(
                 str(customer["username"])[:120] if customer.get("username") else None
