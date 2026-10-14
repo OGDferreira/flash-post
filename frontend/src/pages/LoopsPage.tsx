@@ -380,7 +380,7 @@ export function LoopsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
@@ -565,7 +565,7 @@ export function LoopsPage() {
         </section>
         )
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
       <p className="text-sm leading-6 text-[#94a3b8]">
         Cada loop escolhe a próxima execução aleatoriamente dentro do intervalo configurado e
         usa uma lista de mídias independente. A primeira publicação entra na fila assim que o loop
@@ -574,7 +574,7 @@ export function LoopsPage() {
 
       {formOpen && loops.data.can_manage && (
         <form
-          className="space-y-5 rounded-xl border border-line bg-surface p-5 sm:p-6"
+          className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5"
           onSubmit={(event) => {
             event.preventDefault();
             saveLoop.mutate();
@@ -791,7 +791,7 @@ export function LoopsPage() {
             <summary className="cursor-pointer px-3 py-3 text-sm font-medium text-[#cbd5e1]">
               Configurações do loop e biblioteca de mídias
             </summary>
-          <fieldset disabled={!loops.data.can_configure} className="space-y-5">
+          <fieldset disabled={!loops.data.can_configure} className="space-y-4">
           <label className="grid gap-2 text-sm text-[#cbd5e1]">
             Nome do loop
             <input
@@ -993,7 +993,7 @@ export function LoopsPage() {
         <div className="space-y-3">
           {visibleLoops.map((loop) => (
             <article
-              className="rounded-xl border border-line bg-surface p-4 sm:p-5"
+              className="rounded-xl border border-line bg-surface p-4 sm:p-4"
               key={loop.id}
             >
               <div className="flex flex-col justify-between gap-4 sm:flex-row">

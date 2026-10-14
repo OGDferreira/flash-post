@@ -13,6 +13,7 @@ class RegisterRequest(BaseModel):
     nickname: str
     password: Annotated[str, Field(min_length=8, max_length=256)]
     confirm_password: Annotated[str, Field(min_length=8, max_length=256)]
+    invite_code: Annotated[str | None, Field(max_length=40)] = None
 
     @field_validator("full_name")
     @classmethod

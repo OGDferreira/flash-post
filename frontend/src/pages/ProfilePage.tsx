@@ -4,9 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { AffiliateLinkCard } from "@/features/affiliates/AffiliateLinkCard";
 import { DailyViewsGoalCard } from "@/components/DailyViewsGoalCard";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { resizeAvatar } from "@/lib/image";
 import { ApiError, apiRequest, type User, type Workspace } from "@/services/api";
 import { isValidPublicNickname, normalizePublicNickname } from "@/features/auth/nickname";
 
@@ -136,7 +138,7 @@ export function ProfilePage() {
       : workspace.data?.name ?? "—";
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-5">
       <div>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
           Conta
@@ -149,7 +151,7 @@ export function ProfilePage() {
         </p>
       </div>
 
-      <section className="rounded-xl border border-line-soft bg-surface p-5 sm:p-7">
+      <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
         <div className="mb-7 flex items-center gap-4 border-b border-line-soft pb-6">
           {avatarPreview || profile.data.avatar_url ? (
             <img
@@ -176,7 +178,7 @@ export function ProfilePage() {
         </div>
 
         <form
-          className="space-y-5"
+          className="space-y-4"
           onSubmit={form.handleSubmit((values) => void saveProfile(values))}
           noValidate
         >
@@ -238,7 +240,7 @@ export function ProfilePage() {
           </div>
           <div>
             <label htmlFor="profile-avatar" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
-              Foto de perfil <span className="font-normal text-[#64748b]">(JPEG, PNG ou WebP; até 5 MB)</span>
+              Foto de perfil <span className="font-normal text-[#64748b]">(JPEG, PNG ou WebP; enviada ao selecionar)</span>
             </label>
             <input
               id="profile-avatar"
@@ -259,7 +261,10 @@ export function ProfilePage() {
                   return;
                 }
                 setAvatarError(null);
-                setAvatarFile(file);
+                void resizeAvatar(file).then((small) => {
+                  setAvatarFile(small);
+                  uploadAvatar.mutate(small);
+                });
               }}
               className="block min-h-11 w-full rounded-lg border border-line bg-surface-inset text-sm text-[#c7cfdd] file:mr-3 file:min-h-11 file:border-0 file:bg-[#171e31] file:px-4 file:font-medium file:text-[#aab7ff]"
             />
@@ -269,7 +274,7 @@ export function ProfilePage() {
               </p>
             )}
             {avatarFile && !avatarError && (
-              <p className="mt-1.5 text-xs text-[#94a3b8]">{avatarFile.name} selecionada.</p>
+              <p className="mt-1.5 text-xs text-[#94a3b8]">Enviando…</p>
             )}
           </div>
           <div className="grid gap-3 border-t border-line-soft pt-5 sm:grid-cols-2">
@@ -298,12 +303,13 @@ export function ProfilePage() {
           <button
             type="submit"
             disabled={update.isPending}
-            className="min-h-11 rounded-lg bg-[#536dfe] px-5 text-sm font-semibold text-white transition hover:bg-[#667eea] disabled:opacity-60"
+            className="min-h-11 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white transition hover:bg-[#667eea] disabled:opacity-60"
           >
             {update.isPending || uploadAvatar.isPending ? "Salvando..." : "Salvar alterações"}
           </button>
         </form>
       </section>
+      <AffiliateLinkCard />
       <DailyViewsGoalCard />
     </div>
   );

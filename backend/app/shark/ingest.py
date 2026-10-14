@@ -285,7 +285,12 @@ def _fill(target, field: str, value) -> bool:
 
 
 async def upsert_lead(
-    db: AsyncSession, workspace_id: UUID, event: ParsedEvent, account_id: UUID | None, now: datetime
+    db: AsyncSession,
+    workspace_id: UUID,
+    event: ParsedEvent,
+    account_id: UUID | None,
+    now: datetime,
+    shark_account_id: UUID | None = None,
 ) -> bool:
     """Returns True when the lead is new."""
     lead = await db.scalar(
@@ -304,6 +309,7 @@ async def upsert_lead(
             customer_name=event.customer_name,
             customer_username=event.customer_username,
             account_id=account_id,
+            shark_account_id=shark_account_id,
             utm_source=event.utm_source,
             utm_campaign=event.utm_campaign,
             joined_at=event.joined_at or now,
@@ -339,7 +345,12 @@ def _aware(value: datetime) -> datetime:
 
 
 async def upsert_transaction(
-    db: AsyncSession, workspace_id: UUID, event: ParsedEvent, account_id: UUID | None, now: datetime
+    db: AsyncSession,
+    workspace_id: UUID,
+    event: ParsedEvent,
+    account_id: UUID | None,
+    now: datetime,
+    shark_account_id: UUID | None = None,
 ) -> bool:
     """Create or advance a payment. Returns True when something changed
     (new transaction or pending -> paid); False for a pure re-delivery."""
@@ -371,6 +382,7 @@ async def upsert_transaction(
             customer_username=event.customer_username,
             lead_key=event.lead_key if not event.lead_key.startswith("evt:") else None,
             account_id=account_id,
+            shark_account_id=shark_account_id,
             utm_source=event.utm_source,
             utm_campaign=event.utm_campaign,
             created_at_source=event.created_at or event.paid_at or event.occurred_at or now,

@@ -31,6 +31,9 @@ const ProfilePage = lazyPage(() => import("@/pages/ProfilePage"), "ProfilePage")
 const ProfileFoldersPage = lazyPage(() => import("@/pages/ProfileFoldersPage"), "ProfileFoldersPage");
 const SettingsPage = lazyPage(() => import("@/pages/SettingsPage"), "SettingsPage");
 const CollaboratorsPage = lazyPage(() => import("@/pages/CollaboratorsPage"), "CollaboratorsPage");
+const AffiliatesPage = lazyPage(() => import("@/pages/AffiliatesPage"), "AffiliatesPage");
+const ExtensionsPage = lazyPage(() => import("@/pages/ExtensionsPage"), "ExtensionsPage");
+const SupportPage = lazyPage(() => import("@/pages/SupportPage"), "SupportPage");
 const FeedPage = lazyPage(() => import("@/pages/FeedPage"), "FeedPage");
 const AdminOverviewPage = lazyPage(() => import("@/pages/admin/AdminOverviewPage"), "AdminOverviewPage");
 const AdminSystemPage = lazyPage(() => import("@/pages/admin/AdminSystemPage"), "AdminSystemPage");
@@ -76,6 +79,8 @@ export default function App() {
                   <Route path="/feature/loops" element={<LoopsPage />} />
                   <Route path="/feature/error-logs" element={<ErrorLogsPage />} />
                   <Route path="/feature/emails" element={<EmailsPage />} />
+                  <Route path="/feature/extensions" element={<ExtensionsPage />} />
+                  <Route path="/feature/support" element={<SupportPage />} />
                   <Route element={<RequireWorkspaceOwner />}>
                     <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
                     <Route
@@ -86,6 +91,7 @@ export default function App() {
                         </Suspense>
                       }
                     />
+                    <Route path="/feature/affiliates" element={<AffiliatesPage />} />
                     <Route path="/feature/feed" element={<FeedPage />} />
                     <Route path="/feature/collaborators" element={<CollaboratorsPage />} />
                     <Route path="/feature/notifications" element={<NotificationsPage />} />
@@ -172,6 +178,8 @@ function RequireCollaboratorAccess() {
     "/feature/accounts",
     "/feature/loops",
     "/feature/emails",
+    "/feature/extensions",
+    "/feature/support",
   ];
   if (
     workspaceRole === "COLLABORATOR" &&
@@ -225,7 +233,7 @@ function HomeRedirect() {
 
 function NotFound() {
   return (
-    <main className="grid min-h-screen place-items-center bg-transparent px-5 text-center text-[#94a3b8]">
+    <main className="grid min-h-screen place-items-center bg-transparent px-4 text-center text-[#94a3b8]">
       <div>
         <p className="text-sm font-medium text-[#7186ff]">404</p>
         <h1 className="mt-2 text-2xl font-semibold text-[#f5f7fb]">

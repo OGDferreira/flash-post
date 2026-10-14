@@ -19,7 +19,7 @@ export function FeaturePlaceholderPage() {
   const title = labels[slug] ?? "Módulo";
 
   return (
-    <section className="mx-auto max-w-3xl rounded-xl border border-line-soft bg-surface p-6 sm:p-8">
+    <section className="mx-auto max-w-3xl rounded-xl border border-line-soft bg-surface p-4 sm:p-6">
       <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
         Próxima fase
       </p>

@@ -30,7 +30,7 @@ export function AdminOverviewPage() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       <div>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
           Plataforma
@@ -47,7 +47,7 @@ export function AdminOverviewPage() {
         {cards.map(({ label, value, icon: Icon }) => (
           <article
             key={label}
-            className="rounded-xl border border-line-soft bg-surface p-5"
+            className="rounded-xl border border-line-soft bg-surface p-4"
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium uppercase tracking-[0.12em] text-[#64748b]">

@@ -337,7 +337,7 @@ export function DashboardPage() {
   ];
 
   return (
-    <div className="dashboard-ambient min-h-[calc(100vh-144px)] w-full space-y-6">
+    <div className="dashboard-ambient min-h-[calc(100vh-144px)] w-full space-y-4">
       <AlertsBanner />
       <header className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -419,7 +419,7 @@ export function DashboardPage() {
         aria-label="Resumo da equipe e novas contas"
         className="grid gap-4 xl:grid-cols-3"
       >
-        <article className="dashboard-card rounded-xl p-5">
+        <article className="dashboard-card rounded-xl p-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#8295ff]">
               Equipe
@@ -471,7 +471,7 @@ export function DashboardPage() {
           )}
         </article>
 
-        <article className="dashboard-card rounded-xl p-5">
+        <article className="dashboard-card rounded-xl p-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#8295ff]">
               Saúde das contas
@@ -508,7 +508,7 @@ export function DashboardPage() {
           </ul>
         </article>
 
-        <article className="dashboard-card rounded-xl p-5">
+        <article className="dashboard-card rounded-xl p-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#8295ff]">
               Crescimento

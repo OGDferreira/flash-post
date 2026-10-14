@@ -118,7 +118,7 @@ export function IntegrationsPage() {
   ].filter((message): message is string => Boolean(message));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-4">
       <header>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
           Conexões externas
@@ -138,7 +138,7 @@ export function IntegrationsPage() {
       ))}
 
       <form
-        className="dashboard-card grid gap-3 rounded-xl p-5 sm:grid-cols-[minmax(0,1fr)_160px_auto]"
+        className="dashboard-card grid gap-3 rounded-xl p-4 sm:grid-cols-[minmax(0,1fr)_160px_auto]"
         onSubmit={(event: FormEvent) => {
           event.preventDefault();
           createOperation.mutate();
@@ -183,7 +183,7 @@ export function IntegrationsPage() {
       </form>
 
       {integrations.data.operations.length === 0 ? (
-        <section className="dashboard-card rounded-xl p-6 text-sm text-[#94a3b8]">
+        <section className="dashboard-card rounded-xl p-4 text-sm text-[#94a3b8]">
           Nenhuma operação cadastrada. Crie uma para gerar uma URL de webhook
           exclusiva.
         </section>
@@ -197,7 +197,7 @@ export function IntegrationsPage() {
             };
             return (
               <article
-                className="dashboard-card space-y-4 rounded-xl p-5"
+                className="dashboard-card space-y-4 rounded-xl p-4"
                 key={operation.id}
               >
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px_auto]">

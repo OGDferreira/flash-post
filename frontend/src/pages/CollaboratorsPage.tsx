@@ -178,7 +178,7 @@ export function CollaboratorsPage() {
   );
 
   return (
-    <div className="mx-auto max-w-[1320px] space-y-7">
+    <div className="mx-auto max-w-[1320px] space-y-5">
       <header>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
           Workspace
@@ -192,19 +192,19 @@ export function CollaboratorsPage() {
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <article className="dashboard-card rounded-xl p-5">
+        <article className="dashboard-card rounded-xl p-4">
           <p className="text-xs text-[#94a3b8]">Conexões feitas por você hoje</p>
           <p className="mt-2 text-3xl font-semibold text-[#f5f7fb]">
             {report.data.owner_connections_today}
           </p>
         </article>
-        <article className="dashboard-card rounded-xl p-5">
+        <article className="dashboard-card rounded-xl p-4">
           <p className="text-xs text-[#94a3b8]">Conexões da equipe hoje</p>
           <p className="mt-2 text-3xl font-semibold text-[#aab7ff]">
             {report.data.team_connections_today}
           </p>
         </article>
-        <article className="dashboard-card rounded-xl p-5 sm:col-span-2 lg:col-span-1">
+        <article className="dashboard-card rounded-xl p-4 sm:col-span-2 lg:col-span-1">
           <div className="flex items-center gap-2">
             <Medal className="text-[#f2d48a]" size={16} />
             <h2 className="text-xs font-semibold text-[#edf0f8]">Ranking mensal da equipe</h2>
@@ -233,7 +233,7 @@ export function CollaboratorsPage() {
         </article>
       </section>
 
-      <section className="dashboard-card rounded-xl p-5 sm:p-6">
+      <section className="dashboard-card rounded-xl p-4 sm:p-5">
         <div className="mb-5 flex items-center gap-2">
           <Plus className="text-[#8295ff]" size={17} />
           <h2 className="text-sm font-semibold text-[#edf0f8]">Criar acesso de colaborador</h2>
@@ -341,7 +341,7 @@ export function CollaboratorsPage() {
             const draft = drafts[item.member_id] ?? draftFrom(item);
             const maxDaily = Math.max(1, ...item.recent_days);
             return (
-              <article className="dashboard-card space-y-5 rounded-xl p-5" key={item.member_id}>
+              <article className="dashboard-card space-y-4 rounded-xl p-4" key={item.member_id}>
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <h3 className="font-semibold text-[#f5f7fb]">{item.full_name}</h3>

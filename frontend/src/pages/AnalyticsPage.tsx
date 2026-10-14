@@ -27,6 +27,8 @@ import {
 } from "@/components/InstagramAccountSelector";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { BotPerformancePanel } from "@/features/analytics/BotPerformancePanel";
+import { DailyViewsPanel } from "@/features/analytics/DailyViewsPanel";
+import { SharkSalesPanel } from "@/features/sharkbot/SharkSalesPanel";
 import { EngagementRankingPanel } from "@/features/analytics/EngagementRankingPanel";
 import {
   PeriodFilter,
@@ -46,13 +48,15 @@ type Account = InstagramAccountOption & {
   insights_sync_error?: string | null;
 };
 
-type MetricsTab = "account" | "videos" | "ranking" | "bots";
+type MetricsTab = "account" | "daily" | "videos" | "ranking" | "bots" | "sales";
 
 const tabs: { value: MetricsTab; label: string }[] = [
   { value: "account", label: "Por conta" },
+  { value: "daily", label: "Views por dia" },
   { value: "videos", label: "Vídeos em alta" },
   { value: "ranking", label: "Ranking de engajamento" },
   { value: "bots", label: "Bots e fluxos" },
+  { value: "sales", label: "Vendas" },
 ];
 
 function formatCount(value: number | null | undefined): string {
@@ -220,7 +224,7 @@ export function AnalyticsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-6">
+    <div className="tab-host mx-auto max-w-[1440px] space-y-4">
       <header className="space-y-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Métricas</p>
@@ -251,6 +255,8 @@ export function AnalyticsPage() {
         </nav>
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>
+      {tab === "daily" && <DailyViewsPanel period={period} />}
+      {tab === "sales" && <SharkSalesPanel period={period} />}
       {tab === "videos" && <TopVideosPanel period={period} />}
       {tab === "ranking" && (
         <EngagementRankingPanel
@@ -271,9 +277,9 @@ export function AnalyticsPage() {
           selectionMode="single"
           label="Conta Instagram"
         />
-        <div className="min-w-0 space-y-5">
+        <div className="min-w-0 space-y-4">
           {!activeAccounts.length ? (
-            <section className="rounded-xl border border-dashed border-line p-8 text-center text-sm text-[#94a3b8]">
+            <section className="rounded-xl border border-dashed border-line p-5 text-center text-sm text-[#94a3b8]">
               Conecte uma conta ativa no Hub de Contas para consultar o Analytics.
             </section>
           ) : (
@@ -336,7 +342,7 @@ export function AnalyticsPage() {
                   </article>
                 ))}
               </div>
-              <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
+              <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-4">
                 <h3 className="text-sm font-medium text-[#e6eaf2]">
                   Publicações feitas pelo FlashPost no período
                 </h3>

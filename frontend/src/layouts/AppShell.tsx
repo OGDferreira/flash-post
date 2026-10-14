@@ -11,10 +11,15 @@ import {
   Mail,
   Clapperboard,
   Folder,
+  Handshake,
+  LifeBuoy,
+  Puzzle,
   Home,
   Infinity,
   LogOut,
   Menu,
+  Moon,
+  Sun,
   MessageSquareText,
   Settings2,
   Share,
@@ -26,6 +31,7 @@ import {
 } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
+import { applyTheme, getTheme, type Theme } from "@/lib/theme";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { setCsrfToken, apiRequest, reportClientError } from "@/services/api";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
@@ -44,6 +50,9 @@ const ownerLinks = [
   { label: "Automações", to: "/feature/automations", icon: MessageSquareText },
   { label: "Integrações", to: "/feature/integrations", icon: Blocks },
   { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
+  { label: "Filiados", to: "/feature/affiliates", icon: Handshake },
+  { label: "Extensões", to: "/feature/extensions", icon: Puzzle },
+  { label: "Dúvidas e erros", to: "/feature/support", icon: LifeBuoy },
   { label: "Notificações", to: "/feature/notifications", icon: Bell },
   { label: "Configurações", to: "/feature/settings", icon: Settings2 },
 ];
@@ -61,6 +70,8 @@ const collaboratorLinks = [
   { label: "Loops", to: "/feature/loops", icon: Infinity },
   { label: "Log de erros", to: "/feature/error-logs", icon: Bug },
   { label: "E-mails", to: "/feature/emails", icon: Mail },
+  { label: "Extensões", to: "/feature/extensions", icon: Puzzle },
+  { label: "Dúvidas e erros", to: "/feature/support", icon: LifeBuoy },
 ];
 
 // Bottom bar on phones, in this exact order. Everything else lives in the
@@ -111,6 +122,7 @@ function snoozeInstallPrompt() {
 export function AppShell() {
   const { user } = useAuth();
   const location = useLocation();
+  const [theme, setTheme] = useState<Theme>(getTheme);
   const isAdminRoute = location.pathname.startsWith("/admin");
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const workspaceRole =
@@ -308,7 +320,7 @@ export function AppShell() {
   };
   const sidebar = (
     <div className="flex h-full flex-col">
-      <div className="flex h-[72px] items-center justify-between border-b border-line-soft px-5 lg:px-3 lg:group-hover:px-5">
+      <div className="flex h-[72px] items-center justify-between border-b border-line-soft px-4 lg:px-3 lg:group-hover:px-5">
         <Link
           className="flex items-center gap-3 lg:gap-0 lg:group-hover:gap-3"
           to={
@@ -446,7 +458,7 @@ export function AppShell() {
         </div>
       )}
       <div className="lg:pl-[68px]">
-        <header className="app-shell-header glass-bar sticky top-0 z-20 flex items-center justify-between !border-x-0 !border-t-0 px-4 sm:px-8">
+        <header className="app-shell-header glass-bar sticky top-0 z-20 flex items-center justify-between !border-x-0 !border-t-0 px-4 sm:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <button
               className="grid size-9 place-items-center rounded-lg border border-line-soft text-[#94a3b8] hover:bg-surface-raised lg:hidden"
@@ -531,6 +543,19 @@ export function AppShell() {
                 </section>
               )}
             </div>
+            <button
+              aria-label={theme === "light" ? "Ativar modo escuro" : "Ativar modo claro"}
+              className="grid size-10 place-items-center rounded-full border border-line-soft bg-surface text-[#94a3b8] hover:text-[#f5f7fb]"
+              onClick={() => {
+                const next: Theme = theme === "light" ? "dark" : "light";
+                applyTheme(next, true);
+                setTheme(next);
+              }}
+              title={theme === "light" ? "Modo escuro" : "Modo claro"}
+              type="button"
+            >
+              {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+            </button>
             <div className="flex items-center gap-2 rounded-full border border-line-soft bg-surface p-2.5 text-xs text-[#94a3b8] sm:px-3 sm:py-2" title="Sistema online">
               <span className="size-1.5 rounded-full bg-[#2dd4a0]" />
               <span className="hidden sm:inline">Sistema online</span>
@@ -538,8 +563,10 @@ export function AppShell() {
             </div>
           </div>
         </header>
-        <main className="app-shell-content min-h-[calc(100dvh-72px)] w-full px-4 py-6 sm:px-8 sm:py-9">
-          <Outlet />
+        <main className="app-shell-content min-h-[calc(100dvh-72px)] w-full px-4 py-4 sm:px-6 sm:py-6">
+          <div className="page-enter" key={location.pathname}>
+            <Outlet />
+          </div>
         </main>
       </div>
       <nav
@@ -583,7 +610,7 @@ export function AppShell() {
           <section
             aria-labelledby="install-guide-title"
             aria-modal="true"
-            className="glass-modal modal-enter w-full max-w-md p-5 sm:p-6"
+            className="glass-modal modal-enter w-full max-w-md p-4 sm:p-5"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
           >

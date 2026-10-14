@@ -51,6 +51,10 @@ class SharkLead(Base):
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("instagram_accounts.id", ondelete="SET NULL")
     )
+    # Which SharkBot account (webhook URL) delivered the first event; None = main URL.
+    shark_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("shark_accounts.id", ondelete="SET NULL")
+    )
     utm_source: Mapped[str | None] = mapped_column(String(120))
     utm_campaign: Mapped[str | None] = mapped_column(String(160))
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -101,6 +105,9 @@ class SharkTransaction(Base):
     lead_key: Mapped[str | None] = mapped_column(String(240))
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("instagram_accounts.id", ondelete="SET NULL")
+    )
+    shark_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("shark_accounts.id", ondelete="SET NULL")
     )
     utm_source: Mapped[str | None] = mapped_column(String(120))
     utm_campaign: Mapped[str | None] = mapped_column(String(160))

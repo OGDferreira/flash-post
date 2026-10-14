@@ -52,7 +52,7 @@ export function RankingPage() {
   });
 
   return (
-    <div className="mx-auto max-w-[1320px] space-y-6">
+    <div className="mx-auto max-w-[1320px] space-y-4">
       <header>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
           Equipe
@@ -93,7 +93,7 @@ export function RankingPage() {
       ) : (
         <>
           <section className="grid gap-3 sm:grid-cols-2">
-            <article className="dashboard-card rounded-xl p-5">
+            <article className="dashboard-card rounded-xl p-4">
               <div className="flex items-center gap-2 text-xs text-[#94a3b8]">
                 <UsersRound className="text-[#8295ff]" size={16} />
                 Contas conectadas no período
@@ -102,7 +102,7 @@ export function RankingPage() {
                 {count(ranking.data.total_connections)}
               </p>
             </article>
-            <article className="dashboard-card rounded-xl p-5">
+            <article className="dashboard-card rounded-xl p-4">
               <div className="flex items-center gap-2 text-xs text-[#94a3b8]">
                 <Medal className="text-[#f2d48a]" size={16} />
                 Dias considerados na média
@@ -114,7 +114,7 @@ export function RankingPage() {
           </section>
 
           <section className="dashboard-card overflow-hidden rounded-xl">
-            <div className="border-b border-line-soft px-5 py-4">
+            <div className="border-b border-line-soft px-4 py-4">
               <h2 className="font-semibold text-[#f5f7fb]">
                 Produção por integrante
               </h2>
@@ -127,12 +127,12 @@ export function RankingPage() {
                 <table className="w-full min-w-[560px] text-left text-sm">
                   <thead className="bg-surface text-xs text-[#94a3b8]">
                     <tr>
-                      <th className="px-5 py-3 font-medium">Posição</th>
-                      <th className="px-5 py-3 font-medium">Integrante</th>
-                      <th className="px-5 py-3 text-right font-medium">
+                      <th className="px-4 py-3 font-medium">Posição</th>
+                      <th className="px-4 py-3 font-medium">Integrante</th>
+                      <th className="px-4 py-3 text-right font-medium">
                         Contas conectadas
                       </th>
-                      <th className="px-5 py-3 text-right font-medium">
+                      <th className="px-4 py-3 text-right font-medium">
                         Média por dia
                       </th>
                     </tr>
@@ -143,19 +143,19 @@ export function RankingPage() {
                         className="border-t border-line-soft text-[#e6eaf2]"
                         key={member.user_id}
                       >
-                        <td className="px-5 py-3 font-semibold text-[#f2d48a]">
+                        <td className="px-4 py-3 font-semibold text-[#f2d48a]">
                           #{member.position}
                         </td>
-                        <td className="px-5 py-3">
+                        <td className="px-4 py-3">
                           <span className="font-medium">{member.full_name}</span>
                           <span className="ml-2 text-xs text-[#718096]">
                             @{member.nickname}
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-right font-semibold">
+                        <td className="px-4 py-3 text-right font-semibold">
                           {count(member.connections)}
                         </td>
-                        <td className="px-5 py-3 text-right text-[#aab7ff]">
+                        <td className="px-4 py-3 text-right text-[#aab7ff]">
                           {average(member.average_daily_connections)}
                         </td>
                       </tr>
@@ -164,7 +164,7 @@ export function RankingPage() {
                 </table>
               </div>
             ) : (
-              <p className="p-5 text-sm text-[#94a3b8]">
+              <p className="p-4 text-sm text-[#94a3b8]">
                 Não há integrantes ativos neste workspace.
               </p>
             )}

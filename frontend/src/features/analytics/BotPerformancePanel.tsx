@@ -68,7 +68,7 @@ export function BotPerformancePanel({ period }: { period: MetricsPeriod }) {
 
   return (
     <section className="space-y-4" aria-labelledby="bots-title">
-      <div className="glass-panel p-4 sm:p-5">
+      <div className="glass-panel p-4 sm:p-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h3 id="bots-title" className="flex items-center gap-2 text-base font-semibold text-[#f5f7fb]">

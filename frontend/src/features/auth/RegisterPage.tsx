@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, LoaderCircle, ShieldCheck } from "lucide-react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -20,6 +20,7 @@ const registerSchema = z
       .refine(isValidPublicNickname, "Use um apelido entre 2 e 40 caracteres."),
     password: z.string().min(8, "Use pelo menos 8 caracteres.").max(256),
     confirm_password: z.string().min(1, "Confirme sua senha."),
+    invite_code: z.string().trim().max(40).optional(),
   })
   .refine((values) => values.password === values.confirm_password, {
     message: "As senhas não coincidem.",
@@ -35,6 +36,7 @@ export function RegisterPage() {
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [debouncedNickname, setDebouncedNickname] = useState("");
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
@@ -45,6 +47,8 @@ export function RegisterPage() {
       nickname: "",
       password: "",
       confirm_password: "",
+      // /register?invite=CODE (shared by a chief) prefills the field.
+      invite_code: (searchParams.get("invite") ?? "").slice(0, 40),
     },
   });
   const nicknameInput = form.register("nickname");
@@ -74,6 +78,7 @@ export function RegisterPage() {
         method: "POST",
         body: {
           ...values,
+          invite_code: values.invite_code?.trim() || undefined,
           nickname: normalizePublicNickname(values.nickname),
         },
       }),
@@ -105,10 +110,10 @@ export function RegisterPage() {
     form.formState.errors.nickname?.message ?? availabilityMessage;
 
   return (
-    <main className="relative grid min-h-svh place-items-center overflow-x-hidden bg-transparent px-4 py-6 sm:px-6 sm:py-10">
+    <main className="relative grid min-h-svh place-items-center overflow-x-hidden bg-transparent px-4 py-4 sm:px-5 sm:py-10">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_48%,rgba(83,109,254,0.08),transparent_45%)]" />
       <div className="relative grid w-full max-w-[960px] overflow-hidden rounded-2xl border border-line-soft bg-surface shadow-[0_24px_80px_rgba(0,0,0,0.28)] md:grid-cols-[0.95fr_1.05fr]">
-        <section className="flex flex-col justify-between gap-10 p-6 sm:p-8 md:min-h-[540px] md:p-9">
+        <section className="flex flex-col justify-between gap-10 p-4 sm:p-6 md:min-h-[540px] md:p-9">
           <Link to="/" className="flex w-fit items-center gap-3">
             <img
               src="/flashpost-logo.png"
@@ -140,7 +145,7 @@ export function RegisterPage() {
           </p>
         </section>
 
-        <section className="flex items-center border-t border-line-soft p-6 sm:p-8 md:border-l md:border-t-0 md:p-9">
+        <section className="flex items-center border-t border-line-soft p-4 sm:p-6 md:border-l md:border-t-0 md:p-9">
           <div className="w-full max-w-md md:mx-auto">
           <div className="mb-7">
             <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#f5f7fb]">
@@ -231,6 +236,25 @@ export function RegisterPage() {
               autoComplete="new-password"
               register={form.register("confirm_password")}
             />
+
+            <div>
+              <label htmlFor="register-invite" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+                Código de convite <span className="font-normal text-[#64748b]">(opcional)</span>
+              </label>
+              <input
+                id="register-invite"
+                autoComplete="off"
+                autoCapitalize="characters"
+                className="field uppercase tracking-widest"
+                maxLength={40}
+                placeholder="Se alguém convidou você"
+                {...form.register("invite_code")}
+              />
+              <p className="mt-1.5 text-xs text-[#64748b]">
+                Ao usar o código você passa a ser filiado de quem convidou. Essa pessoa vê as métricas da sua operação,
+                mas não tem acesso às suas contas nem à sua senha.
+              </p>
+            </div>
 
             {apiError && (
               <div

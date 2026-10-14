@@ -18,7 +18,7 @@ export function AdminSystemPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
           Administração

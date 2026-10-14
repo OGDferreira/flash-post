@@ -27,13 +27,23 @@ from app.models.instagram_loop import (
     SharkEvent,
 )
 from app.models.user import User
+from app.models.affiliation import Affiliation
+from app.models.shark_account import SharkAccount
+from app.models.extension import Extension
+from app.models.support import SupportTicket
+from app.models.daily_views import InstagramAccountDailyViews
 from app.models.sharkbot import SharkLead, SharkTransaction
 from app.models.media_insight import InstagramMediaInsight
 from app.models.push import DailyViewsGoal, DailyViewsGoalNotification, PushSubscription
 from app.models.workspace import Workspace, WorkspaceMember
 
 __all__ = [
+    "Affiliation",
     "Base",
+    "Extension",
+    "InstagramAccountDailyViews",
+    "SharkAccount",
+    "SupportTicket",
     "CollaboratorPayment",
     "CollaboratorWorkDay",
     "DailyViewsGoal",

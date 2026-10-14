@@ -226,4 +226,8 @@ async def sync_workspace_accounts(db: AsyncSession, account_ids: list, now: date
         if account is None or account.status != "connected":
             continue
         total += await sync_account_media_insights(db, account, now)
+        # Imported here to keep this module free of a circular import.
+        from app.instagram.daily_views_sync import sync_account_daily_views
+
+        await sync_account_daily_views(db, account, now)
     return total

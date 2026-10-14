@@ -49,7 +49,7 @@ export function EngagementRankingPanel({
   const best = Math.max(...(ranking.data?.rows ?? []).map((row) => row.engagement_rate ?? 0), 0.0001);
 
   return (
-    <section className="glass-panel p-4 sm:p-5" aria-labelledby="engagement-ranking-title">
+    <section className="glass-panel p-4 sm:p-4" aria-labelledby="engagement-ranking-title">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h3 id="engagement-ranking-title" className="flex items-center gap-2 text-base font-semibold text-[#f5f7fb]">

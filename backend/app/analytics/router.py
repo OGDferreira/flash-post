@@ -14,7 +14,8 @@ from sqlalchemy import and_, func, or_, select
 
 from app.auth.dependencies import DbSession, OwnerAccess
 from app.core.crypto import decrypt_value
-from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, local_day_bounds_utc, utc_now
+from app.analytics.periods import period_bounds
+from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, local_date, local_day_bounds_utc, utc_now
 from app.instagram.oauth import (
     INSTAGRAM_INSIGHTS_PERMISSION,
     InstagramInsightsPermissionError,
@@ -150,7 +151,7 @@ async def _fetch_account_meta(
 
     connected_at = _utc(account.connected_at)
     insight_start = max(period_start or connected_at, connected_at)
-    insight_end = period_end or now
+    insight_end = min(period_end, now) if period_end else now
     if insight_start >= insight_end:
         # Nothing to measure yet (e.g. connected after the period ended).
         result.media_views = 0
@@ -289,53 +290,10 @@ async def get_analytics_summary(
         )
     ) or 0
 
-    today = now.astimezone(BRAZIL_TIME_ZONE).date()
-    if period == "custom":
-        period_start = datetime.combine(
-            start_date,
-            datetime.min.time(),
-            tzinfo=BRAZIL_TIME_ZONE,
-        ).astimezone(timezone.utc)
-        period_end = datetime.combine(
-            end_date + timedelta(days=1),
-            datetime.min.time(),
-            tzinfo=BRAZIL_TIME_ZONE,
-        ).astimezone(timezone.utc)
-    elif period == "yesterday":
-        period_day = today - timedelta(days=1)
-        period_start = datetime.combine(
-            period_day,
-            datetime.min.time(),
-            tzinfo=BRAZIL_TIME_ZONE,
-        ).astimezone(timezone.utc)
-        period_end = datetime.combine(
-            today,
-            datetime.min.time(),
-            tzinfo=BRAZIL_TIME_ZONE,
-        ).astimezone(timezone.utc)
-    elif period == "today":
-        period_start, _ = local_day_bounds_utc(now)
-        period_end = None
-    elif period == "7d":
-        first_day = today - timedelta(days=6)
-        period_start = datetime.combine(
-            first_day,
-            datetime.min.time(),
-            tzinfo=BRAZIL_TIME_ZONE,
-        ).astimezone(timezone.utc)
-        period_end = None
-    elif period == "30d":
-        first_day = today - timedelta(days=29)
-        period_start = datetime.combine(
-            first_day,
-            datetime.min.time(),
-            tzinfo=BRAZIL_TIME_ZONE,
-        ).astimezone(timezone.utc)
-        period_end = None
-    else:
-        period_start = None
-        period_end = None
-    connection_period_end = period_end or now
+    # One definition of the period for cards, charts and reports (app time zone).
+    period_start, period_end = period_bounds(period, start_date, end_date, now)
+    today = local_date(now)
+    connection_period_end = min(period_end, now) if period_end else now
     recent_chart_start = datetime.combine(
         today - timedelta(days=29),
         datetime.min.time(),
@@ -507,9 +465,12 @@ async def get_analytics_summary(
         for day, amount in sorted(revenue_by_local_day.items())
     ]
 
+    published_moment = func.coalesce(
+        InstagramPublicationJob.published_at, InstagramPublicationJob.updated_at
+    )
     status_filters = []
     for job_status, timestamp_column in (
-        ("published", InstagramPublicationJob.updated_at),
+        ("published", published_moment),
         ("failed", InstagramPublicationJob.updated_at),
         ("waiting_for_media", InstagramPublicationJob.scheduled_for),
         ("queued", InstagramPublicationJob.scheduled_for),
@@ -541,9 +502,9 @@ async def get_analytics_summary(
 
     dialect = db.get_bind().dialect.name
     local_job_date = (
-        func.date(func.timezone(APP_TIME_ZONE_NAME, InstagramPublicationJob.updated_at))
+        func.date(func.timezone(APP_TIME_ZONE_NAME, published_moment))
         if dialect == "postgresql"
-        else func.date(InstagramPublicationJob.updated_at, "-3 hours")
+        else func.date(published_moment, "-3 hours")
     )
     daily_query = (
         select(
@@ -558,9 +519,9 @@ async def get_analytics_summary(
         .order_by(local_job_date)
     )
     if period_start is not None:
-        daily_query = daily_query.where(InstagramPublicationJob.updated_at >= period_start)
+        daily_query = daily_query.where(published_moment >= period_start)
     if period_end is not None:
-        daily_query = daily_query.where(InstagramPublicationJob.updated_at < period_end)
+        daily_query = daily_query.where(published_moment < period_end)
     daily_rows = await db.execute(
         daily_query
     )

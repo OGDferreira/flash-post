@@ -381,6 +381,7 @@ async def list_meta_apps(
     )
     return InstagramMetaAppsResponse(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
+        callback_url=_redirect_uri(),
         selected_app_id=selected,
         apps=[
             _meta_app_response(app, connected_counts.get(app.id, 0)) for app in apps

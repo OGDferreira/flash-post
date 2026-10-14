@@ -89,7 +89,7 @@ export function ConnectAccountModal({ open, onClose, returnTo }: ConnectAccountM
       )}
 
       {apps.data && appList.length === 0 && (
-        <div className="rounded-xl border border-dashed border-line px-5 py-8 text-center">
+        <div className="rounded-xl border border-dashed border-line px-4 py-5 text-center">
           <Smartphone className="mx-auto text-[#7186ff]" size={22} />
           <p className="mt-3 text-sm text-[#cbd5e1]">Nenhum aplicativo Meta configurado.</p>
           {apps.data.can_manage ? (

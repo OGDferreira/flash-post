@@ -217,7 +217,7 @@ export function InstagramAccountsPage() {
     });
 
   return (
-    <div className="mx-auto max-w-4xl space-y-7">
+    <div className="mx-auto max-w-4xl space-y-5">
       <header>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Workspace</p>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
@@ -442,7 +442,7 @@ export function InstagramAccountsPage() {
 
             return (
               <article
-                className={`flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 ${
+                className={`flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-4 ${
                   active ? "border-[#23513e] bg-[#0e1b17]"                   : "border-[#47252d] bg-[#1a1013]"
                 }`}
                 key={account.id}

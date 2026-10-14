@@ -87,7 +87,7 @@ export function ErrorLogsPage() {
   const visibleEvents = events.data?.events ?? [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">

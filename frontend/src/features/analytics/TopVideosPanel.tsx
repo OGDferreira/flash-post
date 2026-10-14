@@ -78,7 +78,7 @@ export function TopVideosPanel({
   });
 
   return (
-    <section className="glass-panel p-4 sm:p-5" aria-labelledby={`videos-${accountId ?? "all"}`}>
+    <section className="glass-panel p-4 sm:p-4" aria-labelledby={`videos-${accountId ?? "all"}`}>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h3 id={`videos-${accountId ?? "all"}`} className="flex items-center gap-2 text-base font-semibold text-[#f5f7fb]">

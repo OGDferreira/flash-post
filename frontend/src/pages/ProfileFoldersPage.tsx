@@ -136,7 +136,7 @@ export function ProfileFoldersPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
@@ -219,7 +219,7 @@ export function ProfileFoldersPage() {
         <section className="space-y-4" aria-label="Pastas criadas">
           {folderData.folders.map((folder) => (
             <article
-              className="space-y-4 rounded-xl border bg-[#0d151c] p-4 sm:p-5"
+              className="space-y-4 rounded-xl border bg-[#0d151c] p-4 sm:p-4"
               key={folder.id}
               style={{ borderColor: `${folder.color}55` }}
             >

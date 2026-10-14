@@ -187,7 +187,7 @@ export function FinancePage() {
       : 0;
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6">
+    <div className="mx-auto w-full max-w-7xl space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
@@ -283,7 +283,7 @@ export function FinancePage() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <article className="dashboard-card rounded-xl p-5">
+        <article className="dashboard-card rounded-xl p-4">
           <div className="flex items-center gap-2">
             <Banknote className="text-[#aab7ff]" size={17} />
             <h2 className="text-base font-semibold text-[#eef1f8]">
@@ -332,7 +332,7 @@ export function FinancePage() {
           </form>
         </article>
 
-        <article className="dashboard-card rounded-xl p-5">
+        <article className="dashboard-card rounded-xl p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-[#eef1f8]">
@@ -391,7 +391,7 @@ export function FinancePage() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <article className="dashboard-card rounded-xl p-5">
+        <article className="dashboard-card rounded-xl p-4">
           <h2 className="text-base font-semibold text-[#eef1f8]">Histórico de Saques</h2>
           {data.withdrawal_history.length ? (
             <ul className="mt-3 divide-y divide-line-soft">
@@ -417,7 +417,7 @@ export function FinancePage() {
           )}
         </article>
 
-        <article className="dashboard-card rounded-xl p-5">
+        <article className="dashboard-card rounded-xl p-4">
           <h2 className="text-base font-semibold text-[#eef1f8]">
             Despesas / Colaboradores Pagos
           </h2>
@@ -454,7 +454,7 @@ export function FinancePage() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <article className="dashboard-card rounded-xl p-5">
+        <article className="dashboard-card rounded-xl p-4">
           <h2 className="text-base font-semibold text-[#eef1f8]">
             Faturamento por operação
           </h2>
@@ -486,7 +486,7 @@ export function FinancePage() {
             </p>
           )}
         </article>
-        <article aria-live="polite" className="dashboard-card rounded-xl p-5">
+        <article aria-live="polite" className="dashboard-card rounded-xl p-4">
           <h2 className="text-base font-semibold text-[#eef1f8]">
             Feed de vendas ao vivo
           </h2>
@@ -525,7 +525,7 @@ export function FinancePage() {
         </article>
       </section>
 
-      <section className="dashboard-card rounded-xl p-5">
+      <section className="dashboard-card rounded-xl p-4">
         <h2 className="text-base font-semibold text-[#eef1f8]">
           Movimentações · 100 mais recentes
         </h2>

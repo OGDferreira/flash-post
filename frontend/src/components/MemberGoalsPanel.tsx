@@ -31,7 +31,7 @@ export function MemberGoalsPanel() {
   });
 
   return (
-    <section className="glass-panel p-5" aria-labelledby="member-goals-title">
+    <section className="glass-panel p-4" aria-labelledby="member-goals-title">
       <h2 id="member-goals-title" className="flex items-center gap-2 text-base font-semibold text-[#f5f7fb]">
         <Target size={16} className="text-[#8295ff]" />
         Metas diárias de visualizações

@@ -156,7 +156,7 @@ export function DailyViewsGoalCard() {
   const targetValid = Number.isInteger(Number(target)) && Number(target) >= 1;
 
   return (
-    <section className="glass-panel p-5 sm:p-7" aria-labelledby="daily-goal-title">
+    <section className="glass-panel p-4 sm:p-5" aria-labelledby="daily-goal-title">
       <header className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-[#33447c] bg-[#11182d] text-[#9baaff]">
           <Target size={18} />

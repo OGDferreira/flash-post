@@ -30,7 +30,7 @@ export function AdminWorkspacesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
@@ -77,30 +77,30 @@ export function AdminWorkspacesPage() {
               <table className="w-full min-w-[1050px] border-collapse text-left">
                 <thead className="border-b border-line-soft bg-[#0a0d11] text-[11px] uppercase tracking-[0.12em] text-[#64748b]">
                   <tr>
-                    <th className="px-5 py-3.5 font-medium">Chefe autorizado</th>
-                    <th className="px-5 py-3.5 font-medium">Workspace</th>
-                    <th className="px-5 py-3.5 font-medium">Contas conectadas</th>
-                    <th className="px-5 py-3.5 font-medium">Contas com erro</th>
-                    <th className="px-5 py-3.5 font-medium">Posts em execução</th>
-                    <th className="px-5 py-3.5 font-medium">Colaboradores</th>
+                    <th className="px-4 py-3.5 font-medium">Chefe autorizado</th>
+                    <th className="px-4 py-3.5 font-medium">Workspace</th>
+                    <th className="px-4 py-3.5 font-medium">Contas conectadas</th>
+                    <th className="px-4 py-3.5 font-medium">Contas com erro</th>
+                    <th className="px-4 py-3.5 font-medium">Posts em execução</th>
+                    <th className="px-4 py-3.5 font-medium">Colaboradores</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1b2330] text-sm">
                   {workspaces.data.items.map((workspace) => (
                     <tr key={workspace.id} className="hover:bg-surface-raised">
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-4">
                         <p className="font-medium text-[#e6eaf2]">{workspace.owner_name}</p>
                         <p className="mt-1 text-xs text-[#64748b]">{workspace.owner_email}</p>
                       </td>
-                      <td className="px-5 py-4 text-[#94a3b8]">
+                      <td className="px-4 py-4 text-[#94a3b8]">
                         <p className="text-[#c7cfdd]">{workspace.name}</p>
                         <p className="mt-1 text-xs text-[#64748b]">{workspace.slug}</p>
                         <p className="mt-1 text-xs text-[#64748b]">{workspace.members_count} membros · {workspace.status}</p>
                       </td>
-                      <td className="px-5 py-4 text-[#c7cfdd]">{workspace.connected_accounts}</td>
-                      <td className="px-5 py-4 text-[#f2d48a]">{workspace.errored_accounts}</td>
-                      <td className="px-5 py-4 text-[#c7cfdd]">{workspace.active_posts}</td>
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-4 text-[#c7cfdd]">{workspace.connected_accounts}</td>
+                      <td className="px-4 py-4 text-[#f2d48a]">{workspace.errored_accounts}</td>
+                      <td className="px-4 py-4 text-[#c7cfdd]">{workspace.active_posts}</td>
+                      <td className="px-4 py-4">
                         {workspace.collaborators.length ? (
                           <ul className="space-y-1 text-xs text-[#c7cfdd]">
                             {workspace.collaborators.map((person) => (

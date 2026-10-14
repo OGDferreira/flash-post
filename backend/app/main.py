@@ -36,6 +36,9 @@ from app.loops.router import router as loops_router
 from app.notifications.router import router as notifications_router
 from app.shark.router import router as shark_router
 from app.smokepay.router import router as smokepay_router
+from app.affiliates.router import router as affiliates_router
+from app.extensions.router import router as extensions_router
+from app.support.router import router as support_router
 from app.workers.scheduler_service import create_scheduler
 
 settings = get_settings()
@@ -105,7 +108,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application = FastAPI(
         title="FlashPost",
         summary="Operations platform for Instagram publishing and analytics.",
-        version="0.3.1",
+        version="0.4.0",
         lifespan=lifespan,
     )
     application.state.login_rate_limiter = LoginRateLimiter(
@@ -151,6 +154,9 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(smokepay_router)
     application.include_router(legal_router)
     application.include_router(notifications_router)
+    application.include_router(affiliates_router)
+    application.include_router(extensions_router)
+    application.include_router(support_router)
 
     @application.get("/readiness", tags=["health"])
     async def readiness(

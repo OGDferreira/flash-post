@@ -102,6 +102,8 @@ class InstagramMetaAppResponse(BaseModel):
 
 class InstagramMetaAppsResponse(BaseModel):
     can_manage: bool
+    # Exact URI to register under "OAuth redirect URIs" in the Meta app.
+    callback_url: str
     selected_app_id: UUID | None
     apps: list[InstagramMetaAppResponse]
 

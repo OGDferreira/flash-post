@@ -2,7 +2,7 @@
 
 import time
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,9 +11,10 @@ from sqlalchemy import select
 
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
-from app.core.time import APP_TIME_ZONE_NAME, utc_now
+from app.core.time import APP_TIME_ZONE, APP_TIME_ZONE_NAME, local_date, utc_now
+from app.instagram.daily_views_sync import sync_account_daily_views
 from app.instagram.insights_sync import sync_account_media_insights
-from app.models import InstagramAccount, InstagramMediaInsight
+from app.models import InstagramAccount, InstagramAccountDailyViews, InstagramMediaInsight
 
 router = APIRouter(prefix="/api/analytics", tags=["Publication insights"])
 
@@ -280,6 +281,7 @@ async def sync_account_now(
         )
     _last_manual_sync[account.id] = now
     synced = await sync_account_media_insights(db, account)
+    await sync_account_daily_views(db, account)
     return AccountEngagementRow(
         account_id=account.id,
         username=account.username,
@@ -292,3 +294,165 @@ async def sync_account_now(
         synced_at=_utc(account.insights_synced_at),
         sync_error=account.insights_sync_error,
     )
+
+
+# ------------------------------------------------------------ views per day
+VIEWS_DEFINITIONS = {
+    "received_views": (
+        "Visualizações recebidas no dia: o que a Meta informa que o perfil recebeu naquele dia "
+        "(qualquer vídeo, antigo ou novo). Não é acumulado."
+    ),
+    "published_videos_views": (
+        "Visualizações acumuladas dos vídeos publicados no dia: soma das visualizações vitalícias "
+        "(desde a publicação até a última sincronização) apenas dos vídeos postados naquele dia."
+    ),
+    "provisional": (
+        "Os últimos dias podem subir: a Meta pode levar até 48 h para consolidar os números."
+    ),
+    "grouping": f"Dias no fuso {APP_TIME_ZONE_NAME}.",
+}
+
+
+class DailyViewsPoint(BaseModel):
+    day: date
+    received_views: int | None
+    received_accounts: int
+    expected_accounts: int
+    published_videos: int
+    published_videos_with_views: int
+    published_videos_views: int | None
+    provisional: bool
+
+
+class DailyViewsResponse(BaseModel):
+    period: str
+    period_label: str
+    time_zone: str
+    days: list[DailyViewsPoint]
+    received_total: int | None
+    received_days_complete: int
+    received_days_total: int
+    published_videos_views_total: int | None
+    synced_at: datetime | None
+    definitions: dict[str, str]
+
+
+@router.get("/views-daily", response_model=DailyViewsResponse)
+async def views_daily(
+    access: OwnerAccess,
+    db: DbSession,
+    period: AnalyticsPeriod = "30d",
+    start_date: date | None = None,
+    end_date: date | None = None,
+    account_id: uuid.UUID | None = None,
+) -> DailyViewsResponse:
+    now = utc_now()
+    start, end = period_bounds(period, start_date, end_date, now)
+    today = local_date(now)
+    accounts_query = select(InstagramAccount).where(
+        InstagramAccount.workspace_id == access.workspace.id,
+        InstagramAccount.status == "connected",
+    )
+    if account_id is not None:
+        accounts_query = accounts_query.where(InstagramAccount.id == account_id)
+    accounts = (await db.scalars(accounts_query)).all()
+    if account_id is not None and not accounts:
+        raise HTTPException(status_code=404, detail="Conta não encontrada ou desconectada.")
+    ids = [account.id for account in accounts]
+
+    # "All time" starts at the first day with any data (never an empty decade).
+    first_day = local_date(start, APP_TIME_ZONE) if start is not None else None
+    last_day = min(local_date(end - timedelta(microseconds=1), APP_TIME_ZONE), today) if end else today
+    daily_rows = (
+        await db.execute(
+            select(InstagramAccountDailyViews.account_id, InstagramAccountDailyViews.day, InstagramAccountDailyViews.views)
+            .where(
+                InstagramAccountDailyViews.workspace_id == access.workspace.id,
+                InstagramAccountDailyViews.account_id.in_(ids or [uuid.uuid4()]),
+            )
+        )
+    ).all()
+    media_rows = (
+        await db.scalars(
+            select(InstagramMediaInsight).where(
+                InstagramMediaInsight.workspace_id == access.workspace.id,
+                InstagramMediaInsight.account_id.in_(ids or [uuid.uuid4()]),
+                InstagramMediaInsight.media_type == "VIDEO",
+                *_window(start, end),
+            )
+        )
+    ).all()
+    if first_day is None:
+        candidates = [day for _a, day, _v in daily_rows] + [
+            local_date(_utc(row.posted_at)) for row in media_rows
+        ]
+        first_day = min(candidates) if candidates else today
+    first_day = max(first_day, today - timedelta(days=366))
+
+    received: dict[date, dict[uuid.UUID, int]] = {}
+    for row_account, day, views in daily_rows:
+        received.setdefault(day, {})[row_account] = views
+    seen_media: set[tuple[uuid.UUID, str]] = set()
+    published: dict[date, list[InstagramMediaInsight]] = {}
+    for row in media_rows:
+        key = (row.account_id, row.ig_media_id)
+        if key in seen_media:  # a video is counted once
+            continue
+        seen_media.add(key)
+        published.setdefault(local_date(_utc(row.posted_at)), []).append(row)
+
+    points: list[DailyViewsPoint] = []
+    day = first_day
+    while day <= last_day:
+        day_end = _day_end(day)
+        expected = sum(1 for account in accounts if _utc(account.connected_at) < day_end)
+        reported = received.get(day, {})
+        reporting = sum(1 for account in accounts if account.id in reported)
+        complete = expected > 0 and reporting >= expected
+        videos = published.get(day, [])
+        with_views = [video for video in videos if video.views is not None]
+        points.append(
+            DailyViewsPoint(
+                day=day,
+                received_views=sum(reported.get(account.id, 0) for account in accounts) if complete else None,
+                received_accounts=reporting,
+                expected_accounts=expected,
+                published_videos=len(videos),
+                published_videos_with_views=len(with_views),
+                published_videos_views=(
+                    sum(video.views for video in with_views)
+                    if videos and len(with_views) == len(videos)
+                    else None
+                ),
+                provisional=day >= today - timedelta(days=2),
+            )
+        )
+        day += timedelta(days=1)
+    complete_points = [point for point in points if point.received_views is not None]
+    pub_known = [point for point in points if point.published_videos_views is not None]
+    synced = max((account.insights_synced_at for account in accounts if account.insights_synced_at), default=None)
+    return DailyViewsResponse(
+        period=period,
+        period_label=period_label(start, end),
+        time_zone=APP_TIME_ZONE_NAME,
+        days=points,
+        # A total of incomplete days would look exact; it is only given when every day is complete.
+        received_total=(
+            sum(point.received_views for point in complete_points)
+            if points and len(complete_points) == len(points)
+            else None
+        ),
+        received_days_complete=len(complete_points),
+        received_days_total=len(points),
+        published_videos_views_total=(
+            sum(point.published_videos_views for point in pub_known) if pub_known else None
+        ),
+        synced_at=_utc(synced),
+        definitions=VIEWS_DEFINITIONS,
+    )
+
+
+def _day_end(day: date) -> datetime:
+    from app.core.time import day_bounds_utc
+
+    return day_bounds_utc(day)[1]

@@ -72,7 +72,7 @@ export function Modal({ open, title, description, onClose, children, footer, bus
   // Portal: page wrappers use `isolation: isolate`, which would otherwise trap
   // the dialog below the fixed header and bottom navigation.
   return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-end justify-center sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-[90] flex items-end justify-center sm:items-center sm:p-5">
       <button
         aria-label="Fechar"
         className="glass-overlay absolute inset-0 cursor-default"
@@ -90,7 +90,7 @@ export function Modal({ open, title, description, onClose, children, footer, bus
         tabIndex={-1}
       >
         <div className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-white/15 sm:hidden" />
-        <header className="flex items-start justify-between gap-4 px-5 pb-3 pt-4 sm:px-6 sm:pt-6">
+        <header className="flex items-start justify-between gap-4 px-4 pb-3 pt-4 sm:px-5 sm:pt-6">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#f5f7fb]" id={titleId}>
               {title}
@@ -111,9 +111,9 @@ export function Modal({ open, title, description, onClose, children, footer, bus
             <X size={18} />
           </button>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 sm:px-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 sm:px-5">{children}</div>
         {footer && (
-          <footer className="flex flex-wrap justify-end gap-2 border-t border-line-soft px-5 py-4 sm:px-6">
+          <footer className="flex flex-wrap justify-end gap-2 border-t border-line-soft px-4 py-4 sm:px-5">
             {footer}
           </footer>
         )}

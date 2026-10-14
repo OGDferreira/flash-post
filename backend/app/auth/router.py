@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -23,7 +23,8 @@ from app.core.nickname import nickname_key, normalize_nickname
 from app.core.rate_limit import LoginRateLimiter
 from app.core.security import PlatformRole, WorkspaceRole, hash_password, verify_password
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
-from app.models import User, Workspace, WorkspaceMember
+from app.affiliates.router import find_chief
+from app.models import Affiliation, User, Workspace, WorkspaceMember
 from app.schemas.auth import (
     AuthResponse,
     LoginRequest,
@@ -49,6 +50,8 @@ PROFILE_AVATAR_TYPES = {
     ),
 }
 _AVATAR_STORAGE_PREFIX = "avatars/"
+_DB_AVATAR = "db:avatar"
+MAX_DB_AVATAR_BYTES = 1_000_000
 
 
 def _user_role(user: User, membership: WorkspaceMember | None) -> str:
@@ -66,7 +69,8 @@ def _user_response(user: User, membership: WorkspaceMember | None) -> UserRespon
         full_name=user.full_name,
         avatar_url=(
             f"/api/profile/avatar?{urlencode({'v': int(user.updated_at.timestamp())})}"
-            if user.avatar_url and user.avatar_url.startswith(_AVATAR_STORAGE_PREFIX)
+            if user.avatar_url
+            and (user.avatar_url.startswith(_AVATAR_STORAGE_PREFIX) or user.avatar_url == _DB_AVATAR)
             else user.avatar_url
         ),
         role=_user_role(user, membership),
@@ -169,6 +173,8 @@ async def register(
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
     if await _nickname_in_use(db, payload.nickname):
         raise HTTPException(status_code=409, detail="This nickname is already in use.")
+    # A code that was typed must be valid: never silently sign up without the link.
+    chief = await find_chief(db, payload.invite_code) if payload.invite_code else None
 
     user = User(
         email=str(payload.email),
@@ -199,6 +205,9 @@ async def register(
             status="ACTIVE",
         )
         db.add(membership)
+        if chief is not None:
+            # New user: no self-link or loop is possible.
+            db.add(Affiliation(chief_user_id=chief.id, affiliate_user_id=user.id))
         await db.commit()
     except IntegrityError:
         await db.rollback()
@@ -362,12 +371,21 @@ async def upload_profile_avatar(
 
     try:
         storage = SupabaseStorage.from_settings()
-    except RuntimeError as exc:
-        logger.error("Profile avatar storage is not configured (%s).", type(exc).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="O armazenamento de imagens de perfil não está configurado no servidor.",
-        ) from None
+    except RuntimeError:
+        # No object storage configured: keep the (already validated) image in
+        # the database so changing the photo always works.
+        if len(content) > MAX_DB_AVATAR_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Imagem grande demais. Use uma foto de até 1 MB.",
+            ) from None
+        user.avatar_data = content
+        user.avatar_content_type = content_type
+        user.avatar_url = _DB_AVATAR
+        await db.commit()
+        await db.refresh(user)
+        membership = await _primary_membership(user, db)
+        return _user_response(user, membership)
 
     previous_path = user.avatar_url
     avatar_path = f"{_AVATAR_STORAGE_PREFIX}{user.id}/{uuid.uuid4()}{avatar_type[0]}"
@@ -381,6 +399,8 @@ async def upload_profile_avatar(
         ) from None
 
     user.avatar_url = avatar_path
+    user.avatar_data = None
+    user.avatar_content_type = None
     try:
         await db.commit()
         await db.refresh(user)
@@ -409,7 +429,16 @@ async def upload_profile_avatar(
 
 
 @router.get("/profile/avatar")
-async def get_profile_avatar(user: AuthenticatedUser) -> RedirectResponse:
+async def get_profile_avatar(user: AuthenticatedUser, db: DbSession):
+    if user.avatar_url == _DB_AVATAR:
+        data = await db.scalar(select(User.avatar_data).where(User.id == user.id))
+        if not data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile avatar not found.")
+        return Response(
+            content=data,
+            media_type=user.avatar_content_type or "image/jpeg",
+            headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"},
+        )
     if not user.avatar_url or not user.avatar_url.startswith(_AVATAR_STORAGE_PREFIX):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile avatar not found.")
     try:

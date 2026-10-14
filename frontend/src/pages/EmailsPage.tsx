@@ -440,7 +440,7 @@ export function EmailsPage() {
   const importError = errorMessage(importAccounts.error, "Não foi possível importar a planilha.");
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-6">
+    <div className="mx-auto max-w-[1600px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
@@ -497,7 +497,7 @@ export function EmailsPage() {
       )}
 
       {emails.data.can_manage && (
-        <details className="dashboard-card rounded-xl p-5">
+        <details className="dashboard-card rounded-xl p-4">
           <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-[#edf0f8]">
             <Plus className="text-[#8295ff]" size={16} />
             Adicionar conta de e-mail
@@ -523,7 +523,7 @@ export function EmailsPage() {
       )}
 
       {emails.data.can_manage && (
-        <details className="dashboard-card rounded-xl p-5">
+        <details className="dashboard-card rounded-xl p-4">
           <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-[#edf0f8]">
             <Plus className="text-[#8295ff]" size={16} />
             Importar contas por arquivo ou texto
@@ -590,7 +590,7 @@ export function EmailsPage() {
                 className="fixed inset-0 z-[100] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/70 p-4"
                 role="dialog"
               >
-                <div className="flex h-[85dvh] max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-5xl flex-col gap-3 rounded-xl border border-[#34446f] bg-[#0f1320] p-5">
+                <div className="flex h-[85dvh] max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-5xl flex-col gap-3 rounded-xl border border-[#34446f] bg-[#0f1320] p-4">
                   <h2 className="text-sm font-semibold text-[#edf0f8]">
                     Digite ou cole as contas
                   </h2>
@@ -645,7 +645,7 @@ export function EmailsPage() {
                 role="dialog"
               >
                 <form
-                  className="grid w-full max-w-md gap-3 rounded-xl border border-[#34446f] bg-[#0f1320] p-5"
+                  className="grid w-full max-w-md gap-3 rounded-xl border border-[#34446f] bg-[#0f1320] p-4"
                   onSubmit={(event: FormEvent) => {
                     event.preventDefault();
                     const supplier = bulkSupplier.trim();
@@ -691,7 +691,7 @@ export function EmailsPage() {
         </details>
       )}
 
-      <section className="dashboard-card space-y-4 rounded-xl p-4 sm:p-5">
+      <section className="dashboard-card space-y-4 rounded-xl p-4 sm:p-4">
         <div className="flex flex-wrap items-center gap-3">
           <label className="grid gap-1 text-xs text-[#94a3b8]">
             Filtrar por Status

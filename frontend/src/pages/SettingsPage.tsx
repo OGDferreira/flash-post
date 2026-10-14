@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Copy, CircleHelp, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
+import { CopyField } from "@/components/ui/CopyField";
+import { MetaSetupModal } from "@/features/meta/MetaSetupModal";
+import { SharkAccountsPanel } from "@/features/sharkbot/SharkAccountsPanel";
 import { ApiError, apiRequest } from "@/services/api";
 
 type InstagramMetaApp = {
@@ -19,6 +22,7 @@ type InstagramMetaApp = {
 };
 
 type InstagramMetaAppsResponse = {
+  callback_url: string;
   selected_app_id: string | null;
   apps: InstagramMetaApp[];
 };
@@ -37,6 +41,7 @@ export function SettingsPage() {
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editAppSecret, setEditAppSecret] = useState("");
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<{ can_manage: boolean }>("/api/instagram/accounts"),
@@ -108,7 +113,7 @@ export function SettingsPage() {
   }
   if (!accounts.data.can_manage) {
     return (
-      <section className="mx-auto max-w-3xl rounded-xl border border-line bg-surface p-6">
+      <section className="mx-auto max-w-3xl rounded-xl border border-line bg-surface p-4">
         <h2 className="text-2xl font-semibold text-[#f5f7fb]">Configurações</h2>
         <p className="mt-3 text-sm leading-6 text-[#94a3b8]">
           Somente o OWNER do workspace pode cadastrar e gerenciar aplicativos Meta.
@@ -149,7 +154,7 @@ export function SettingsPage() {
         : null;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-7">
+    <div className="mx-auto max-w-4xl space-y-5">
       <header>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Workspace</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
@@ -160,14 +165,28 @@ export function SettingsPage() {
         </p>
       </header>
 
-      <section className="space-y-5 rounded-xl border border-line bg-surface p-5 sm:p-6">
-        <div>
-          <h3 className="font-medium text-[#f5f7fb]">Aplicativos Meta</h3>
-          <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
-            Cadastre as credenciais de Instagram Business Login. O segredo é criptografado no
-            servidor e nunca é exibido novamente.
-          </p>
+      <section className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h3 className="font-medium text-[#f5f7fb]">Aplicativos Meta</h3>
+            <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+              Cadastre as credenciais de Instagram Business Login. O segredo é criptografado no
+              servidor e nunca é exibido novamente.
+            </p>
+          </div>
+          <button className="btn-secondary shrink-0" onClick={() => setSetupOpen(true)} type="button">
+            <CircleHelp size={15} />
+            Como configurar
+          </button>
         </div>
+        {metaApps.data?.callback_url && (
+          <CopyField
+            hint="Cole exatamente esta URL em Business login settings → OAuth redirect URIs, no painel do seu app na Meta."
+            label="URL de callback (OAuth redirect URI)"
+            value={metaApps.data.callback_url}
+          />
+        )}
+        <MetaSetupModal callbackUrl={metaApps.data?.callback_url} onClose={() => setSetupOpen(false)} open={setupOpen} />
         {mutationMessage && <ErrorState message={mutationMessage} />}
         <div className="space-y-3">
           {metaApps.data.apps.map((app) => (
@@ -395,7 +414,7 @@ export function SettingsPage() {
           </div>
         </form>
       </section>
-      <section className="space-y-4 rounded-xl border border-line bg-surface p-5 sm:p-6">
+      <section className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
         <div>
           <h3 className="font-medium text-[#f5f7fb]">Integração Sharkbot</h3>
           <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
@@ -489,6 +508,7 @@ export function SettingsPage() {
           </details>
         )}
       </section>
+      {accounts.data?.can_manage === true && <SharkAccountsPanel />}
     </div>
   );
 }

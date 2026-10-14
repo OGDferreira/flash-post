@@ -40,7 +40,7 @@ export function AdminUsersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
@@ -105,24 +105,24 @@ export function AdminUsersPage() {
               <table className="w-full min-w-[920px] border-collapse text-left">
                 <thead className="border-b border-line-soft bg-[#0a0d11] text-[11px] uppercase tracking-[0.12em] text-[#64748b]">
                   <tr>
-                    <th className="px-5 py-3.5 font-medium">Usuário</th>
-                    <th className="px-5 py-3.5 font-medium">Role</th>
-                    <th className="px-5 py-3.5 font-medium">Status</th>
-                    <th className="px-5 py-3.5 font-medium">Workspace</th>
-                    <th className="px-5 py-3.5 font-medium">Criado em</th>
-                    <th className="px-5 py-3.5 font-medium">Último login</th>
-                    <th className="px-5 py-3.5 font-medium">Ações</th>
+                    <th className="px-4 py-3.5 font-medium">Usuário</th>
+                    <th className="px-4 py-3.5 font-medium">Role</th>
+                    <th className="px-4 py-3.5 font-medium">Status</th>
+                    <th className="px-4 py-3.5 font-medium">Workspace</th>
+                    <th className="px-4 py-3.5 font-medium">Criado em</th>
+                    <th className="px-4 py-3.5 font-medium">Último login</th>
+                    <th className="px-4 py-3.5 font-medium">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1b2330] text-sm">
                   {users.data.items.map((user) => (
                     <tr key={user.id} className="hover:bg-surface-raised">
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-4">
                         <p className="font-medium text-[#e6eaf2]">{user.full_name}</p>
                         <p className="mt-1 text-xs text-[#64748b]">{user.email}</p>
                       </td>
-                      <td className="px-5 py-4 text-[#c7cfdd]">{user.role}</td>
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-4 text-[#c7cfdd]">{user.role}</td>
+                      <td className="px-4 py-4">
                         <span
                           className={`rounded-md border px-2 py-1 text-xs ${
                             user.status === "PENDING_APPROVAL"
@@ -135,16 +135,16 @@ export function AdminUsersPage() {
                           {user.status === "PENDING_APPROVAL" ? "Aguardando aprovação" : user.status}
                         </span>
                       </td>
-                      <td className="px-5 py-4 text-[#94a3b8]">
+                      <td className="px-4 py-4 text-[#94a3b8]">
                         {user.workspace_name ?? "—"}
                       </td>
-                      <td className="px-5 py-4 text-[#94a3b8]">
+                      <td className="px-4 py-4 text-[#94a3b8]">
                         {formatDate(user.created_at)}
                       </td>
-                      <td className="px-5 py-4 text-[#94a3b8]">
+                      <td className="px-4 py-4 text-[#94a3b8]">
                         {user.last_login_at ? formatDate(user.last_login_at) : "Nunca"}
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-4">
                         <div className="flex flex-wrap items-center gap-2">
                           {user.is_approved ? (
                             <span className="inline-flex items-center gap-1 text-xs text-[#9de6d1]">

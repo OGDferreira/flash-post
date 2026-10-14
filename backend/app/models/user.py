@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, func, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, LargeBinary, String, func, text
+from sqlalchemy.orm import Mapped, deferred, mapped_column
 from sqlalchemy.types import Uuid
 
 from app.models import Base
@@ -24,6 +24,13 @@ class User(Base):
             sqlite_where=text("username IS NOT NULL"),
         ),
         Index("uq_users_nickname_normalized", "nickname_normalized", unique=True),
+        Index(
+            "uq_users_invite_code",
+            "invite_code",
+            unique=True,
+            postgresql_where=text("invite_code IS NOT NULL"),
+            sqlite_where=text("invite_code IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -34,6 +41,11 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     full_name: Mapped[str] = mapped_column(String(160), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(2048))
+    # Code a chief shares so new users become affiliates (created lazily).
+    invite_code: Mapped[str | None] = mapped_column(String(16))
+    # Fallback avatar stored in the database when object storage is not configured.
+    avatar_data: Mapped[bytes | None] = deferred(mapped_column(LargeBinary))
+    avatar_content_type: Mapped[str | None] = mapped_column(String(40))
     platform_role: Mapped[str] = mapped_column(
         String(32), nullable=False, default="USER", server_default="USER"
     )

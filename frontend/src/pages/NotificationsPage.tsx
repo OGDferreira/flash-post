@@ -89,7 +89,7 @@ export function NotificationsPage() {
     metrics.data?.profile_metrics_unavailable === true;
 
   return (
-    <div className="mx-auto max-w-[1100px] space-y-6">
+    <div className="mx-auto max-w-[1100px] space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
@@ -131,7 +131,7 @@ export function NotificationsPage() {
       )}
 
       {!hasLoading && !hasIssues && (
-        <section className="dashboard-card flex items-center gap-3 rounded-xl p-5">
+        <section className="dashboard-card flex items-center gap-3 rounded-xl p-4">
           <CheckCircle2 className="text-[#76c8a0]" size={20} />
           <div>
             <h2 className="font-medium text-[#e6eaf2]">Nenhum problema registrado</h2>
@@ -145,7 +145,7 @@ export function NotificationsPage() {
       {(metrics.data?.insights_unavailable ||
         metrics.data?.missing_permissions.length ||
         metrics.data?.profile_metrics_unavailable) && (
-        <section className="dashboard-card rounded-xl p-5">
+        <section className="dashboard-card rounded-xl p-4">
           <h2 className="flex items-center gap-2 font-semibold text-[#f2d48a]">
             <AlertTriangle size={16} />
             Métricas da Meta
@@ -188,7 +188,7 @@ export function NotificationsPage() {
       )}
 
       {activeFailures.length > 0 && (
-        <section className="dashboard-card rounded-xl p-5">
+        <section className="dashboard-card rounded-xl p-4">
           <h2 className="flex items-center gap-2 font-semibold text-[#f1a3ad]">
             <AlertTriangle size={16} />
             Publicações com falha ({activeFailures.length})

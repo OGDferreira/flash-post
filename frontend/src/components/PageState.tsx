@@ -57,7 +57,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-line bg-surface-inset/40 px-5 py-10 text-center text-sm text-[#94a3b8]">
+    <div className="rounded-2xl border border-dashed border-line bg-surface-inset/40 px-4 py-10 text-center text-sm text-[#94a3b8]">
       <span className="mx-auto mb-3 grid size-10 place-items-center rounded-xl border border-line-soft text-[#7186ff]">
         {icon ?? <Inbox size={18} />}
       </span>
