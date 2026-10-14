@@ -46,7 +46,7 @@ export function InstagramAccountSelector({
   }
 
   return (
-    <section className="rounded-xl border border-[#202838] bg-[#0d1015] p-4">
+    <section className="rounded-xl border border-line-soft bg-surface p-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-medium text-[#e6eaf2]">{label}</h2>
         {selectionMode === "multiple" && accounts.length > 0 && (
@@ -66,7 +66,7 @@ export function InstagramAccountSelector({
           </button>
         )}
       </div>
-      <label className="mt-3 flex min-h-10 items-center gap-2 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#94a3b8]">
+      <label className="mt-3 flex min-h-10 items-center gap-2 rounded-lg border border-line bg-surface-inset px-3 text-[#94a3b8]">
         <Search size={15} />
         <input
           aria-label="Buscar conta conectada"

@@ -193,7 +193,7 @@ export function AnalyticsPage() {
         />
         <div className="min-w-0 space-y-5">
           {!activeAccounts.length ? (
-            <section className="rounded-xl border border-dashed border-[#27334a] p-8 text-center text-sm text-[#94a3b8]">
+            <section className="rounded-xl border border-dashed border-line p-8 text-center text-sm text-[#94a3b8]">
               Conecte uma conta ativa no Hub de Contas para consultar o Analytics.
             </section>
           ) : (
@@ -222,7 +222,7 @@ export function AnalyticsPage() {
               <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                 {metrics.map(({ title, value, helper, icon: Icon }) => (
                   <article
-                    className="rounded-xl border border-[#202838] bg-[#0d1015] p-4"
+                    className="rounded-xl border border-line-soft bg-surface p-4"
                     key={title}
                   >
                     <div className="flex items-center gap-2 text-xs text-[#94a3b8]">
@@ -234,7 +234,7 @@ export function AnalyticsPage() {
                   </article>
                 ))}
               </div>
-              <section className="rounded-xl border border-[#202838] bg-[#0d1015] p-4 sm:p-5">
+              <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
                 <h3 className="text-sm font-medium text-[#e6eaf2]">
                   Publicações dos últimos 7 dias
                 </h3>
@@ -287,7 +287,7 @@ export function AnalyticsPage() {
                   </ResponsiveContainer>
                 </div>
               </section>
-              <p className="rounded-lg border border-[#27334a] bg-[#10141b] px-4 py-3 text-xs leading-5 text-[#94a3b8]">
+              <p className="rounded-lg border border-line bg-surface-raised px-4 py-3 text-xs leading-5 text-[#94a3b8]">
                 Os Insights são consultados diretamente na Meta para o período selecionado. Um
                 “—” indica que a API não disponibilizou aquela métrica para esta conta; o motivo
                 aparece no próprio card. Métricas de perfil e do FlashPost são exibidas separadas

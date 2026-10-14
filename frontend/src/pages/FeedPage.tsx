@@ -79,7 +79,7 @@ function FeedMetric({
   icon: typeof UsersRound;
 }) {
   return (
-    <div className="rounded-lg border border-[#202838] bg-[#0d151c] p-3">
+    <div className="rounded-lg border border-line-soft bg-[#0d151c] p-3">
       <div className="flex items-center gap-2 text-xs text-[#94a3b8]">
         <Icon className="text-[#8295ff]" size={14} />
         {label}
@@ -154,7 +154,7 @@ export function FeedPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <FeedHeading />
         <button
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#27334a] bg-[#0d151c] px-3 text-sm text-[#cbd5e1] transition hover:bg-[#151b24] disabled:opacity-60"
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-[#0d151c] px-3 text-sm text-[#cbd5e1] transition hover:bg-[#151b24] disabled:opacity-60"
           type="button"
           disabled={feed.isFetching || accounts.isFetching}
           onClick={() => {
@@ -179,7 +179,7 @@ export function FeedPage() {
                 className={`flex min-w-[190px] items-center gap-3 rounded-lg border p-2.5 text-left transition xl:w-full ${
                   selected
                     ? "border-[#00c9d8] bg-[#0d2229]"
-                    : "border-[#202838] bg-[#0d151c] hover:border-[#3a4a60]"
+                    : "border-line-soft bg-[#0d151c] hover:border-[#3a4a60]"
                 }`}
                 key={account.id}
                 type="button"
@@ -187,7 +187,7 @@ export function FeedPage() {
                 onClick={() => setSelectedAccountId(account.id)}
               >
                 <InstagramAvatar
-                  className="size-10 shrink-0 rounded-full border border-[#27334a] object-cover"
+                  className="size-10 shrink-0 rounded-full border border-line object-cover"
                   src={account.profile_picture_url}
                   username={account.username}
                 />
@@ -206,7 +206,7 @@ export function FeedPage() {
 
         {selectedAccount && (
           <section className="min-w-0 space-y-3" aria-label={`Feed de ${selectedAccount.username}`}>
-            <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#202838] bg-[#0d151c] px-3 py-2.5">
+            <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line-soft bg-[#0d151c] px-3 py-2.5">
               <div className="flex min-w-0 items-center gap-2">
                 <Star className="shrink-0 text-[#f2d48a]" size={15} />
                 <h2 className="truncate text-sm font-semibold text-[#f5f7fb]">
@@ -285,7 +285,7 @@ export function FeedPage() {
               <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                 {feed.data.media.map((item) => (
                   <article
-                    className="overflow-hidden rounded-lg border border-[#202838] bg-[#0d151c]"
+                    className="overflow-hidden rounded-lg border border-line-soft bg-[#0d151c]"
                     key={item.id}
                   >
                     {item.permalink ? (

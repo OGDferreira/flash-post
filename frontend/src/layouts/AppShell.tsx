@@ -21,6 +21,7 @@ import {
   Shield,
   Trophy,
   Users,
+  UsersRound,
   X,
 } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -42,7 +43,7 @@ const ownerLinks = [
   { label: "Feed", to: "/feature/feed", icon: Clapperboard },
   { label: "Automações", to: "/feature/automations", icon: MessageSquareText },
   { label: "Integrações", to: "/feature/integrations", icon: Blocks },
-  { label: "Colaboradores", to: "/feature/collaborators", icon: Users },
+  { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
   { label: "Notificações", to: "/feature/notifications", icon: Bell },
   { label: "Configurações", to: "/feature/settings", icon: Settings2 },
 ];
@@ -61,6 +62,19 @@ const collaboratorLinks = [
   { label: "Log de erros", to: "/feature/error-logs", icon: Bug },
   { label: "E-mails", to: "/feature/emails", icon: Mail },
 ];
+
+// Bottom bar on phones, in this exact order. Everything else lives in the
+// collapsible menu (header button). Route guards and the API still enforce
+// permissions; this list only hides what a role cannot open.
+const mobilePrimaryLinks = [
+  { label: "Painel", to: "/dashboard", icon: Home },
+  { label: "Contas", to: "/feature/accounts", icon: Users },
+  { label: "Pastas", to: "/feature/profile-folders", icon: Folder },
+  { label: "Ranking", to: "/feature/ranking", icon: Trophy },
+  { label: "Métricas", to: "/feature/analytics", icon: ChartNoAxesCombined },
+  { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
+];
+const collaboratorMobileRoutes = new Set(["/dashboard", "/feature/accounts"]);
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -103,7 +117,6 @@ export function AppShell() {
   const hasWorkspaceOwnerAccess = workspaceRole === "OWNER";
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -170,19 +183,11 @@ export function AppShell() {
     workspaceRole === "COLLABORATOR" ? collaboratorLinks : ownerLinks;
   const mobileLinks = isAdminRoute
     ? adminLinks
-    : workspaceRole === "COLLABORATOR"
-      ? collaboratorLinks
-      : ownerLinks.filter(({ to }) =>
-          [
-            "/dashboard",
-            "/feature/accounts",
-            "/feature/loops",
-            "/feature/error-logs",
-            "/feature/emails",
-            "/feature/finance",
-            "/feature/collaborators",
-          ].includes(to),
-        );
+    : mobilePrimaryLinks.filter(({ to }) =>
+        workspaceRole === "COLLABORATOR"
+          ? collaboratorMobileRoutes.has(to)
+          : hasWorkspaceOwnerAccess,
+      );
   const visibleLinkGroups = [
     ...(hasWorkspaceOwnerAccess || workspaceRole === "COLLABORATOR"
       ? [{ title: "Workspace", links: workspaceLinks }]
@@ -243,10 +248,6 @@ export function AppShell() {
     };
   }, []);
   useEffect(() => {
-    const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  useEffect(() => {
     const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
     const installed =
       window.matchMedia("(display-mode: standalone)").matches ||
@@ -304,34 +305,9 @@ export function AppShell() {
     }
     dismissInstallGuide();
   };
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      hour: "numeric",
-      hourCycle: "h23",
-      timeZone: "America/Sao_Paulo",
-    }).format(new Date()),
-  );
-  const greeting =
-    hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
-  const pageHeading = isAdminRoute
-    ? "Painel da plataforma"
-    : `${greeting}, ${user?.nickname ?? "bem-vindo"} · ${new Intl.DateTimeFormat(
-        "pt-BR",
-        {
-          weekday: "long",
-          day: "2-digit",
-          month: "long",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          timeZone: "America/Sao_Paulo",
-        },
-      ).format(currentTime)}`;
-
   const sidebar = (
-    <div className="flex h-full flex-col bg-[#0b0c0e]">
-      <div className="flex h-[72px] items-center justify-between border-b border-[#202838] px-5 lg:px-3 lg:group-hover:px-5">
+    <div className="flex h-full flex-col">
+      <div className="flex h-[72px] items-center justify-between border-b border-line-soft px-5 lg:px-3 lg:group-hover:px-5">
         <Link
           className="flex items-center gap-3 lg:gap-0 lg:group-hover:gap-3"
           to={
@@ -362,7 +338,7 @@ export function AppShell() {
       </div>
 
       {isAdminRoute && (
-        <div className="mx-4 mt-5 flex items-center gap-2 overflow-hidden rounded-lg border border-[#27334a] bg-[#10141b] px-3 py-2 text-xs font-medium text-[#aeb9ce] lg:group-hover:mx-3">
+        <div className="mx-4 mt-5 flex items-center gap-2 overflow-hidden rounded-lg border border-line bg-surface-raised px-3 py-2 text-xs font-medium text-[#aeb9ce] lg:group-hover:mx-3">
           <Shield className="shrink-0 text-[#8295ff]" size={14} />
           <span className="max-w-[180px] overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[180px] lg:group-hover:opacity-100">
             Administração da plataforma
@@ -373,7 +349,7 @@ export function AppShell() {
       <nav className="app-sidebar-nav flex-1 space-y-1 overflow-y-auto px-3 py-5">
         {visibleLinkGroups.map((group, groupIndex) => (
           <section
-            className={groupIndex ? "mt-4 border-t border-[#202838] pt-3" : ""}
+            className={groupIndex ? "mt-4 border-t border-line-soft pt-3" : ""}
             key={group.title}
           >
             {visibleLinkGroups.length > 1 && (
@@ -408,7 +384,7 @@ export function AppShell() {
         ))}
       </nav>
 
-      <div className="border-t border-[#202838] p-3">
+      <div className="border-t border-line-soft p-3">
         <Link
           to="/profile"
           onClick={() => setMobileOpen(false)}
@@ -418,7 +394,7 @@ export function AppShell() {
             <img
               src={user.avatar_url}
               alt=""
-              className="size-9 rounded-full border border-[#27334a] object-cover"
+              className="size-9 rounded-full border border-line object-cover"
             />
           ) : (
             <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#171e31] text-sm font-semibold text-[#aab7ff]">
@@ -452,42 +428,46 @@ export function AppShell() {
   );
 
   return (
-    <div className="min-h-screen bg-[#070809] text-[#f5f7fb]">
-      <aside className="group fixed inset-y-0 left-0 z-30 hidden w-[68px] border-r border-[#202838] transition-[width] duration-200 hover:w-[252px] lg:block">
+    <div className="min-h-screen bg-transparent text-[#f5f7fb]">
+      <aside className="glass-bar group fixed inset-y-0 left-0 z-30 hidden w-[68px] !border-y-0 !border-l-0 transition-[width,background-color] duration-200 hover:w-[252px] hover:!bg-[rgb(8_10_18/0.95)] lg:block">
         {sidebar}
       </aside>
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <button
-            className="absolute inset-0 bg-black/70"
+            className="glass-overlay absolute inset-0"
             onClick={() => setMobileOpen(false)}
             aria-label="Fechar menu"
           />
-          <aside className="group relative h-full w-[min(300px,85vw)] border-r border-[#202838]">
+          <aside className="glass-modal group relative h-full w-[min(300px,85vw)] !rounded-l-none pt-[env(safe-area-inset-top)]">
             {sidebar}
           </aside>
         </div>
       )}
       <div className="lg:pl-[68px]">
-        <header className="app-shell-header sticky top-0 z-20 flex items-center justify-between border-b border-[#202838] bg-[#070809]/95 px-4 backdrop-blur-sm sm:px-8">
-          <div className="flex items-center gap-3">
+        <header className="app-shell-header glass-bar sticky top-0 z-20 flex items-center justify-between !border-x-0 !border-t-0 px-4 sm:px-8">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <button
-              className="grid size-9 place-items-center rounded-lg border border-[#202838] text-[#94a3b8] hover:bg-[#10141b] lg:hidden"
+              className="grid size-9 place-items-center rounded-lg border border-line-soft text-[#94a3b8] hover:bg-surface-raised lg:hidden"
               onClick={() => setMobileOpen(true)}
               aria-label="Abrir menu"
             >
               <Menu size={18} />
             </button>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-[#64748b]">
                 {isAdminRoute ? "FlashPost / Administração" : "FlashPost / Workspace"}
               </p>
-              <h1 className="mt-0.5 max-w-[calc(100vw-170px)] truncate text-sm font-medium text-[#e6eaf2]">
-                {pageHeading}
+              <h1 className="mt-0.5 truncate text-sm font-medium text-[#e6eaf2]">
+                {isAdminRoute ? (
+                  "Painel da plataforma"
+                ) : (
+                  <GreetingClock nickname={user?.nickname} />
+                )}
               </h1>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 pl-2">
             <div className="relative">
               <button
                 aria-label={
@@ -497,7 +477,7 @@ export function AppShell() {
                 }
                 aria-expanded={notificationsOpen}
                 aria-haspopup="dialog"
-                className="relative grid size-9 place-items-center rounded-full border border-[#202838] bg-[#0d1015] text-[#94a3b8] transition-colors hover:border-[#536dfe]/40 hover:text-white"
+                className="relative grid size-9 place-items-center rounded-full border border-line-soft bg-surface text-[#94a3b8] transition-colors hover:border-[#536dfe]/40 hover:text-white"
                 onClick={() => setNotificationsOpen((open) => !open)}
                 type="button"
               >
@@ -511,10 +491,10 @@ export function AppShell() {
               {notificationsOpen && (
                 <section
                   aria-label="Notificações"
-                  className="absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-32px))] rounded-xl border border-[#27334a] bg-[#0d1015] p-3 shadow-[0_16px_48px_rgba(0,0,0,.55)]"
+                  className="glass-modal modal-enter absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-32px))] !rounded-2xl p-3"
                   role="dialog"
                 >
-                  <div className="flex items-center justify-between border-b border-[#202838] pb-2">
+                  <div className="flex items-center justify-between border-b border-line-soft pb-2">
                     <h2 className="text-sm font-semibold text-[#e6eaf2]">Notificações</h2>
                     <button
                       className="text-xs text-[#94a3b8] hover:text-white"
@@ -525,7 +505,7 @@ export function AppShell() {
                     </button>
                   </div>
                   {notificationItems.length ? (
-                    <ul className="max-h-[min(60vh,420px)] divide-y divide-[#202838] overflow-y-auto">
+                    <ul className="max-h-[min(60vh,420px)] divide-y divide-line-soft overflow-y-auto">
                       {notificationItems.map((item, index) => (
                         <li className="flex gap-2.5 py-3" key={`${item.title}-${index}`}>
                           <AlertTriangle
@@ -550,10 +530,10 @@ export function AppShell() {
                 </section>
               )}
             </div>
-            <div className="flex items-center gap-2 rounded-full border border-[#202838] bg-[#0d1015] px-3 py-2 text-xs text-[#94a3b8]">
+            <div className="flex items-center gap-2 rounded-full border border-line-soft bg-surface p-2.5 text-xs text-[#94a3b8] sm:px-3 sm:py-2" title="Sistema online">
               <span className="size-1.5 rounded-full bg-[#2dd4a0]" />
               <span className="hidden sm:inline">Sistema online</span>
-              <span className="sm:hidden">Online</span>
+              <span className="sr-only sm:hidden">Online</span>
             </div>
           </div>
         </header>
@@ -563,7 +543,7 @@ export function AppShell() {
       </div>
       <nav
         aria-label="Navegação principal"
-        className="app-mobile-nav fixed inset-x-0 bottom-0 z-30 flex border-t border-[#202838] bg-[#0b0c0e]/95 px-2 pt-2 backdrop-blur-xl lg:hidden"
+        className="app-mobile-nav glass-bar fixed inset-x-0 bottom-0 z-30 flex gap-0.5 !border-x-0 !border-b-0 pt-1.5 lg:hidden"
       >
         {mobileLinks.map(({ label, to, icon: Icon }) => (
           <NavLink
@@ -572,15 +552,23 @@ export function AppShell() {
             to={to}
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-[10px] transition ${
-                isActive ? "text-[#aab7ff]" : "text-[#78839b]"
+              `group/nav flex min-h-[52px] min-w-0 flex-auto flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium tracking-[-0.01em] transition-colors ${
+                isActive ? "text-[#dfe4ff]" : "text-[#8390a8] active:text-[#cbd5e1]"
               }`
             }
           >
             {({ isActive }) => (
               <>
-                <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />
-                <span className="max-w-full truncate">{label}</span>
+                <span
+                  className={`grid h-7 w-11 place-items-center rounded-full transition-all duration-200 ${
+                    isActive
+                      ? "bg-[#536dfe]/20 text-[#aab7ff] shadow-[0_0_18px_rgba(83,109,254,0.35)]"
+                      : ""
+                  }`}
+                >
+                  <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />
+                </span>
+                <span className="max-w-full whitespace-nowrap">{label}</span>
               </>
             )}
           </NavLink>
@@ -588,13 +576,13 @@ export function AppShell() {
       </nav>
       {installGuideOpen && isMobileDevice && !isStandalone && (
         <div
-          className="fixed inset-0 z-[80] grid items-end bg-black/70 p-3 sm:items-center sm:justify-items-center"
+          className="glass-overlay fixed inset-0 z-[80] grid items-end p-3 sm:items-center sm:justify-items-center"
           onClick={dismissInstallGuide}
         >
           <section
             aria-labelledby="install-guide-title"
             aria-modal="true"
-            className="dashboard-card w-full max-w-md rounded-2xl p-5 sm:p-6"
+            className="glass-modal modal-enter w-full max-w-md p-5 sm:p-6"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
@@ -635,7 +623,7 @@ export function AppShell() {
                   : "Abra o menu do navegador e escolha “Instalar app” ou “Adicionar à tela inicial”."}
               </p>
             )}
-            <p className="mt-4 rounded-lg border border-[#27334a] bg-[#0d1015] p-3 text-xs leading-5 text-[#94a3b8]">
+            <p className="mt-4 rounded-lg border border-line bg-surface p-3 text-xs leading-5 text-[#94a3b8]">
               {isIosDevice
                 ? "Depois de adicionar, abra o ícone FlashPost pela tela de início. O app abrirá sem a barra de endereço."
                 : "A instalação mantém sua sessão e abre o FlashPost numa janela própria."}
@@ -672,7 +660,7 @@ export function AppShell() {
       )}
       {toast && (
         <div
-          className="fixed right-5 top-20 z-[70] max-w-sm rounded-xl border border-[#315843] bg-[#10231a] px-4 py-3 text-sm text-[#a9e5c0] shadow-[0_12px_38px_rgba(0,0,0,.45)]"
+          className="glass-modal modal-enter fixed left-4 right-4 top-[calc(5rem+env(safe-area-inset-top))] z-[95] mx-auto max-w-sm !rounded-2xl !border-[#315843] px-4 py-3 text-sm text-[#a9e5c0] sm:left-auto sm:right-5"
           role="status"
         >
           {toast}
@@ -681,3 +669,40 @@ export function AppShell() {
     </div>
   );
 }
+
+/**
+ * Live greeting + clock. Kept in its own component so the 1 s tick re-renders
+ * only this text instead of the whole shell (sidebar, menus, page outlet).
+ */
+function GreetingClock({ nickname }: { nickname: string | undefined }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      hourCycle: "h23",
+      timeZone: "America/Sao_Paulo",
+    }).format(now),
+  );
+  const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+  return (
+    <>
+      {greeting}, {nickname ?? "bem-vindo"} ·{" "}
+      <time dateTime={now.toISOString()}>{clockFormat.format(now)}</time>
+    </>
+  );
+}
+
+const clockFormat = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+  day: "2-digit",
+  month: "long",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});

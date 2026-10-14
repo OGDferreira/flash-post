@@ -40,7 +40,7 @@ export function AdminSystemPage() {
           {settings.data.map((setting) => (
             <article
               key={setting.key}
-              className="flex flex-col gap-3 rounded-xl border border-[#202838] bg-[#0d1015] p-4 sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-3 rounded-xl border border-line-soft bg-surface p-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
                 <p className="text-sm font-medium text-[#e6eaf2]">{setting.key}</p>
@@ -51,7 +51,7 @@ export function AdminSystemPage() {
                   })}
                 </p>
               </div>
-              <code className="max-w-full overflow-auto rounded-lg border border-[#202838] bg-[#090b0e] px-3 py-2 text-xs text-[#aeb9ce]">
+              <code className="max-w-full overflow-auto rounded-lg border border-line-soft bg-surface-inset px-3 py-2 text-xs text-[#aeb9ce]">
                 {JSON.stringify(setting.value)}
               </code>
             </article>

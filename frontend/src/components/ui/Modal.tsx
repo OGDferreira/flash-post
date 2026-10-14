@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 type ModalProps = {
@@ -68,7 +69,9 @@ export function Modal({ open, title, description, onClose, children, footer, bus
 
   if (!open) return null;
 
-  return (
+  // Portal: page wrappers use `isolation: isolate`, which would otherwise trap
+  // the dialog below the fixed header and bottom navigation.
+  return createPortal(
     <div className="fixed inset-0 z-[90] flex items-end justify-center sm:items-center sm:p-6">
       <button
         aria-label="Fechar"
@@ -115,6 +118,7 @@ export function Modal({ open, title, description, onClose, children, footer, bus
           </footer>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

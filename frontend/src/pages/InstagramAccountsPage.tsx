@@ -269,7 +269,7 @@ export function InstagramAccountsPage() {
               ? "border-[#23513e] bg-[#0e1b17] text-[#9de0c0]"
               : callbackMessage.kind === "error"
                 ? "border-[#47252d] bg-[#1a1013] text-[#f1a3ad]"
-                : "border-[#27334a] bg-[#10141b] text-[#aeb9ce]"
+                : "border-line bg-surface-raised text-[#aeb9ce]"
           }`}
           role="status"
         >
@@ -293,7 +293,7 @@ export function InstagramAccountsPage() {
       )}
 
       {!accounts.data.can_manage && !accounts.data.can_connect && (
-        <p className="rounded-lg border border-[#27334a] bg-[#10141b] px-4 py-3 text-sm text-[#aeb9ce]">
+        <p className="rounded-lg border border-line bg-surface-raised px-4 py-3 text-sm text-[#aeb9ce]">
           Você pode ver as contas conectadas. Somente o OWNER do workspace pode gerenciá-las.
         </p>
       )}
@@ -314,7 +314,7 @@ export function InstagramAccountsPage() {
         )}
         <section
           aria-label="Quantidade de contas por pasta"
-          className="rounded-xl border border-[#27334a] bg-[#0d1015] p-4"
+          className="rounded-xl border border-line bg-surface p-4"
         >
           <div className="mb-3 flex items-center gap-2">
             <Folder size={15} className="text-[#aab7ff]" />
@@ -325,7 +325,7 @@ export function InstagramAccountsPage() {
               className={`rounded-full border px-3 py-1.5 text-xs ${
                 selectedFolderId === "all"
                   ? "border-[#536dfe] bg-[#151b2d] text-white"
-                  : "border-[#27334a] text-[#94a3b8]"
+                  : "border-line text-[#94a3b8]"
               }`}
               onClick={() => setSelectedFolderId("all")}
               type="button"
@@ -361,7 +361,7 @@ export function InstagramAccountsPage() {
               className={`rounded-full border px-3 py-1.5 text-xs ${
                 selectedFolderId === "unassigned"
                   ? "border-[#536dfe] bg-[#151b2d] text-white"
-                  : "border-[#27334a] text-[#94a3b8]"
+                  : "border-line text-[#94a3b8]"
               }`}
               onClick={() => setSelectedFolderId("unassigned")}
               type="button"
@@ -371,7 +371,7 @@ export function InstagramAccountsPage() {
           </div>
         </section>
         <div className="flex flex-col gap-3 sm:flex-row">
-          <label className="flex min-h-11 flex-1 items-center gap-2 rounded-lg border border-[#27334a] bg-[#0d1015] px-3 text-[#94a3b8]">
+          <label className="flex min-h-11 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-[#94a3b8]">
             <Search size={16} />
             <input
               className="w-full bg-transparent text-sm text-[#f5f7fb] outline-none placeholder:text-[#64748b]"
@@ -382,7 +382,7 @@ export function InstagramAccountsPage() {
             />
           </label>
           <select
-            className="min-h-11 rounded-lg border border-[#27334a] bg-[#0d1015] px-3 text-xs text-[#f5f7fb] outline-none"
+            className="min-h-11 rounded-lg border border-line bg-surface px-3 text-xs text-[#f5f7fb] outline-none"
             value={accountSort}
             onChange={(event) => setAccountSort(event.target.value as typeof accountSort)}
             aria-label="Ordenar contas Instagram"
@@ -391,7 +391,7 @@ export function InstagramAccountsPage() {
             <option value="disconnection_desc">Ordem de Desconexão (caíram recentemente)</option>
             <option value="connection_desc">Recém-Conectadas (mais novas primeiro)</option>
           </select>
-          <div className="flex rounded-lg border border-[#27334a] bg-[#0d1015] p-1">
+          <div className="flex rounded-lg border border-line bg-surface p-1">
             {([
               ["active", `Ativas (${activeAccountCount})`],
               ["issues", `Aba Oculta de Erros (${issueAccountCount})`],

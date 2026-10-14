@@ -133,7 +133,7 @@ export function CollaboratorDashboardPage() {
 
   return (
     <div className="w-full space-y-3 xl:grid xl:h-[calc(100dvh-216px)] xl:min-h-[620px] xl:grid-rows-[auto_auto_minmax(0,1fr)] xl:gap-3 xl:space-y-0">
-      <header className="flex items-center gap-3">
+      <header className="flex min-w-0 items-center gap-3">
         {data.avatar_url ? (
           <img
             alt=""
@@ -154,7 +154,7 @@ export function CollaboratorDashboardPage() {
           </h1>
         </div>
         <button
-          className="btn-primary ml-auto"
+          className="btn-primary ml-auto shrink-0 whitespace-nowrap max-sm:!px-3"
           onClick={() => setConnectOpen(true)}
           type="button"
         >
@@ -319,7 +319,7 @@ export function CollaboratorDashboardPage() {
                 </thead>
                 <tbody>
                   {rankedCollaborators.slice(0, 6).map((person) => (
-                    <tr className="border-t border-[#202838]" key={person.user_id}>
+                    <tr className="border-t border-line-soft" key={person.user_id}>
                       <td className="py-2 pr-2 font-semibold text-[#f2d48a]">{person.position}</td>
                       <td className="max-w-0 truncate py-2 pr-2 text-[#e6eaf2]">
                         @{person.nickname}
@@ -355,7 +355,7 @@ export function CollaboratorDashboardPage() {
           <ul className="grid gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
             {data.account_earnings.map((account) => (
               <li
-                className="flex items-center justify-between gap-2 border-t border-[#202838] py-2 text-xs"
+                className="flex items-center justify-between gap-2 border-t border-line-soft py-2 text-xs"
                 key={account.account_id}
               >
                 <span className="min-w-0 truncate text-[#e6eaf2]">

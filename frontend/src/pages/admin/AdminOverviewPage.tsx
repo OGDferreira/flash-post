@@ -47,7 +47,7 @@ export function AdminOverviewPage() {
         {cards.map(({ label, value, icon: Icon }) => (
           <article
             key={label}
-            className="rounded-xl border border-[#202838] bg-[#0d1015] p-5"
+            className="rounded-xl border border-line-soft bg-surface p-5"
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium uppercase tracking-[0.12em] text-[#64748b]">

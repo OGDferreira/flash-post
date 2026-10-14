@@ -67,7 +67,7 @@ export function RankingPage() {
 
       <nav
         aria-label="Período do ranking"
-        className="flex flex-wrap gap-2 rounded-xl border border-[#202838] bg-[#0d1015] p-2"
+        className="flex flex-wrap gap-2 rounded-xl border border-line-soft bg-surface p-2"
       >
         {periods.map((option) => (
           <button
@@ -114,7 +114,7 @@ export function RankingPage() {
           </section>
 
           <section className="dashboard-card overflow-hidden rounded-xl">
-            <div className="border-b border-[#202838] px-5 py-4">
+            <div className="border-b border-line-soft px-5 py-4">
               <h2 className="font-semibold text-[#f5f7fb]">
                 Produção por integrante
               </h2>
@@ -125,7 +125,7 @@ export function RankingPage() {
             {ranking.data.collaborators.length ? (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[560px] text-left text-sm">
-                  <thead className="bg-[#0d1015] text-xs text-[#94a3b8]">
+                  <thead className="bg-surface text-xs text-[#94a3b8]">
                     <tr>
                       <th className="px-5 py-3 font-medium">Posição</th>
                       <th className="px-5 py-3 font-medium">Integrante</th>
@@ -140,7 +140,7 @@ export function RankingPage() {
                   <tbody>
                     {ranking.data.collaborators.map((member) => (
                       <tr
-                        className="border-t border-[#202838] text-[#e6eaf2]"
+                        className="border-t border-line-soft text-[#e6eaf2]"
                         key={member.user_id}
                       >
                         <td className="px-5 py-3 font-semibold text-[#f2d48a]">

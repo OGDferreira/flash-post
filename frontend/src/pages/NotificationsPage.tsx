@@ -104,7 +104,7 @@ export function NotificationsPage() {
           </p>
         </div>
         <button
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#27334a] px-3 text-sm text-[#cbd5e1] hover:bg-[#101923]"
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 text-sm text-[#cbd5e1] hover:bg-[#101923]"
           onClick={() => {
             void accounts.refetch();
             void failures.refetch();
@@ -117,7 +117,7 @@ export function NotificationsPage() {
         </button>
       </header>
 
-      <aside className="rounded-lg border border-[#27334a] bg-[#0d1015] p-4 text-xs leading-5 text-[#94a3b8]">
+      <aside className="rounded-lg border border-line bg-surface p-4 text-xs leading-5 text-[#94a3b8]">
         Os detalhes abaixo vêm dos retornos da Meta, do estado das contas e dos
         erros de publicação guardados pelo FlashPost. O Render não disponibiliza
         os logs brutos ao aplicativo sem uma integração autenticada; para
@@ -158,7 +158,7 @@ export function NotificationsPage() {
             </p>
           )}
           {insightsIssues.length > 0 ? (
-            <ul className="mt-3 divide-y divide-[#202838]">
+            <ul className="mt-3 divide-y divide-line-soft">
               {insightsIssues.map((account) => (
                 <li className="py-3 first:pt-0 last:pb-0" key={account.account_id}>
                   <p className="text-sm font-medium text-[#e6eaf2]">
@@ -193,7 +193,7 @@ export function NotificationsPage() {
             <AlertTriangle size={16} />
             Publicações com falha ({activeFailures.length})
           </h2>
-          <ul className="mt-4 divide-y divide-[#202838]">
+          <ul className="mt-4 divide-y divide-line-soft">
             {activeFailures.map((failure) => (
               <li className="py-3 first:pt-0 last:pb-0" key={failure.id}>
                 <div className="flex flex-wrap justify-between gap-2">

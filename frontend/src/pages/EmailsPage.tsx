@@ -157,7 +157,7 @@ export function EmailsPage() {
     queryKey: ["emails"],
     queryFn: () => apiRequest<EmailsResponse>("/api/emails"),
     retry: false,
-    refetchInterval: 10_000,
+    refetchInterval: 20_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -773,7 +773,7 @@ export function EmailsPage() {
         {filteredAccounts.length === 0 ? (
           <EmptyState message="Nenhuma conta corresponde aos filtros." />
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-[#202838]">
+          <div className="overflow-x-auto rounded-lg border border-line-soft">
             <table className="w-full min-w-[1500px] border-collapse text-left text-xs">
               <thead className="bg-[#11151d] text-[10px] uppercase tracking-[0.1em] text-[#94a3b8]">
                 <tr>
@@ -800,9 +800,9 @@ export function EmailsPage() {
                   {emails.data.can_manage && <th className="px-3 py-3">Ações</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#202838]">
+              <tbody className="divide-y divide-line-soft">
                 {filteredAccounts.map((account, accountIndex) => (
-                  <tr className="align-top hover:bg-[#10141b]" key={account.id}>
+                  <tr className="align-top hover:bg-surface-raised" key={account.id}>
                     {emails.data.can_manage && (
                       <td className="px-3 py-3">
                         <input
@@ -838,7 +838,7 @@ export function EmailsPage() {
                         <td className="px-2 py-2">
                           <div className="flex gap-2">
                             <button aria-label="Salvar edição" className="rounded border border-[#315843] p-2 text-[#a9e5c0]" disabled={updateAccount.isPending} onClick={() => updateAccount.mutate({ id: account.id, form: editForm })} type="button"><Save size={14} /></button>
-                            <button aria-label="Cancelar edição" className="rounded border border-[#27334a] p-2 text-[#94a3b8]" onClick={() => setEditingId(null)} type="button">×</button>
+                            <button aria-label="Cancelar edição" className="rounded border border-line p-2 text-[#94a3b8]" onClick={() => setEditingId(null)} type="button">×</button>
                           </div>
                         </td>
                       </>
@@ -885,10 +885,10 @@ export function EmailsPage() {
                           <div className="flex min-w-36 items-center gap-2">
                             {account.attachment_url && (
                               <a href={account.attachment_url} rel="noreferrer" target="_blank">
-                                <img alt="Anexo de erro" className="size-10 rounded border border-[#27334a] object-cover" src={account.attachment_url} />
+                                <img alt="Anexo de erro" className="size-10 rounded border border-line object-cover" src={account.attachment_url} />
                               </a>
                             )}
-                            <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-[#27334a] px-2 py-2 text-[#aab7ff] hover:bg-[#151b2d]">
+                            <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-line px-2 py-2 text-[#aab7ff] hover:bg-[#151b2d]">
                               <ImagePlus size={14} />
                               <span>{account.attachment_url ? "Trocar" : "Anexar"}</span>
                               <input accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={uploadAttachment.isPending} onChange={(event) => handleAttachment(account.id, event)} type="file" />
@@ -900,7 +900,7 @@ export function EmailsPage() {
                             <div className="flex gap-2">
                               <button
                                 aria-label={`Editar ${account.email}`}
-                                className="rounded border border-[#27334a] p-2 text-[#aab7ff] hover:bg-[#151b2d]"
+                                className="rounded border border-line p-2 text-[#aab7ff] hover:bg-[#151b2d]"
                                 onClick={() => {
                                   setEditingId(account.id);
                                   setEditForm({

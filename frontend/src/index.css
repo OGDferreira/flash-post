@@ -111,6 +111,24 @@ body::before {
   .glass-bar { background: #090b12; }
 }
 
+/* Outer panels built with the `bg-surface` token get real glass from tablet
+   width up; nested inset/raised surfaces stay unblurred to keep it cheap. */
+@media (min-width: 768px) {
+  .bg-surface {
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    backdrop-filter: blur(12px) saturate(140%);
+  }
+}
+
+/* Existing solid brand buttons across pages share the primary look. */
+.bg-\[\#536dfe\].text-white,
+.bg-\[\#586eff\].text-white {
+  background-image: linear-gradient(135deg, #5b72ff, #4458e8);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    0 6px 18px rgb(83 109 254 / 0.28);
+}
+
 /* ---------- Buttons ---------- */
 .btn-primary,
 .btn-secondary,

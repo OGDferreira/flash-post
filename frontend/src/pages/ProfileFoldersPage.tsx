@@ -165,7 +165,7 @@ export function ProfileFoldersPage() {
 
       {formOpen && (
         <form
-          className="grid gap-4 rounded-xl border border-[#27334a] bg-[#0d1015] p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"
+          className="grid gap-4 rounded-xl border border-line bg-surface p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"
           onSubmit={(event) => {
             event.preventDefault();
             saveFolder.mutate();
@@ -174,7 +174,7 @@ export function ProfileFoldersPage() {
           <label className="grid gap-2 text-sm text-[#cbd5e1]">
             Nome da pasta
             <input
-              className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
               maxLength={80}
               required
               value={draft.name}
@@ -202,7 +202,7 @@ export function ProfileFoldersPage() {
               {saveFolder.isPending ? "Salvando..." : "Salvar"}
             </button>
             <button
-              className="grid size-10 place-items-center rounded-lg border border-[#27334a] text-[#94a3b8] hover:text-white"
+              className="grid size-10 place-items-center rounded-lg border border-line text-[#94a3b8] hover:text-white"
               type="button"
               onClick={() => setFormOpen(false)}
               aria-label="Cancelar edição da pasta"
@@ -233,7 +233,7 @@ export function ProfileFoldersPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    className="grid size-9 place-items-center rounded-lg border border-[#27334a] text-[#aeb9ce] hover:text-white"
+                    className="grid size-9 place-items-center rounded-lg border border-line text-[#aeb9ce] hover:text-white"
                     type="button"
                     aria-label={`Editar pasta ${folder.name}`}
                     onClick={() => openEditForm(folder)}
@@ -267,7 +267,7 @@ export function ProfileFoldersPage() {
                     style={{ borderColor: `${folder.color}99` }}
                   >
                     <InstagramAvatar
-                      className="size-6 shrink-0 rounded-full border border-[#27334a] object-cover"
+                      className="size-6 shrink-0 rounded-full border border-line object-cover"
                       src={account.profile_picture_url}
                       username={account.username}
                     />
@@ -290,7 +290,7 @@ export function ProfileFoldersPage() {
                 )}
               </div>
               <button
-                className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#27334a] px-3 text-xs font-medium text-[#cbd5e1] hover:bg-[#101923]"
+                className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-line px-3 text-xs font-medium text-[#cbd5e1] hover:bg-[#101923]"
                 type="button"
                 onClick={() => openAccountManager(folder)}
               >
@@ -299,7 +299,7 @@ export function ProfileFoldersPage() {
               </button>
               {managingFolderId === folder.id && (
                 <form
-                  className="space-y-3 rounded-lg border border-[#27334a] bg-[#090b0f] p-3"
+                  className="space-y-3 rounded-lg border border-line bg-surface-inset p-3"
                   onSubmit={(event) => {
                     event.preventDefault();
                     saveFolderAccounts.mutate({
@@ -314,7 +314,7 @@ export function ProfileFoldersPage() {
                   <label className="grid gap-1.5 text-xs text-[#94a3b8]">
                     Buscar perfil pelo nome
                     <input
-                      className="min-h-9 rounded-lg border border-[#27334a] bg-[#10141b] px-3 text-sm text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+                      className="min-h-9 rounded-lg border border-line bg-surface-raised px-3 text-sm text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
                       type="search"
                       value={accountSearch}
                       onChange={(event) => setAccountSearch(event.target.value)}
@@ -327,7 +327,7 @@ export function ProfileFoldersPage() {
                       {" "}correspondem à busca
                     </p>
                     <button
-                      className="min-h-8 rounded-lg border border-[#27334a] px-3 text-xs font-medium text-[#cbd5e1] hover:bg-[#101923] disabled:opacity-50"
+                      className="min-h-8 rounded-lg border border-line px-3 text-xs font-medium text-[#cbd5e1] hover:bg-[#101923] disabled:opacity-50"
                       type="button"
                       disabled={visibleAccounts.length === 0}
                       onClick={() =>
@@ -354,7 +354,7 @@ export function ProfileFoldersPage() {
                           className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-xs ${
                             checked
                               ? "border-[#00c9d8] bg-[#0d3036] text-[#e7fdff]"
-                              : "border-[#27334a] bg-[#10141b] text-[#cbd5e1]"
+                              : "border-line bg-surface-raised text-[#cbd5e1]"
                           }`}
                           key={account.id}
                         >
@@ -371,7 +371,7 @@ export function ProfileFoldersPage() {
                             }
                           />
                           <InstagramAvatar
-                            className="size-6 shrink-0 rounded-full border border-[#27334a] object-cover"
+                            className="size-6 shrink-0 rounded-full border border-line object-cover"
                             src={account.profile_picture_url}
                             username={account.username}
                           />
@@ -383,7 +383,7 @@ export function ProfileFoldersPage() {
                   )}
                   <div className="flex justify-end gap-2">
                     <button
-                      className="min-h-9 rounded-lg border border-[#27334a] px-3 text-xs text-[#cbd5e1]"
+                      className="min-h-9 rounded-lg border border-line px-3 text-xs text-[#cbd5e1]"
                       type="button"
                       onClick={() => setManagingFolderId(null)}
                     >
@@ -404,7 +404,7 @@ export function ProfileFoldersPage() {
         </section>
       )}
 
-      <section className="rounded-xl border border-[#27334a] bg-[#0d1015] p-4">
+      <section className="rounded-xl border border-line bg-surface p-4">
         <h3 className="font-medium text-[#f5f7fb]">Contas sem pasta ({unassignedCount})</h3>
         <p className="mt-1 text-xs text-[#94a3b8]">
           Contas não atribuídas a nenhuma pasta podem ser movidas pelo botão “Organizar contas”.
@@ -415,11 +415,11 @@ export function ProfileFoldersPage() {
               .filter((account) => !account.profile_folder_id)
               .map((account) => (
                 <div
-                  className="inline-flex items-start gap-2 rounded-lg border border-[#27334a] bg-[#101923] px-2.5 py-1.5 text-xs text-[#cbd5e1]"
+                  className="inline-flex items-start gap-2 rounded-lg border border-line bg-[#101923] px-2.5 py-1.5 text-xs text-[#cbd5e1]"
                   key={account.id}
                 >
                   <InstagramAvatar
-                    className="size-6 rounded-full border border-[#27334a] object-cover"
+                    className="size-6 rounded-full border border-line object-cover"
                     src={account.profile_picture_url}
                     username={account.username}
                   />

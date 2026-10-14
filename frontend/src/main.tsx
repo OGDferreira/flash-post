@@ -20,6 +20,9 @@ const queryClient = new QueryClient({
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
+      // Remounting a page within 30 s reuses cached data instead of refetching;
+      // polling pages still refresh on their own intervals.
+      staleTime: 30_000,
     },
   },
 });

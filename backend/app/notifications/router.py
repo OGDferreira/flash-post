@@ -257,6 +257,9 @@ async def _goal_response(
         )
     )
     is_today = goal.progress_date == today
+    checked_at = goal.progress_checked_at
+    if checked_at is not None and checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=timezone.utc)
     return DailyViewsGoalResponse(
         user_id=user_id,
         full_name=full_name,
@@ -269,7 +272,7 @@ async def _goal_response(
         progress_date=today,
         progress_views=goal.progress_views if is_today else None,
         progress_accounts=goal.progress_accounts if is_today else None,
-        progress_checked_at=goal.progress_checked_at if is_today else None,
+        progress_checked_at=checked_at if is_today else None,
         progress_error=goal.progress_error if is_today else None,
         notified_today=notified is not None,
     )

@@ -225,7 +225,7 @@ function HomeRedirect() {
 
 function NotFound() {
   return (
-    <main className="grid min-h-screen place-items-center bg-[#070809] px-5 text-center text-[#94a3b8]">
+    <main className="grid min-h-screen place-items-center bg-transparent px-5 text-center text-[#94a3b8]">
       <div>
         <p className="text-sm font-medium text-[#7186ff]">404</p>
         <h1 className="mt-2 text-2xl font-semibold text-[#f5f7fb]">

@@ -112,14 +112,14 @@ export function ErrorLogsPage() {
             Reenviar falhas de hoje
           </button>
           <a
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#27334a] px-3 py-2 text-sm text-[#dbe4f3] hover:bg-[#101923]"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-[#dbe4f3] hover:bg-[#101923]"
             href={`/api/diagnostics/events.csv?${params}`}
           >
             <Download size={15} />
             Exportar CSV
           </a>
           <button
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#27334a] px-3 py-2 text-sm text-[#dbe4f3] hover:bg-[#101923] disabled:opacity-60"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-[#dbe4f3] hover:bg-[#101923] disabled:opacity-60"
             disabled={events.isFetching}
             onClick={() => void events.refetch()}
             type="button"
@@ -131,7 +131,7 @@ export function ErrorLogsPage() {
       </header>
 
       {retryMessage && (
-        <p className="rounded-lg border border-[#27334a] bg-[#101923] px-3 py-2 text-sm text-[#dbe4f3]" role="status">
+        <p className="rounded-lg border border-line bg-[#101923] px-3 py-2 text-sm text-[#dbe4f3]" role="status">
           {retryMessage}
         </p>
       )}
@@ -139,14 +139,14 @@ export function ErrorLogsPage() {
       <div className="flex flex-wrap gap-2">
         <input
           aria-label="Buscar no log"
-          className="min-h-10 rounded-lg border border-[#27334a] bg-[#0b0d11] px-3 text-sm text-white placeholder:text-[#64748b]"
+          className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-sm text-white placeholder:text-[#64748b]"
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Buscar conta, vídeo ou texto"
           value={search}
         />
         <select
           aria-label="Categoria"
-          className="min-h-10 rounded-lg border border-[#27334a] bg-[#0b0d11] px-3 text-sm text-white"
+          className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-sm text-white"
           onChange={(event) => setCategory(event.target.value)}
           value={category}
         >
@@ -159,7 +159,7 @@ export function ErrorLogsPage() {
         </select>
         <select
           aria-label="Período"
-          className="min-h-10 rounded-lg border border-[#27334a] bg-[#0b0d11] px-3 text-sm text-white"
+          className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-sm text-white"
           onChange={(event) => setPeriod(event.target.value)}
           value={period}
         >
@@ -185,7 +185,7 @@ export function ErrorLogsPage() {
             className={`rounded-lg border px-3 py-2 text-xs ${
               filter === value
                 ? "border-[#536dfe] bg-[#171d35] text-white"
-                : "border-[#27334a] text-[#94a3b8] hover:text-white"
+                : "border-line text-[#94a3b8] hover:text-white"
             }`}
             key={value}
             onClick={() => setFilter(value)}
@@ -231,7 +231,7 @@ export function ErrorLogsPage() {
                   <summary className="cursor-pointer text-xs text-[#aab7ff]">
                     Detalhes técnicos
                   </summary>
-                  <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[#0b0d11] p-3 text-xs leading-5 text-[#cbd5e1]">
+                  <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-inset p-3 text-xs leading-5 text-[#cbd5e1]">
                     {event.stack}
                   </pre>
                 </details>

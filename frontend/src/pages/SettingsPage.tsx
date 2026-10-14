@@ -107,7 +107,7 @@ export function SettingsPage() {
   }
   if (!accounts.data.can_manage) {
     return (
-      <section className="mx-auto max-w-3xl rounded-xl border border-[#27334a] bg-[#0d1015] p-6">
+      <section className="mx-auto max-w-3xl rounded-xl border border-line bg-surface p-6">
         <h2 className="text-2xl font-semibold text-[#f5f7fb]">Configurações</h2>
         <p className="mt-3 text-sm leading-6 text-[#94a3b8]">
           Somente o OWNER do workspace pode cadastrar e gerenciar aplicativos Meta.
@@ -159,7 +159,7 @@ export function SettingsPage() {
         </p>
       </header>
 
-      <section className="space-y-5 rounded-xl border border-[#27334a] bg-[#0d1015] p-5 sm:p-6">
+      <section className="space-y-5 rounded-xl border border-line bg-surface p-5 sm:p-6">
         <div>
           <h3 className="font-medium text-[#f5f7fb]">Aplicativos Meta</h3>
           <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
@@ -174,7 +174,7 @@ export function SettingsPage() {
               className={`space-y-4 rounded-lg border p-4 ${
                 app.is_selected
                   ? "border-[#536dfe] bg-[#11182d]"
-                  : "border-[#27334a] bg-[#090b0f]"
+                  : "border-line bg-surface-inset"
               }`}
               key={app.id}
             >
@@ -212,7 +212,7 @@ export function SettingsPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
-                    className="grid size-10 place-items-center rounded-lg border border-[#27334a] text-[#cbd5e1] hover:bg-[#10141b]"
+                    className="grid size-10 place-items-center rounded-lg border border-line text-[#cbd5e1] hover:bg-surface-raised"
                     type="button"
                     aria-label={`Editar ${app.display_name}`}
                     onClick={() => {
@@ -255,7 +255,7 @@ export function SettingsPage() {
               </div>
               {editingAppId === app.id && (
                 <form
-                  className="grid gap-3 border-t border-[#27334a] pt-4 sm:grid-cols-2"
+                  className="grid gap-3 border-t border-line pt-4 sm:grid-cols-2"
                   onSubmit={(event) => {
                     event.preventDefault();
                     updateMetaApp.mutate({
@@ -268,7 +268,7 @@ export function SettingsPage() {
                   <label className="grid gap-2 text-sm text-[#cbd5e1]">
                     Nome interno
                     <input
-                      className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
+                      className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
                       maxLength={120}
                       required
                       value={editDisplayName}
@@ -279,7 +279,7 @@ export function SettingsPage() {
                     Novo Instagram App Secret (opcional)
                     <input
                       autoComplete="new-password"
-                      className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
+                      className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
                       maxLength={512}
                       type="password"
                       value={editAppSecret}
@@ -297,7 +297,7 @@ export function SettingsPage() {
                       {updateMetaApp.isPending ? "Salvando..." : "Salvar alterações"}
                     </button>
                     <button
-                      className="grid size-10 place-items-center rounded-lg border border-[#27334a] text-[#cbd5e1]"
+                      className="grid size-10 place-items-center rounded-lg border border-line text-[#cbd5e1]"
                       type="button"
                       aria-label="Cancelar edição"
                       onClick={() => {
@@ -314,13 +314,13 @@ export function SettingsPage() {
             </article>
           ))}
           {metaApps.data.apps.length === 0 && (
-            <p className="rounded-lg border border-dashed border-[#27334a] px-4 py-3 text-sm text-[#94a3b8]">
+            <p className="rounded-lg border border-dashed border-line px-4 py-3 text-sm text-[#94a3b8]">
               Nenhum aplicativo cadastrado. Adicione as credenciais do Instagram Business Login abaixo.
             </p>
           )}
         </div>
         <form
-          className="grid gap-4 border-t border-[#202838] pt-5 sm:grid-cols-2"
+          className="grid gap-4 border-t border-line-soft pt-5 sm:grid-cols-2"
           onSubmit={(event) => {
             event.preventDefault();
             createMetaApp.mutate();
@@ -330,7 +330,7 @@ export function SettingsPage() {
             Nome para identificar o aplicativo
             <input
               autoComplete="off"
-              className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
               maxLength={120}
               required
               value={displayName}
@@ -346,7 +346,7 @@ export function SettingsPage() {
             </span>
             <input
               autoComplete="off"
-              className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
               inputMode="numeric"
               maxLength={64}
               pattern="[0-9]+"
@@ -363,7 +363,7 @@ export function SettingsPage() {
             </span>
             <input
               autoComplete="new-password"
-              className="min-h-10 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
               maxLength={512}
               type="password"
               required
@@ -394,7 +394,7 @@ export function SettingsPage() {
           </div>
         </form>
       </section>
-      <section className="space-y-4 rounded-xl border border-[#27334a] bg-[#0d1015] p-5 sm:p-6">
+      <section className="space-y-4 rounded-xl border border-line bg-surface p-5 sm:p-6">
         <div>
           <h3 className="font-medium text-[#f5f7fb]">Integração Sharkbot</h3>
           <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
@@ -405,7 +405,7 @@ export function SettingsPage() {
         <label className="grid gap-2 text-sm text-[#cbd5e1]">
           URL do webhook para cadastrar no Sharkbot
           <input
-            className="min-h-11 rounded-lg border border-[#27334a] bg-[#090b0f] px-3 font-mono text-xs text-[#cbd5e1] outline-none focus:border-[#7186ff]"
+            className="min-h-11 rounded-lg border border-line bg-surface-inset px-3 font-mono text-xs text-[#cbd5e1] outline-none focus:border-[#7186ff]"
             readOnly
             value={sharkbotSettings.data.webhook_url}
           />

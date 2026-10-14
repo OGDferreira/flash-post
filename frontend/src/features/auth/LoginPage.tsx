@@ -75,9 +75,9 @@ export function LoginPage() {
     mutation.error instanceof ApiError ? mutation.error.message : null;
 
   return (
-    <main className="relative grid min-h-svh place-items-center overflow-x-hidden bg-[#070809] px-4 py-6 sm:px-6 sm:py-10">
+    <main className="relative grid min-h-svh place-items-center overflow-x-hidden bg-transparent px-4 py-6 sm:px-6 sm:py-10">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_48%,rgba(83,109,254,0.08),transparent_45%)]" />
-      <div className="relative grid w-full max-w-[960px] overflow-hidden rounded-2xl border border-[#202838] bg-[#0d1015] shadow-[0_24px_80px_rgba(0,0,0,0.28)] md:grid-cols-[0.95fr_1.05fr]">
+      <div className="relative grid w-full max-w-[960px] overflow-hidden rounded-2xl border border-line-soft bg-surface shadow-[0_24px_80px_rgba(0,0,0,0.28)] md:grid-cols-[0.95fr_1.05fr]">
         <section className="flex flex-col justify-between gap-10 p-6 sm:p-8 md:min-h-[540px] md:p-9">
           <Link to="/" className="flex w-fit items-center gap-3">
             <img
@@ -92,7 +92,7 @@ export function LoginPage() {
             </span>
           </Link>
           <div className="max-w-sm md:my-auto">
-            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#27334a] bg-[#0d1015] px-3 py-1.5 text-xs text-[#aeb9ce]">
+            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-[#aeb9ce]">
               <ShieldCheck size={14} className="text-[#8295ff]" />
               Acesso seguro à sua operação
             </p>
@@ -110,7 +110,7 @@ export function LoginPage() {
           </p>
         </section>
 
-        <section className="flex items-center border-t border-[#202838] p-6 sm:p-8 md:border-l md:border-t-0 md:p-9">
+        <section className="flex items-center border-t border-line-soft p-6 sm:p-8 md:border-l md:border-t-0 md:p-9">
           <div className="w-full max-w-md md:mx-auto">
           <div className="mb-7">
             <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#f5f7fb]">
@@ -147,7 +147,7 @@ export function LoginPage() {
                 {...form.register("email")}
                 aria-invalid={Boolean(form.formState.errors.email)}
                 aria-describedby={form.formState.errors.email ? "email-error" : undefined}
-                className="h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] px-3.5 text-sm text-[#f5f7fb] outline-none transition placeholder:text-[#536176] focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+                className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-[#f5f7fb] outline-none transition placeholder:text-[#536176] focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
                 placeholder="voce@empresa.com"
               />
               {form.formState.errors.email && (
@@ -169,7 +169,7 @@ export function LoginPage() {
                   {...form.register("password")}
                   aria-invalid={Boolean(form.formState.errors.password)}
                   aria-describedby={form.formState.errors.password ? "password-error" : undefined}
-                  className="h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] px-3.5 pr-12 text-sm text-[#f5f7fb] outline-none transition placeholder:text-[#536176] focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+                  className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 pr-12 text-sm text-[#f5f7fb] outline-none transition placeholder:text-[#536176] focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
                   placeholder="Sua senha"
                 />
                 <button
@@ -206,7 +206,7 @@ export function LoginPage() {
               {mutation.isPending ? "Entrando..." : "Entrar"}
             </button>
           </form>
-          <p className="mt-6 border-t border-[#202838] pt-5 text-xs leading-5 text-[#64748b]">
+          <p className="mt-6 border-t border-line-soft pt-5 text-xs leading-5 text-[#64748b]">
             Ainda não tem uma conta?{" "}
             <Link to="/register" className="font-medium text-[#aab7ff] hover:text-white">
               Criar conta
@@ -221,7 +221,7 @@ export function LoginPage() {
 
 function LoginLoading() {
   return (
-    <main className="grid min-h-screen place-items-center bg-[#070809] text-sm text-[#94a3b8]">
+    <main className="grid min-h-screen place-items-center bg-transparent text-sm text-[#94a3b8]">
       Verificando sessão segura...
     </main>
   );

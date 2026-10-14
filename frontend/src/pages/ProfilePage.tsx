@@ -149,13 +149,13 @@ export function ProfilePage() {
         </p>
       </div>
 
-      <section className="rounded-xl border border-[#202838] bg-[#0d1015] p-5 sm:p-7">
-        <div className="mb-7 flex items-center gap-4 border-b border-[#202838] pb-6">
+      <section className="rounded-xl border border-line-soft bg-surface p-5 sm:p-7">
+        <div className="mb-7 flex items-center gap-4 border-b border-line-soft pb-6">
           {avatarPreview || profile.data.avatar_url ? (
             <img
               src={avatarPreview ?? profile.data.avatar_url ?? undefined}
               alt=""
-              className="size-14 rounded-full border border-[#27334a] object-cover"
+              className="size-14 rounded-full border border-line object-cover"
             />
           ) : (
             <span className="grid size-14 place-items-center rounded-full bg-[#171e31] text-lg font-semibold text-[#aab7ff]">
@@ -189,7 +189,7 @@ export function ProfilePage() {
               autoComplete="name"
               {...form.register("full_name")}
               aria-invalid={Boolean(form.formState.errors.full_name)}
-              className="h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+              className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
             />
             {form.formState.errors.full_name && (
               <p className="mt-1.5 text-xs text-[#f1a3ad]">
@@ -205,7 +205,7 @@ export function ProfilePage() {
               id="profile-email"
               value={profile.data.email}
               readOnly
-              className="h-11 w-full cursor-not-allowed rounded-lg border border-[#202838] bg-[#0a0d11] px-3.5 text-sm text-[#64748b]"
+              className="h-11 w-full cursor-not-allowed rounded-lg border border-line-soft bg-[#0a0d11] px-3.5 text-sm text-[#64748b]"
             />
           </div>
           <div>
@@ -225,7 +225,7 @@ export function ProfilePage() {
                 });
               }}
               aria-invalid={Boolean(form.formState.errors.nickname)}
-              className="h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+              className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
             />
             <p className="mt-1.5 text-xs text-[#64748b]">
               Este será o nome público exibido no ranking e na plataforma.
@@ -261,7 +261,7 @@ export function ProfilePage() {
                 setAvatarError(null);
                 setAvatarFile(file);
               }}
-              className="block min-h-11 w-full rounded-lg border border-[#27334a] bg-[#090b0e] text-sm text-[#c7cfdd] file:mr-3 file:min-h-11 file:border-0 file:bg-[#171e31] file:px-4 file:font-medium file:text-[#aab7ff]"
+              className="block min-h-11 w-full rounded-lg border border-line bg-surface-inset text-sm text-[#c7cfdd] file:mr-3 file:min-h-11 file:border-0 file:bg-[#171e31] file:px-4 file:font-medium file:text-[#aab7ff]"
             />
             {avatarError && (
               <p className="mt-1.5 text-xs text-[#f1a3ad]">
@@ -272,7 +272,7 @@ export function ProfilePage() {
               <p className="mt-1.5 text-xs text-[#94a3b8]">{avatarFile.name} selecionada.</p>
             )}
           </div>
-          <div className="grid gap-3 border-t border-[#202838] pt-5 sm:grid-cols-2">
+          <div className="grid gap-3 border-t border-line-soft pt-5 sm:grid-cols-2">
             <Info label="Permissão" value={profile.data.role} />
             <Info
               label="Workspace"

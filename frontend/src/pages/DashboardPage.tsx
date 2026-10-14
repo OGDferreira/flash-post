@@ -486,7 +486,7 @@ export function DashboardPage() {
               ativas
             </span>
           </p>
-          <ul className="mt-3 space-y-2 border-t border-[#202838] pt-3 text-sm">
+          <ul className="mt-3 space-y-2 border-t border-line-soft pt-3 text-sm">
             <li className="flex items-center justify-between gap-3">
               <span className="text-[#f1a3ad]">Com erro</span>
               <span className="font-medium text-[#e6eaf2]">

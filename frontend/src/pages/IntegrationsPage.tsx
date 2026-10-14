@@ -265,7 +265,7 @@ export function IntegrationsPage() {
                   </label>
                 </div>
 
-                <div className="rounded-lg border border-[#27334a] bg-[#090c11] p-3">
+                <div className="rounded-lg border border-line bg-[#090c11] p-3">
                   <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#8295ff]">
                     URL para cadastrar na Smokepay
                   </p>

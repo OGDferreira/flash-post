@@ -403,7 +403,7 @@ export function CollaboratorsPage() {
                       <Trash2 size={14} />
                       Excluir colaborador
                     </button>
-                    <div className="flex items-center gap-2 rounded-lg border border-[#27334a] bg-[#090b0e] px-3 py-2 text-xs">
+                    <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-inset px-3 py-2 text-xs">
                       <CircleDollarSign className="text-[#f2d48a]" size={15} />
                       <span className="text-[#94a3b8]">Devido</span>
                       <strong className="text-[#f2d48a]">{money(item.due_month)}</strong>
@@ -427,7 +427,7 @@ export function CollaboratorsPage() {
                   <SummaryMetric label="Pago no mês" value={money(item.paid_month)} />
                 </div>
 
-                <div className="rounded-lg border border-[#252c3e] bg-[#0a0d13] p-4">
+                <div className="rounded-lg border border-[#252c3e] bg-surface-inset p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                     <span className="font-medium text-[#cbd5e1]">Meta mensal de conexões</span>
                     <span className="text-[#aab7ff]">
@@ -472,7 +472,7 @@ export function CollaboratorsPage() {
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
-                  <div className="rounded-lg border border-[#252c3e] bg-[#0a0d13] p-4">
+                  <div className="rounded-lg border border-[#252c3e] bg-surface-inset p-4">
                     <div className="mb-3 flex items-center gap-2 text-xs text-[#b7bfd0]">
                       <BarChart3 className="text-[#8295ff]" size={15} />
                       Conexões por dia · últimos 7 dias
@@ -579,12 +579,12 @@ export function CollaboratorsPage() {
 
                 <WorkDaysPanel memberId={item.member_id} collaboratorName={item.full_name} />
 
-                <details className="border-t border-[#202838] pt-4">
+                <details className="border-t border-line-soft pt-4">
                   <summary className="cursor-pointer list-none text-xs font-medium text-[#cbd5e1] marker:hidden">
                     <span className="inline-flex items-center gap-2">
                       <UsersRound className="text-[#8295ff]" size={14} />
                       Contas vinculadas e valores salvos
-                      <span className="rounded-full border border-[#27334a] px-2 py-0.5 text-[10px] text-[#94a3b8]">
+                      <span className="rounded-full border border-line px-2 py-0.5 text-[10px] text-[#94a3b8]">
                         {item.account_earnings.length}
                       </span>
                     </span>
@@ -602,7 +602,7 @@ export function CollaboratorsPage() {
                         </thead>
                         <tbody>
                           {item.account_earnings.map((account) => (
-                            <tr className="border-t border-[#202838]" key={account.account_id}>
+                            <tr className="border-t border-line-soft" key={account.account_id}>
                               <td className="py-2 pr-3 text-[#e6eaf2]">@{account.username}</td>
                               <td className="py-2 pr-3 text-[#94a3b8]">
                                 {formatConnectionDate(account.connected_at)}
@@ -680,7 +680,7 @@ function WorkDaysPanel({
   const daysByDate = new Map(selectedDays.map((item) => [item.day, item]));
 
   return (
-    <section className="rounded-lg border border-[#252c3e] bg-[#0a0d13] p-4">
+    <section className="rounded-lg border border-[#252c3e] bg-surface-inset p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h4 className="text-sm font-medium text-[#e6eaf2]">Dias trabalhados · {collaboratorName}</h4>
@@ -727,7 +727,7 @@ function WorkDaysPanel({
                       ? "border-[#315843] bg-[#10231a] text-[#a9e5c0]"
                       : workDay
                         ? "border-[#536dfe] bg-[#151b2d] text-[#d5dcff]"
-                        : "border-[#202838] text-[#94a3b8] hover:bg-[#171e31]"
+                        : "border-line-soft text-[#94a3b8] hover:bg-[#171e31]"
                   }`}
                   disabled={isFuture || workDay?.paid || saveDays.isPending}
                   key={date}
@@ -766,7 +766,7 @@ function WorkDaysPanel({
               {displayError(saveDays.error, "Não foi possível salvar os dias trabalhados.")}
             </p>
           )}
-          <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-[#202838] pt-3 text-xs">
+          <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-line-soft pt-3 text-xs">
             <span className="text-[#94a3b8]">
               {selectedDays.length} dia(s) marcado(s) · {workDays.data?.total_connections ?? 0} conta(s)
               {selectedDays.some((item) => item.paid) && " · verde = pago"}
@@ -838,7 +838,7 @@ function NumberField({
 
 function SummaryMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-[#252c3e] bg-[#0a0d13] p-3">
+    <div className="rounded-lg border border-[#252c3e] bg-surface-inset p-3">
       <p className="text-[10px] uppercase tracking-[0.1em] text-[#78839b]">{label}</p>
       <p className="mt-1 text-lg font-semibold text-[#e8ebf4]">{value}</p>
     </div>

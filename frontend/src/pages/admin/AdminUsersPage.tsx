@@ -65,10 +65,10 @@ export function AdminUsersPage() {
               onChange={(event) => setSearchDraft(event.target.value)}
               placeholder="Nome ou e-mail"
               maxLength={120}
-              className="h-10 w-full rounded-lg border border-[#27334a] bg-[#0d1015] pl-9 pr-3 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe]"
+              className="h-10 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe]"
             />
           </label>
-          <button className="h-10 rounded-lg border border-[#27334a] bg-[#10141b] px-4 text-sm text-[#c7cfdd] hover:bg-[#171e31]">
+          <button className="h-10 rounded-lg border border-line bg-surface-raised px-4 text-sm text-[#c7cfdd] hover:bg-[#171e31]">
             Buscar
           </button>
         </form>
@@ -100,10 +100,10 @@ export function AdminUsersPage() {
               }
             />
           )}
-          <div className="overflow-hidden rounded-xl border border-[#202838] bg-[#0d1015]">
+          <div className="overflow-hidden rounded-xl border border-line-soft bg-surface">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[920px] border-collapse text-left">
-                <thead className="border-b border-[#202838] bg-[#0a0d11] text-[11px] uppercase tracking-[0.12em] text-[#64748b]">
+                <thead className="border-b border-line-soft bg-[#0a0d11] text-[11px] uppercase tracking-[0.12em] text-[#64748b]">
                   <tr>
                     <th className="px-5 py-3.5 font-medium">Usuário</th>
                     <th className="px-5 py-3.5 font-medium">Role</th>
@@ -116,7 +116,7 @@ export function AdminUsersPage() {
                 </thead>
                 <tbody className="divide-y divide-[#1b2330] text-sm">
                   {users.data.items.map((user) => (
-                    <tr key={user.id} className="hover:bg-[#10141b]">
+                    <tr key={user.id} className="hover:bg-surface-raised">
                       <td className="px-5 py-4">
                         <p className="font-medium text-[#e6eaf2]">{user.full_name}</p>
                         <p className="mt-1 text-xs text-[#64748b]">{user.email}</p>
@@ -221,7 +221,7 @@ export function Pagination({
         <button
           onClick={() => onChange(Math.max(1, page - 1))}
           disabled={page <= 1}
-          className="min-h-9 rounded-lg border border-[#27334a] px-3 text-[#c7cfdd] hover:bg-[#10141b] disabled:opacity-40"
+          className="min-h-9 rounded-lg border border-line px-3 text-[#c7cfdd] hover:bg-surface-raised disabled:opacity-40"
         >
           Anterior
         </button>
@@ -231,7 +231,7 @@ export function Pagination({
         <button
           onClick={() => onChange(Math.min(pages, page + 1))}
           disabled={page >= pages}
-          className="min-h-9 rounded-lg border border-[#27334a] px-3 text-[#c7cfdd] hover:bg-[#10141b] disabled:opacity-40"
+          className="min-h-9 rounded-lg border border-line px-3 text-[#c7cfdd] hover:bg-surface-raised disabled:opacity-40"
         >
           Próxima
         </button>

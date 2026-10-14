@@ -84,7 +84,7 @@ export function FinancePage() {
     queryKey: ["finance", "cash-flow"],
     queryFn: () => apiRequest<FinanceSummary>("/api/finance"),
     retry: false,
-    refetchInterval: 5_000,
+    refetchInterval: 15_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -394,7 +394,7 @@ export function FinancePage() {
         <article className="dashboard-card rounded-xl p-5">
           <h2 className="text-base font-semibold text-[#eef1f8]">Histórico de Saques</h2>
           {data.withdrawal_history.length ? (
-            <ul className="mt-3 divide-y divide-[#202838]">
+            <ul className="mt-3 divide-y divide-line-soft">
               {data.withdrawal_history.map((item) => (
                 <li className="flex items-center justify-between gap-3 py-3" key={item.id}>
                   <div className="min-w-0">
@@ -422,7 +422,7 @@ export function FinancePage() {
             Despesas / Colaboradores Pagos
           </h2>
           {data.collaborator_payment_history.length ? (
-            <ul className="mt-3 divide-y divide-[#202838]">
+            <ul className="mt-3 divide-y divide-line-soft">
               {data.collaborator_payment_history.map((item) => (
                 <li className="flex items-center justify-between gap-3 py-3" key={item.id}>
                   <div className="min-w-0">
@@ -459,7 +459,7 @@ export function FinancePage() {
             Faturamento por operação
           </h2>
           {data.operation_revenue.length ? (
-            <ul className="mt-3 divide-y divide-[#202838]">
+            <ul className="mt-3 divide-y divide-line-soft">
               {data.operation_revenue.map((operation) => (
                 <li
                   className="flex flex-wrap items-center justify-between gap-2 py-3"
@@ -491,7 +491,7 @@ export function FinancePage() {
             Feed de vendas ao vivo
           </h2>
           {data.transactions.some((item) => item.kind === "sale") ? (
-            <ul className="mt-3 divide-y divide-[#202838]">
+            <ul className="mt-3 divide-y divide-line-soft">
               {data.transactions
                 .filter((item) => item.kind === "sale")
                 .slice(0, 10)
@@ -543,7 +543,7 @@ export function FinancePage() {
                   <th className="py-2 text-right font-medium">Tipo</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#202838]">
+              <tbody className="divide-y divide-line-soft">
                 {data.transactions.map((item) => (
                   <tr key={item.id}>
                     <td className="py-3 pr-3 text-xs text-[#94a3b8]">

@@ -55,10 +55,10 @@ export function AdminWorkspacesPage() {
               onChange={(event) => setSearchDraft(event.target.value)}
               placeholder="Workspace ou owner"
               maxLength={120}
-              className="h-10 w-full rounded-lg border border-[#27334a] bg-[#0d1015] pl-9 pr-3 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe]"
+              className="h-10 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe]"
             />
           </label>
-          <button className="h-10 rounded-lg border border-[#27334a] bg-[#10141b] px-4 text-sm text-[#c7cfdd] hover:bg-[#171e31]">
+          <button className="h-10 rounded-lg border border-line bg-surface-raised px-4 text-sm text-[#c7cfdd] hover:bg-[#171e31]">
             Buscar
           </button>
         </form>
@@ -72,10 +72,10 @@ export function AdminWorkspacesPage() {
         <EmptyState message="Nenhum workspace encontrado." />
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-[#202838] bg-[#0d1015]">
+          <div className="overflow-hidden rounded-xl border border-line-soft bg-surface">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1050px] border-collapse text-left">
-                <thead className="border-b border-[#202838] bg-[#0a0d11] text-[11px] uppercase tracking-[0.12em] text-[#64748b]">
+                <thead className="border-b border-line-soft bg-[#0a0d11] text-[11px] uppercase tracking-[0.12em] text-[#64748b]">
                   <tr>
                     <th className="px-5 py-3.5 font-medium">Chefe autorizado</th>
                     <th className="px-5 py-3.5 font-medium">Workspace</th>
@@ -87,7 +87,7 @@ export function AdminWorkspacesPage() {
                 </thead>
                 <tbody className="divide-y divide-[#1b2330] text-sm">
                   {workspaces.data.items.map((workspace) => (
-                    <tr key={workspace.id} className="hover:bg-[#10141b]">
+                    <tr key={workspace.id} className="hover:bg-surface-raised">
                       <td className="px-5 py-4">
                         <p className="font-medium text-[#e6eaf2]">{workspace.owner_name}</p>
                         <p className="mt-1 text-xs text-[#64748b]">{workspace.owner_email}</p>
