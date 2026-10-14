@@ -15,6 +15,7 @@ type InstagramMetaApp = {
   app_link: string | null;
   is_selected: boolean;
   app_secret_configured: boolean;
+  connected_accounts: number;
 };
 
 type InstagramMetaAppsResponse = {
@@ -186,6 +187,19 @@ export function SettingsPage() {
                         Selecionado
                       </span>
                     )}
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        app.connected_accounts
+                          ? "bg-[#2dd4a0]/10 text-[#7ee2bd]"
+                          : "bg-[#f2d48a]/10 text-[#f2d48a]"
+                      }`}
+                    >
+                      {app.connected_accounts === 0
+                        ? "Sem contas conectadas"
+                        : app.connected_accounts === 1
+                          ? "1 conta conectada"
+                          : `${app.connected_accounts} contas conectadas`}
+                    </span>
                   </div>
                   <p className="mt-1 text-sm text-[#94a3b8]">
                     Instagram App ID: {app.app_id}

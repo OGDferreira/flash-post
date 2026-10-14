@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+/* FlashPost glass design tokens. Surfaces are translucent so the ambient
+   blue background shows through; text colors stay opaque for contrast. */
+@theme {
+  --color-surface: rgb(17 21 33 / 0.62);
+  --color-surface-raised: rgb(26 32 50 / 0.62);
+  --color-surface-inset: rgb(6 8 13 / 0.58);
+  --color-line: rgb(148 163 255 / 0.16);
+  --color-line-soft: rgb(148 163 255 / 0.1);
+  --color-brand: #536dfe;
+  --color-brand-strong: #6b81ff;
+  --color-neon: #00c9d8;
+}
+
 :root {
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -21,6 +34,228 @@ body {
   min-width: 320px;
   min-height: 100dvh;
   margin: 0;
+  background: #06070b;
+}
+
+/* Ambient background: fixed layer (not background-attachment, which is
+   janky on iOS) that gives the translucent surfaces something to refract. */
+body::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background:
+    radial-gradient(900px 520px at 8% -8%, rgb(83 109 254 / 0.2), transparent 62%),
+    radial-gradient(760px 480px at 105% 12%, rgb(0 201 216 / 0.09), transparent 60%),
+    radial-gradient(820px 620px at 50% 115%, rgb(124 92 255 / 0.1), transparent 62%),
+    #06070b;
+}
+
+/* ---------- Glass primitives ---------- */
+.glass-panel,
+.glass-modal,
+.glass-bar {
+  border: 1px solid var(--color-line);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.05),
+    0 14px 36px rgb(0 0 0 / 0.3);
+}
+
+.glass-panel {
+  border-radius: 16px;
+  background: linear-gradient(150deg, rgb(26 33 54 / 0.6), rgb(11 14 22 / 0.62));
+}
+
+.glass-modal {
+  border-radius: 20px;
+  background: linear-gradient(150deg, rgb(24 30 50 / 0.86), rgb(10 12 20 / 0.9));
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.07),
+    0 0 0 1px rgb(83 109 254 / 0.08),
+    0 28px 80px rgb(0 0 0 / 0.55);
+}
+
+.glass-bar {
+  background: rgb(9 11 18 / 0.72);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.glass-overlay {
+  background: rgb(3 4 8 / 0.62);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* Blur is costly on phones: panels only blur from tablet width up. */
+@media (min-width: 768px) {
+  .glass-panel {
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(140%);
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-modal { background: #0d111c; }
+  .glass-bar { background: rgb(9 11 18 / 0.97); }
+  .glass-overlay { background: rgb(3 4 8 / 0.82); }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-panel { background: #0f131d; }
+  .glass-modal { background: #0d111c; }
+  .glass-bar { background: #090b12; }
+}
+
+/* ---------- Buttons ---------- */
+.btn-primary,
+.btn-secondary,
+.btn-ghost {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 0 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 120ms ease;
+}
+
+.btn-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #5b72ff, #4458e8);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.2),
+    0 6px 20px rgb(83 109 254 / 0.32);
+}
+
+.btn-primary:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.24),
+    0 8px 28px rgb(83 109 254 / 0.48);
+}
+
+.btn-secondary {
+  color: #dfe4ff;
+  border: 1px solid var(--color-line);
+  background: rgb(255 255 255 / 0.04);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: rgb(130 149 255 / 0.45);
+  background: rgb(83 109 254 / 0.1);
+}
+
+.btn-ghost {
+  color: #94a3b8;
+  background: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: #f5f7fb;
+  background: rgb(255 255 255 / 0.05);
+}
+
+.btn-primary:active:not(:disabled),
+.btn-secondary:active:not(:disabled),
+.btn-ghost:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-ghost:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-ghost:focus-visible,
+.field:focus-visible {
+  outline: 2px solid rgb(130 149 255 / 0.85);
+  outline-offset: 2px;
+}
+
+/* ---------- Form fields ---------- */
+.field {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  padding: 0 14px;
+  color: #f5f7fb;
+  background: var(--color-surface-inset);
+  font-size: 16px; /* prevents iOS zoom on focus */
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.field::placeholder {
+  color: #64748b;
+}
+
+.field:focus {
+  border-color: rgb(130 149 255 / 0.6);
+  box-shadow: 0 0 0 3px rgb(83 109 254 / 0.18);
+  outline: none;
+}
+
+@media (min-width: 640px) {
+  .field {
+    font-size: 14px;
+  }
+}
+
+/* ---------- Motion ---------- */
+.modal-enter {
+  animation: modal-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes modal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-enter { animation: none; }
+}
+
+/* ---------- Skeleton loading ---------- */
+.skeleton {
+  border-radius: 10px;
+  background: linear-gradient(
+    100deg,
+    rgb(148 163 255 / 0.06) 30%,
+    rgb(148 163 255 / 0.14) 50%,
+    rgb(148 163 255 / 0.06) 70%
+  );
+  background-size: 300% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }
 
 .app-shell-header {
@@ -34,6 +269,8 @@ body {
 
 .app-mobile-nav {
   padding-bottom: max(8px, env(safe-area-inset-bottom));
+  padding-left: max(8px, env(safe-area-inset-left));
+  padding-right: max(8px, env(safe-area-inset-right));
 }
 
 @media (min-width: 1024px) {
@@ -52,8 +289,8 @@ body {
   isolation: isolate;
   overflow: hidden;
   border: 1px solid transparent;
-  border-radius: 15px;
-  background: linear-gradient(145deg, rgba(19, 24, 38, 0.94), rgba(13, 16, 21, 0.98));
+  border-radius: 16px;
+  background: linear-gradient(150deg, rgb(26 33 54 / 0.62), rgb(11 14 22 / 0.66));
   box-shadow:
     0 0 0 1px rgba(83, 109, 254, 0.035),
     0 10px 32px rgba(0, 0, 0, 0.2),
@@ -84,9 +321,15 @@ body {
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
-  background-size: 180% 180%;
-  animation: dashboard-border-glow 12s linear infinite;
-  filter: blur(0.35px) drop-shadow(0 0 5px rgba(115, 112, 255, 0.13));
+  /* Static gradient border: the previous infinite animation + filter
+     repainted every card continuously, which drained mobile GPUs. */
+}
+
+@media (min-width: 768px) {
+  .dashboard-card {
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(140%);
+  }
 }
 
 .dashboard-card > * {
@@ -104,15 +347,6 @@ body {
 
 .dashboard-card:hover::before {
   opacity: 0.82;
-}
-
-@keyframes dashboard-border-glow {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 180% 50%;
-  }
 }
 
 .dashboard-toolbar {
@@ -581,17 +815,23 @@ body {
 
 .collaborator-input {
   width: 100%;
-  min-height: 39px;
-  border: 1px solid #2a3246;
-  border-radius: 8px;
+  min-height: 40px;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
   outline: none;
-  background: #090c12;
+  background: var(--color-surface-inset);
   padding: 0 10px;
   color: #edf0f8;
-  font-size: 12px;
+  font-size: 16px;
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease;
+}
+
+@media (min-width: 640px) {
+  .collaborator-input {
+    font-size: 12px;
+  }
 }
 
 .collaborator-input:focus {

@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.auth.dependencies import (
     DbSession,
@@ -316,8 +316,12 @@ async def get_account_feed(
     )
 
 
-def _meta_app_response(app: InstagramAppCredential) -> InstagramMetaAppResponse:
+def _meta_app_response(
+    app: InstagramAppCredential,
+    connected_accounts: int = 0,
+) -> InstagramMetaAppResponse:
     return InstagramMetaAppResponse(
+        connected_accounts=connected_accounts,
         id=app.id,
         display_name=app.display_name,
         meta_app_name=app.meta_app_name,
@@ -356,10 +360,27 @@ async def list_meta_apps(
         )
     ).all()
     selected = next((app.id for app in apps if app.is_selected), None)
+    # One grouped query; apps without accounts stay listed with 0 (they are
+    # never removed automatically).
+    connected_counts = dict(
+        (
+            await db.execute(
+                select(InstagramAccount.app_credential_id, func.count(InstagramAccount.id))
+                .where(
+                    InstagramAccount.workspace_id == access.workspace.id,
+                    InstagramAccount.status == "connected",
+                    InstagramAccount.app_credential_id.is_not(None),
+                )
+                .group_by(InstagramAccount.app_credential_id)
+            )
+        ).all()
+    )
     return InstagramMetaAppsResponse(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
         selected_app_id=selected,
-        apps=[_meta_app_response(app) for app in apps],
+        apps=[
+            _meta_app_response(app, connected_counts.get(app.id, 0)) for app in apps
+        ],
     )
 
 

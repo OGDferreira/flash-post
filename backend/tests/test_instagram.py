@@ -1478,3 +1478,51 @@ async def test_instagram_permission_revocation_uses_meta_endpoint(
     monkeypatch.setattr(oauth.httpx, "AsyncClient", FakeClient)
 
     assert await oauth.revoke_instagram_permissions("private-token") is True
+
+
+@pytest.mark.anyio
+async def test_meta_apps_report_connected_accounts_and_keep_empty_apps(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    collaborator,
+    owner,
+) -> None:
+    _owner_user, workspace = owner
+    used_app = InstagramAppCredential(
+        workspace_id=workspace.id,
+        display_name="App com contas",
+        meta_app_name="Meta app A",
+        app_id="111111111",
+        encrypted_app_secret=encrypt_value("secret-a"),
+        is_selected=True,
+    )
+    empty_app = InstagramAppCredential(
+        workspace_id=workspace.id,
+        display_name="App vazio",
+        meta_app_name="Meta app B",
+        app_id="222222222",
+        encrypted_app_secret=encrypt_value("secret-b"),
+        is_selected=False,
+    )
+    db_session.add_all([used_app, empty_app])
+    await db_session.flush()
+    for index, account_status in enumerate(("connected", "connected", "disconnected")):
+        db_session.add(
+            InstagramAccount(
+                workspace_id=workspace.id,
+                app_credential_id=used_app.id,
+                instagram_user_id=f"1784000000{index}",
+                username=f"count_{index}",
+                encrypted_access_token=encrypt_value("token"),
+                token_expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+                status=account_status,
+            )
+        )
+    await db_session.commit()
+    await _login(client, "collaborator@example.com", "collaborator password")
+
+    response = await client.get("/api/instagram/apps")
+
+    assert response.status_code == 200
+    counts = {app["display_name"]: app["connected_accounts"] for app in response.json()["apps"]}
+    assert counts == {"App com contas": 2, "App vazio": 0}

@@ -14,6 +14,11 @@ import { Link, useSearchParams } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { InstagramAvatar } from "@/components/InstagramAvatar";
 import {
+  ConnectAccountModal,
+  metaAppsQueryKey,
+  type InstagramMetaAppsResponse,
+} from "@/components/ConnectAccountModal";
+import {
   formatAccountConnectedAt,
   formatConnectedDuration,
 } from "@/features/instagram/accountDates";
@@ -41,11 +46,6 @@ type ProfileFoldersResponse = {
   folders: { id: string; name: string; color: string }[];
 };
 
-type InstagramMetaAppsResponse = {
-  selected_app_id: string | null;
-  can_manage: boolean;
-  apps: { id: string; display_name: string; app_id: string }[];
-};
 
 type InstagramDisconnectResponse = {
   meta_revoked: boolean;
@@ -88,7 +88,7 @@ export function InstagramAccountsPage() {
     retry: false,
   });
   const metaApps = useQuery({
-    queryKey: ["instagram", "apps"],
+    queryKey: metaAppsQueryKey,
     queryFn: () => apiRequest<InstagramMetaAppsResponse>("/api/instagram/apps"),
     enabled: accounts.data?.can_connect === true,
     retry: false,
@@ -97,14 +97,6 @@ export function InstagramAccountsPage() {
     queryKey: ["instagram", "folders"],
     queryFn: () => apiRequest<ProfileFoldersResponse>("/api/instagram/folders"),
     retry: false,
-  });
-  const connect = useMutation({
-    mutationFn: (appId: string) =>
-      apiRequest<{ authorization_url: string }>(
-        `/api/instagram/connect?app_id=${encodeURIComponent(appId)}`,
-        { method: "POST" },
-      ),
-    onSuccess: ({ authorization_url }) => window.location.assign(authorization_url),
   });
   const startConnection = () => setShowAppSelector(true);
   useEffect(() => {
@@ -173,12 +165,6 @@ export function InstagramAccountsPage() {
     return <ErrorState message="Não foi possível carregar as contas deste workspace." />;
   }
 
-  const connectError =
-    connect.error instanceof ApiError
-      ? connect.error.message
-      : connect.error
-        ? "Não foi possível iniciar a conexão com o Instagram."
-        : null;
   const disconnectError =
     disconnect.error instanceof ApiError
       ? disconnect.error.message
@@ -246,17 +232,13 @@ export function InstagramAccountsPage() {
           {accounts.data.can_connect && (
             <div className="flex flex-col items-end gap-2">
               <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#667eea] disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-primary"
                 type="button"
                 onClick={startConnection}
-                disabled={
-                  !metaApps.data?.apps.length ||
-                  metaApps.isLoading ||
-                  connect.isPending
-                }
+                disabled={!metaApps.data?.apps.length || metaApps.isLoading}
               >
                 <Link2 size={16} />
-                {connect.isPending ? "Conectando..." : "Conectar conta"}
+                Conectar conta
               </button>
               {accounts.data.can_manage &&
                 !metaApps.data?.apps.length &&
@@ -274,37 +256,11 @@ export function InstagramAccountsPage() {
         </div>
       </header>
 
-      {showAppSelector && (
-        <section className="space-y-3 rounded-xl border border-[#27334a] bg-[#0d1015] p-4">
-          <div>
-            <h3 className="font-medium text-[#f5f7fb]">Escolha o aplicativo Meta</h3>
-            <p className="mt-1 text-sm text-[#94a3b8]">
-              A nova conta será vinculada ao app selecionado. As contas existentes não serão alteradas.
-            </p>
-          </div>
-          {metaApps.data?.apps.map((app) => (
-            <button
-              className="flex w-full flex-col rounded-lg border border-[#27334a] bg-[#090b0f] p-3 text-left transition hover:border-[#536dfe] sm:flex-row sm:items-center sm:justify-between"
-              key={app.id}
-              type="button"
-              disabled={connect.isPending}
-              onClick={() => connect.mutate(app.id)}
-            >
-              <span className="font-medium text-[#f5f7fb]">{app.display_name}</span>
-              <span className="mt-1 text-xs text-[#94a3b8] sm:mt-0">
-                Instagram App ID: {app.app_id}
-              </span>
-            </button>
-          ))}
-          <button
-            className="text-sm text-[#aab7ff] hover:text-white"
-            type="button"
-            onClick={() => setShowAppSelector(false)}
-          >
-            Cancelar
-          </button>
-        </section>
-      )}
+      <ConnectAccountModal
+        onClose={() => setShowAppSelector(false)}
+        open={showAppSelector}
+        returnTo="/feature/accounts"
+      />
 
       {callbackMessage && (
         <div
@@ -320,7 +276,6 @@ export function InstagramAccountsPage() {
           {callbackMessage.text}
         </div>
       )}
-      {connectError && <ErrorState message={connectError} />}
       {disconnectError && <ErrorState message={disconnectError} />}
       {removeError && <ErrorState message={removeError} />}
       {metaAppsError && <ErrorState message={metaAppsError} />}
@@ -530,10 +485,7 @@ export function InstagramAccountsPage() {
                         className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
                         type="button"
                         onClick={startConnection}
-                        disabled={
-                          connect.isPending ||
-                          !metaApps.data?.apps.length
-                        }
+                        disabled={!metaApps.data?.apps.length}
                       >
                         <Link2 size={15} />
                         Reconectar

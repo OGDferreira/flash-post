@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
   CalendarCheck2,
   CircleDollarSign,
   Flame,
+  Link2,
   Medal,
   Target,
   TrendingUp,
@@ -21,7 +23,9 @@ import {
   YAxis,
 } from "recharts";
 
+import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { ErrorState, LoadingState } from "@/components/PageState";
+import { useInstagramCallbackToast } from "@/hooks/useInstagramCallbackToast";
 import { apiRequest, type CollaboratorDashboard } from "@/services/api";
 
 function money(value: number | null | undefined) {
@@ -70,6 +74,8 @@ function accountDateLabel(value: string | null) {
 }
 
 export function CollaboratorDashboardPage() {
+  const [connectOpen, setConnectOpen] = useState(false);
+  useInstagramCallbackToast();
   const dashboard = useQuery({
     queryKey: ["collaborators", "dashboard"],
     queryFn: () => apiRequest<CollaboratorDashboard>("/api/collaborators/dashboard"),
@@ -147,6 +153,19 @@ export function CollaboratorDashboardPage() {
             Olá, {data.nickname || data.full_name || "colaborador"}
           </h1>
         </div>
+        <button
+          className="btn-primary ml-auto"
+          onClick={() => setConnectOpen(true)}
+          type="button"
+        >
+          <Link2 size={16} />
+          Conectar conta
+        </button>
+        <ConnectAccountModal
+          onClose={() => setConnectOpen(false)}
+          open={connectOpen}
+          returnTo="/dashboard"
+        />
       </header>
 
       <section aria-label="Resumo de produção e pagamentos" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">

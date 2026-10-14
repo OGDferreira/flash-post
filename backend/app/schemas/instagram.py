@@ -94,6 +94,8 @@ class InstagramMetaAppResponse(BaseModel):
     app_link: str | None
     is_selected: bool
     app_secret_configured: bool
+    # Accounts currently connected through this app (status "connected").
+    connected_accounts: int = 0
 
 
 class InstagramMetaAppsResponse(BaseModel):

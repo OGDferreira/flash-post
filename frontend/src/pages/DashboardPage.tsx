@@ -11,11 +11,12 @@ import {
   Link2,
   type LucideIcon,
 } from "lucide-react";
-import { Link } from "react-router-dom";
 
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { apiRequest } from "@/services/api";
 import { AlertsBanner } from "@/components/AlertsBanner";
+import { ConnectAccountModal } from "@/components/ConnectAccountModal";
+import { useInstagramCallbackToast } from "@/hooks/useInstagramCallbackToast";
 
 type AnalyticsPeriod = InstagramAnalyticsSummary["period"];
 
@@ -115,6 +116,8 @@ function MetricCard({
 }
 
 export function DashboardPage() {
+  const [connectOpen, setConnectOpen] = useState(false);
+  useInstagramCallbackToast();
   const [period, setPeriod] = useState<AnalyticsPeriod>("7d");
   const [startDate, setStartDate] = useState(localDateInputValue);
   const [endDate, setEndDate] = useState(localDateInputValue);
@@ -341,13 +344,19 @@ export function DashboardPage() {
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
             Período das métricas
           </p>
-          <Link
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#536dfe] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#667eea]"
-            to="/feature/accounts?connect=1"
+          <button
+            className="btn-primary"
+            onClick={() => setConnectOpen(true)}
+            type="button"
           >
             <Link2 size={16} />
             Conectar conta
-          </Link>
+          </button>
+          <ConnectAccountModal
+            onClose={() => setConnectOpen(false)}
+            open={connectOpen}
+            returnTo="/dashboard"
+          />
         </div>
         <div aria-label="Filtrar por período" className="dashboard-periods" role="group">
           {periodOptions.map(({ value, label }) => (
