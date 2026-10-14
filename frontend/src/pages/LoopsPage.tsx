@@ -58,6 +58,7 @@ type InstagramLoop = {
   name: string;
   interval_min_minutes: number;
   interval_max_minutes: number;
+  daily_limit_per_account: number;
   post_type: "reels" | "images" | "both";
   repeat_media: boolean;
   status: "active" | "paused";
@@ -136,6 +137,7 @@ type LoopForm = {
   name: string;
   interval_min_minutes: number;
   interval_max_minutes: number;
+  daily_limit_per_account: number;
   post_type: "reels" | "images" | "both";
   repeat_media: boolean;
   account_ids: string[];
@@ -146,6 +148,7 @@ const emptyForm: LoopForm = {
   name: "",
   interval_min_minutes: 20,
   interval_max_minutes: 40,
+  daily_limit_per_account: 24,
   post_type: "reels",
   repeat_media: true,
   account_ids: [],
@@ -362,6 +365,7 @@ export function LoopsPage() {
       name: loop.name,
       interval_min_minutes: loop.interval_min_minutes,
       interval_max_minutes: loop.interval_max_minutes,
+      daily_limit_per_account: loop.daily_limit_per_account ?? 100,
       post_type: loop.post_type,
       repeat_media: loop.repeat_media,
       media_ids: loop.media_ids,
@@ -828,10 +832,31 @@ export function LoopsPage() {
               />
             </label>
           </div>
+          {form.interval_max_minutes < form.interval_min_minutes && (
+            <p className="text-xs text-[#f1a3ad]" role="alert">
+              O intervalo máximo precisa ser maior ou igual ao mínimo.
+            </p>
+          )}
+          <label className="grid gap-2 text-sm text-[#cbd5e1]">
+            Máximo de publicações por conta por dia
+            <input
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+              type="number"
+              min={1}
+              max={100}
+              required
+              value={form.daily_limit_per_account}
+              onChange={(event) =>
+                setForm({ ...form, daily_limit_per_account: Number(event.target.value) })
+              }
+            />
+          </label>
           <p className="text-xs leading-5 text-[#78839b]">
-            Os intervalos são contados como tempo decorrido (independente do fuso do
-            servidor); os horários da próxima execução são exibidos no horário de
-            Brasília (America/Sao_Paulo).
+            Cada conta segue sua própria sequência (vídeo 1, 2, 3… e depois recomeça) e só
+            avança quando a Meta confirma a publicação. O próximo envio de cada conta é
+            sorteado entre o intervalo mínimo e o máximo (fixo se forem iguais). Ao atingir o
+            limite diário, a conta pausa até a meia-noite (horário de Brasília) e continua do
+            próximo vídeo. O Instagram permite no máximo 100 publicações por conta em 24 h.
           </p>
 
           <fieldset>
@@ -937,7 +962,10 @@ export function LoopsPage() {
               !form.name.trim() ||
               form.account_ids.length === 0 ||
               form.interval_min_minutes < 1 ||
-              form.interval_max_minutes < form.interval_min_minutes
+              form.interval_max_minutes < form.interval_min_minutes ||
+              !Number.isInteger(form.daily_limit_per_account) ||
+              form.daily_limit_per_account < 1 ||
+              form.daily_limit_per_account > 100
             }
           >
             {saveLoop.isPending
@@ -986,8 +1014,11 @@ export function LoopsPage() {
                   <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#94a3b8]">
                     <span className="inline-flex items-center gap-1">
                       <Clock3 size={13} />
-                      {loop.interval_min_minutes}–{loop.interval_max_minutes} min entre posts
+                      {loop.interval_min_minutes === loop.interval_max_minutes
+                        ? `${loop.interval_min_minutes} min entre posts`
+                        : `${loop.interval_min_minutes}–${loop.interval_max_minutes} min entre posts`}
                     </span>
+                    <span>até {loop.daily_limit_per_account}/dia por conta</span>
                     <span>
                       {loop.post_type === "reels"
                         ? "Reels"
