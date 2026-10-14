@@ -148,7 +148,7 @@ export function SharkSalesPanel({ period }: { period: MetricsPeriod }) {
 
       {sales.isLoading && <div aria-busy="true" className="skeleton h-40" />}
       {sales.error && <ErrorState message="Não foi possível carregar as vendas." onRetry={() => void sales.refetch()} />}
-      {data && data.total === 0 && <EmptyState message="Nenhuma venda neste período e filtro. Confira a URL do webhook em Configurações." />}
+      {data && data.total === 0 && <EmptyState message="Nenhuma venda neste período e filtro. Confira a URL do webhook em Integrações." />}
       {data && data.total > 0 && (
         <div className="glass-panel overflow-x-auto">
           <table className="w-full min-w-[820px] text-left text-xs">

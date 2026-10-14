@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, CircleHelp, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { CircleHelp, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { CopyField } from "@/components/ui/CopyField";
 import { MetaSetupModal } from "@/features/meta/MetaSetupModal";
-import { SharkAccountsPanel } from "@/features/sharkbot/SharkAccountsPanel";
 import { ApiError, apiRequest } from "@/services/api";
 
 type InstagramMetaApp = {
@@ -27,12 +26,8 @@ type InstagramMetaAppsResponse = {
   apps: InstagramMetaApp[];
 };
 
-type SharkbotWebhookSettings = {
-  webhook_url: string;
-  account_webhooks: { account_id: string; username: string; webhook_url: string }[];
-};
 
-export function SettingsPage() {
+export function MetaAppsPage() {
   const queryClient = useQueryClient();
   const [displayName, setDisplayName] = useState("");
   const [appId, setAppId] = useState("");
@@ -40,7 +35,6 @@ export function SettingsPage() {
   const [editingAppId, setEditingAppId] = useState<string | null>(null);
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editAppSecret, setEditAppSecret] = useState("");
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
@@ -50,12 +44,6 @@ export function SettingsPage() {
   const metaApps = useQuery({
     queryKey: ["instagram", "apps"],
     queryFn: () => apiRequest<InstagramMetaAppsResponse>("/api/instagram/apps"),
-    enabled: accounts.data?.can_manage === true,
-    retry: false,
-  });
-  const sharkbotSettings = useQuery({
-    queryKey: ["sharkbot", "webhook-settings"],
-    queryFn: () => apiRequest<SharkbotWebhookSettings>("/api/sharkbot/webhook/config"),
     enabled: accounts.data?.can_manage === true,
     retry: false,
   });
@@ -96,33 +84,23 @@ export function SettingsPage() {
     mutationFn: (id: string) => apiRequest(`/api/instagram/apps/${id}`, { method: "DELETE" }),
     onSuccess: invalidateApps,
   });
-  const rotateSharkbotWebhook = useMutation({
-    mutationFn: () =>
-      apiRequest<SharkbotWebhookSettings>("/api/sharkbot/webhook/rotate", {
-        method: "POST",
-      }),
-    onSuccess: (settings) => {
-      queryClient.setQueryData(["sharkbot", "webhook-settings"], settings);
-      setCopyFeedback("URL renovada. Atualize o endereço configurado no Sharkbot.");
-    },
-  });
 
-  if (accounts.isLoading) return <LoadingState label="Carregando configurações" />;
+  if (accounts.isLoading) return <LoadingState label="Carregando aplicativos Meta" />;
   if (accounts.error || !accounts.data) {
     return <ErrorState message="Não foi possível carregar as configurações do workspace." />;
   }
   if (!accounts.data.can_manage) {
     return (
       <section className="mx-auto max-w-3xl rounded-xl border border-line bg-surface p-4">
-        <h2 className="text-2xl font-semibold text-[#f5f7fb]">Configurações</h2>
+        <h2 className="text-2xl font-semibold text-[#f5f7fb]">Aplicativos Meta</h2>
         <p className="mt-3 text-sm leading-6 text-[#94a3b8]">
           Somente o OWNER do workspace pode cadastrar e gerenciar aplicativos Meta.
         </p>
       </section>
     );
   }
-  if (metaApps.isLoading || sharkbotSettings.isLoading) {
-    return <LoadingState label="Carregando configurações" />;
+  if (metaApps.isLoading) {
+    return <LoadingState label="Carregando aplicativos Meta" />;
   }
   if (metaApps.error || !metaApps.data) {
     const message =
@@ -131,20 +109,12 @@ export function SettingsPage() {
         : "Não foi possível carregar os aplicativos Meta.";
     return <ErrorState message={message} />;
   }
-  if (sharkbotSettings.error || !sharkbotSettings.data) {
-    const message =
-      sharkbotSettings.error instanceof ApiError
-        ? sharkbotSettings.error.message
-        : "Não foi possível carregar a URL do webhook Sharkbot.";
-    return <ErrorState message={message} />;
-  }
 
   const mutationError = [
     createMetaApp.error,
     selectMetaApp.error,
     updateMetaApp.error,
     removeMetaApp.error,
-    rotateSharkbotWebhook.error,
   ].find(Boolean);
   const mutationMessage =
     mutationError instanceof ApiError
@@ -158,7 +128,7 @@ export function SettingsPage() {
       <header>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Workspace</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
-          Configurações
+          Apps Meta
         </h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[#94a3b8]">
           Gerencie os aplicativos Meta usados para autorizar novas contas Instagram neste workspace.
@@ -414,101 +384,6 @@ export function SettingsPage() {
           </div>
         </form>
       </section>
-      <section className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
-        <div>
-          <h3 className="font-medium text-[#f5f7fb]">Integração Sharkbot</h3>
-          <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
-            Uma única URL serve para todos os seus bots e fluxos do Sharkbot: as vendas são
-            separadas pelo bot e pelo fluxo informados em cada evento e ficam restritas a este
-            workspace. Reenvios do mesmo evento não duplicam leads nem vendas.
-          </p>
-        </div>
-        <label className="grid gap-2 text-sm text-[#cbd5e1]">
-          URL do webhook para cadastrar no Sharkbot
-          <input
-            className="min-h-11 rounded-lg border border-line bg-surface-inset px-3 font-mono text-xs text-[#cbd5e1] outline-none focus:border-[#7186ff]"
-            readOnly
-            value={sharkbotSettings.data.webhook_url}
-          />
-        </label>
-        {copyFeedback && (
-          <p className="text-sm text-[#9de0c0]" role="status">
-            {copyFeedback}
-          </p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <button
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
-            type="button"
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(sharkbotSettings.data.webhook_url)
-                .then(() => setCopyFeedback("URL copiada. Cole-a nas configurações do Sharkbot."))
-                .catch(() =>
-                  setCopyFeedback("Não foi possível copiar automaticamente. Selecione e copie a URL."),
-                );
-            }}
-          >
-            <Copy size={15} />
-            Copiar URL
-          </button>
-          <button
-            className="min-h-10 rounded-lg border border-[#47252d] px-3 py-2 text-sm text-[#f1a3ad] disabled:opacity-60"
-            type="button"
-            disabled={rotateSharkbotWebhook.isPending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Gerar uma nova URL invalidará imediatamente a URL atual. Será necessário atualizá-la no Sharkbot. Continuar?",
-                )
-              ) {
-                rotateSharkbotWebhook.mutate();
-              }
-            }}
-          >
-            {rotateSharkbotWebhook.isPending ? "Gerando..." : "Gerar nova URL"}
-          </button>
-        </div>
-        {sharkbotSettings.data.account_webhooks.length > 0 && (
-          <details className="rounded-xl border border-line-soft bg-surface-inset p-4">
-            <summary className="cursor-pointer text-sm font-medium text-[#dfe4ff]">
-              Atribuir as vendas de um bot a uma conta do Instagram
-            </summary>
-            <p className="mt-2 text-xs leading-5 text-[#94a3b8]">
-              O Sharkbot não envia qual conta do Instagram originou o lead. Se um bot atende a uma
-              única conta, cadastre nele a URL dessa conta: as vendas desse bot passam a aparecer
-              nas métricas da conta. Sem isso, as vendas contam só no total do workspace.
-            </p>
-            <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
-              {sharkbotSettings.data.account_webhooks.map((item) => (
-                <li className="flex items-center gap-2" key={item.account_id}>
-                  <span className="w-32 shrink-0 truncate text-xs text-[#cbd5e1]">@{item.username}</span>
-                  <input
-                    aria-label={`URL do webhook para @${item.username}`}
-                    className="min-h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 font-mono text-[11px] text-[#94a3b8]"
-                    readOnly
-                    value={item.webhook_url}
-                  />
-                  <button
-                    aria-label={`Copiar URL de @${item.username}`}
-                    className="btn-ghost !min-h-9 !px-2"
-                    onClick={() => {
-                      void navigator.clipboard
-                        .writeText(item.webhook_url)
-                        .then(() => setCopyFeedback(`URL de @${item.username} copiada.`))
-                        .catch(() => setCopyFeedback("Não foi possível copiar automaticamente."));
-                    }}
-                    type="button"
-                  >
-                    <Copy size={14} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </section>
-      {accounts.data?.can_manage === true && <SharkAccountsPanel />}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 """Top publications and account engagement ranking from synced Insights."""
 
+import asyncio
+import logging
 import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -13,7 +15,8 @@ from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
 from app.core.time import APP_TIME_ZONE, APP_TIME_ZONE_NAME, local_date, utc_now
 from app.instagram.daily_views_sync import sync_account_daily_views
-from app.instagram.insights_sync import sync_account_media_insights
+from app.core.database import get_session_factory
+from app.instagram.insights_sync import sync_account_media_insights, sync_workspace_accounts
 from app.models import InstagramAccount, InstagramAccountDailyViews, InstagramMediaInsight
 
 router = APIRouter(prefix="/api/analytics", tags=["Publication insights"])
@@ -295,6 +298,105 @@ async def sync_account_now(
         sync_error=account.insights_sync_error,
     )
 
+
+
+# ------------------------------------------------- workspace background sync
+logger = logging.getLogger(__name__)
+_WORKSPACE_SYNC_CONCURRENCY = 4
+_WORKSPACE_SYNC_COOLDOWN_SECONDS = 600
+_workspace_syncs: dict[uuid.UUID, dict] = {}
+
+
+class WorkspaceSyncStatus(BaseModel):
+    running: bool
+    total: int
+    done: int
+    failed: int
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+def _sync_status(workspace_id: uuid.UUID) -> WorkspaceSyncStatus:
+    state = _workspace_syncs.get(workspace_id) or {}
+    return WorkspaceSyncStatus(
+        running=bool(state.get("running")),
+        total=state.get("total", 0),
+        done=state.get("done", 0),
+        failed=state.get("failed", 0),
+        started_at=state.get("started_at"),
+        finished_at=state.get("finished_at"),
+    )
+
+
+async def _run_workspace_sync(workspace_id: uuid.UUID, account_ids: list[uuid.UUID]) -> None:
+    state = _workspace_syncs[workspace_id]
+    semaphore = asyncio.Semaphore(_WORKSPACE_SYNC_CONCURRENCY)
+
+    async def one(account_id: uuid.UUID) -> None:
+        async with semaphore:
+            # One session per account so a failure never blocks the others.
+            async with get_session_factory()() as session:
+                try:
+                    await sync_workspace_accounts(session, [account_id])
+                except Exception as exc:  # noqa: BLE001 - keep syncing the rest
+                    await session.rollback()
+                    state["failed"] += 1
+                    logger.warning("Workspace sync skipped account %s (%s).", account_id, type(exc).__name__)
+            state["done"] += 1
+
+    try:
+        await asyncio.gather(*(one(account_id) for account_id in account_ids))
+    finally:
+        state["running"] = False
+        state["finished_at"] = utc_now()
+
+
+@router.post("/sync", response_model=WorkspaceSyncStatus, dependencies=[Depends(require_csrf)])
+async def sync_workspace_in_background(
+    access: OwnerAccess, db: DbSession, force: bool = False
+) -> WorkspaceSyncStatus:
+    """Start syncing every connected account in the background and return at once.
+
+    The UI polls ``GET /sync-status``; a recent or running sync is not repeated.
+    """
+    workspace_id = access.workspace.id
+    state = _workspace_syncs.get(workspace_id)
+    if state and state.get("running"):
+        return _sync_status(workspace_id)
+    finished = state.get("finished_at") if state else None
+    if (
+        not force
+        and finished is not None
+        and (utc_now() - finished).total_seconds() < _WORKSPACE_SYNC_COOLDOWN_SECONDS
+    ):
+        return _sync_status(workspace_id)
+    account_ids = list(
+        await db.scalars(
+            select(InstagramAccount.id).where(
+                InstagramAccount.workspace_id == workspace_id,
+                InstagramAccount.status == "connected",
+                InstagramAccount.encrypted_access_token.is_not(None),
+                InstagramAccount.token_expires_at > utc_now(),
+            )
+        )
+    )
+    _workspace_syncs[workspace_id] = {
+        "running": bool(account_ids),
+        "total": len(account_ids),
+        "done": 0,
+        "failed": 0,
+        "started_at": utc_now(),
+        "finished_at": None if account_ids else utc_now(),
+    }
+    if account_ids:
+        task = asyncio.create_task(_run_workspace_sync(workspace_id, account_ids))
+        _workspace_syncs[workspace_id]["task"] = task  # keep a reference
+    return _sync_status(workspace_id)
+
+
+@router.get("/sync-status", response_model=WorkspaceSyncStatus)
+async def workspace_sync_status(access: OwnerAccess) -> WorkspaceSyncStatus:
+    return _sync_status(access.workspace.id)
 
 # ------------------------------------------------------------ views per day
 VIEWS_DEFINITIONS = {

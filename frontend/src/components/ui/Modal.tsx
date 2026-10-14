@@ -11,13 +11,15 @@ type ModalProps = {
   footer?: ReactNode;
   /** Prevents closing while an action is running. */
   busy?: boolean;
+  /** Wider dialog for long forms. */
+  wide?: boolean;
 };
 
 /**
  * Glass dialog. Bottom sheet on phones (thumb reach + safe area), centered
  * card from 640px up. Closes on Escape/backdrop unless `busy`.
  */
-export function Modal({ open, title, description, onClose, children, footer, busy }: ModalProps) {
+export function Modal({ open, title, description, onClose, children, footer, busy, wide }: ModalProps) {
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -84,7 +86,7 @@ export function Modal({ open, title, description, onClose, children, footer, bus
         aria-describedby={description ? descriptionId : undefined}
         aria-labelledby={titleId}
         aria-modal="true"
-        className="glass-modal modal-enter relative flex max-h-[min(88dvh,720px)] w-full flex-col rounded-b-none pb-[env(safe-area-inset-bottom)] sm:max-w-lg sm:rounded-b-[20px] sm:pb-0"
+        className={`glass-modal modal-enter relative flex max-h-[min(88dvh,720px)] w-full flex-col rounded-b-none pb-[env(safe-area-inset-bottom)] ${wide ? "sm:max-w-3xl" : "sm:max-w-lg"} sm:rounded-b-[20px] sm:pb-0`}
         ref={panelRef}
         role="dialog"
         tabIndex={-1}

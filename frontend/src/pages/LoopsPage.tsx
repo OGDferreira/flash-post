@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
+import { Modal } from "@/components/ui/Modal";
 import { ApiError, apiRequest } from "@/services/api";
 import { LoopHealthPanel } from "@/components/LoopHealthPanel";
 import {
@@ -101,6 +102,7 @@ type PublicationFailure = {
   error: string;
   account_in_loop: boolean;
   error_category?: string | null;
+  account_status?: string | null;
 };
 
 type PublicationFailuresResponse = {
@@ -113,6 +115,7 @@ type FailureAccountGroup = {
   loopNames: string[];
   failures: PublicationFailure[];
   inLoop: boolean;
+  accountStatus: string | null;
 };
 
 function groupFailuresByAccount(failures: PublicationFailure[]): FailureAccountGroup[] {
@@ -124,6 +127,7 @@ function groupFailuresByAccount(failures: PublicationFailure[]): FailureAccountG
       loopNames: [],
       failures: [],
       inLoop: false,
+      accountStatus: failure.account_status ?? null,
     };
     group.failures.push(failure);
     if (!group.loopNames.includes(failure.loop_name)) group.loopNames.push(failure.loop_name);
@@ -502,6 +506,11 @@ export function LoopsPage() {
                       >
                         {group.inLoop ? "Ativa" : "Desativada"}
                       </span>
+                      {group.accountStatus && group.accountStatus !== "connected" && (
+                        <span className="rounded-full bg-[#3a1a22] px-2 py-0.5 text-[10px] font-semibold uppercase text-[#f1a3ad]">
+                          {group.accountStatus === "error" ? "Conta com erro" : "Conta desconectada"}
+                        </span>
+                      )}
                     </span>
                     <span className="block text-xs text-[#94a3b8]">
                       {group.loopNames.join(", ")}
@@ -572,34 +581,28 @@ export function LoopsPage() {
         é criado com contas e mídias; o intervalo controla as publicações seguintes.
       </p>
 
-      {formOpen && loops.data.can_manage && (
+      <Modal
+        busy={saveLoop.isPending}
+        onClose={() => {
+          setFormOpen(false);
+          setEditingId(null);
+          setForm(emptyForm);
+        }}
+        open={formOpen && loops.data.can_manage}
+        title={!loops.data.can_configure && editingId
+          ? "Associar contas ao loop"
+          : editingId
+            ? "Editar loop"
+            : "Novo loop"}
+        wide
+      >
         <form
-          className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5"
+          className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
             saveLoop.mutate();
           }}
         >
-          <div className="flex items-center justify-between">
-            <h3 className="font-medium text-[#f5f7fb]">
-              {!loops.data.can_configure && editingId
-                ? "Associar contas ao loop"
-                : editingId
-                  ? "Editar loop"
-                  : "Novo loop"}
-            </h3>
-            <button
-              className="text-xs text-[#94a3b8] hover:text-white"
-              type="button"
-              onClick={() => {
-                setFormOpen(false);
-                setEditingId(null);
-                setForm(emptyForm);
-              }}
-            >
-              Cancelar
-            </button>
-          </div>
           <fieldset className="space-y-3 rounded-lg border border-line bg-surface-inset p-3">
             <legend className="px-1 text-sm font-medium text-[#cbd5e1]">
               Contas Instagram ({form.account_ids.length} selecionadas)
@@ -979,7 +982,7 @@ export function LoopsPage() {
                   : "Criar loop"}
           </button>
         </form>
-      )}
+      </Modal>
 
       {visibleLoops.length === 0 ? (
         <EmptyState
@@ -1078,7 +1081,7 @@ export function LoopsPage() {
                   <LoopHealthPanel loopId={loop.id} />
                 </div>
                 {loops.data.can_manage && (
-                  <div className="flex shrink-0 items-start gap-2">
+                  <div className="flex shrink-0 items-start gap-1">
                     {loops.data.can_configure && (
                       <button
                         className="grid size-9 place-items-center rounded-lg border border-line text-[#cbd5e1] hover:bg-surface-raised disabled:opacity-50"

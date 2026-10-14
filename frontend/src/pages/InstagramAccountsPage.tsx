@@ -217,7 +217,7 @@ export function InstagramAccountsPage() {
     });
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
+    <div className="mx-auto max-w-6xl space-y-5">
       <header>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Workspace</p>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
@@ -246,7 +246,7 @@ export function InstagramAccountsPage() {
                 !metaApps.error && (
                 <Link
                   className="text-xs text-[#aab7ff] hover:text-white"
-                  to="/feature/settings"
+                  to="/feature/meta-apps"
                 >
                   Configurar aplicativo Meta
                 </Link>
@@ -426,7 +426,8 @@ export function InstagramAccountsPage() {
             }
           />
         ) : (
-          visibleAccounts.map((account) => {
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {visibleAccounts.map((account) => {
             const active = isInstagramAccountActive(account);
             const expired = new Date(account.token_expires_at).getTime() <= Date.now();
             const label =
@@ -442,7 +443,7 @@ export function InstagramAccountsPage() {
 
             return (
               <article
-                className={`flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-4 ${
+                className={`flex flex-col justify-between gap-3 rounded-xl border p-4 ${
                   active ? "border-[#23513e] bg-[#0e1b17]"                   : "border-[#47252d] bg-[#1a1013]"
                 }`}
                 key={account.id}
@@ -479,7 +480,7 @@ export function InstagramAccountsPage() {
                   </div>
                 </div>
                 {(accounts.data.can_connect || accounts.data.can_manage) && (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {!active && accounts.data.can_connect && (
                       <button
                         className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
@@ -533,7 +534,8 @@ export function InstagramAccountsPage() {
                 )}
               </article>
             );
-          })
+          })}
+          </div>
         )}
       </section>
 

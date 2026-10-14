@@ -220,7 +220,15 @@ def parse_event(event: dict[str, Any]) -> ParsedEvent | None:
     customer_name = " ".join(
         str(part).strip() for part in (customer.get("first_name"), customer.get("last_name")) if part
     ) or None
-    bot_id = _text(bot.get("id"), 120)
+    bot_name = _text(bot.get("name") or bot.get("username") or data.get("bot_name") or event.get("bot_name"), 160)
+    flow_name = _text(flow.get("name") or data.get("flow_name") or event.get("flow_name"), 160)
+    bot_id = _text(bot.get("id") or data.get("bot_id") or event.get("bot_id"), 120)
+    flow_id = _text(flow.get("id") or data.get("flow_id") or event.get("flow_id"), 120)
+    # Payloads without an id still need distinct groups: fall back to the name.
+    if bot_id is None and bot_name:
+        bot_id = f"name:{bot_name.lower()}"[:120]
+    if flow_id is None and flow_name:
+        flow_id = f"name:{flow_name.lower()}"[:120]
     customer_id = _text(customer.get("id"), 120)
     telegram_id = _text(customer.get("telegram_id"), 64)
     if customer_id:
@@ -235,9 +243,9 @@ def parse_event(event: dict[str, Any]) -> ParsedEvent | None:
         raw=event,
         occurred_at=occurred_at,
         bot_id=bot_id,
-        bot_name=_text(bot.get("name") or bot.get("username"), 160),
-        flow_id=_text(flow.get("id"), 120),
-        flow_name=_text(flow.get("name"), 160),
+        bot_name=bot_name,
+        flow_id=flow_id,
+        flow_name=flow_name,
         customer_id=customer_id,
         telegram_id=telegram_id,
         customer_name=customer_name[:240] if customer_name else None,

@@ -199,3 +199,16 @@ async def test_summary_period_and_publication_day(
     assert week["published_posts"] == 1
     bad = await client.get("/api/analytics/summary", params={"period": "custom"})
     assert bad.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_workspace_sync_endpoint_reports_status(client, owner, collaborator):
+    from tests.test_loops import _login
+
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = (await client.get("/api/auth/csrf")).json()["csrf_token"]
+    started = await client.post("/api/analytics/sync", headers={"X-CSRF-Token": token})
+    assert started.status_code == 200
+    assert started.json()["running"] is False and started.json()["total"] == 0
+    status = await client.get("/api/analytics/sync-status")
+    assert status.status_code == 200 and status.json()["finished_at"] is not None

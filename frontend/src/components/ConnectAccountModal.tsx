@@ -93,7 +93,7 @@ export function ConnectAccountModal({ open, onClose, returnTo }: ConnectAccountM
           <Smartphone className="mx-auto text-[#7186ff]" size={22} />
           <p className="mt-3 text-sm text-[#cbd5e1]">Nenhum aplicativo Meta configurado.</p>
           {apps.data.can_manage ? (
-            <Link className="btn-secondary mt-4" onClick={onClose} to="/feature/settings">
+            <Link className="btn-secondary mt-4" onClick={onClose} to="/feature/meta-apps">
               Configurar aplicativo Meta
             </Link>
           ) : (

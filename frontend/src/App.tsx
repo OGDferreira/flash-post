@@ -29,7 +29,7 @@ const EmailsPage = lazyPage(() => import("@/pages/EmailsPage"), "EmailsPage");
 const IntegrationsPage = lazyPage(() => import("@/pages/IntegrationsPage"), "IntegrationsPage");
 const ProfilePage = lazyPage(() => import("@/pages/ProfilePage"), "ProfilePage");
 const ProfileFoldersPage = lazyPage(() => import("@/pages/ProfileFoldersPage"), "ProfileFoldersPage");
-const SettingsPage = lazyPage(() => import("@/pages/SettingsPage"), "SettingsPage");
+const MetaAppsPage = lazyPage(() => import("@/pages/MetaAppsPage"), "MetaAppsPage");
 const CollaboratorsPage = lazyPage(() => import("@/pages/CollaboratorsPage"), "CollaboratorsPage");
 const AffiliatesPage = lazyPage(() => import("@/pages/AffiliatesPage"), "AffiliatesPage");
 const ExtensionsPage = lazyPage(() => import("@/pages/ExtensionsPage"), "ExtensionsPage");
@@ -96,7 +96,8 @@ export default function App() {
                     <Route path="/feature/collaborators" element={<CollaboratorsPage />} />
                     <Route path="/feature/notifications" element={<NotificationsPage />} />
                     <Route path="/feature/ranking" element={<RankingPage />} />
-                    <Route path="/feature/settings" element={<SettingsPage />} />
+                    <Route path="/feature/meta-apps" element={<MetaAppsPage />} />
+                    <Route path="/feature/settings" element={<Navigate replace to="/feature/meta-apps" />} />
                     <Route path="/feature/integrations" element={<IntegrationsPage />} />
                     <Route
                       path="/feature/finance"

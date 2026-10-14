@@ -27,6 +27,7 @@ import {
 } from "@/components/InstagramAccountSelector";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { BotPerformancePanel } from "@/features/analytics/BotPerformancePanel";
+import { SyncStatusBar, useWorkspaceSync } from "@/features/analytics/useWorkspaceSync";
 import { DailyViewsPanel } from "@/features/analytics/DailyViewsPanel";
 import { SharkSalesPanel } from "@/features/sharkbot/SharkSalesPanel";
 import { EngagementRankingPanel } from "@/features/analytics/EngagementRankingPanel";
@@ -83,6 +84,7 @@ function insightHelper(error: string | undefined): string {
 export function AnalyticsPage() {
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [tab, setTab] = useState<MetricsTab>("account");
+  const sync = useWorkspaceSync();
   const [period, setPeriod] = useState<MetricsPeriod>(() => ({
     period: "7d",
     start: todayInput(),
@@ -255,6 +257,7 @@ export function AnalyticsPage() {
         </nav>
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>
+      <SyncStatusBar onRefresh={() => sync.start.mutate(true)} starting={sync.start.isPending} status={sync.status.data} />
       {tab === "daily" && <DailyViewsPanel period={period} />}
       {tab === "sales" && <SharkSalesPanel period={period} />}
       {tab === "videos" && <TopVideosPanel period={period} />}
@@ -269,7 +272,7 @@ export function AnalyticsPage() {
       )}
       {tab === "bots" && <BotPerformancePanel period={period} />}
       {tab === "account" && (
-      <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
         <InstagramAccountSelector
           accounts={activeAccounts}
           selectedAccountIds={selectedAccountIds}

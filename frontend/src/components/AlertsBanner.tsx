@@ -38,12 +38,6 @@ export function AlertsBanner() {
       to: "/feature/accounts",
     });
   }
-  if (data.disconnected_count > 0) {
-    messages.push({
-      text: `${data.disconnected_count} conta(s) desconectadas precisam ser reconectadas.`,
-      to: "/feature/accounts",
-    });
-  }
   if (messages.length === 0) return null;
 
   return (

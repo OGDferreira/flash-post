@@ -226,6 +226,7 @@ async def list_publication_failures(
                 InstagramLoop.name,
                 InstagramAccount.username,
                 InstagramMedia.filename,
+                InstagramAccount.status,
                 select(InstagramLoopAccount.account_id)
                 .where(
                     InstagramLoopAccount.loop_id == InstagramPublicationJob.loop_id,
@@ -233,7 +234,7 @@ async def list_publication_failures(
                 )
                 .exists(),
             )
-            .join(
+            .outerjoin(
                 InstagramLoop,
                 InstagramLoop.id == InstagramPublicationJob.loop_id,
             )
@@ -248,8 +249,6 @@ async def list_publication_failures(
             .where(
                 InstagramPublicationJob.workspace_id == access.workspace.id,
                 InstagramPublicationJob.status == "failed",
-                InstagramPublicationJob.last_error.is_not(None),
-                InstagramAccount.status == "connected",
             )
             .order_by(
                 InstagramPublicationJob.updated_at.desc(),
@@ -263,7 +262,7 @@ async def list_publication_failures(
             InstagramPublicationFailureResponse(
                 id=job.id,
                 account_id=job.account_id,
-                loop_name=loop_name,
+                loop_name=loop_name or "Loop removido",
                 account_username=username,
                 media_filename=filename,
                 scheduled_for=_utc_datetime(job.scheduled_for),
@@ -273,8 +272,9 @@ async def list_publication_failures(
                 account_in_loop=bool(in_loop),
                 error_category=job.error_category,
                 loop_id=job.loop_id,
+                account_status=account_status,
             )
-            for job, loop_name, username, filename, in_loop in rows
+            for job, loop_name, username, filename, account_status, in_loop in rows
         ]
     )
 

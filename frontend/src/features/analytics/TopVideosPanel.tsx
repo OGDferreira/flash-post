@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowDownWideNarrow, ArrowUpNarrowWide, ExternalLink, Flame, Info } from "lucide-react";
 
 import { EmptyState, ErrorState } from "@/components/PageState";
+import { useSyncStatus } from "@/features/analytics/useWorkspaceSync";
 import { apiRequest } from "@/services/api";
 import {
   formatDateTime,
@@ -77,6 +78,7 @@ export function TopVideosPanel({
     placeholderData: (previous) => previous,
   });
 
+  const syncing = Boolean(useSyncStatus().data?.running);
   return (
     <section className="glass-panel p-4 sm:p-4" aria-labelledby={`videos-${accountId ?? "all"}`}>
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -123,8 +125,10 @@ export function TopVideosPanel({
         <div className="mt-4">
           <EmptyState
             message={
-              videos.data.accounts_never_synced.length
-                ? "Ainda não há Insights sincronizados para este período. A primeira sincronização acontece automaticamente em até 3 horas."
+              syncing
+                ? "Carregando as publicações de todas as contas em segundo plano… elas aparecem aqui assim que terminar."
+                : videos.data.accounts_never_synced.length
+                ? "Ainda não há Insights sincronizados para este período. Use “Atualizar agora” acima para buscar na Meta."
                 : "Nenhuma publicação no período selecionado."
             }
           />

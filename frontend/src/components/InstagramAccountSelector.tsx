@@ -46,7 +46,7 @@ export function InstagramAccountSelector({
   }
 
   return (
-    <section className="rounded-xl border border-line-soft bg-surface p-4">
+    <section className="flex flex-col rounded-xl border border-line-soft bg-surface p-4 lg:sticky lg:top-24 lg:h-[calc(100dvh-7.5rem)]">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-medium text-[#e6eaf2]">{label}</h2>
         {selectionMode === "multiple" && accounts.length > 0 && (
@@ -76,7 +76,7 @@ export function InstagramAccountSelector({
           onChange={(event) => setSearchTerm(event.target.value)}
         />
       </label>
-      <div className="mt-3 max-h-72 space-y-1 overflow-y-auto">
+      <div className="mt-3 max-h-72 min-h-0 space-y-1 overflow-y-auto lg:max-h-none lg:flex-1">
         {visibleAccounts.map((account) => {
           const selected = selectedAccountIds.includes(account.id);
           return (

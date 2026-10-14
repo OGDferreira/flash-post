@@ -6,12 +6,12 @@ from typing import Literal
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
-from sqlalchemy import and_, exists, func, select
+from sqlalchemy import String, and_, exists, func, select
 
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.auth.dependencies import DbSession, OwnerAccess
 from app.core.time import APP_TIME_ZONE_NAME, utc_now
-from app.models import SharkLead, SharkTransaction
+from app.models import SharkAccount, SharkLead, SharkTransaction
 
 router = APIRouter(prefix="/api/analytics", tags=["Bot performance"])
 
@@ -20,6 +20,8 @@ UNKNOWN = "__none__"
 
 class BotPerformanceRow(BaseModel):
     key: str
+    shark_account_id: str | None = None
+    shark_account_name: str | None = None
     bot_id: str | None
     bot_name: str | None
     flow_id: str | None
@@ -68,9 +70,11 @@ async def bot_performance(
     workspace_id = access.workspace.id
 
     def keys(model):
+        # Shark accounts are separate systems: their bot/flow ids must never merge.
+        account = func.coalesce(func.cast(model.shark_account_id, String), UNKNOWN)
         bot = func.coalesce(model.bot_id, UNKNOWN)
         flow = func.coalesce(model.flow_id, UNKNOWN)
-        return (bot, flow) if group_by == "flow" else (bot,)
+        return (account, bot, flow) if group_by == "flow" else (account, bot)
 
     def window(column):
         conditions = []
@@ -160,12 +164,24 @@ async def bot_performance(
         item["bot_name"] = item["bot_name"] or bot_name
         item["flow_name"] = item["flow_name"] or flow_name
 
+    account_names = {
+        str(account_id): name
+        for account_id, name in await db.execute(
+            select(SharkAccount.id, SharkAccount.name).where(SharkAccount.workspace_id == workspace_id)
+        )
+    }
+
     def build(key: tuple, data: dict) -> BotPerformanceRow:
-        bot_id = None if key[0] == UNKNOWN else key[0]
-        flow_id = None if len(key) < 2 or key[1] == UNKNOWN else key[1]
+        if key[0] == "__total__":
+            key = (UNKNOWN, UNKNOWN)
+        account_key = None if key[0] == UNKNOWN else key[0]
+        bot_id = None if key[1] == UNKNOWN else key[1]
+        flow_id = None if len(key) < 3 or key[2] == UNKNOWN else key[2]
         priced = data["payments_approved"] - data["payments_without_amount"]
         return BotPerformanceRow(
             key="|".join(key),
+            shark_account_id=account_key,
+            shark_account_name=account_names.get(account_key) if account_key else None,
             bot_id=bot_id,
             bot_name=data["bot_name"],
             flow_id=flow_id,

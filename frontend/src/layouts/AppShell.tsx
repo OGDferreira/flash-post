@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -18,6 +18,8 @@ import {
   Infinity,
   LogOut,
   Menu,
+  Pin,
+  PinOff,
   Moon,
   Sun,
   MessageSquareText,
@@ -54,7 +56,7 @@ const ownerLinks = [
   { label: "Extensões", to: "/feature/extensions", icon: Puzzle },
   { label: "Dúvidas e erros", to: "/feature/support", icon: LifeBuoy },
   { label: "Notificações", to: "/feature/notifications", icon: Bell },
-  { label: "Configurações", to: "/feature/settings", icon: Settings2 },
+  { label: "Apps Meta", to: "/feature/meta-apps", icon: Settings2 },
 ];
 
 const adminLinks = [
@@ -123,6 +125,31 @@ export function AppShell() {
   const { user } = useAuth();
   const location = useLocation();
   const [theme, setTheme] = useState<Theme>(getTheme);
+  const [pinned, setPinned] = useState(() => {
+    try {
+      return localStorage.getItem("flashpost-sidebar-pinned") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [hovered, setHovered] = useState(false);
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const sidebarOpen = pinned || hovered;
+  const openSoon = (next: boolean) => {
+    window.clearTimeout(hoverTimer.current);
+    // Small intent delay so sweeping the mouse past the rail doesn't flicker it open.
+    hoverTimer.current = window.setTimeout(() => setHovered(next), next ? 90 : 160);
+  };
+  const togglePin = () => {
+    setPinned((value) => {
+      try {
+        localStorage.setItem("flashpost-sidebar-pinned", value ? "0" : "1");
+      } catch {
+        /* storage unavailable */
+      }
+      return !value;
+    });
+  };
   const isAdminRoute = location.pathname.startsWith("/admin");
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const workspaceRole =
@@ -320,9 +347,9 @@ export function AppShell() {
   };
   const sidebar = (
     <div className="flex h-full flex-col">
-      <div className="flex h-[72px] items-center justify-between border-b border-line-soft px-4 lg:px-3 lg:group-hover:px-5">
+      <div className="flex h-[72px] items-center justify-between border-b border-line-soft px-4 lg:px-3 lg:group-data-[open=true]:px-5">
         <Link
-          className="flex items-center gap-3 lg:gap-0 lg:group-hover:gap-3"
+          className="flex items-center gap-3 lg:gap-0 lg:group-data-[open=true]:gap-3"
           to={
             hasWorkspaceOwnerAccess
               ? "/dashboard"
@@ -337,7 +364,7 @@ export function AppShell() {
           <span className="grid size-9 place-items-center rounded-xl border border-[#33447c] bg-[#11182d] text-sm font-bold text-[#9baaff]">
             F
           </span>
-          <span className="max-w-[140px] overflow-hidden whitespace-nowrap text-base font-semibold tracking-[-0.03em] text-[#f5f7fb] opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[140px] lg:group-hover:opacity-100">
+          <span className="max-w-[140px] overflow-hidden whitespace-nowrap text-base font-semibold tracking-[-0.03em] text-[#f5f7fb] opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[140px] lg:group-data-[open=true]:opacity-100">
             FlashPost<span className="text-[#7186ff]">.</span>
           </span>
         </Link>
@@ -348,12 +375,22 @@ export function AppShell() {
         >
           <X size={18} />
         </button>
+        <button
+          aria-label={pinned ? "Desafixar menu" : "Fixar menu aberto"}
+          aria-pressed={pinned}
+          className={`hidden size-8 shrink-0 place-items-center rounded-lg transition-opacity duration-200 hover:bg-[#151922] lg:group-data-[open=true]:grid ${pinned ? "text-[#8295ff]" : "text-[#64748b]"}`}
+          onClick={togglePin}
+          title={pinned ? "Desafixar menu" : "Fixar menu aberto"}
+          type="button"
+        >
+          {pinned ? <PinOff size={15} /> : <Pin size={15} />}
+        </button>
       </div>
 
       {isAdminRoute && (
-        <div className="mx-4 mt-5 flex items-center gap-2 overflow-hidden rounded-lg border border-line bg-surface-raised px-3 py-2 text-xs font-medium text-[#aeb9ce] lg:group-hover:mx-3">
+        <div className="mx-4 mt-5 flex items-center gap-2 overflow-hidden rounded-lg border border-line bg-surface-raised px-3 py-2 text-xs font-medium text-[#aeb9ce] lg:group-data-[open=true]:mx-3">
           <Shield className="shrink-0 text-[#8295ff]" size={14} />
-          <span className="max-w-[180px] overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[180px] lg:group-hover:opacity-100">
+          <span className="max-w-[180px] overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[180px] lg:group-data-[open=true]:opacity-100">
             Administração da plataforma
           </span>
         </div>
@@ -366,7 +403,7 @@ export function AppShell() {
             key={group.title}
           >
             {visibleLinkGroups.length > 1 && (
-              <h2 className="mb-2 overflow-hidden px-3 text-[10px] font-medium uppercase tracking-[0.12em] text-[#64748b] opacity-100 transition-all lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[170px] lg:group-hover:opacity-100">
+              <h2 className="mb-2 overflow-hidden px-3 text-[10px] font-medium uppercase tracking-[0.12em] text-[#64748b] opacity-100 transition-all lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
                 {group.title}
               </h2>
             )}
@@ -387,7 +424,7 @@ export function AppShell() {
                   }
                 >
                   <Icon className="shrink-0" size={17} strokeWidth={1.8} />
-                  <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[170px] lg:group-hover:opacity-100">
+                  <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
                     {label}
                   </span>
                 </NavLink>
@@ -401,7 +438,7 @@ export function AppShell() {
         <Link
           to="/profile"
           onClick={() => setMobileOpen(false)}
-          className="flex items-center justify-center gap-3 rounded-lg px-3 py-3 hover:bg-[#12151b] lg:px-0 lg:group-hover:justify-start lg:group-hover:px-3"
+          className="flex items-center justify-center gap-3 rounded-lg px-3 py-3 hover:bg-[#12151b] lg:px-0 lg:group-data-[open=true]:justify-start lg:group-data-[open=true]:px-3"
         >
           {user?.avatar_url ? (
             <img
@@ -414,7 +451,7 @@ export function AppShell() {
               {(user?.full_name || user?.nickname || "F").slice(0, 1).toUpperCase()}
             </span>
           )}
-          <span className="min-w-0 max-w-[145px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[145px] lg:group-hover:opacity-100">
+          <span className="min-w-0 max-w-[145px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[145px] lg:group-data-[open=true]:opacity-100">
             <span className="block truncate text-sm font-medium text-[#e6eaf2]">
               {user?.full_name}
             </span>
@@ -422,17 +459,17 @@ export function AppShell() {
               {user?.role}
             </span>
           </span>
-          <ChevronDown size={15} className="hidden shrink-0 text-[#64748b] lg:group-hover:block" />
+          <ChevronDown size={15} className="hidden shrink-0 text-[#64748b] lg:group-data-[open=true]:block" />
         </Link>
         <button
           onClick={() => {
             logout.mutate();
           }}
           disabled={logout.isPending}
-          className="mt-1 flex min-h-10 w-full items-center justify-center gap-3 rounded-lg px-3 text-sm text-[#94a3b8] hover:bg-[#171317] hover:text-[#f1a3ad] disabled:opacity-50 lg:px-0 lg:group-hover:justify-start lg:group-hover:px-3"
+          className="mt-1 flex min-h-10 w-full items-center justify-center gap-3 rounded-lg px-3 text-sm text-[#94a3b8] hover:bg-[#171317] hover:text-[#f1a3ad] disabled:opacity-50 lg:px-0 lg:group-data-[open=true]:justify-start lg:group-data-[open=true]:px-3"
         >
           <LogOut className="shrink-0" size={16} />
-          <span className="max-w-[120px] overflow-hidden whitespace-nowrap opacity-100 transition-all duration-200 lg:max-w-0 lg:opacity-0 lg:group-hover:max-w-[120px] lg:group-hover:opacity-100">
+          <span className="max-w-[120px] overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[120px] lg:group-data-[open=true]:opacity-100">
             Sair
           </span>
         </button>
@@ -442,7 +479,11 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-transparent text-[#f5f7fb]">
-      <aside className="glass-bar group fixed inset-y-0 left-0 z-30 hidden w-[68px] !border-y-0 !border-l-0 transition-[width,background-color] duration-200 hover:w-[252px] hover:!bg-[rgb(8_10_18/0.95)] lg:block">
+      <aside className="glass-bar group fixed inset-y-0 left-0 z-30 hidden w-[68px] !border-y-0 !border-l-0 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] data-[open=true]:w-[252px] data-[open=true]:!bg-[rgb(6_8_14/0.95)] lg:block"
+        data-open={sidebarOpen}
+        onMouseEnter={() => openSoon(true)}
+        onMouseLeave={() => openSoon(false)}
+      >
         {sidebar}
       </aside>
       {mobileOpen && (
@@ -457,7 +498,7 @@ export function AppShell() {
           </aside>
         </div>
       )}
-      <div className="lg:pl-[68px]">
+      <div className={`transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${pinned ? "lg:pl-[252px]" : "lg:pl-[68px]"}`}>
         <header className="app-shell-header glass-bar sticky top-0 z-20 flex items-center justify-between !border-x-0 !border-t-0 px-4 sm:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <button
@@ -590,7 +631,7 @@ export function AppShell() {
             {({ isActive }) => (
               <>
                 <span
-                  className={`grid h-7 w-10 place-items-center rounded-full transition-all duration-200 ${
+                  className={`grid h-7 w-10 place-items-center rounded-full transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                     isActive ? "text-[#b8c3ff]" : ""
                   }`}
                 >

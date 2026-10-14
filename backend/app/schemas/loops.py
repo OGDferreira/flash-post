@@ -107,6 +107,7 @@ class InstagramPublicationFailureResponse(BaseModel):
     account_in_loop: bool
     error_category: str | None = None
     loop_id: UUID | None = None
+    account_status: str | None = None
 
 
 class InstagramRetryFailuresRequest(BaseModel):

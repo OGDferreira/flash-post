@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, KeyRound, PlugZap, Plus, Save, Trash2 } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
+import { SharkIntegrationPanel } from "@/features/sharkbot/SharkIntegrationPanel";
 import { ApiError, apiRequest } from "@/services/api";
 
 type SmokepayOperation = {
@@ -125,7 +126,7 @@ export function IntegrationsPage() {
         </p>
         <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-[#f5f7fb] sm:text-3xl">
           <PlugZap className="text-[#8295ff]" size={25} />
-          Integrações Smokepay
+          Integrações
         </h1>
         <p className="mt-2 text-sm text-[#94a3b8]">
           Crie um endpoint por operação e configure a parte da venda que fica
@@ -133,6 +134,7 @@ export function IntegrationsPage() {
         </p>
       </header>
 
+      <h2 className="text-lg font-semibold text-[#f5f7fb]">Smokepay</h2>
       {errors.map((error) => (
         <ErrorState key={error} message={error} />
       ))}
@@ -330,6 +332,9 @@ export function IntegrationsPage() {
           })}
         </section>
       )}
+
+      <h2 className="pt-2 text-lg font-semibold text-[#f5f7fb]">Sharkbot</h2>
+      <SharkIntegrationPanel />
     </div>
   );
 }

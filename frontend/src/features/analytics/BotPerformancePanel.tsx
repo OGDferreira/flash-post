@@ -15,6 +15,7 @@ import {
 
 type Row = {
   key: string;
+  shark_account_name?: string | null;
   bot_id: string | null;
   bot_name: string | null;
   flow_id: string | null;
@@ -46,9 +47,10 @@ function money(value: string | null) {
 }
 
 function label(row: Row, groupBy: "bot" | "flow") {
-  const bot = row.bot_name || (row.bot_id ? `Bot ${row.bot_id}` : "Bot não identificado");
-  if (groupBy === "bot") return bot;
-  return `${bot} · ${row.flow_name || (row.flow_id ? `Fluxo ${row.flow_id}` : "fluxo não identificado")}`;
+  const bot = row.bot_name || (row.bot_id && !row.bot_id.startsWith("name:") ? `Bot ${row.bot_id}` : "Bot não identificado");
+  const origin = row.shark_account_name ? `${row.shark_account_name} · ` : "";
+  if (groupBy === "bot") return `${origin}${bot}`;
+  return `${origin}${bot} · ${row.flow_name || (row.flow_id ? `Fluxo ${row.flow_id}` : "fluxo não identificado")}`;
 }
 
 export function BotPerformancePanel({ period }: { period: MetricsPeriod }) {
@@ -142,7 +144,7 @@ export function BotPerformancePanel({ period }: { period: MetricsPeriod }) {
       {data.isLoading && <div className="skeleton h-40" aria-busy="true" />}
       {data.error && <ErrorState message="Não foi possível carregar o desempenho dos bots." onRetry={() => void data.refetch()} />}
       {data.data && data.data.rows.length === 0 && (
-        <EmptyState message="Nenhum evento do Sharkbot neste período. Confira a URL do webhook em Configurações." />
+        <EmptyState message="Nenhum evento do Sharkbot neste período. Confira a URL do webhook em Integrações." />
       )}
       {data.data && data.data.rows.length > 0 && (
         <div className="glass-panel overflow-x-auto">

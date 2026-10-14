@@ -167,8 +167,6 @@ export function DashboardPage() {
     staleTime: 5 * 60_000,
   });
   const metrics = metaSummary.data ?? summary.data;
-  const metricCount = (value: number | null | undefined) =>
-    metrics ? formatCount(value) : "—";
   const pixGenerated = metrics?.pix_generated ?? 0;
   const pixPaid = metrics?.pix_paid ?? 0;
   const pixConversion =
@@ -469,43 +467,6 @@ export function DashboardPage() {
               Nenhuma conexão registrada no período.
             </p>
           )}
-        </article>
-
-        <article className="dashboard-card rounded-xl p-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#8295ff]">
-              Saúde das contas
-            </p>
-            <h2 className="mt-1 text-base font-semibold text-[#e6eaf2]">
-              Ativas e que precisam de atenção
-            </h2>
-          </div>
-          <p className="mt-4 text-3xl font-semibold tracking-[-0.045em] text-[#f5f7fb]">
-            {metricCount(metrics?.active_accounts)}
-            <span className="ml-2 text-sm font-normal tracking-normal text-[#94a3b8]">
-              ativas
-            </span>
-          </p>
-          <ul className="mt-3 space-y-2 border-t border-line-soft pt-3 text-sm">
-            <li className="flex items-center justify-between gap-3">
-              <span className="text-[#f1a3ad]">Com erro</span>
-              <span className="font-medium text-[#e6eaf2]">
-                {metricCount(metrics?.errored_accounts)}
-              </span>
-            </li>
-            <li className="flex items-center justify-between gap-3">
-              <span className="text-[#f2d48a]">Desconectadas</span>
-              <span className="font-medium text-[#e6eaf2]">
-                {metricCount(metrics?.disconnected_accounts)}
-              </span>
-            </li>
-            <li className="flex items-center justify-between gap-3">
-              <span className="text-[#f2d48a]">Autorização expirada</span>
-              <span className="font-medium text-[#e6eaf2]">
-                {metricCount(metrics?.expired_accounts)}
-              </span>
-            </li>
-          </ul>
         </article>
 
         <article className="dashboard-card rounded-xl p-4">

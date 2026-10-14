@@ -16,3 +16,10 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Webhook Shark e OAuth Meta não testados contra serviços reais.
 - Modo claro remapeia cores hex existentes; telas pouco usadas podem precisar de ajuste fino.
 - Participação é valor de referência (bruto, sem taxas); não há repasse automático.
+
+## Rodada 2 (ajustes pós-uso)
+- Removidos banner de contas desconectadas e card "Saúde das contas"; sidebar com hover suave e botão fixar; Hub e Pastas em grade; "Organizar contas" ao lado do lápis.
+- Loops: falhas listam todas as contas com falha (antes filtrava só contas conectadas) com erro ao expandir; edição em pop-up.
+- Analytics: lista de contas até o rodapé; sync em segundo plano de todas as contas (`POST /api/analytics/sync`, `GET /api/analytics/sync-status`) com barra de status; Views por dia/Vídeos em alta mostram carregando/vazio/erro.
+- Bots e fluxos agrupados por conta Shark + bot/fluxo (fallback por nome); dados já gravados sem id de bot continuam como estão.
+- Sharkbot (URL e contas) em Integrações; nova aba "Apps Meta" (Configurações removida, rota antiga redireciona).

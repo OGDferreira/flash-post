@@ -136,7 +136,7 @@ export function ProfileFoldersPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="mx-auto max-w-6xl space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
@@ -216,7 +216,7 @@ export function ProfileFoldersPage() {
       {folderData.folders.length === 0 ? (
         <EmptyState message="Nenhuma pasta criada. Crie uma pasta e escolha uma cor para começar." />
       ) : (
-        <section className="space-y-4" aria-label="Pastas criadas">
+        <section className="grid items-start gap-4 lg:grid-cols-2" aria-label="Pastas criadas">
           {folderData.folders.map((folder) => (
             <article
               className="space-y-4 rounded-xl border bg-[#0d151c] p-4 sm:p-4"
@@ -232,6 +232,14 @@ export function ProfileFoldersPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs font-medium text-[#cbd5e1] hover:text-white"
+                    type="button"
+                    onClick={() => openAccountManager(folder)}
+                  >
+                    <Users size={14} />
+                    Organizar contas
+                  </button>
                   <button
                     className="grid size-9 place-items-center rounded-lg border border-line text-[#aeb9ce] hover:text-white"
                     type="button"
@@ -259,7 +267,7 @@ export function ProfileFoldersPage() {
                   </button>
                 </div>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-2 sm:grid-cols-2">
                 {folder.accounts.map((account) => (
                   <div
                     className="flex min-w-0 items-start gap-2 rounded-lg border bg-[#101923] px-2.5 py-2 text-sm text-[#e6eaf2]"
@@ -289,14 +297,6 @@ export function ProfileFoldersPage() {
                   <p className="text-sm text-[#64748b]">Nenhuma conta nesta pasta ainda.</p>
                 )}
               </div>
-              <button
-                className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-line px-3 text-xs font-medium text-[#cbd5e1] hover:bg-[#101923]"
-                type="button"
-                onClick={() => openAccountManager(folder)}
-              >
-                <Users size={14} />
-                Organizar contas
-              </button>
               {managingFolderId === folder.id && (
                 <form
                   className="space-y-3 rounded-lg border border-line bg-surface-inset p-3"
@@ -346,7 +346,7 @@ export function ProfileFoldersPage() {
                       Nenhum perfil corresponde à busca.
                     </p>
                   ) : (
-                  <div className="grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2">
                     {visibleAccounts.map((account) => {
                       const checked = selectedAccountIds.includes(account.id);
                       return (

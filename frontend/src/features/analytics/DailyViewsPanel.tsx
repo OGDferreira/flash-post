@@ -10,6 +10,7 @@ import {
   periodParams,
   type MetricsPeriod,
 } from "@/features/analytics/period";
+import { useSyncStatus } from "@/features/analytics/useWorkspaceSync";
 import { apiRequest } from "@/services/api";
 
 type Point = {
@@ -47,6 +48,7 @@ export function DailyViewsPanel({ period, accountId }: { period: MetricsPeriod; 
     placeholderData: (previous) => previous,
   });
   const data = query.data;
+  const syncing = Boolean(useSyncStatus().data?.running);
   const chart = (data?.days ?? []).map((point) => ({
     label: dayLabel(point.day),
     received: point.received_views,
@@ -78,6 +80,17 @@ export function DailyViewsPanel({ period, accountId }: { period: MetricsPeriod; 
           </dl>
         )}
       </header>
+      {(query.isLoading || query.isFetching || syncing) && !query.error && (
+        <p aria-live="polite" className="mt-3 flex items-center gap-2 text-xs text-[#8295ff]">
+          <span className="size-2 animate-pulse rounded-full bg-[#8295ff]" />
+          {syncing ? "Buscando as visualizações na Meta em segundo plano…" : "Carregando…"}
+        </p>
+      )}
+      {data && !syncing && !data.synced_at && (
+        <p className="mt-3 rounded-xl border border-[#6b552b] bg-[#1c180e]/60 px-3 py-2 text-xs text-[#f2d48a]">
+          Ainda não há dados diários da Meta para este período. Use “Atualizar agora” acima; se continuar vazio, verifique a permissão instagram_business_manage_insights nas contas.
+        </p>
+      )}
       {query.isLoading && <div aria-busy="true" className="skeleton mt-4 h-56" />}
       {query.error && <div className="mt-4"><ErrorState message="Não foi possível carregar as visualizações." onRetry={() => void query.refetch()} /></div>}
       {data && data.days.length === 0 && <div className="mt-4"><EmptyState message="Sem dias no período." /></div>}
