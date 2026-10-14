@@ -13,6 +13,7 @@ from app.models import (
     InstagramLoop,
     InstagramPublicationJob,
     SharkEvent,
+    SharkTransaction,
 )
 
 
@@ -392,26 +393,29 @@ async def test_revenue_period_uses_sao_paulo_local_day_boundaries(
     _user, workspace = owner
     db_session.add_all(
         [
-            SharkEvent(
+            SharkTransaction(
                 workspace_id=workspace.id,
-                event_type="pix_paid",
-                source_event_key="before-local-day",
+                transaction_key="tx:before-local-day",
+                status="paid",
                 amount="10.00",
-                occurred_at=datetime(2026, 3, 8, 2, 59, tzinfo=timezone.utc),
+                created_at_source=datetime(2026, 3, 8, 2, 59, tzinfo=timezone.utc),
+                paid_at=datetime(2026, 3, 8, 2, 59, tzinfo=timezone.utc),
             ),
-            SharkEvent(
+            SharkTransaction(
                 workspace_id=workspace.id,
-                event_type="pix_paid",
-                source_event_key="on-local-day",
+                transaction_key="tx:on-local-day",
+                status="paid",
                 amount="25.00",
-                occurred_at=datetime(2026, 3, 8, 3, 0, tzinfo=timezone.utc),
+                created_at_source=datetime(2026, 3, 8, 3, 0, tzinfo=timezone.utc),
+                paid_at=datetime(2026, 3, 8, 3, 0, tzinfo=timezone.utc),
             ),
-            SharkEvent(
+            SharkTransaction(
                 workspace_id=workspace.id,
-                event_type="pix_paid",
-                source_event_key="after-local-day",
+                transaction_key="tx:after-local-day",
+                status="paid",
                 amount="40.00",
-                occurred_at=datetime(2026, 3, 9, 3, 0, tzinfo=timezone.utc),
+                created_at_source=datetime(2026, 3, 9, 3, 0, tzinfo=timezone.utc),
+                paid_at=datetime(2026, 3, 9, 3, 0, tzinfo=timezone.utc),
             ),
         ]
     )

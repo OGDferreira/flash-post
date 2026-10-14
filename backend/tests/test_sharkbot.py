@@ -47,7 +47,13 @@ async def test_sharkbot_webhook_handles_reference_events_and_idempotently_update
 
     settings_response = await client.get("/api/sharkbot/webhook/config")
     assert settings_response.status_code == 200, settings_response.text
-    webhook_path = urlparse(settings_response.json()["webhook_url"]).path
+    account_url = next(
+        item["webhook_url"]
+        for item in settings_response.json()["account_webhooks"]
+        if item["account_id"] == str(account.id)
+    )
+    parsed_url = urlparse(account_url)
+    webhook_path = f"{parsed_url.path}?{parsed_url.query}"
 
     payloads = [
         {
@@ -96,7 +102,7 @@ async def test_sharkbot_webhook_handles_reference_events_and_idempotently_update
     assert [response.json()["accepted"] for response in responses] == [1, 1, 1]
     duplicate = await client.post(webhook_path, json=payloads[0])
     assert duplicate.status_code == 200
-    assert duplicate.json() == {"accepted": 0, "duplicates": 1}
+    assert duplicate.json() == {"accepted": 0, "duplicates": 1, "ignored": 0}
 
     metrics = await client.get(
         "/api/analytics/summary",
@@ -105,12 +111,13 @@ async def test_sharkbot_webhook_handles_reference_events_and_idempotently_update
     assert metrics.status_code == 200, metrics.text
     body = metrics.json()
     assert body["leads"] == 1
-    assert body["pix_generated"] == 1
+    # Both PIX were generated in the period (one of them was later paid).
+    assert body["pix_generated"] == 2
     assert body["pix_paid"] == 1
     assert body["pix_paid_amount"] == "97.00"
     account_metrics = body["accounts"][0]
     assert account_metrics["leads"] == 1
-    assert account_metrics["pix_generated"] == 1
+    assert account_metrics["pix_generated"] == 2
     assert account_metrics["pix_paid"] == 1
     assert account_metrics["pix_paid_amount"] == "97.00"
     assert len(body["daily_revenue"]) == 1
@@ -210,9 +217,13 @@ async def test_sharkbot_rejects_unknown_token_and_invalid_event_payload(
 
     await _login(client, "owner@example.com", "correct horse battery staple")
     config = await client.get("/api/sharkbot/webhook/config")
+    unsupported = await client.post(
+        urlparse(config.json()["webhook_url"]).path,
+        json={"event": "unsupported_action", "data": {}},
+    )
+    # Acknowledged (so SharkBot does not retry forever) but not stored.
+    assert unsupported.status_code == 200
+    assert unsupported.json() == {"accepted": 0, "duplicates": 0, "ignored": 1}
     assert (
-        await client.post(
-            urlparse(config.json()["webhook_url"]).path,
-            json={"event": "unsupported_action", "data": {}},
-        )
+        await client.post(urlparse(config.json()["webhook_url"]).path, json=[1, 2])
     ).status_code == 422

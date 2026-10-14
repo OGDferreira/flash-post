@@ -59,6 +59,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             DailyViewsGoal,
             DailyViewsGoalNotification,
             PushSubscription,
+            SharkLead,
+            SharkTransaction,
+            InstagramLoopAccountState,
             EmailAccount,
             FinancialWithdrawal,
             InstagramAccount,
@@ -77,6 +80,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             WorkspaceMember,
         )
 
+        await connection.execute(delete(SharkLead))
+        await connection.execute(delete(SharkTransaction))
+        await connection.execute(delete(InstagramLoopAccountState))
         await connection.execute(delete(DailyViewsGoalNotification))
         await connection.execute(delete(DailyViewsGoal))
         await connection.execute(delete(PushSubscription))

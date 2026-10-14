@@ -27,6 +27,7 @@ from app.models.instagram_loop import (
     SharkEvent,
 )
 from app.models.user import User
+from app.models.sharkbot import SharkLead, SharkTransaction
 from app.models.push import DailyViewsGoal, DailyViewsGoalNotification, PushSubscription
 from app.models.workspace import Workspace, WorkspaceMember
 
@@ -50,6 +51,8 @@ __all__ = [
     "InstagramPublicationJob",
     "PushSubscription",
     "SharkEvent",
+    "SharkLead",
+    "SharkTransaction",
     "SmokepayOperation",
     "SystemSetting",
     "User",

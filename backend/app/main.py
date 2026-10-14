@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin.router import router as admin_router
+from app.analytics.bots import router as bot_performance_router
 from app.analytics.router import router as analytics_router
 from app.auth.router import router as auth_router
 from app.core.database import dispose_engine, get_session_factory
@@ -134,6 +135,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(auth_router)
     application.include_router(admin_router)
     application.include_router(analytics_router)
+    application.include_router(bot_performance_router)
     application.include_router(collaborators_router)
     application.include_router(emails_router)
     application.include_router(finance_router)

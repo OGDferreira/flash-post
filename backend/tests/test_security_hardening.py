@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import encrypt_value
 from app.core.redaction import install_log_redaction, redact_secrets
-from app.models import InstagramAccount, SharkEvent
+from app.models import InstagramAccount, SharkEvent, SharkTransaction
 
 
 async def _csrf(client: AsyncClient) -> str:
@@ -76,12 +76,12 @@ async def test_sharkbot_payment_resend_with_new_webhook_id_is_not_counted_twice(
 
     first = await client.post(webhook_path, json=payload(1789578257))
     resend = await client.post(webhook_path, json=payload(1789578300))
-    assert first.json() == {"accepted": 1, "duplicates": 0}
-    assert resend.json() == {"accepted": 0, "duplicates": 1}
+    assert first.json() == {"accepted": 1, "duplicates": 0, "ignored": 0}
+    assert resend.json() == {"accepted": 0, "duplicates": 1, "ignored": 0}
     stored = await db_session.scalar(
-        select(func.count(SharkEvent.id)).where(
-            SharkEvent.workspace_id == workspace.id,
-            SharkEvent.transaction_id == transaction_id,
+        select(func.count(SharkTransaction.id)).where(
+            SharkTransaction.workspace_id == workspace.id,
+            SharkTransaction.transaction_id == transaction_id,
         )
     )
     assert stored == 1
@@ -116,21 +116,23 @@ async def test_analytics_account_filter_excludes_unattributed_shark_events(
     now = datetime.now(timezone.utc)
     db_session.add_all(
         [
-            SharkEvent(
+            SharkTransaction(
                 workspace_id=workspace.id,
                 account_id=account.id,
-                event_type="pix_paid",
-                source_event_key=uuid.uuid4().hex,
+                transaction_key=f"tx:{uuid.uuid4().hex}",
+                status="paid",
                 amount=Decimal("10.00"),
-                occurred_at=now,
+                created_at_source=now,
+                paid_at=now,
             ),
-            SharkEvent(
+            SharkTransaction(
                 workspace_id=workspace.id,
                 account_id=None,
-                event_type="pix_paid",
-                source_event_key=uuid.uuid4().hex,
+                transaction_key=f"tx:{uuid.uuid4().hex}",
+                status="paid",
                 amount=Decimal("99.00"),
-                occurred_at=now,
+                created_at_source=now,
+                paid_at=now,
             ),
         ]
     )

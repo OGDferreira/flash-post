@@ -78,6 +78,9 @@ class InstagramAnalyticsSummary(BaseModel):
     pix_generated: int
     pix_paid: int
     pix_paid_amount: Decimal
+    # Approved payments whose amount SharkBot did not send (excluded from the
+    # revenue sum, which is therefore incomplete when > 0).
+    pix_paid_without_amount: int = 0
     accounts: list[InstagramAccountAnalytics]
     daily_publications: list[DailyPublicationMetric]
     daily_revenue: list[DailyRevenueMetric]
