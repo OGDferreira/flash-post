@@ -7,7 +7,11 @@ def test_create_scheduler_registers_one_minute_worker() -> None:
     scheduler = scheduler_service.create_scheduler()
     jobs = {job.id: job for job in scheduler.get_jobs()}
 
-    assert set(jobs) == {"flashpost-loop-and-token-worker", "flashpost-daily-views-goals"}
+    assert set(jobs) == {
+        "flashpost-loop-and-token-worker",
+        "flashpost-daily-views-goals",
+        "flashpost-insights-sync",
+    }
     worker = jobs["flashpost-loop-and-token-worker"]
     assert worker.trigger.interval.total_seconds() == 60
     assert worker.max_instances == 1

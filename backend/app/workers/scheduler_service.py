@@ -5,12 +5,65 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.database import get_engine, get_session_factory
+from app.instagram.insights_sync import sync_workspace_accounts
+from app.models import InstagramAccount
 from app.notifications.goals import run_daily_views_goal_tick
 from app.workers.loop_scheduler import run_loop_scheduler_tick
 
 logger = logging.getLogger(__name__)
 _POSTGRES_ADVISORY_LOCK_KEY = 731904281
 _GOALS_ADVISORY_LOCK_KEY = 731904282
+_INSIGHTS_ADVISORY_LOCK_KEY = 731904283
+INSIGHTS_SYNC_HOURS = 3
+
+
+async def _sync_insights_once() -> None:
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    async with get_session_factory()() as db:
+        account_ids = (
+            await db.scalars(
+                select(InstagramAccount.id).where(
+                    InstagramAccount.status == "connected",
+                    InstagramAccount.encrypted_access_token.is_not(None),
+                    InstagramAccount.token_expires_at > datetime.now(timezone.utc),
+                )
+            )
+        ).all()
+    for account_id in account_ids:
+        # One session per account so a failure never blocks the others.
+        async with get_session_factory()() as db:
+            try:
+                await sync_workspace_accounts(db, [account_id])
+            except Exception as exc:
+                await db.rollback()
+                logger.warning("Insights sync skipped account %s (%s).", account_id, type(exc).__name__)
+
+
+async def _run_insights_sync_with_database_lock() -> None:
+    engine = get_engine()
+    try:
+        if engine.dialect.name != "postgresql":
+            await _sync_insights_once()
+            return
+        async with engine.connect() as connection:
+            acquired = await connection.scalar(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                {"lock_key": _INSIGHTS_ADVISORY_LOCK_KEY},
+            )
+            if not acquired:
+                return
+            try:
+                await _sync_insights_once()
+            finally:
+                await connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": _INSIGHTS_ADVISORY_LOCK_KEY},
+                )
+    except Exception as exc:
+        logger.error("Insights sync failed (%s); it will retry.", type(exc).__name__)
 _LOOP_TICK_INTERVAL_SECONDS = 60
 
 
@@ -99,6 +152,16 @@ def create_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         max_instances=1,
         misfire_grace_time=30,
+    )
+    scheduler.add_job(
+        _run_insights_sync_with_database_lock,
+        trigger="interval",
+        hours=INSIGHTS_SYNC_HOURS,
+        id="flashpost-insights-sync",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=600,
     )
     scheduler.add_job(
         _run_goals_tick_with_database_lock,

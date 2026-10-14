@@ -69,6 +69,9 @@ class InstagramAccount(Base):
         nullable=False, default=False, server_default=text("false")
     )
     token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Last successful sync of per-publication Insights (and the last error).
+    insights_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    insights_sync_error: Mapped[str | None] = mapped_column(String(500))
     token_refresh_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
