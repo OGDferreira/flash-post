@@ -23,3 +23,8 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Analytics: lista de contas até o rodapé; sync em segundo plano de todas as contas (`POST /api/analytics/sync`, `GET /api/analytics/sync-status`) com barra de status; Views por dia/Vídeos em alta mostram carregando/vazio/erro.
 - Bots e fluxos agrupados por conta Shark + bot/fluxo (fallback por nome); dados já gravados sem id de bot continuam como estão.
 - Sharkbot (URL e contas) em Integrações; nova aba "Apps Meta" (Configurações removida, rota antiga redireciona).
+
+## 0.4.2
+- Dashboard abre sempre em "Hoje"; colaboradores em cards recolhidos (nome + contas conectadas hoje), expandem ao clicar.
+- Performance: gzip nas respostas; assets com hash em cache imutável (index/SW/manifest sempre revalidados); resumo do dashboard não soma views por vídeo (1 chamada Meta a menos por vídeo, por conta); polling de colaboradores 30s→120s.
+- Nota: plano free do Render hiberna após ~15 min parado (primeiro acesso lento); só plano pago ou ping externo resolve.

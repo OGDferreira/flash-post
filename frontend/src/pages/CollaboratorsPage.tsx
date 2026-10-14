@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
+  ChevronDown,
   CircleDollarSign,
   LockKeyhole,
   Medal,
@@ -104,10 +105,11 @@ export function CollaboratorsPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(blankForm);
   const [drafts, setDrafts] = useState<Record<string, CollaboratorUpdateDraft>>({});
+  const [openMembers, setOpenMembers] = useState<Set<string>>(new Set());
   const report = useQuery({
     queryKey: ["collaborators", "report"],
     queryFn: () => apiRequest<CollaboratorsResponse>("/api/collaborators"),
-    refetchInterval: 30_000,
+    refetchInterval: 120_000,
     retry: false,
   });
   const ranking = useQuery({
@@ -341,7 +343,34 @@ export function CollaboratorsPage() {
             const draft = drafts[item.member_id] ?? draftFrom(item);
             const maxDaily = Math.max(1, ...item.recent_days);
             return (
-              <article className="dashboard-card space-y-4 rounded-xl p-4" key={item.member_id}>
+              <article className="dashboard-card rounded-xl" key={item.member_id}>
+                <button
+                  aria-expanded={openMembers.has(item.member_id)}
+                  className="flex w-full items-center justify-between gap-3 p-4 text-left"
+                  onClick={() =>
+                    setOpenMembers((current) => {
+                      const next = new Set(current);
+                      if (!next.delete(item.member_id)) next.add(item.member_id);
+                      return next;
+                    })
+                  }
+                  type="button"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold text-[#f5f7fb]">{item.full_name}</span>
+                    <span className="block text-xs text-[#94a3b8]">
+                      {item.connections_today}{" "}
+                      {item.connections_today === 1 ? "conta conectada hoje" : "contas conectadas hoje"}
+                    </span>
+                  </span>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={`shrink-0 text-[#8295ff] transition-transform duration-200 ${openMembers.has(item.member_id) ? "rotate-180" : ""}`}
+                    size={18}
+                  />
+                </button>
+                {openMembers.has(item.member_id) && (
+                <div className="space-y-4 border-t border-line-soft p-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <h3 className="font-semibold text-[#f5f7fb]">{item.full_name}</h3>
@@ -625,6 +654,8 @@ export function CollaboratorsPage() {
                   </p>
                   </div>
                 </details>
+                </div>
+                )}
               </article>
             );
           })

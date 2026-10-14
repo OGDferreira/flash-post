@@ -96,6 +96,7 @@ class _AccountMetaResult:
     account_insight_errors: dict[str, str] = field(default_factory=dict)
     insights_error: str | None = None
     missing_permissions: set[str] = field(default_factory=set)
+    media_views_skipped: bool = False
 
 
 async def _fetch_account_meta(
@@ -105,6 +106,7 @@ async def _fetch_account_meta(
     period_end: datetime | None,
     now: datetime,
     include_account_insights: bool,
+    include_media_views: bool = True,
 ) -> _AccountMetaResult:
     result = _AccountMetaResult()
     unavailable_token = "O token de autorização não está disponível. Reconecte esta conta."
@@ -166,24 +168,29 @@ async def _fetch_account_meta(
                     account.instagram_user_id, access_token, insight_start, insight_end
                 ),
             )
-        views, video_count, video_errors = await _cached_meta_call(
-            ("media_views", account.id, token_key, *window),
-            lambda: fetch_instagram_media_views(
-                account.instagram_user_id, access_token, insight_start, insight_end
-            ),
-        )
-        if video_errors:
-            if any(INSTAGRAM_INSIGHTS_PERMISSION in error for error in video_errors):
-                result.missing_permissions.add(INSTAGRAM_INSIGHTS_PERMISSION)
-            # A partial sum would look like a real (lower) number; report it as
-            # unavailable and say how many videos failed.
-            result.media_views = None
-            result.media_views_error = (
-                "Não foi possível consultar visualizações "
-                f"de {len(video_errors)} de {video_count} vídeos."
+        if include_media_views:
+            views, video_count, video_errors = await _cached_meta_call(
+                ("media_views", account.id, token_key, *window),
+                lambda: fetch_instagram_media_views(
+                    account.instagram_user_id, access_token, insight_start, insight_end
+                ),
             )
+            if video_errors:
+                if any(INSTAGRAM_INSIGHTS_PERMISSION in error for error in video_errors):
+                    result.missing_permissions.add(INSTAGRAM_INSIGHTS_PERMISSION)
+                # A partial sum would look like a real (lower) number; report it as
+                # unavailable and say how many videos failed.
+                result.media_views = None
+                result.media_views_error = (
+                    "Não foi possível consultar visualizações "
+                    f"de {len(video_errors)} de {video_count} vídeos."
+                )
+            else:
+                result.media_views = views
         else:
-            result.media_views = views
+            # Workspace-wide cards only need the period total; summing every
+            # video's lifetime views means one Meta call per video per account.
+            result.media_views_skipped = True
     except InstagramInsightsPermissionError:
         result.missing_permissions.add(INSTAGRAM_INSIGHTS_PERMISSION)
         result.insights_error = instagram_api_error_detail(InstagramInsightsPermissionError())
@@ -561,6 +568,7 @@ async def get_analytics_summary(
                     period_end=period_end,
                     now=now,
                     include_account_insights=account_ids is not None,
+                    include_media_views=account_ids is not None,
                 )
 
         await asyncio.gather(*(load(account) for account in active_account_list))
@@ -577,7 +585,10 @@ async def get_analytics_summary(
     )
     # Missing permissions are reported separately (missing_permissions).
     insights_unavailable = any(
-        (result.insights_error is not None or result.media_views is None)
+        (
+            result.insights_error is not None
+            or (result.media_views is None and not result.media_views_skipped)
+        )
         and not result.missing_permissions
         for result in meta_results.values()
     )
@@ -641,8 +652,12 @@ async def get_analytics_summary(
             return None
         return sum(value for value in values if value is not None)
 
-    views_count = _complete_sum(
-        [meta_results[a.id].media_views for a in active_account_list if a.id in meta_results]
+    views_count = (
+        None
+        if any(result.media_views_skipped for result in meta_results.values())
+        else _complete_sum(
+            [meta_results[a.id].media_views for a in active_account_list if a.id in meta_results]
+        )
     )
     period_views_count = _complete_sum(
         [meta_results[a.id].period_views for a in active_account_list if a.id in meta_results]

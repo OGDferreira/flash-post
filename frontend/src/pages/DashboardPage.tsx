@@ -118,7 +118,7 @@ function MetricCard({
 export function DashboardPage() {
   const [connectOpen, setConnectOpen] = useState(false);
   useInstagramCallbackToast();
-  const [period, setPeriod] = useState<AnalyticsPeriod>("7d");
+  const [period, setPeriod] = useState<AnalyticsPeriod>("today");
   const [startDate, setStartDate] = useState(localDateInputValue);
   const [endDate, setEndDate] = useState(localDateInputValue);
   const summary = useQuery({

@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin.router import router as admin_router
@@ -108,7 +109,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application = FastAPI(
         title="FlashPost",
         summary="Operations platform for Instagram publishing and analytics.",
-        version="0.4.0",
+        version="0.4.2",
         lifespan=lifespan,
     )
     application.state.login_rate_limiter = LoginRateLimiter(
@@ -131,6 +132,8 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
         same_site="lax",
         https_only=settings.is_production or settings.public_base_url.startswith("https://"),
     )
+    # Compress JSON/JS/CSS (large account lists and the bundle) over the wire.
+    application.add_middleware(GZipMiddleware, minimum_size=1024)
     application.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=settings.trusted_hosts,
@@ -260,10 +263,17 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
             if not candidate.is_relative_to(resolved_frontend_dir):
                 raise HTTPException(status_code=404, detail="Not found.")
             if candidate.is_file():
-                return FileResponse(candidate)
+                # Vite hashes everything under /assets, so it can be cached for good;
+                # the shell, service worker and manifest must always be revalidated.
+                cache = (
+                    "public, max-age=31536000, immutable"
+                    if asset_path.startswith("assets/")
+                    else "no-cache"
+                )
+                return FileResponse(candidate, headers={"Cache-Control": cache})
             if Path(asset_path).suffix:
                 raise HTTPException(status_code=404, detail="Not found.")
-            return FileResponse(index_file)
+            return FileResponse(index_file, headers={"Cache-Control": "no-cache"})
 
     return application
 

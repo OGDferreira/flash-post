@@ -187,7 +187,7 @@ async def test_partial_video_view_failures_are_reported_as_unavailable(
     await _login(client, "owner@example.com", "correct horse battery staple")
     response = await client.get(
         "/api/analytics/summary",
-        params={"period": "7d", "include_meta_insights": "true"},
+        params={"period": "7d", "include_meta_insights": "true", "account_ids": str(account.id)},
     )
     body = response.json()
     assert response.status_code == 200, response.text
