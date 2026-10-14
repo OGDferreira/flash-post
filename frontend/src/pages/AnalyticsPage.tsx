@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, BarChart3, CircleCheck, Clock3, Eye, UsersRound } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  BarChart3,
+  CircleCheck,
+  Clock3,
+  Eye,
+  RefreshCw,
+  UsersRound,
+} from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -18,12 +26,34 @@ import {
   type InstagramAccountOption,
 } from "@/components/InstagramAccountSelector";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
-import { apiRequest } from "@/services/api";
+import { BotPerformancePanel } from "@/features/analytics/BotPerformancePanel";
+import { EngagementRankingPanel } from "@/features/analytics/EngagementRankingPanel";
+import {
+  PeriodFilter,
+  formatDateTime,
+  isPeriodReady,
+  periodParams,
+  todayInput,
+  type MetricsPeriod,
+} from "@/features/analytics/period";
+import { TopVideosPanel } from "@/features/analytics/TopVideosPanel";
+import { ApiError, apiRequest } from "@/services/api";
 
 type Account = InstagramAccountOption & {
   status: "connected" | "disconnected" | "error";
   token_expires_at: string;
+  insights_synced_at?: string | null;
+  insights_sync_error?: string | null;
 };
+
+type MetricsTab = "account" | "videos" | "ranking" | "bots";
+
+const tabs: { value: MetricsTab; label: string }[] = [
+  { value: "account", label: "Por conta" },
+  { value: "videos", label: "Vídeos em alta" },
+  { value: "ranking", label: "Ranking de engajamento" },
+  { value: "bots", label: "Bots e fluxos" },
+];
 
 function formatCount(value: number | null | undefined): string {
   return value === null || value === undefined
@@ -48,6 +78,13 @@ function insightHelper(error: string | undefined): string {
 
 export function AnalyticsPage() {
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [tab, setTab] = useState<MetricsTab>("account");
+  const [period, setPeriod] = useState<MetricsPeriod>(() => ({
+    period: "7d",
+    start: todayInput(),
+    end: todayInput(),
+  }));
+  const queryClient = useQueryClient();
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<{ accounts: Account[] }>("/api/instagram/accounts"),
@@ -70,17 +107,27 @@ export function AnalyticsPage() {
     if (nextId !== selectedAccountId) setSelectedAccountIds(nextId ? [nextId] : []);
   }, [activeAccounts, selectedAccountId]);
   const summary = useQuery({
-    queryKey: ["analytics", "account", selectedAccountId],
+    queryKey: ["analytics", "account", selectedAccountId, periodParams(period)],
     queryFn: () => {
-      const query = new URLSearchParams();
+      const query = new URLSearchParams(periodParams(period));
       query.append("account_ids", selectedAccountId);
       query.set("include_meta_insights", "true");
       return apiRequest<InstagramAnalyticsSummary>(
         `/api/analytics/summary?${query.toString()}`,
       );
     },
-    enabled: Boolean(selectedAccountId),
+    enabled: Boolean(selectedAccountId) && isPeriodReady(period),
     retry: false,
+    staleTime: 60_000,
+  });
+  const selectedAccount = activeAccounts.find(({ id }) => id === selectedAccountId);
+  const syncNow = useMutation({
+    mutationFn: (accountId: string) =>
+      apiRequest(`/api/analytics/accounts/${accountId}/sync`, { method: "POST" }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["analytics"] });
+    },
   });
   const accountMetrics = summary.data?.accounts[0];
   const appMetrics = [
@@ -174,15 +221,48 @@ export function AnalyticsPage() {
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-6">
-      <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Métricas</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
-          Analytics por conta
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
-          Selecione uma conta para consultar seus dados sem misturá-los com os das outras.
-        </p>
+      <header className="space-y-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Métricas</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
+            Analytics
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+            Métricas reais por conta, publicações em alta, ranking de engajamento e vendas por bot. O
+            período vale para todas as abas.
+          </p>
+        </div>
+        <nav aria-label="Seções de métricas" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
+          {tabs.map((item) => (
+            <button
+              aria-current={tab === item.value ? "page" : undefined}
+              className={`shrink-0 rounded-full px-4 py-2 text-sm transition ${
+                tab === item.value
+                  ? "bg-[#536dfe]/20 font-medium text-[#dfe4ff] shadow-[inset_0_0_0_1px_rgba(130,149,255,0.45)]"
+                  : "text-[#94a3b8] hover:bg-white/5 hover:text-[#f5f7fb]"
+              }`}
+              key={item.value}
+              onClick={() => setTab(item.value)}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <PeriodFilter onChange={setPeriod} value={period} />
       </header>
+      {tab === "videos" && <TopVideosPanel period={period} />}
+      {tab === "ranking" && (
+        <EngagementRankingPanel
+          onSelectAccount={(accountId) => {
+            setSelectedAccountIds([accountId]);
+            setTab("account");
+          }}
+          period={period}
+        />
+      )}
+      {tab === "bots" && <BotPerformancePanel period={period} />}
+      {tab === "account" && (
       <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
         <InstagramAccountSelector
           accounts={activeAccounts}
@@ -208,13 +288,35 @@ export function AnalyticsPage() {
                     "Instagram"
                   }
                 />
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-xs uppercase tracking-[0.13em] text-[#7186ff]">Conta atual</p>
                   <h3 className="font-medium text-[#f5f7fb]">
-                    @{accountMetrics?.username ?? activeAccounts.find(({ id }) => id === selectedAccountId)?.username}
+                    @{accountMetrics?.username ?? selectedAccount?.username}
                   </h3>
+                  <p className="text-[11px] text-[#64748b]">
+                    Publicações sincronizadas: {formatDateTime(selectedAccount?.insights_synced_at)}
+                    {selectedAccount?.insights_sync_error ? ` · ${selectedAccount.insights_sync_error}` : ""}
+                  </p>
                 </div>
+                <button
+                  className="btn-secondary !min-h-9 shrink-0 !px-3 text-xs"
+                  disabled={!selectedAccountId || syncNow.isPending}
+                  onClick={() => syncNow.mutate(selectedAccountId)}
+                  type="button"
+                >
+                  <RefreshCw className={syncNow.isPending ? "animate-spin" : ""} size={14} />
+                  Sincronizar
+                </button>
               </div>
+              {syncNow.error && (
+                <ErrorState
+                  message={
+                    syncNow.error instanceof ApiError
+                      ? syncNow.error.message
+                      : "Não foi possível sincronizar agora."
+                  }
+                />
+              )}
               {summary.error && (
                 <ErrorState message="Não foi possível carregar as métricas desta conta." />
               )}
@@ -236,7 +338,7 @@ export function AnalyticsPage() {
               </div>
               <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
                 <h3 className="text-sm font-medium text-[#e6eaf2]">
-                  Publicações dos últimos 7 dias
+                  Publicações feitas pelo FlashPost no período
                 </h3>
                 <div className="mt-4 h-[260px]">
                   <ResponsiveContainer height="100%" width="100%">
@@ -287,16 +389,18 @@ export function AnalyticsPage() {
                   </ResponsiveContainer>
                 </div>
               </section>
+              {selectedAccountId && <TopVideosPanel accountId={selectedAccountId} compact period={period} />}
               <p className="rounded-lg border border-line bg-surface-raised px-4 py-3 text-xs leading-5 text-[#94a3b8]">
-                Os Insights são consultados diretamente na Meta para o período selecionado. Um
-                “—” indica que a API não disponibilizou aquela métrica para esta conta; o motivo
-                aparece no próprio card. Métricas de perfil e do FlashPost são exibidas separadas
-                das métricas fornecidas pela Meta.
+                Os cards acima são consultados na Meta no momento da abertura para o período
+                selecionado (Insights podem atrasar até 48 h). A lista de publicações usa os dados
+                sincronizados automaticamente a cada 3 horas. Um “—” indica que a Meta não
+                disponibilizou aquela métrica; o motivo aparece no card.
               </p>
             </>
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

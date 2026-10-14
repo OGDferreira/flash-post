@@ -111,6 +111,10 @@ async def list_accounts(
                 error_at=_utc_datetime(account.error_at) if account.error_at else None,
                 status=account.status,
                 status_reason=account.status_reason,
+                insights_synced_at=(
+                    _utc_datetime(account.insights_synced_at) if account.insights_synced_at else None
+                ),
+                insights_sync_error=account.insights_sync_error,
             )
             for account in accounts
         ],

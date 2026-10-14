@@ -18,6 +18,8 @@ class InstagramAccountResponse(BaseModel):
     error_at: datetime | None
     status: str
     status_reason: str | None
+    insights_synced_at: datetime | None = None
+    insights_sync_error: str | None = None
 
 
 class InstagramAccountsResponse(BaseModel):
