@@ -26,12 +26,15 @@ from app.models.instagram_loop import (
     SharkEvent,
 )
 from app.models.user import User
+from app.models.push import DailyViewsGoal, DailyViewsGoalNotification, PushSubscription
 from app.models.workspace import Workspace, WorkspaceMember
 
 __all__ = [
     "Base",
     "CollaboratorPayment",
     "CollaboratorWorkDay",
+    "DailyViewsGoal",
+    "DailyViewsGoalNotification",
     "DiagnosticsEvent",
     "EmailAccount",
     "FinancialWithdrawal",
@@ -43,6 +46,7 @@ __all__ = [
     "InstagramMedia",
     "InstagramProfileFolder",
     "InstagramPublicationJob",
+    "PushSubscription",
     "SharkEvent",
     "SmokepayOperation",
     "SystemSetting",

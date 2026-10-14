@@ -31,6 +31,7 @@ from app.instagram.folders_router import router as instagram_folders_router
 from app.instagram.media_router import router as media_router
 from app.instagram.webhooks import router as instagram_webhooks_router
 from app.loops.router import router as loops_router
+from app.notifications.router import router as notifications_router
 from app.shark.router import router as shark_router
 from app.smokepay.router import router as smokepay_router
 from app.workers.scheduler_service import create_scheduler
@@ -145,6 +146,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(shark_router)
     application.include_router(smokepay_router)
     application.include_router(legal_router)
+    application.include_router(notifications_router)
 
     @application.get("/readiness", tags=["health"])
     async def readiness(

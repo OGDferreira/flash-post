@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { DailyViewsGoalCard } from "@/components/DailyViewsGoalCard";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ApiError, apiRequest, type User, type Workspace } from "@/services/api";
@@ -303,6 +304,7 @@ export function ProfilePage() {
           </button>
         </form>
       </section>
+      <DailyViewsGoalCard />
     </div>
   );
 }

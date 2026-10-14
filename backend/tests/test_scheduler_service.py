@@ -5,13 +5,16 @@ from app.workers import scheduler_service
 
 def test_create_scheduler_registers_one_minute_worker() -> None:
     scheduler = scheduler_service.create_scheduler()
-    jobs = scheduler.get_jobs()
+    jobs = {job.id: job for job in scheduler.get_jobs()}
 
-    assert len(jobs) == 1
-    assert jobs[0].id == "flashpost-loop-and-token-worker"
-    assert jobs[0].trigger.interval.total_seconds() == 60
-    assert jobs[0].max_instances == 1
-    assert jobs[0].coalesce is True
+    assert set(jobs) == {"flashpost-loop-and-token-worker", "flashpost-daily-views-goals"}
+    worker = jobs["flashpost-loop-and-token-worker"]
+    assert worker.trigger.interval.total_seconds() == 60
+    assert worker.max_instances == 1
+    assert worker.coalesce is True
+    goals = jobs["flashpost-daily-views-goals"]
+    assert goals.trigger.interval.total_seconds() == 15 * 60
+    assert goals.max_instances == 1
 
 
 @pytest.mark.anyio

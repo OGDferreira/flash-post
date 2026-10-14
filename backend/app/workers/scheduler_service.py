@@ -3,12 +3,47 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import text
 
-from app.core.database import get_engine
+from app.core.config import get_settings
+from app.core.database import get_engine, get_session_factory
+from app.notifications.goals import run_daily_views_goal_tick
 from app.workers.loop_scheduler import run_loop_scheduler_tick
 
 logger = logging.getLogger(__name__)
 _POSTGRES_ADVISORY_LOCK_KEY = 731904281
+_GOALS_ADVISORY_LOCK_KEY = 731904282
 _LOOP_TICK_INTERVAL_SECONDS = 60
+
+
+async def _run_goals_once() -> None:
+    async with get_session_factory()() as db:
+        delivered = await run_daily_views_goal_tick(db)
+    if delivered:
+        logger.info("Daily views goals: %s push notification(s) delivered.", delivered)
+
+
+async def _run_goals_tick_with_database_lock() -> None:
+    """Separate lock from the loop worker so goal checks never delay publishing."""
+    engine = get_engine()
+    try:
+        if engine.dialect.name != "postgresql":
+            await _run_goals_once()
+            return
+        async with engine.connect() as connection:
+            acquired = await connection.scalar(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                {"lock_key": _GOALS_ADVISORY_LOCK_KEY},
+            )
+            if not acquired:
+                return
+            try:
+                await _run_goals_once()
+            finally:
+                await connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": _GOALS_ADVISORY_LOCK_KEY},
+                )
+    except Exception as exc:
+        logger.error("Daily views goal tick failed (%s); it will retry.", type(exc).__name__)
 
 
 async def _run_tick_with_database_lock() -> None:
@@ -64,5 +99,15 @@ def create_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         max_instances=1,
         misfire_grace_time=30,
+    )
+    scheduler.add_job(
+        _run_goals_tick_with_database_lock,
+        trigger="interval",
+        minutes=get_settings().daily_views_goal_check_minutes,
+        id="flashpost-daily-views-goals",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=120,
     )
     return scheduler

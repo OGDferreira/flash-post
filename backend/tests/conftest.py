@@ -56,6 +56,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with engine.begin() as connection:
         from app.models import (
             CollaboratorPayment,
+            DailyViewsGoal,
+            DailyViewsGoalNotification,
+            PushSubscription,
             EmailAccount,
             FinancialWithdrawal,
             InstagramAccount,
@@ -74,6 +77,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             WorkspaceMember,
         )
 
+        await connection.execute(delete(DailyViewsGoalNotification))
+        await connection.execute(delete(DailyViewsGoal))
+        await connection.execute(delete(PushSubscription))
         await connection.execute(delete(CollaboratorPayment))
         await connection.execute(delete(EmailAccount))
         await connection.execute(delete(FinancialWithdrawal))

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 
+import { MemberGoalsPanel } from "@/components/MemberGoalsPanel";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest } from "@/services/api";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
@@ -216,6 +217,7 @@ export function NotificationsPage() {
           </ul>
         </section>
       )}
+      <MemberGoalsPanel />
     </div>
   );
 }

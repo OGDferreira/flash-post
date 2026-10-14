@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     instagram_publishing_enabled: bool = False
     session_secret: SecretStr | None = None
     master_encryption_key: SecretStr | None = None
+    # Web Push (optional): when unset, keys are generated once and stored
+    # encrypted in system_settings. Subject must be a mailto: or https: URL.
+    vapid_private_key: SecretStr | None = None
+    vapid_subject: str | None = None
+    daily_views_goal_check_minutes: Annotated[int, Field(ge=5, le=240)] = 15
     session_max_age_seconds: Annotated[int, Field(ge=900, le=2592000)] = 2592000
     login_max_attempts: Annotated[int, Field(ge=3, le=20)] = 5
     login_window_seconds: Annotated[int, Field(ge=60, le=3600)] = 900
@@ -40,6 +45,7 @@ class Settings(BaseSettings):
         "supabase_service_role_key",
         "session_secret",
         "master_encryption_key",
+        "vapid_private_key",
         mode="before",
     )
     @classmethod
@@ -60,6 +66,13 @@ class Settings(BaseSettings):
             if not value:
                 return None
         return value
+
+    @property
+    def vapid_subject_value(self) -> str:
+        subject = (self.vapid_subject or "").strip()
+        if subject.startswith(("mailto:", "https://")):
+            return subject
+        return self.public_base_url.rstrip("/")
 
     @property
     def is_production(self) -> bool:

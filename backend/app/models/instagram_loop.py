@@ -198,6 +198,12 @@ class SharkEvent(Base):
         ),
         Index("ix_shark_events_workspace_occurred_at", "workspace_id", "occurred_at"),
         Index("ix_shark_events_account_occurred_at", "account_id", "occurred_at"),
+        Index(
+            "ix_shark_events_workspace_type_transaction",
+            "workspace_id",
+            "event_type",
+            "transaction_id",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
