@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -23,7 +23,6 @@ import {
   YAxis,
 } from "recharts";
 
-import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { useInstagramCallbackToast } from "@/hooks/useInstagramCallbackToast";
 import { apiRequest, type CollaboratorDashboard } from "@/services/api";
@@ -74,7 +73,6 @@ function accountDateLabel(value: string | null) {
 }
 
 export function CollaboratorDashboardPage() {
-  const [connectOpen, setConnectOpen] = useState(false);
   useInstagramCallbackToast();
   const dashboard = useQuery({
     queryKey: ["collaborators", "dashboard"],
@@ -153,19 +151,10 @@ export function CollaboratorDashboardPage() {
             Olá, {data.nickname || data.full_name || "colaborador"}
           </h1>
         </div>
-        <button
-          className="btn-primary ml-auto shrink-0 whitespace-nowrap max-sm:!px-3"
-          onClick={() => setConnectOpen(true)}
-          type="button"
-        >
+        <Link className="btn-primary ml-auto shrink-0 whitespace-nowrap max-sm:!px-3" to="/feature/accounts?connect=1">
           <Link2 size={16} />
           Conectar conta
-        </button>
-        <ConnectAccountModal
-          onClose={() => setConnectOpen(false)}
-          open={connectOpen}
-          returnTo="/dashboard"
-        />
+        </Link>
       </header>
 
       <section aria-label="Resumo de produção e pagamentos" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">

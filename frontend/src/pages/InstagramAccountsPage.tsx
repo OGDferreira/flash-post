@@ -100,8 +100,9 @@ export function InstagramAccountsPage() {
   });
   const startConnection = () => setShowAppSelector(true);
   useEffect(() => {
-    if (searchParams.get("connect") !== "1" || !accounts.data) return;
-    if (accounts.data.can_connect) setShowAppSelector(true);
+    if (searchParams.get("connect") !== "1") return;
+    // Open at once; the backend re-checks permission when the connection starts.
+    if (accounts.data?.can_connect !== false) setShowAppSelector(true);
     const next = new URLSearchParams(searchParams);
     next.delete("connect");
     setSearchParams(next, { replace: true });

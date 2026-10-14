@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -15,7 +16,6 @@ import {
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { apiRequest } from "@/services/api";
 import { AlertsBanner } from "@/components/AlertsBanner";
-import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { useInstagramCallbackToast } from "@/hooks/useInstagramCallbackToast";
 
 type AnalyticsPeriod = InstagramAnalyticsSummary["period"];
@@ -116,7 +116,6 @@ function MetricCard({
 }
 
 export function DashboardPage() {
-  const [connectOpen, setConnectOpen] = useState(false);
   useInstagramCallbackToast();
   const [period, setPeriod] = useState<AnalyticsPeriod>("today");
   const [startDate, setStartDate] = useState(localDateInputValue);
@@ -342,19 +341,10 @@ export function DashboardPage() {
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
             Período das métricas
           </p>
-          <button
-            className="btn-primary"
-            onClick={() => setConnectOpen(true)}
-            type="button"
-          >
+          <Link className="btn-primary" to="/feature/accounts?connect=1">
             <Link2 size={16} />
             Conectar conta
-          </button>
-          <ConnectAccountModal
-            onClose={() => setConnectOpen(false)}
-            open={connectOpen}
-            returnTo="/dashboard"
-          />
+          </Link>
         </div>
         <div aria-label="Filtrar por período" className="dashboard-periods" role="group">
           {periodOptions.map(({ value, label }) => (
