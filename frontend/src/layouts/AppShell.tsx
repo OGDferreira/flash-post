@@ -69,12 +69,13 @@ const collaboratorLinks = [
 const mobilePrimaryLinks = [
   { label: "Painel", to: "/dashboard", icon: Home },
   { label: "Contas", to: "/feature/accounts", icon: Users },
+  { label: "Loops", to: "/feature/loops", icon: Infinity },
   { label: "Pastas", to: "/feature/profile-folders", icon: Folder },
   { label: "Ranking", to: "/feature/ranking", icon: Trophy },
   { label: "Métricas", to: "/feature/analytics", icon: ChartNoAxesCombined },
   { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
 ];
-const collaboratorMobileRoutes = new Set(["/dashboard", "/feature/accounts"]);
+const collaboratorMobileRoutes = new Set(["/dashboard", "/feature/accounts", "/feature/loops"]);
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -552,7 +553,7 @@ export function AppShell() {
             to={to}
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
-              `group/nav flex min-h-[52px] min-w-0 flex-auto flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium tracking-[-0.01em] transition-colors ${
+              `group/nav flex min-h-[52px] min-w-0 flex-auto flex-col items-center justify-center gap-1 rounded-xl px-0 text-[9px] tracking-[-0.02em] min-[360px]:px-1 min-[360px]:tracking-[-0.01em] min-[360px]:text-[10px] font-medium transition-colors ${
                 isActive ? "text-[#dfe4ff]" : "text-[#8390a8] active:text-[#cbd5e1]"
               }`
             }
@@ -560,7 +561,7 @@ export function AppShell() {
             {({ isActive }) => (
               <>
                 <span
-                  className={`grid h-7 w-11 place-items-center rounded-full transition-all duration-200 ${
+                  className={`grid h-7 w-10 place-items-center rounded-full transition-all duration-200 ${
                     isActive
                       ? "bg-[#536dfe]/20 text-[#aab7ff] shadow-[0_0_18px_rgba(83,109,254,0.35)]"
                       : ""

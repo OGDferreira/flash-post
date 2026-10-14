@@ -283,6 +283,9 @@ body::before {
 
 .app-shell-content {
   padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+  /* A page that is too wide must not widen the phone layout viewport, which
+     would push the fixed bottom bar off-screen. `clip` keeps sticky working. */
+  overflow-x: clip;
 }
 
 .app-mobile-nav {

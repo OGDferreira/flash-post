@@ -409,7 +409,7 @@ export function LoopsPage() {
           <p className="flex items-start gap-2">
             <AlertTriangle size={17} className="mt-0.5 shrink-0" />
             As publicações automáticas estão desativadas no servidor. Configure
-            {" "}<code className="font-mono">INSTAGRAM_PUBLISHING_ENABLED=true</code>
+            {" "}<code className="break-all font-mono">INSTAGRAM_PUBLISHING_ENABLED=true</code>
             {" "}no serviço Web do Render e reinicie ou reimplante o serviço para habilitá-las.
           </p>
         </div>
