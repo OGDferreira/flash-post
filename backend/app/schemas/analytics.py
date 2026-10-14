@@ -24,6 +24,10 @@ class InstagramAccountAnalytics(BaseModel):
     pix_generated: int
     pix_paid: int
     pix_paid_amount: Decimal
+    # Lifetime views of the videos published in the period (cumulative).
+    views_count: int | None = None
+    # Views that happened during the period (account-level Insights).
+    period_views_count: int | None = None
 
 
 class DailyPublicationMetric(BaseModel):
@@ -52,7 +56,10 @@ class InstagramAnalyticsSummary(BaseModel):
     period: str
     followers_count: int | None
     media_count: int | None
-    views_count: int
+    # None means "not checked or unavailable" — never a silent zero.
+    views_count: int | None
+    period_views_count: int | None = None
+    views_partial: bool = False
     insights_checked: bool
     missing_permissions: list[str]
     insights_unavailable: bool

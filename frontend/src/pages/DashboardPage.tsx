@@ -204,8 +204,8 @@ export function DashboardPage() {
   );
   const metricsCards = [
     {
-      title: "Total de visualizações",
-      target: viewsUnavailable ? null : metrics?.views_count ?? null,
+      title: "Visualizações no período",
+      target: viewsUnavailable ? null : metrics?.period_views_count ?? null,
       loading:
         !viewsUnavailable
           ? false
@@ -222,7 +222,11 @@ export function DashboardPage() {
             : metaSummary.error
               ? "A Meta não retornou os Insights; consulte as notificações"
               : "Consulte as notificações para verificar os Insights da Meta"
-          : "Insights recebidos da Meta no período",
+          : metrics?.period_views_count === null || metrics?.period_views_count === undefined
+            ? "A Meta não retornou o total do período"
+            : metrics?.views_count !== null && metrics?.views_count !== undefined
+              ? `Acumulado dos vídeos do período: ${formatCount(metrics.views_count)}`
+              : "Ocorridas no período (Insights da Meta)",
       icon: ChartNoAxesCombined,
       color: "text-[#71c8e8]",
     },

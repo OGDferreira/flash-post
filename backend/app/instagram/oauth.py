@@ -14,6 +14,8 @@ INSTAGRAM_TOKEN_REFRESH_ENDPOINT = "https://graph.instagram.com/refresh_access_t
 INSTAGRAM_BASIC_PERMISSION = "instagram_business_basic"
 INSTAGRAM_PUBLISH_PERMISSION = "instagram_business_content_publish"
 INSTAGRAM_INSIGHTS_PERMISSION = "instagram_business_manage_insights"
+# Metrics that count unique accounts: a period total is not the sum of days.
+_NON_ADDITIVE_METRICS = frozenset({"reach", "accounts_engaged"})
 
 
 class InstagramOAuthError(ValueError):
@@ -609,6 +611,16 @@ async def fetch_instagram_account_insights(
                     ):
                         return metric_name, direct_value, None, False
 
+                    if metric_name in _NON_ADDITIVE_METRICS:
+                        # Daily reach/engaged accounts count unique people per
+                        # day; adding the days together double-counts them.
+                        return (
+                            metric_name,
+                            None,
+                            "A Meta não retornou o total do período; "
+                            "valores diários desta métrica não podem ser somados.",
+                            False,
+                        )
                     values = metric.get("values")
                     if not isinstance(values, list):
                         return (

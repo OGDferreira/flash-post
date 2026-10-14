@@ -17,13 +17,21 @@ export type InstagramAnalyticsAccount = {
   pix_generated: number;
   pix_paid: number;
   pix_paid_amount: string;
+  /** Lifetime (cumulative) views of videos published in the period. */
+  views_count: number | null;
+  /** Views that happened during the period (account Insights). */
+  period_views_count: number | null;
 };
 
 export type InstagramAnalyticsSummary = {
   period: "today" | "yesterday" | "7d" | "30d" | "all" | "custom";
   followers_count: number | null;
   media_count: number | null;
-  views_count: number;
+  /** Cumulative: lifetime views of the videos published in the period. null = unavailable. */
+  views_count: number | null;
+  /** Daily/period metric: views that happened in the period. null = unavailable. */
+  period_views_count: number | null;
+  views_partial: boolean;
   insights_checked: boolean;
   missing_permissions: string[];
   insights_unavailable: boolean;

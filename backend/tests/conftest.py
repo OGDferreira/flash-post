@@ -212,3 +212,18 @@ async def super_admin(db_session: AsyncSession):
     db_session.add(user)
     await db_session.commit()
     return user
+
+
+@pytest.fixture(autouse=True)
+def _isolate_meta_period_views(monkeypatch: pytest.MonkeyPatch):
+    """Never reach graph.instagram.com from tests; reset the Meta read cache."""
+    from app.analytics import router as analytics_router
+    from app.instagram.oauth import InstagramOAuthError
+
+    async def period_views_disabled(*_args, **_kwargs):
+        raise InstagramOAuthError("Period views are not available in tests.")
+
+    monkeypatch.setattr(analytics_router, "fetch_instagram_views", period_views_disabled)
+    analytics_router._meta_cache.clear()
+    yield
+    analytics_router._meta_cache.clear()

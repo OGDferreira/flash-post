@@ -173,7 +173,8 @@ async def test_fast_analytics_summary_skips_live_meta_requests(
     assert response.json()["insights_checked"] is False
     assert response.json()["followers_count"] == 321
     assert response.json()["media_count"] == 24
-    assert response.json()["views_count"] == 0
+    # Insights were not requested: views are unknown, not zero.
+    assert response.json()["views_count"] is None
 
 
 @pytest.mark.anyio

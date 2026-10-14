@@ -146,3 +146,49 @@ async def test_analytics_account_filter_excludes_unattributed_shark_events(
 
     workspace_total = await client.get("/api/analytics/summary?period=today")
     assert workspace_total.json()["pix_paid"] == 2
+
+
+@pytest.mark.anyio
+async def test_partial_video_view_failures_are_reported_as_unavailable(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.analytics import router as analytics_router
+
+    _user, workspace = owner
+    account = InstagramAccount(
+        workspace_id=workspace.id,
+        instagram_user_id="17840000000555",
+        username="partial_views",
+        encrypted_access_token=encrypt_value("token-partial"),
+        token_expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        connected_at=datetime.now(timezone.utc) - timedelta(days=10),
+        status="connected",
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    async def profile_metrics(*_args):
+        return 10, 3, 2
+
+    async def media_views(*_args):
+        return 500, 4, ["HTTP 500"]
+
+    async def period_views(*_args):
+        return 1234
+
+    monkeypatch.setattr(analytics_router, "fetch_instagram_profile_metrics", profile_metrics)
+    monkeypatch.setattr(analytics_router, "fetch_instagram_media_views", media_views)
+    monkeypatch.setattr(analytics_router, "fetch_instagram_views", period_views)
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    response = await client.get(
+        "/api/analytics/summary",
+        params={"period": "7d", "include_meta_insights": "true"},
+    )
+    body = response.json()
+    assert response.status_code == 200, response.text
+    assert body["views_count"] is None
+    assert body["views_partial"] is True
+    assert body["period_views_count"] == 1234

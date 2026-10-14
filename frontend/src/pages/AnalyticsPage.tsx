@@ -36,6 +36,10 @@ function insightHelper(error: string | undefined): string {
   if (error.includes("instagram_business_manage_insights")) {
     return "Permissão necessária: instagram_business_manage_insights";
   }
+  if (error.includes("não podem ser somados")) {
+    return "A Meta não enviou o total do período; dias não são somados";
+  }
+  if (error.includes("vídeos")) return error;
   if (error.includes("descontinuou esta métrica")) {
     return "Métrica descontinuada pela Meta; consulte Visualizações";
   }
@@ -136,7 +140,8 @@ export function AnalyticsPage() {
     },
   ];
   const metaInsightMetrics = [
-    { key: "views", title: "Visualizações", icon: Eye },
+    { key: "period_views", title: "Visualizações no período", icon: Eye },
+    { key: "views", title: "Visualizações acumuladas dos vídeos do período", icon: Eye },
     { key: "reach", title: "Alcance", icon: Eye },
     { key: "impressions", title: "Impressões", icon: Eye },
     { key: "accounts_engaged", title: "Contas engajadas", icon: UsersRound },
