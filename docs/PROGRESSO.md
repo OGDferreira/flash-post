@@ -139,3 +139,7 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - "Conexões hoje" → "Conexões do período": conectadas e desconectadas passam a seguir o filtro marcado (Hoje/Ontem/7 dias/30 dias/Total/Personalizado). Campos novos em `/api/analytics/summary`: `connected_period`, `disconnected_period`, `disconnected_period_accounts` (os `*_today` continuam para o sino).
 - Data da saudação sempre com inicial maiúscula ("Quinta-feira, 15 de outubro…").
 - Botão flutuante de atualizar (canto inferior direito, acima do menu no celular): refaz todas as consultas da tela (contas novas, métricas, ranking) com ícone girando.
+
+## 0.13.2 — Barra do topo
+- Topo reformulado: mostra o nome da página atual (e "FlashPost"/"Administração" como subtítulo), sino e tema agrupados numa cápsula, sem a sombra pesada.
+- Diagnóstico Shark (sem mudança de código): o webhook recebe normalmente; a diferença de números vem de bots do Shark que não enviam eventos ao FlashPost.

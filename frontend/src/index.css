@@ -1241,3 +1241,29 @@ html[data-motion="off"] .glass-panel:hover { transform: none; }
   .logo-anim *, .logo-loop { animation: none !important; }
   .dashboard-card:hover, .glass-panel:hover { transform: none; }
 }
+
+/* ---------- Top bar: flat, quiet, one soft edge instead of a heavy shadow ---------- */
+.app-shell-header.glass-bar {
+  box-shadow: none;
+  border-bottom: 1px solid var(--glass-edge);
+  background: var(--glass-fill);
+}
+.app-header-actions {
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(128 140 170 / 0.1);
+}
+.app-header-btn {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--color-muted);
+  background: transparent;
+  transition: background-color 160ms ease, color 160ms ease, transform 120ms ease;
+}
+.app-header-btn:hover { background: rgb(128 140 170 / 0.18); color: var(--color-fg); }
+.app-header-btn:active { transform: scale(0.94); }
+.app-header-btn:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .app-header-btn { transition: none; } }

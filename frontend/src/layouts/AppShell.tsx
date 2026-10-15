@@ -169,6 +169,13 @@ export function AppShell() {
   });
   const navigation = buildNavigation({ isAdminRoute, isSuperAdmin, workspaceRole });
   const mobileLinks = navigation.direct;
+  const pageTitle = (() => {
+    const all = [...navigation.direct, ...navigation.groups.flatMap((group) => group.items)];
+    const match = all
+      .filter(({ to }) => location.pathname === to || location.pathname.startsWith(`${to}/`))
+      .sort((a, b) => b.to.length - a.to.length)[0];
+    return match?.label ?? (isAdminRoute ? "Administração" : "FlashPost");
+  })();
   const [hoverGroup, setHoverGroup] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const activeGroupId = navigation.groups.find((group) =>
@@ -480,14 +487,19 @@ export function AppShell() {
       <div className={`transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${pinned ? "lg:pl-[252px]" : "lg:pl-[68px]"}`}>
         <header className="app-shell-header glass-bar sticky top-0 z-20 flex items-center justify-between !border-x-0 !border-t-0 px-4 sm:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Link className="flex min-w-0 items-center gap-2.5" to="/dashboard">
-              <BrandLogo className="size-8 shrink-0 lg:hidden" />
-              <span className="truncate text-base font-semibold tracking-[-0.03em] text-fg">
-                {isAdminRoute ? "FlashPost · Administração" : "FlashPost"}
-              </span>
+            <Link aria-label="FlashPost" className="shrink-0 lg:hidden" to="/dashboard">
+              <BrandLogo className="size-8" />
             </Link>
+            <div className="min-w-0 leading-tight">
+              <h1 className="truncate text-[17px] font-semibold tracking-[-0.03em] text-fg sm:text-lg">
+                {pageTitle}
+              </h1>
+              <p className="hidden truncate text-xs text-muted sm:block">
+                {isAdminRoute ? "Administração da plataforma" : "FlashPost"}
+              </p>
+            </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2 pl-2">
+          <div className="app-header-actions flex shrink-0 items-center gap-1 pl-2">
             <div className="relative max-sm:static">
               <button
                 aria-label={
@@ -497,7 +509,7 @@ export function AppShell() {
                 }
                 aria-expanded={notificationsOpen}
                 aria-haspopup="dialog"
-                className="relative grid size-9 place-items-center rounded-full border border-line-soft bg-surface text-muted transition-colors hover:border-brand/40 hover:text-white"
+                className="app-header-btn relative"
                 onClick={() => setNotificationsOpen((open) => !open)}
                 type="button"
               >
@@ -552,7 +564,7 @@ export function AppShell() {
             </div>
             <button
               aria-label={theme === "light" ? "Ativar modo escuro" : "Ativar modo claro"}
-              className="grid size-10 place-items-center rounded-full border border-line-soft bg-surface text-muted hover:text-fg"
+              className="app-header-btn"
               onClick={() => {
                 const next: Theme = theme === "light" ? "dark" : "light";
                 applyTheme(next, true);
