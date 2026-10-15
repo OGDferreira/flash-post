@@ -1,3 +1,4 @@
+import { CollaboratorInvitePage } from "@/features/auth/CollaboratorInvitePage";
 import { Suspense, lazy, type ComponentType } from "react";
 import {
   BrowserRouter,
@@ -71,6 +72,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/convite/:token" element={<CollaboratorInvitePage />} />
           <Route element={<RequireAuth />}>
             <Route element={<RequireWorkspaceUser />}>
               <Route element={<RequireCollaboratorAccess />}>

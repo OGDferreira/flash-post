@@ -13,11 +13,13 @@ import {
   UsersRound,
 } from "lucide-react";
 
+import { CollaboratorInvitesPanel, type PendingCollaborator } from "@/components/CollaboratorInvitesPanel";
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { ApiError, apiRequest, type CollaboratorReport } from "@/services/api";
 import { confirmAction } from "@/lib/confirm";
 
 type CollaboratorsResponse = {
+  pending?: PendingCollaborator[];
   collaborators: CollaboratorReport[];
   owner_connections_today: number;
   team_connections_today: number;
@@ -193,6 +195,8 @@ export function CollaboratorsPage() {
           Gerencie acessos, metas, remuneração e os pagamentos registrados para a equipe.
         </p>
       </header>
+
+      <CollaboratorInvitesPanel pending={report.data.pending ?? []} />
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <article className="dashboard-card rounded-xl p-4">

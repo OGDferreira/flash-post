@@ -98,10 +98,23 @@ class CollaboratorReportItem(BaseModel):
     account_earnings: list[CollaboratorAccountEarning]
 
 
+class PendingCollaborator(BaseModel):
+    member_id: UUID
+    full_name: str
+    nickname: str
+    email: EmailStr
+    requested_at: datetime
+    rate_per_connection: Decimal
+    daily_connection_goal: int
+    monthly_connection_goal: int
+    monthly_bonus: Decimal
+
+
 class CollaboratorsResponse(BaseModel):
     collaborators: list[CollaboratorReportItem]
     owner_connections_today: int
     team_connections_today: int
+    pending: list[PendingCollaborator] = []
 
 
 class CollaboratorRankingItem(BaseModel):

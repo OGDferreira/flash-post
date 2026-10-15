@@ -67,3 +67,10 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Tipo da queda (`classify_inactive_account`): manual, suspensa, restrita ou expirada, a partir do motivo salvo. `/api/loops/alerts` devolve `suspended_accounts` e `restricted_accounts`; o banner do Painel e o sino de notificações mostram as contas que caíram hoje.
 - Painel: card "Conexões hoje" (conectadas/desconectadas); ranking com abas Dia (padrão) e Mensal; fotos no Painel, no Painel do colaborador e na página Ranking (iniciais como reserva). Novo `GET /api/members/{id}/avatar` (só membros ativos do mesmo workspace).
 - Limite conhecido: restrição só é detectada quando a conta é isolada por erro da Meta; conta restrita que ainda publica não é sinalizada. Não há push no celular para queda de conta (só sino/banner). Não validado com a Meta real.
+
+## 0.9.0 — Parte 6: convite de colaborador por link
+- Migração `20261015_33` (aditiva): tabela `collaborator_invites` (só o hash do token é guardado; valor por conta, metas, bônus, validade, usos).
+- Chefe: `POST/GET/DELETE /api/collaborators/invites`, `GET .../invites/defaults` ("última configuração usada" = valores do convite mais recente), `POST /api/collaborators/{id}/approve|reject`. Tela em Colaboradores: gerar link (modal, copiar), links ativos, revogar, fila "Aguardando sua aprovação".
+- Colaborador: página pública `/convite/:token` faz o próprio cadastro; o vínculo nasce `INVITED` com o valor/metas do convite e o login responde 403 "aguarda a aprovação do chefe" até o chefe aprovar (vira `ACTIVE`; Extensões e Dúvidas e erros já fazem parte do acesso de colaborador). Link de uso único por padrão, expira em 7 dias (1–30), revogável; o link só aparece uma vez.
+- Recusar apaga o cadastro pendente (e o usuário, se não tiver outro vínculo). Criação manual de colaborador continua existindo.
+- Pendência: sem aviso (sino/push) ao chefe quando chega cadastro pendente além da fila na página.

@@ -24,6 +24,7 @@ from app.api.health import router as health_router
 from app.core.config import get_settings
 from app.core.rate_limit import LoginRateLimiter
 from app.core.redaction import install_log_redaction, redact_secrets
+from app.collaborators.invites import router as collaborator_invites_router
 from app.collaborators.router import router as collaborators_router
 from app.emails.router import router as emails_router
 from app.finance.router import router as finance_router
@@ -109,7 +110,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application = FastAPI(
         title="FlashPost",
         summary="Operations platform for Instagram publishing and analytics.",
-        version="0.8.0",
+        version="0.9.0",
         lifespan=lifespan,
     )
     application.state.login_rate_limiter = LoginRateLimiter(
@@ -144,6 +145,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(analytics_router)
     application.include_router(bot_performance_router)
     application.include_router(publication_insights_router)
+    application.include_router(collaborator_invites_router)
     application.include_router(collaborators_router)
     application.include_router(emails_router)
     application.include_router(finance_router)

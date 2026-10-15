@@ -21,6 +21,7 @@ from app.models import (
     WorkspaceMember,
 )
 from app.schemas.collaborators import (
+    PendingCollaborator,
     CollaboratorAccountEarning,
     CollaboratorAccessRequest,
     CollaboratorCreateRequest,
@@ -398,7 +399,32 @@ async def list_collaborators(
         today_start,
         today_end,
     )
+    pending_rows = await db.execute(
+        select(WorkspaceMember, User)
+        .join(User, User.id == WorkspaceMember.user_id)
+        .where(
+            WorkspaceMember.workspace_id == access.workspace.id,
+            WorkspaceMember.role == WorkspaceRole.COLLABORATOR.value,
+            WorkspaceMember.status == "INVITED",
+        )
+        .order_by(WorkspaceMember.created_at)
+    )
+    pending = [
+        PendingCollaborator(
+            member_id=member.id,
+            full_name=user.full_name,
+            nickname=user.nickname,
+            email=user.email,
+            requested_at=member.created_at,
+            rate_per_connection=member.rate_per_connection,
+            daily_connection_goal=member.daily_connection_goal,
+            monthly_connection_goal=member.monthly_connection_goal,
+            monthly_bonus=member.monthly_bonus,
+        )
+        for member, user in pending_rows
+    ]
     return CollaboratorsResponse(
+        pending=pending,
         collaborators=collaborators,
         owner_connections_today=owner_connections_today,
         team_connections_today=sum(
