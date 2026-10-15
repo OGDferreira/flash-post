@@ -140,6 +140,7 @@ async def _loop_response(
     return InstagramLoopResponse(
         id=loop.id,
         name=loop.name,
+        auto_folder_ids=[uuid.UUID(str(item)) for item in (loop.auto_folder_ids or [])],
         interval_min_minutes=loop.interval_min_minutes,
         interval_max_minutes=loop.interval_max_minutes,
         daily_limit_per_account=loop.daily_limit_per_account,
@@ -645,6 +646,41 @@ async def _validate_selected_accounts(
     return accounts
 
 
+async def _selected_with_folders(
+    workspace_id: uuid.UUID,
+    account_ids: list[uuid.UUID],
+    folder_ids: list[uuid.UUID],
+    db: DbSession,
+) -> tuple[list[InstagramAccount], list[str]]:
+    """Chosen accounts plus every connected account of the watched folders."""
+    from app.instagram.folder_automation import folder_accounts
+    from app.models import InstagramProfileFolder
+
+    valid_folders = set(
+        (
+            await db.scalars(
+                select(InstagramProfileFolder.id).where(
+                    InstagramProfileFolder.workspace_id == workspace_id,
+                    InstagramProfileFolder.id.in_(folder_ids),
+                )
+            )
+        ).all()
+    ) if folder_ids else set()
+    if valid_folders != set(folder_ids):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Uma ou mais pastas não pertencem a este workspace.",
+        )
+    accounts = await _validate_selected_accounts(workspace_id, account_ids, db)
+    known = {account.id for account in accounts}
+    extra = [
+        account
+        for account in await folder_accounts(db, workspace_id, [str(item) for item in folder_ids])
+        if account.id not in known and account.token_expires_at and account.token_expires_at > utc_now()
+    ]
+    return [*accounts, *extra], [str(item) for item in folder_ids]
+
+
 async def _validate_selected_media(
     workspace_id: uuid.UUID,
     media_ids: list[uuid.UUID] | None,
@@ -729,10 +765,8 @@ async def create_loop(
     access: OwnerAccess,
     db: DbSession,
 ) -> InstagramLoopResponse:
-    accounts = await _validate_selected_accounts(
-        access.workspace.id,
-        payload.account_ids,
-        db,
+    accounts, auto_folders = await _selected_with_folders(
+        access.workspace.id, payload.account_ids, payload.auto_folder_ids, db
     )
     media = await _validate_selected_media(
         access.workspace.id,
@@ -742,6 +776,7 @@ async def create_loop(
     )
     now = utc_now()
     loop = InstagramLoop(
+        auto_folder_ids=auto_folders,
         workspace_id=access.workspace.id,
         name=payload.name,
         interval_min_minutes=payload.interval_min_minutes,
@@ -787,6 +822,7 @@ async def clone_loop(
     clone_suffix = " (cópia)"
     clone = InstagramLoop(
         workspace_id=source.workspace_id,
+        auto_folder_ids=list(source.auto_folder_ids or []),
         name=f"{source.name[:120 - len(clone_suffix)]}{clone_suffix}",
         interval_min_minutes=source.interval_min_minutes,
         interval_max_minutes=source.interval_max_minutes,
@@ -851,11 +887,10 @@ async def update_loop(
             )
         ).all()
     )
-    accounts = await _validate_selected_accounts(
-        access.workspace.id,
-        payload.account_ids,
-        db,
+    accounts, auto_folders = await _selected_with_folders(
+        access.workspace.id, payload.account_ids, payload.auto_folder_ids, db
     )
+    loop.auto_folder_ids = auto_folders
     media = (
         await _validate_selected_media(
             access.workspace.id,

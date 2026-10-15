@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select, update
 
+from app.instagram.folder_automation import automate_account
 from app.auth.dependencies import (
     DbSession,
     OwnerAccess,
@@ -776,6 +777,9 @@ async def instagram_callback(
             ),
         )
         db.add(account)
+        await db.flush()
+        # Auto-detect: file by name prefix and join the folder's loops.
+        await automate_account(db, account, datetime.now(timezone.utc))
     else:
         account.app_credential_id = credential.id
         account.username = username

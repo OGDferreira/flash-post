@@ -214,6 +214,7 @@ export function LoopsPage() {
       post_type: loop.post_type,
       repeat_media: loop.repeat_media,
       media_ids: loop.media_ids,
+      auto_folder_ids: loop.auto_folder_ids ?? [],
       account_ids: loop.accounts
         .filter((account) =>
           loops.data?.available_accounts.some((available) => available.id === account.id),
@@ -473,7 +474,7 @@ export function LoopsPage() {
                     ),
                   },
                 ]
-                  .filter((folder) => folder.accounts.length > 0)
+                  .filter((folder) => folder.accounts.length > 0 || folder.id !== "unassigned")
                   .map((folder) => (
                     <section key={folder.id}>
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -481,6 +482,28 @@ export function LoopsPage() {
                           <Folder size={13} style={{ color: folder.color }} />
                           {folder.label} ({folder.accounts.length})
                         </h4>
+                        {folder.id !== "unassigned" && (
+                          <label
+                            className="flex cursor-pointer items-center gap-1.5 text-[11px] text-fg-2"
+                            title="Toda conta que entrar nesta pasta passa a fazer parte deste loop automaticamente"
+                          >
+                            <input
+                              checked={form.auto_folder_ids.includes(folder.id)}
+                              className="accent-[#00c9d8]"
+                              disabled={!loops.data.can_manage}
+                              onChange={() =>
+                                setForm((current) => ({
+                                  ...current,
+                                  auto_folder_ids: current.auto_folder_ids.includes(folder.id)
+                                    ? current.auto_folder_ids.filter((id) => id !== folder.id)
+                                    : [...current.auto_folder_ids, folder.id],
+                                }))
+                              }
+                              type="checkbox"
+                            />
+                            Entrar no loop automaticamente
+                          </label>
+                        )}
                         <button
                           className="text-[11px] font-medium text-accent hover:text-white disabled:opacity-50"
                           disabled={!loops.data.can_manage}
@@ -806,7 +829,7 @@ export function LoopsPage() {
               saveLoop.isPending ||
               (!loops.data.can_configure && !editingId) ||
               !form.name.trim() ||
-              form.account_ids.length === 0 ||
+              (form.account_ids.length === 0 && form.auto_folder_ids.length === 0) ||
               form.interval_min_minutes < 1 ||
               form.interval_max_minutes < form.interval_min_minutes ||
               !Number.isInteger(form.daily_limit_per_account) ||

@@ -143,3 +143,8 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 ## 0.13.2 — Barra do topo
 - Topo reformulado: mostra o nome da página atual (e "FlashPost"/"Administração" como subtítulo), sino e tema agrupados numa cápsula, sem a sombra pesada.
 - Diagnóstico Shark (sem mudança de código): o webhook recebe normalmente; a diferença de números vem de bots do Shark que não enviam eventos ao FlashPost.
+
+## 0.14.0 — Automação por pasta
+- Pasta com "Entrada automática por nome": prefixos (alice, alic, ali.…) + chave ligar/desligar. Conta NOVA conectada e sem pasta cujo @ começa com um prefixo entra na pasta sozinha. Não mexe em contas existentes.
+- Loop com "Entrar no loop automaticamente" por pasta: toda conta que entra na pasta (manual ou auto) entra no loop e é enfileirada se ele estiver ativo. Contas nunca são removidas automaticamente. Loop pode ser criado só com pastas.
+- Migration 20261015_36 (3 colunas com default). Aba Pastas mostra "Contas sem pasta" no topo. Topo mostra só "FlashPost".

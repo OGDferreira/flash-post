@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
 
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
+from app.instagram.folder_automation import join_auto_loops, normalize_prefixes
 from app.models import InstagramAccount, InstagramProfileFolder, User
 from app.schemas.instagram_folders import (
     InstagramProfileFolderAccount,
@@ -71,6 +72,8 @@ async def _folder_response(
         name=folder.name,
         color=folder.color,
         created_at=created_at,
+        auto_prefixes=list(folder.auto_prefixes or []),
+        auto_enabled=folder.auto_enabled,
         accounts=[_account_response(account, names) for account in accounts],
     )
 
@@ -145,6 +148,8 @@ async def create_profile_folder(
         workspace_id=access.workspace.id,
         name=payload.name,
         color=payload.color,
+        auto_prefixes=normalize_prefixes(payload.auto_prefixes),
+        auto_enabled=payload.auto_enabled,
     )
     db.add(folder)
     await db.commit()
@@ -180,6 +185,8 @@ async def update_profile_folder(
         )
     folder.name = payload.name
     folder.color = payload.color
+    folder.auto_prefixes = normalize_prefixes(payload.auto_prefixes)
+    folder.auto_enabled = payload.auto_enabled
     await db.commit()
     await db.refresh(folder)
     return await _folder_response(folder, db)
@@ -243,6 +250,17 @@ async def update_profile_folder_accounts(
             )
             .values(profile_folder_id=None)
         )
+    # Loops that watch this folder pick up the accounts that were just filed.
+    if payload.account_ids:
+        filed = (
+            await db.scalars(
+                select(InstagramAccount).where(
+                    InstagramAccount.workspace_id == access.workspace.id,
+                    InstagramAccount.id.in_(payload.account_ids),
+                )
+            )
+        ).all()
+        await join_auto_loops(db, access.workspace.id, folder.id, list(filed), datetime.now(timezone.utc))
     await db.commit()
     await db.refresh(folder)
     return await _folder_response(folder, db)

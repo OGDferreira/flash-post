@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -58,6 +59,10 @@ class InstagramLoop(Base):
     post_type: Mapped[str] = mapped_column(String(16), nullable=False, default="reels")
     repeat_media: Mapped[bool] = mapped_column(
         nullable=False, default=True, server_default=text("true")
+    )
+    # Folders whose accounts join this loop automatically.
+    auto_folder_ids: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
     )
     next_media_index: Mapped[int | None] = mapped_column(Integer)
     next_queue_sequence: Mapped[int] = mapped_column(

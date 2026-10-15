@@ -14,7 +14,9 @@ class InstagramLoopCreateRequest(BaseModel):
     # Max confirmed publications per account per calendar day (app time zone).
     # Instagram itself allows at most 100 API publications per 24 h.
     daily_limit_per_account: Annotated[int, Field(ge=1, le=100)] = 100
-    account_ids: Annotated[list[UUID], Field(min_length=1, max_length=1000)]
+    account_ids: Annotated[list[UUID], Field(max_length=1000)]
+    # Folders whose accounts join this loop automatically.
+    auto_folder_ids: Annotated[list[UUID], Field(max_length=100)] = []
     media_ids: list[UUID] | None = None
 
     @field_validator("name")
@@ -38,6 +40,12 @@ class InstagramLoopCreateRequest(BaseModel):
         if values is not None and len(set(values)) != len(values):
             raise ValueError("Each media file can only be selected once.")
         return values
+
+    @model_validator(mode="after")
+    def needs_accounts_or_folders(self) -> "InstagramLoopCreateRequest":
+        if not self.account_ids and not self.auto_folder_ids:
+            raise ValueError("Select at least one account or one folder.")
+        return self
 
     @model_validator(mode="after")
     def valid_interval(self) -> "InstagramLoopCreateRequest":
@@ -69,6 +77,7 @@ class InstagramLoopResponse(BaseModel):
     status: Literal["active", "paused"]
     next_run_at: datetime | None
     last_run_at: datetime | None
+    auto_folder_ids: list[UUID] = []
     accounts: list[InstagramLoopAccountResponse]
     active_accounts_count: int
     media_ids: list[UUID]

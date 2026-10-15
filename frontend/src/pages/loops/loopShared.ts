@@ -41,6 +41,7 @@ export type InstagramLoop = {
   status: "active" | "paused";
   next_run_at: string | null;
   last_run_at: string | null;
+  auto_folder_ids?: string[];
   accounts: LoopAccount[];
   active_accounts_count: number;
   media_ids: string[];
@@ -121,6 +122,7 @@ export type LoopForm = {
   post_type: "reels" | "images" | "both";
   repeat_media: boolean;
   account_ids: string[];
+  auto_folder_ids: string[];
   media_ids: string[];
 };
 
@@ -132,6 +134,7 @@ export const emptyForm: LoopForm = {
   post_type: "reels",
   repeat_media: true,
   account_ids: [],
+  auto_folder_ids: [],
   media_ids: [],
 };
 

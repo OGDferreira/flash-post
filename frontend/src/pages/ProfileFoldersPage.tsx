@@ -28,6 +28,8 @@ type ProfileFolder = {
   name: string;
   color: string;
   created_at: string;
+  auto_prefixes?: string[];
+  auto_enabled?: boolean;
   accounts: ProfileFolderAccount[];
 };
 
@@ -36,7 +38,44 @@ type ProfileFoldersResponse = {
   accounts: ProfileFolderAccount[];
 };
 
-const emptyDraft = { name: "", color: "#00c9d8" };
+const emptyDraft = { name: "", color: "#00c9d8", prefixes: "", auto_enabled: true };
+
+function AutoRule({
+  draft,
+  onChange,
+}: {
+  draft: { prefixes: string; auto_enabled: boolean };
+  onChange: (next: { prefixes?: string; auto_enabled?: boolean }) => void;
+}) {
+  return (
+    <div className="grid gap-2 rounded-lg border border-line-soft p-3 text-sm text-fg-2 sm:col-span-full">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium text-fg">Entrada automática por nome</span>
+        <label className="flex cursor-pointer items-center gap-2 text-xs">
+          <input
+            checked={draft.auto_enabled}
+            className="accent-[#00c9d8]"
+            onChange={(event) => onChange({ auto_enabled: event.target.checked })}
+            type="checkbox"
+          />
+          {draft.auto_enabled ? "Ligada" : "Desligada"}
+        </label>
+      </div>
+      <input
+        aria-label="Prefixos dos nomes das contas"
+        className="field min-h-10"
+        disabled={!draft.auto_enabled}
+        onChange={(event) => onChange({ prefixes: event.target.value })}
+        placeholder="Ex.: alice, alic, ali., alii, alli"
+        value={draft.prefixes}
+      />
+      <p className="text-xs text-muted">
+        Conta nova conectada cujo @ começa com um desses nomes entra nesta pasta sozinha (e no loop,
+        se a pasta estiver ligada a um). Separe por vírgula. Só vale para contas novas e sem pasta.
+      </p>
+    </div>
+  );
+}
 
 function getErrorMessage(error: unknown, fallback: string): string | null {
   if (!error) return null;
@@ -63,7 +102,15 @@ export function ProfileFoldersPage() {
         editingId ? `/api/instagram/folders/${editingId}` : "/api/instagram/folders",
         {
           method: editingId ? "PATCH" : "POST",
-          body: draft,
+          body: {
+            name: draft.name,
+            color: draft.color,
+            auto_enabled: draft.auto_enabled,
+            auto_prefixes: draft.prefixes
+              .split(/[,;\n]/)
+              .map((item) => item.trim())
+              .filter(Boolean),
+          },
         },
       ),
     onSuccess: () => {
@@ -124,7 +171,12 @@ export function ProfileFoldersPage() {
 
   function openEditForm(folder: ProfileFolder) {
     setEditingId(folder.id);
-    setDraft({ name: folder.name, color: folder.color });
+    setDraft({
+      name: folder.name,
+      color: folder.color,
+      prefixes: (folder.auto_prefixes ?? []).join(", "),
+      auto_enabled: folder.auto_enabled ?? true,
+    });
     setFormOpen(false);
     saveFolder.reset();
   }
@@ -199,6 +251,7 @@ export function ProfileFoldersPage() {
               aria-label="Escolher cor da pasta"
             />
           </label>
+          <AutoRule draft={draft} onChange={(next) => setDraft({ ...draft, ...next })} />
           <div className="flex gap-2">
             <button
               className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-3 text-sm font-semibold text-white disabled:opacity-60"
@@ -298,6 +351,9 @@ export function ProfileFoldersPage() {
                     type="color"
                     value={draft.color}
                   />
+                  <div className="w-full">
+                    <AutoRule draft={draft} onChange={(next) => setDraft({ ...draft, ...next })} />
+                  </div>
                   <button className="btn-primary btn-sm" disabled={saveFolder.isPending || !draft.name.trim()} type="submit">
                     <Save size={14} />
                     {saveFolder.isPending ? "Salvando..." : "Salvar"}
@@ -314,6 +370,16 @@ export function ProfileFoldersPage() {
                   <span className="text-xs text-muted">
                     ({folder.accounts.length} {folder.accounts.length === 1 ? "conta" : "contas"})
                   </span>
+                  {(folder.auto_prefixes?.length ?? 0) > 0 && (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] ${
+                        folder.auto_enabled === false ? "text-muted" : "bg-brand-soft text-accent"
+                      }`}
+                      title={`Prefixos: ${folder.auto_prefixes?.join(", ")}`}
+                    >
+                      {folder.auto_enabled === false ? "Auto desligado" : "Auto por nome"}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <button

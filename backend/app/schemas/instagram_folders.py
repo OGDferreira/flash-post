@@ -21,6 +21,8 @@ class InstagramProfileFolderResponse(BaseModel):
     name: str
     color: str
     created_at: datetime
+    auto_prefixes: list[str] = []
+    auto_enabled: bool = True
     accounts: list[InstagramProfileFolderAccount]
 
 
@@ -32,6 +34,8 @@ class InstagramProfileFoldersResponse(BaseModel):
 class InstagramProfileFolderCreateRequest(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=80)]
     color: Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] = "#00c9d8"
+    auto_prefixes: Annotated[list[str], Field(max_length=30)] = []
+    auto_enabled: bool = True
 
     @field_validator("name")
     @classmethod
@@ -45,6 +49,8 @@ class InstagramProfileFolderCreateRequest(BaseModel):
 class InstagramProfileFolderUpdateRequest(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=80)]
     color: Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
+    auto_prefixes: Annotated[list[str], Field(max_length=30)] = []
+    auto_enabled: bool = True
 
     @field_validator("name")
     @classmethod
