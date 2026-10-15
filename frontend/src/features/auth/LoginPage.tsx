@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, LoaderCircle, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { z } from "zod";
 
+import { AuthShell } from "@/features/auth/AuthShell";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ApiError, apiRequest, type User } from "@/services/api";
 
@@ -75,42 +76,8 @@ export function LoginPage() {
     mutation.error instanceof ApiError ? mutation.error.message : null;
 
   return (
-    <main className="relative grid min-h-svh place-items-center overflow-x-hidden bg-transparent px-4 py-4 sm:px-5 sm:py-10">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_48%,rgba(83,109,254,0.08),transparent_45%)]" />
-      <div className="relative grid w-full max-w-[960px] overflow-hidden rounded-2xl border border-line-soft bg-surface shadow-[0_24px_80px_rgba(0,0,0,0.28)] md:grid-cols-[0.95fr_1.05fr]">
-        <section className="flex flex-col justify-between gap-10 p-4 sm:p-6 md:min-h-[540px] md:p-9">
-          <Link to="/" className="flex w-fit items-center gap-3">
-            <img
-              src="/flashpost-logo.png"
-              alt="FlashPost"
-              width="40"
-              height="40"
-              className="size-10 shrink-0 object-contain"
-            />
-            <span className="text-base font-semibold tracking-[-0.03em] text-fg">
-              FlashPost<span className="text-accent">.</span>
-            </span>
-          </Link>
-          <div className="max-w-sm md:my-auto">
-            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-fg-2">
-              <ShieldCheck size={14} className="text-accent" />
-              Acesso seguro à sua operação
-            </p>
-            <h1 className="text-4xl font-semibold leading-tight tracking-[-0.06em] text-fg sm:text-5xl">
-              Bom ter você
-              <br />
-              <span className="text-accent">de volta.</span>
-            </h1>
-            <p className="mt-5 max-w-md text-base leading-7 text-muted">
-              Entre no FlashPost para continuar acompanhando seu espaço de trabalho.
-            </p>
-          </div>
-          <p className="hidden text-xs text-muted md:block">
-            FlashPost · Acesso protegido
-          </p>
-        </section>
-
-        <section className="flex items-center border-t border-line-soft p-4 sm:p-6 md:border-l md:border-t-0 md:p-9">
+    <AuthShell mode="login">
+        <section className="flex items-center border-t border-line-soft p-5 sm:p-8 md:border-l md:border-t-0 md:p-10">
           <div className="w-full max-w-md md:mx-auto">
           <div className="mb-7">
             <h2 className="text-xl font-semibold tracking-[-0.035em] text-fg">
@@ -214,8 +181,7 @@ export function LoginPage() {
           </p>
           </div>
         </section>
-      </div>
-    </main>
+    </AuthShell>
   );
 }
 

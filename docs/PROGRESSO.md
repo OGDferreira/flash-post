@@ -94,3 +94,7 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Novo card "A receber hoje" (conexões do dia × valor por conta conectada, vindo de `earnings_today`).
 - Corrigido: valores em R$ apareciam como "R$ —" porque a API devolve decimais como texto; agora são convertidos.
 - Pop-up de notificações no celular ocupa a largura da tela (antes cortava à esquerda) e tem fundo opaco.
+
+## 0.10.4 — Login e cadastro redesenhados
+- Login e cadastro usam o mesmo layout (`features/auth/AuthShell.tsx`): vidro + cor do tema, logo nova e copy financeira estilo landing page ("Cada conexão vira dinheiro no bolso" / "Transforme suas contas em receita previsível"), 3 benefícios e um cartão marcado como "exemplo ilustrativo". Os benefícios citados existem no produto (ganho do dia, metas/ranking, pagamentos).
+- Sair já leva ao login (`/login`, com limpeza de cache e CSRF).
