@@ -102,3 +102,7 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 ## 0.10.5 — Menos polling e ErrorBoundary
 - Intervalos de atualização automática mais longos (Financeiro/E-mails/Erros 15–30 s → 60 s; demais painéis 60 s → 120 s; "Painel do colaborador" mantém 60 s por causa do "A receber hoje"). O sync em andamento continua a 3 s e o React Query já pausa polling com a aba em segundo plano.
 - `ErrorBoundary` em volta do conteúdo das páginas: erro de renderização numa tela mostra aviso com "Recarregar" e a navegação continua funcionando; reseta ao trocar de rota.
+
+## 0.10.6 — Páginas divididas e testes de fluxo
+- Tipos e helpers das páginas grandes saíram para arquivos próprios, sem mudar comportamento: `pages/loops/loopShared.ts`, `pages/emails/emailShared.tsx`, `pages/collaborators/collaboratorShared.ts` e `CollaboratorParts.tsx` (WorkDaysPanel, campos). Loops 1171→1007, E-mails 943→823, Colaboradores 885→590 linhas.
+- Testes de fluxo com Playwright (`frontend/e2e/flows.spec.ts`, `npm run test:e2e`): rota protegida → login, login com copy nova + erro de senha, cadastro, entrar → Contatos → Sair → login. Precisa do front e da API rodando; variáveis `E2E_BASE_URL`, `E2E_EMAIL`, `E2E_PASSWORD`, `E2E_CHROMIUM`.
