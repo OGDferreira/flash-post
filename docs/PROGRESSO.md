@@ -117,3 +117,9 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 ## 0.11.1 — Login/cadastro compactos
 - Espaçamentos menores no celular: o login inteiro cabe na tela (390×844). Campos 40 px no celular, 44 px no desktop.
 - Copy explica o que a plataforma faz: "Seu Instagram no piloto automático" / "Menos trabalho manual, mais resultado" — conectar contas, agenda de publicações, automações para pessoas e empresas. Frase rotativa (7 variações, troca a cada 3,5 s) e 4 benefícios no desktop. Removido o cartão de valor ilustrativo.
+
+## 0.12.0 — Conquistas com dados reais, seguidores e admin de notificações
+- Textos das conquistas viraram modelos com `{valor}` (número real do dia), `{conta}` e `{nome}`: ex. "👀 12.340 visualizações hoje!". Mais frases por marco (3–4 por marco de views, 3 por posts/vendas, 2 por seguidores).
+- Seguidores: a cada 1 h o job em segundo plano relê `followers_count` de todas as contas conectadas (Meta) e avisa chefe(s) + quem conectou quando uma conta bate 1 mil, 5 mil, 10 mil, 50 mil ou 100 mil. Na primeira vez que vê uma conta grava o que ela já tem sem notificar (não dispara "bateu 1 mil" para quem já tinha 50 mil). Migração `20261015_35` (aditiva): `account_follower_milestones`.
+- Admin → Notificações (`/admin/notifications`): editar/adicionar/remover frases por tipo e marco (salvo em `system_settings.milestone_messages`), "Voltar ao padrão" e botão Testar por frase, que monta o texto com os dados reais de hoje do workspace do admin e envia push para os dispositivos dele.
+- Contas e Pastas: card da conta mostra "· por <apelido>" de quem conectou.

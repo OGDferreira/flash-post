@@ -282,7 +282,7 @@ export function DailyViewsGoalCard() {
         <h3 className="text-sm font-medium text-fg">Notificações neste dispositivo</h3>
         <p className="mt-1 text-xs leading-5 text-muted">
           Além da meta, você recebe conquistas do dia: 10 mil, 50 mil, 100 mil, 500 mil e 1 milhão de
-          visualizações 🔥, marcos de posts e de vendas 💸.
+          visualizações 🔥, marcos de posts, de vendas 💸 e de seguidores das suas contas 🎉.
         </p>
         {availability === "ios-needs-install" ? (
           <p className="mt-2 text-sm leading-6 text-muted">

@@ -20,6 +20,7 @@ import {
   Users,
   UsersRound,
   Bell,
+  BellRing,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,6 +31,7 @@ export const adminLinks: NavItem[] = [
   { label: "Visão geral", to: "/admin", icon: Home },
   { label: "Usuários", to: "/admin/users", icon: Users },
   { label: "Workspaces", to: "/admin/workspaces", icon: Blocks },
+  { label: "Notificações", to: "/admin/notifications", icon: BellRing },
   { label: "Sistema", to: "/admin/system", icon: Settings2 },
 ];
 

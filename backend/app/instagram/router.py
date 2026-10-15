@@ -93,6 +93,13 @@ async def list_accounts(
             .order_by(InstagramAccount.connected_at, InstagramAccount.id)
         )
     ).all()
+    connector_ids = {a.connected_by_user_id for a in accounts if a.connected_by_user_id}
+    connector_names: dict[uuid.UUID, str] = {}
+    if connector_ids:
+        for user_id, nickname, full_name in (
+            await db.execute(select(User.id, User.nickname, User.full_name).where(User.id.in_(connector_ids)))
+        ).all():
+            connector_names[user_id] = nickname or full_name
     return InstagramAccountsResponse(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
         can_connect=access.membership.role
@@ -115,6 +122,9 @@ async def list_accounts(
                     _utc_datetime(account.insights_synced_at) if account.insights_synced_at else None
                 ),
                 insights_sync_error=account.insights_sync_error,
+                connected_by_name=connector_names.get(account.connected_by_user_id)
+                if account.connected_by_user_id
+                else None,
             )
             for account in accounts
         ],

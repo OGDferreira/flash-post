@@ -19,6 +19,7 @@ type ProfileFolderAccount = {
   profile_picture_url: string | null;
   status: "connected" | "disconnected" | "error";
   connected_at: string;
+  connected_by_name?: string | null;
   error_at: string | null;
 };
 
@@ -324,6 +325,7 @@ export function ProfileFoldersPage() {
                       <p className="truncate">@{account.username}</p>
                       <p className="mt-0.5 text-[10px] text-muted">
                         Conectada em {formatAccountConnectedAt(account.connected_at)}
+                      {account.connected_by_name ? ` · por ${account.connected_by_name}` : ""}
                       </p>
                       {account.status === "error" && (
                         <p className="mt-0.5 text-[10px] text-danger">
@@ -371,6 +373,7 @@ export function ProfileFoldersPage() {
                     <p>@{account.username}</p>
                     <p className="mt-0.5 text-[10px] text-muted">
                       Conectada em {formatAccountConnectedAt(account.connected_at)}
+                      {account.connected_by_name ? ` · por ${account.connected_by_name}` : ""}
                     </p>
                     {account.status === "error" && (
                       <p className="mt-0.5 text-[10px] text-danger">

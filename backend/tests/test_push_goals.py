@@ -325,23 +325,62 @@ async def test_milestones_push_highest_new_threshold_once_per_day(
     monkeypatch.setattr(ms, "send_web_push", fake_send)
 
     now = datetime(2026, 10, 15, 15, 0, tzinfo=timezone.utc)
-    assert await ms.run_milestones_tick(db_session, now) == 1
-    # 10k, 50k and 100k crossed at once: only the 100k message is pushed.
-    assert len(sent) == 1 and sent[0]["title"].startswith(("💯", "🔥"))
-    assert "100 mil" in sent[0]["title"]
+    assert await ms.run_milestones_tick(db_session, now, refresh_followers=False) == 1
+    # 10k, 50k and 100k crossed at once: only one push, with the real number.
+    assert len(sent) == 1 and "120.000" in sent[0]["title"]
     rows = (await db_session.scalars(select(MilestoneNotification.threshold))).all()
     assert sorted(rows) == [10_000, 50_000, 100_000]
-    # Same day, same value: nothing new.
-    assert await ms.run_milestones_tick(db_session, now + timedelta(minutes=15)) == 0
+    assert await ms.run_milestones_tick(db_session, now + timedelta(minutes=15), refresh_followers=False) == 0
     views["value"] = 1_000_000
-    assert await ms.run_milestones_tick(db_session, now + timedelta(minutes=30)) == 1
-    assert "1 milhão" in sent[-1]["title"].lower() or "1 MILHÃO" in sent[-1]["title"]
+    assert await ms.run_milestones_tick(db_session, now + timedelta(minutes=30), refresh_followers=False) == 1
+    assert "1.000.000" in sent[-1]["title"] + sent[-1]["body"]
 
 
-def test_milestone_messages_cover_every_threshold() -> None:
+@pytest.mark.anyio
+async def test_follower_milestone_baseline_then_crossing(
+    db_session: AsyncSession, owner, collaborator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.notifications import milestones as ms
+
+    owner_user, workspace = owner
+    account = _account(workspace.id, collaborator.id, "404")
+    account.follower_count = 1_500  # already above 1k before the feature existed
+    db_session.add(account)
+    _private, p256dh, auth = _browser_keys()
+    db_session.add(
+        PushSubscription(
+            user_id=owner_user.id, workspace_id=workspace.id, endpoint=ENDPOINT, p256dh=p256dh, auth=auth
+        )
+    )
+    await db_session.commit()
+    sent: list[dict] = []
+
+    async def fake_send(_client, **kwargs):
+        sent.append(kwargs["payload"])
+        return PushResult(ok=True, gone=False, status_code=201)
+
+    async def fake_views(*_args):
+        return 0
+
+    monkeypatch.setattr(goals_module, "fetch_instagram_views", fake_views)
+    monkeypatch.setattr(ms, "send_web_push", fake_send)
+    now = datetime(2026, 10, 15, 15, 0, tzinfo=timezone.utc)
+    # First sight is a silent baseline: no "1k" push for an account already past it.
+    assert await ms.run_milestones_tick(db_session, now, refresh_followers=False) == 0
+    account.follower_count = 5_200
+    await db_session.commit()
+    assert await ms.run_milestones_tick(db_session, now, refresh_followers=False) == 1
+    assert "@goal_404" in sent[0]["title"] and "5.200" in sent[0]["title"]
+    assert await ms.run_milestones_tick(db_session, now, refresh_followers=False) == 0
+
+
+def test_milestone_messages_cover_every_threshold_and_overrides() -> None:
     from app.notifications import milestones as ms
 
     for kind, thresholds in ms.THRESHOLDS.items():
         for threshold in thresholds:
-            title, body = ms.milestone_message(kind, threshold)
-            assert title and body
+            title, body = ms.render(ms.pick(ms.DEFAULT_MESSAGES, kind, threshold), threshold, "conta", "Gui")
+            assert title and body and "{" not in title + body
+    merged = ms.merge_messages({"views": {"10000": [{"title": "Oi {valor}", "body": "x"}]}, "bad": {}})
+    assert merged["views"][10_000] == [{"title": "Oi {valor}", "body": "x"}]
+    assert ms.render(merged["views"][10_000][0], 12345, None, None)[0] == "Oi 12.345"

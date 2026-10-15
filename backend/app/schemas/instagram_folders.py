@@ -13,6 +13,7 @@ class InstagramProfileFolderAccount(BaseModel):
     status: str
     connected_at: datetime
     error_at: datetime | None
+    connected_by_name: str | None = None
 
 
 class InstagramProfileFolderResponse(BaseModel):

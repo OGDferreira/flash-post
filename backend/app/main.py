@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.admin.notifications import router as admin_notifications_router
 from app.admin.router import router as admin_router
 from app.analytics.bots import router as bot_performance_router
 from app.analytics.media import router as publication_insights_router
@@ -110,7 +111,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application = FastAPI(
         title="FlashPost",
         summary="Operations platform for Instagram publishing and analytics.",
-        version="0.11.1",
+        version="0.12.0",
         lifespan=lifespan,
     )
     application.state.login_rate_limiter = LoginRateLimiter(
@@ -141,6 +142,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     )
     application.include_router(health_router)
     application.include_router(auth_router)
+    application.include_router(admin_notifications_router)
     application.include_router(admin_router)
     application.include_router(analytics_router)
     application.include_router(bot_performance_router)

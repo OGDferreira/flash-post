@@ -38,6 +38,7 @@ from app.models.media_insight import InstagramMediaInsight
 from app.models.push import (
     DailyViewsGoal,
     DailyViewsGoalNotification,
+    AccountFollowerMilestone,
     MilestoneNotification,
     PushSubscription,
 )
@@ -70,6 +71,7 @@ __all__ = [
     "InstagramPublicationJob",
     "PushSubscription",
     "MilestoneNotification",
+    "AccountFollowerMilestone",
     "SharkEvent",
     "SharkLead",
     "SharkTransaction",

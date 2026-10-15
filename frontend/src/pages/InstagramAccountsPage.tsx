@@ -33,6 +33,7 @@ type InstagramAccount = {
   profile_picture_url: string | null;
   token_expires_at: string;
   connected_at: string;
+  connected_by_name?: string | null;
   error_at: string | null;
   status: "connected" | "disconnected" | "error";
 };
@@ -480,6 +481,7 @@ export function InstagramAccountsPage() {
                     </p>
                     <p className="mt-1 text-xs text-muted">
                       Conectada em {formatAccountConnectedAt(account.connected_at)}
+                      {account.connected_by_name ? ` · por ${account.connected_by_name}` : ""}
                     </p>
                     {account.status === "error" && (
                       <p className="mt-1 text-xs text-danger">

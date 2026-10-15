@@ -20,6 +20,7 @@ class InstagramAccountResponse(BaseModel):
     status_reason: str | None
     insights_synced_at: datetime | None = None
     insights_sync_error: str | None = None
+    connected_by_name: str | None = None
 
 
 class InstagramAccountsResponse(BaseModel):

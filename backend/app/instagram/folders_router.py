@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
 
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
-from app.models import InstagramAccount, InstagramProfileFolder
+from app.models import InstagramAccount, InstagramProfileFolder, User
 from app.schemas.instagram_folders import (
     InstagramProfileFolderAccount,
     InstagramProfileFolderAccountsRequest,
@@ -22,8 +22,21 @@ def _utc_datetime(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
-def _account_response(account: InstagramAccount) -> InstagramProfileFolderAccount:
+async def _connector_names(db: DbSession, accounts) -> dict[uuid.UUID, str]:
+    ids = {account.connected_by_user_id for account in accounts if account.connected_by_user_id}
+    if not ids:
+        return {}
+    rows = await db.execute(select(User.id, User.nickname, User.full_name).where(User.id.in_(ids)))
+    return {user_id: nickname or full_name for user_id, nickname, full_name in rows.all()}
+
+
+def _account_response(
+    account: InstagramAccount, names: dict[uuid.UUID, str] | None = None
+) -> InstagramProfileFolderAccount:
     return InstagramProfileFolderAccount(
+        connected_by_name=(names or {}).get(account.connected_by_user_id)
+        if account.connected_by_user_id
+        else None,
         id=account.id,
         profile_folder_id=account.profile_folder_id,
         username=account.username,
@@ -51,13 +64,14 @@ async def _folder_response(
             .order_by(InstagramAccount.username)
         )
     ).all()
+    names = await _connector_names(db, accounts)
     created_at = _utc_datetime(folder.created_at)
     return InstagramProfileFolderResponse(
         id=folder.id,
         name=folder.name,
         color=folder.color,
         created_at=created_at,
-        accounts=[_account_response(account) for account in accounts],
+        accounts=[_account_response(account, names) for account in accounts],
     )
 
 
@@ -98,9 +112,10 @@ async def list_profile_folders(
             .order_by(InstagramAccount.username)
         )
     ).all()
+    names = await _connector_names(db, accounts)
     return InstagramProfileFoldersResponse(
         folders=[await _folder_response(folder, db) for folder in folders],
-        accounts=[_account_response(account) for account in accounts],
+        accounts=[_account_response(account, names) for account in accounts],
     )
 
 

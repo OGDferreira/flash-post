@@ -39,6 +39,7 @@ const ExtensionsPage = lazyPage(() => import("@/pages/ExtensionsPage"), "Extensi
 const SupportPage = lazyPage(() => import("@/pages/SupportPage"), "SupportPage");
 const FeedPage = lazyPage(() => import("@/pages/FeedPage"), "FeedPage");
 const AdminOverviewPage = lazyPage(() => import("@/pages/admin/AdminOverviewPage"), "AdminOverviewPage");
+const AdminNotificationsPage = lazyPage(() => import("@/pages/admin/AdminNotificationsPage"), "AdminNotificationsPage");
 const AdminSystemPage = lazyPage(() => import("@/pages/admin/AdminSystemPage"), "AdminSystemPage");
 const AdminUsersPage = lazyPage(() => import("@/pages/admin/AdminUsersPage"), "AdminUsersPage");
 const AdminWorkspacesPage = lazyPage(() => import("@/pages/admin/AdminWorkspacesPage"), "AdminWorkspacesPage");
@@ -124,6 +125,7 @@ export default function App() {
                 <Route path="/admin/users" element={<AdminUsersPage />} />
                 <Route path="/admin/workspaces" element={<AdminWorkspacesPage />} />
                 <Route path="/admin/system" element={<AdminSystemPage />} />
+                <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
               </Route>
             </Route>
           </Route>
