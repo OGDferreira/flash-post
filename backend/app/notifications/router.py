@@ -403,3 +403,22 @@ async def update_member_goal(
         raise HTTPException(status_code=404, detail="Membro não encontrado neste workspace.")
     goal = await _save_goal(db, access.workspace.id, user_id, payload, access.membership.user_id)
     return await _goal_response(db, user_id, goal, role=member.role)
+
+
+@router.get("/engagement/me")
+async def my_engagement(access: WorkspaceMemberAccess, db: DbSession) -> dict:
+    """Streak and personal record for the dashboard (real connection data)."""
+    from app.notifications.engagement import user_stats
+
+    stats = await user_stats(db, access.workspace.id, access.membership.user_id, datetime.now(timezone.utc))
+    return {
+        "today": stats.today,
+        "goal": stats.goal,
+        "streak": stats.streak,
+        "streak_before_today": stats.streak_before_today,
+        "met_today": stats.met_today,
+        "missing_today": stats.missing_today,
+        "best_previous": stats.best_previous,
+        "best_previous_date": stats.best_previous_date.isoformat() if stats.best_previous_date else None,
+        "is_record_today": stats.is_record_today,
+    }

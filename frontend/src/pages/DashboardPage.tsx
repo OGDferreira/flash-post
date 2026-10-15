@@ -1,3 +1,4 @@
+import { EngagementCards } from "@/components/EngagementCards";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -442,6 +443,7 @@ export function DashboardPage() {
           {metricsCards.map((metric) => (
             <MetricCard key={metric.title} {...metric} />
           ))}
+          <EngagementCards />
         </section>
       </main>
       <section

@@ -328,7 +328,11 @@ async def test_milestones_push_highest_new_threshold_once_per_day(
     assert await ms.run_milestones_tick(db_session, now, refresh_followers=False) == 1
     # 10k, 50k and 100k crossed at once: only one push, with the real number.
     assert len(sent) == 1 and "120.000" in sent[0]["title"]
-    rows = (await db_session.scalars(select(MilestoneNotification.threshold))).all()
+    rows = (
+        await db_session.scalars(
+            select(MilestoneNotification.threshold).where(MilestoneNotification.kind == "views")
+        )
+    ).all()
     assert sorted(rows) == [10_000, 50_000, 100_000]
     assert await ms.run_milestones_tick(db_session, now + timedelta(minutes=15), refresh_followers=False) == 0
     views["value"] = 1_000_000

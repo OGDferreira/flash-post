@@ -555,6 +555,20 @@ async def run_milestones_tick(
                     return total
                 total += await _notify_daily(db, scope, day, kind, value, client, keys, messages)
         try:
+            from app.notifications.engagement import run_engagement_tick
+
+            total += await run_engagement_tick(
+                db,
+                now,
+                client=client,
+                keys_getter=keys_getter,
+                push_to=push_to,
+                views_today=lambda d, scope, n, start: views_today(d, scope, n, start, cache),
+            )
+        except Exception as exc:  # noqa: BLE001
+            await db.rollback()
+            logger.warning("Engagement pushes failed (%s).", type(exc).__name__)
+        try:
             total += await _notify_followers(db, client, keys_getter, messages)
         except Exception as exc:  # noqa: BLE001
             await db.rollback()

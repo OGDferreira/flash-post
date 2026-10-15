@@ -123,3 +123,12 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Seguidores: a cada 1 h o job em segundo plano relê `followers_count` de todas as contas conectadas (Meta) e avisa chefe(s) + quem conectou quando uma conta bate 1 mil, 5 mil, 10 mil, 50 mil ou 100 mil. Na primeira vez que vê uma conta grava o que ela já tem sem notificar (não dispara "bateu 1 mil" para quem já tinha 50 mil). Migração `20261015_35` (aditiva): `account_follower_milestones`.
 - Admin → Notificações (`/admin/notifications`): editar/adicionar/remover frases por tipo e marco (salvo em `system_settings.milestone_messages`), "Voltar ao padrão" e botão Testar por frase, que monta o texto com os dados reais de hoje do workspace do admin e envia push para os dispositivos dele.
 - Contas e Pastas: card da conta mostra "· por <apelido>" de quem conectou.
+
+## 0.13.0 — Sequência, recorde, provocação no ranking e resumo da noite
+- `app/notifications/engagement.py`, rodando no mesmo job das conquistas (a cada 15 min), só para quem tem push ativo. Usa conexões reais (`first_connected_at`, fuso de São Paulo).
+- **Sequência 🔥**: dias seguidos batendo a meta diária de conexões (sem meta: ≥ 1 conexão). Às 20h, se a sequência é de 2+ dias e hoje ainda não bateu: "😱 Sua sequência de N dias tá em risco! Faltam X conexões…" (1×/dia).
+- **Recorde pessoal 🏆**: quando as conexões de hoje passam o melhor dia anterior (melhor ≥ 3), 1×/dia.
+- **Ranking**: compara com a checagem anterior; "⚠️ Fulano te passou no ranking do dia. Vai deixar? 😤" (no máximo 1×/hora) e "👑 Você é o número 1 de hoje!" (1×/dia). O retrato anterior fica em memória: após reiniciar o servidor, a primeira checagem só grava a posição.
+- **Resumo da noite 🌙** às 22h: conexões, views do dia e R$ (colaborador: a receber pelas conexões; chefe: vendas pagas do dia), com frase de fechamento sorteada.
+- Painéis (chefe e colaborador): cards "Sequência" e "Recorde pessoal" via `GET /api/notifications/engagement/me`.
+- Estes textos ainda não são editáveis no admin (só as conquistas de views/posts/vendas/seguidores).

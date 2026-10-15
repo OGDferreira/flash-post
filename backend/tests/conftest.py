@@ -78,6 +78,8 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             InstagramMedia,
             InstagramProfileFolder,
             InstagramPublicationJob,
+            MilestoneNotification,
+            AccountFollowerMilestone,
             SharkEvent,
             SmokepayOperation,
             SystemSetting,
@@ -95,6 +97,8 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await connection.execute(delete(SharkTransaction))
         await connection.execute(delete(SharkAccount))
         await connection.execute(delete(InstagramLoopAccountState))
+        await connection.execute(delete(MilestoneNotification))
+        await connection.execute(delete(AccountFollowerMilestone))
         await connection.execute(delete(DailyViewsGoalNotification))
         await connection.execute(delete(DailyViewsGoal))
         await connection.execute(delete(PushSubscription))

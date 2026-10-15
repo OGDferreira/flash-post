@@ -1,3 +1,4 @@
+import { EngagementCards } from "@/components/EngagementCards";
 import { useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { GreetingClock } from "@/components/GreetingClock";
@@ -175,6 +176,7 @@ export function CollaboratorDashboardPage() {
         <Metric icon={CircleDollarSign} label="Recebido no mês" value={money(data.paid_month)} />
         <Metric icon={TrendingUp} label="Total do mês" value={money(data.earnings_month)} />
         <Metric icon={Flame} label="Pode alcançar no mês" value={money(data.projected_month)} />
+        <EngagementCards />
       </section>
 
       <section className="grid min-h-0 gap-3 xl:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)]">
