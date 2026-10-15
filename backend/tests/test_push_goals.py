@@ -292,3 +292,56 @@ async def test_goal_tick_retries_when_push_delivery_fails_transiently(
     assert await db_session.scalar(select(func.count(DailyViewsGoalNotification.id))) == 0
     assert await goals_module.run_daily_views_goal_tick(db_session, now + timedelta(minutes=15)) == 1
     assert await db_session.scalar(select(func.count(DailyViewsGoalNotification.id))) == 1
+
+
+@pytest.mark.anyio
+async def test_milestones_push_highest_new_threshold_once_per_day(
+    db_session: AsyncSession, owner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.models import MilestoneNotification
+    from app.notifications import milestones as ms
+
+    owner_user, workspace = owner
+    db_session.add(_account(workspace.id, owner_user.id, "303"))
+    _private, p256dh, auth = _browser_keys()
+    db_session.add(
+        PushSubscription(
+            user_id=owner_user.id, workspace_id=workspace.id, endpoint=ENDPOINT, p256dh=p256dh, auth=auth
+        )
+    )
+    await db_session.commit()
+    views = {"value": 120_000}
+
+    async def fake_views(_ig, _token, _since, _until):
+        return views["value"]
+
+    sent: list[dict] = []
+
+    async def fake_send(_client, **kwargs):
+        sent.append(kwargs["payload"])
+        return PushResult(ok=True, gone=False, status_code=201)
+
+    monkeypatch.setattr(goals_module, "fetch_instagram_views", fake_views)
+    monkeypatch.setattr(ms, "send_web_push", fake_send)
+
+    now = datetime(2026, 10, 15, 15, 0, tzinfo=timezone.utc)
+    assert await ms.run_milestones_tick(db_session, now) == 1
+    # 10k, 50k and 100k crossed at once: only the 100k message is pushed.
+    assert len(sent) == 1 and sent[0]["title"].startswith(("💯", "🔥"))
+    assert "100 mil" in sent[0]["title"]
+    rows = (await db_session.scalars(select(MilestoneNotification.threshold))).all()
+    assert sorted(rows) == [10_000, 50_000, 100_000]
+    # Same day, same value: nothing new.
+    assert await ms.run_milestones_tick(db_session, now + timedelta(minutes=15)) == 0
+    views["value"] = 1_000_000
+    assert await ms.run_milestones_tick(db_session, now + timedelta(minutes=30)) == 1
+    assert "1 milhão" in sent[-1]["title"].lower() or "1 MILHÃO" in sent[-1]["title"]
+
+
+def test_milestone_messages_cover_every_threshold() -> None:
+    from app.notifications import milestones as ms
+
+    for kind, thresholds in ms.THRESHOLDS.items():
+        for threshold in thresholds:
+            title, body = ms.milestone_message(kind, threshold)
+            assert title and body

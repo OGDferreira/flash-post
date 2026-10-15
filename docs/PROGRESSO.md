@@ -106,3 +106,10 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 ## 0.10.6 — Páginas divididas e testes de fluxo
 - Tipos e helpers das páginas grandes saíram para arquivos próprios, sem mudar comportamento: `pages/loops/loopShared.ts`, `pages/emails/emailShared.tsx`, `pages/collaborators/collaboratorShared.ts` e `CollaboratorParts.tsx` (WorkDaysPanel, campos). Loops 1171→1007, E-mails 943→823, Colaboradores 885→590 linhas.
 - Testes de fluxo com Playwright (`frontend/e2e/flows.spec.ts`, `npm run test:e2e`): rota protegida → login, login com copy nova + erro de senha, cadastro, entrar → Contatos → Sair → login. Precisa do front e da API rodando; variáveis `E2E_BASE_URL`, `E2E_EMAIL`, `E2E_PASSWORD`, `E2E_CHROMIUM`.
+
+## 0.11.0 — Pushes de conquistas do dia
+- Novo `app/notifications/milestones.py`, rodando junto com o job de metas (reaproveita a mesma leitura de Insights por conta, sem chamadas extras à Meta). Vale para todo usuário com push ativado no dispositivo (Perfil → Notificações neste dispositivo).
+- Marcos por dia local: visualizações 10 mil / 50 mil / 100 mil / 500 mil / 1 milhão; posts publicados 1 mil / 5 mil / 10 mil / 15 mil; vendas pagas Shark 10 / 50 / 100 / 500 (só chefe). Colaborador conta só as contas que ele conectou.
+- Frases cômicas com emoji e variações sorteadas ("já pode comprar o pastel na feira 🥟", "Dubai te espera 🏝️", "o Zuckerberg tem medo de você 🫣", "vai com calma, quer ficar rico? 😂").
+- Cada marco é enviado uma vez por dia; se vários forem batidos entre duas checagens, vai só o maior. Migração `20261015_34` (aditiva): tabela `milestone_notifications`.
+- Limite: depende do push estar ativado no aparelho (no iPhone, só com o app instalado na Tela de Início) e de a Meta devolver as visualizações.

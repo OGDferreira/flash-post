@@ -35,7 +35,12 @@ from app.models.support import SupportTicket
 from app.models.daily_views import InstagramAccountDailyViews
 from app.models.sharkbot import SharkLead, SharkTransaction
 from app.models.media_insight import InstagramMediaInsight
-from app.models.push import DailyViewsGoal, DailyViewsGoalNotification, PushSubscription
+from app.models.push import (
+    DailyViewsGoal,
+    DailyViewsGoalNotification,
+    MilestoneNotification,
+    PushSubscription,
+)
 from app.models.workspace import Workspace, WorkspaceMember
 
 __all__ = [
@@ -64,6 +69,7 @@ __all__ = [
     "InstagramProfileFolder",
     "InstagramPublicationJob",
     "PushSubscription",
+    "MilestoneNotification",
     "SharkEvent",
     "SharkLead",
     "SharkTransaction",

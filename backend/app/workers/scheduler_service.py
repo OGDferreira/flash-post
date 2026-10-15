@@ -8,6 +8,7 @@ from app.core.database import get_engine, get_session_factory
 from app.instagram.insights_sync import sync_workspace_accounts
 from app.models import InstagramAccount
 from app.notifications.goals import run_daily_views_goal_tick
+from app.notifications.milestones import run_milestones_tick
 from app.workers.loop_scheduler import run_loop_scheduler_tick
 
 logger = logging.getLogger(__name__)
@@ -68,10 +69,16 @@ _LOOP_TICK_INTERVAL_SECONDS = 60
 
 
 async def _run_goals_once() -> None:
+    # One Meta Insights read per account serves both goals and milestones.
+    views_cache: dict = {}
     async with get_session_factory()() as db:
-        delivered = await run_daily_views_goal_tick(db)
+        delivered = await run_daily_views_goal_tick(db, views_cache=views_cache)
     if delivered:
         logger.info("Daily views goals: %s push notification(s) delivered.", delivered)
+    async with get_session_factory()() as db:
+        milestones = await run_milestones_tick(db, views_cache=views_cache)
+    if milestones:
+        logger.info("Milestones: %s push notification(s) delivered.", milestones)
 
 
 async def _run_goals_tick_with_database_lock() -> None:

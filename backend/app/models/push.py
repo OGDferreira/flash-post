@@ -118,3 +118,35 @@ class DailyViewsGoalNotification(Base):
     sent_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class MilestoneNotification(Base):
+    """One row per user, workspace, local day, kind and threshold: milestone push de-dup."""
+
+    __tablename__ = "milestone_notifications"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "user_id",
+            "local_date",
+            "kind",
+            "threshold",
+            name="uq_milestone_notifications_scope",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    local_date: Mapped[date] = mapped_column(Date, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    threshold: Mapped[int] = mapped_column(Integer, nullable=False)
+    value: Mapped[int] = mapped_column(Integer, nullable=False)
+    delivered: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

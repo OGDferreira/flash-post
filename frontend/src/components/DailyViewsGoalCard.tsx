@@ -280,6 +280,10 @@ export function DailyViewsGoalCard() {
 
       <div className="mt-6 border-t border-line-soft pt-5">
         <h3 className="text-sm font-medium text-fg">Notificações neste dispositivo</h3>
+        <p className="mt-1 text-xs leading-5 text-muted">
+          Além da meta, você recebe conquistas do dia: 10 mil, 50 mil, 100 mil, 500 mil e 1 milhão de
+          visualizações 🔥, marcos de posts e de vendas 💸.
+        </p>
         {availability === "ios-needs-install" ? (
           <p className="mt-2 text-sm leading-6 text-muted">
             No iPhone e iPad, adicione o FlashPost à Tela de Início (Compartilhar → Adicionar à Tela de

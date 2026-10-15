@@ -240,7 +240,11 @@ async def notify_goal_reached(
     return delivered
 
 
-async def run_daily_views_goal_tick(db: AsyncSession, now: datetime | None = None) -> int:
+async def run_daily_views_goal_tick(
+    db: AsyncSession,
+    now: datetime | None = None,
+    views_cache: dict[tuple[uuid.UUID, datetime], tuple[int | None, str | None]] | None = None,
+) -> int:
     """Check every enabled goal once. Returns how many pushes were delivered."""
     now = now or datetime.now(timezone.utc)
     goal_ids = (
@@ -253,7 +257,8 @@ async def run_daily_views_goal_tick(db: AsyncSession, now: datetime | None = Non
     if not goal_ids:
         return 0
     keys: VapidKeys | None = None
-    views_cache: dict[tuple[uuid.UUID, datetime], tuple[int | None, str | None]] = {}
+    if views_cache is None:
+        views_cache = {}
     delivered_total = 0
     async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
         for goal_id in goal_ids:
