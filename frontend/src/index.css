@@ -50,7 +50,7 @@ html[data-theme="light"] {
   --accent: #3a4fd6;
   --danger: #b4233a;
   --warning: #8a5a00;
-  --success: #0f7a55;
+  --success: #0c6e4b;
   --brand-soft: rgb(83 109 254 / 0.12);
   --danger-soft: rgb(180 35 58 / 0.09);
   --warning-soft: rgb(138 90 0 / 0.1);
@@ -160,7 +160,7 @@ aside.glass-bar {
 /* Existing solid brand buttons across pages share the primary look. */
 .bg-\[\#536dfe\].text-white,
 .bg-\[\#586eff\].text-white {
-  background-image: linear-gradient(145deg, #6a82ff, #3f56e6);
+  background-image: linear-gradient(145deg, #5169f4, #3b52e0);
   box-shadow: 4px 4px 10px var(--nm-sd), -3px -3px 8px var(--nm-sl), inset 0 1px 0 rgb(255 255 255 / 0.25);
 }
 
@@ -195,7 +195,7 @@ aside.glass-bar {
 
 .btn-primary {
   color: #fff;
-  background: linear-gradient(145deg, #6a82ff, #3f56e6);
+  background: linear-gradient(145deg, #5169f4, #3b52e0);
   box-shadow: 5px 5px 12px var(--nm-sd), -4px -4px 10px var(--nm-sl), inset 0 1px 0 rgb(255 255 255 / 0.25);
 }
 
@@ -445,7 +445,7 @@ aside.glass-bar {
 }
 
 .dashboard-periods button.is-selected {
-  background: linear-gradient(145deg, #6a82ff, #3f56e6);
+  background: linear-gradient(145deg, #5169f4, #3b52e0);
   box-shadow: 3px 3px 8px var(--nm-sd), -2px -2px 6px var(--nm-sl);
   color: #fff;
 }
