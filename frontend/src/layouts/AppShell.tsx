@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { buildNavigation } from "./navigation";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
@@ -565,7 +566,9 @@ export function AppShell() {
         </header>
         <main className="app-shell-content min-h-[calc(100dvh-72px)] w-full px-4 py-4 sm:px-6 sm:py-6">
           <div className="page-enter" key={location.pathname}>
-            <Outlet />
+            <ErrorBoundary resetKey={location.pathname}>
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </main>
       </div>

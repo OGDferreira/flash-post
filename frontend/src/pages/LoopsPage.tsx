@@ -208,7 +208,7 @@ export function LoopsPage() {
   const loops = useQuery({
     queryKey: ["loops"],
     queryFn: () => apiRequest<InstagramLoopsResponse>("/api/loops"),
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
     retry: false,
   });
   const media = useQuery({
@@ -225,7 +225,7 @@ export function LoopsPage() {
     queryKey: ["loops", "failures"],
     queryFn: () => apiRequest<PublicationFailuresResponse>("/api/loops/failures"),
     enabled: loops.data?.can_configure === true,
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
     retry: false,
   });
   const failureGroups = useMemo(

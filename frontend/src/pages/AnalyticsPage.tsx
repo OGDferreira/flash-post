@@ -94,7 +94,7 @@ export function AnalyticsPage() {
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<{ accounts: Account[] }>("/api/instagram/accounts"),
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
     retry: false,
   });
   const activeAccounts = useMemo(

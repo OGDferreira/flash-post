@@ -70,7 +70,7 @@ export function ErrorLogsPage() {
     queryKey: ["diagnostics", "events", params.toString()],
     queryFn: () => apiRequest<DiagnosticsResponse>(`/api/diagnostics/events?${params}`),
     retry: false,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
   const retryFailures = useMutation({
     mutationFn: () =>

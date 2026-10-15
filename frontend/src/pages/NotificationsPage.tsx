@@ -46,13 +46,13 @@ export function NotificationsPage() {
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<AccountList>("/api/instagram/accounts"),
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
     retry: false,
   });
   const failures = useQuery({
     queryKey: ["loops", "failures"],
     queryFn: () => apiRequest<PublicationFailures>("/api/loops/failures"),
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
     retry: false,
   });
   const metrics = useQuery({

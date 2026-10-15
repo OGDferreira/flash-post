@@ -118,7 +118,7 @@ export function CollaboratorsPage() {
   const ranking = useQuery({
     queryKey: ["collaborators", "ranking"],
     queryFn: () => apiRequest<CollaboratorRankingResponse>("/api/collaborators/ranking"),
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
     retry: false,
   });
   const create = useMutation({

@@ -87,7 +87,7 @@ export function CollaboratorDashboardPage() {
   const dashboard = useQuery({
     queryKey: ["collaborators", "dashboard"],
     queryFn: () => apiRequest<CollaboratorDashboard>("/api/collaborators/dashboard"),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     retry: false,
   });
   const [rankTab, setRankTab] = useState<"day" | "month">("day");
@@ -108,7 +108,7 @@ export function CollaboratorDashboardPage() {
           ? "/api/collaborators/ranking?period=today"
           : `/api/collaborators/ranking?month=${currentMonth()}`,
       ),
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
     retry: false,
   });
 

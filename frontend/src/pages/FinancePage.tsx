@@ -84,7 +84,7 @@ export function FinancePage() {
     queryKey: ["finance", "cash-flow"],
     queryFn: () => apiRequest<FinanceSummary>("/api/finance"),
     retry: false,
-    refetchInterval: 15_000,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });

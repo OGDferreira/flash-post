@@ -158,7 +158,7 @@ export function EmailsPage() {
     queryKey: ["emails"],
     queryFn: () => apiRequest<EmailsResponse>("/api/emails"),
     retry: false,
-    refetchInterval: 20_000,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });

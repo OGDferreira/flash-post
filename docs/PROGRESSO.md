@@ -98,3 +98,7 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 ## 0.10.4 — Login e cadastro redesenhados
 - Login e cadastro usam o mesmo layout (`features/auth/AuthShell.tsx`): vidro + cor do tema, logo nova e copy financeira estilo landing page ("Cada conexão vira dinheiro no bolso" / "Transforme suas contas em receita previsível"), 3 benefícios e um cartão marcado como "exemplo ilustrativo". Os benefícios citados existem no produto (ganho do dia, metas/ranking, pagamentos).
 - Sair já leva ao login (`/login`, com limpeza de cache e CSRF).
+
+## 0.10.5 — Menos polling e ErrorBoundary
+- Intervalos de atualização automática mais longos (Financeiro/E-mails/Erros 15–30 s → 60 s; demais painéis 60 s → 120 s; "Painel do colaborador" mantém 60 s por causa do "A receber hoje"). O sync em andamento continua a 3 s e o React Query já pausa polling com a aba em segundo plano.
+- `ErrorBoundary` em volta do conteúdo das páginas: erro de renderização numa tela mostra aviso com "Recarregar" e a navegação continua funcionando; reseta ao trocar de rota.

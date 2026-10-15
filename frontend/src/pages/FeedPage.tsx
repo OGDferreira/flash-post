@@ -95,7 +95,7 @@ export function FeedPage() {
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<InstagramAccountsResponse>("/api/instagram/accounts"),
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
     retry: false,
   });
   const selectedAccount =
