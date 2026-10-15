@@ -84,3 +84,7 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Menu lateral: abre mais rápido ao passar o mouse (60 ms / fecha em 220 ms); as subabas de cada grupo abrem ao passar o mouse, animadas (grid-rows), e fecham ao tirar o mouse (teclado: foco abre). Item com leve deslize no hover.
 - Removido o selo "Sistema online" do topo.
 - Pastas: editar nome e cor agora acontece dentro do próprio card (Enter salva, Esc cancela); o formulário no topo ficou só para criar pasta.
+
+## 0.10.2 — Aba Contatos e animação centralizada
+- Nova aba **Contatos** (grupo Suporte; também para colaboradores): WhatsApp do FlashPost (+55 27 99938-4259, abre conversa com mensagem pronta), Suporte, Comunidade (grupo de WhatsApp — "Em breve" até existir o link), Instagram do FlashPost e Bot do Telegram ("Em breve"). Links e @ configuráveis em `frontend/src/lib/contacts.ts`.
+- Animação da logo agora ocupa o centro da tela (tela cheia) nos carregamentos de sessão/permissões/página; carregamentos dentro de painéis continuam inline.

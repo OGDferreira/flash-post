@@ -2,15 +2,19 @@ import type { ReactNode } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { CircleAlert, Inbox, RotateCw } from "lucide-react";
 
-export function LoadingState({ label = "Carregando" }: { label?: string }) {
+export function LoadingState({ label = "Carregando", fullscreen = false }: { label?: string; fullscreen?: boolean }) {
   return (
     <div
       aria-busy="true"
       aria-live="polite"
-      className="flex min-h-48 flex-col items-center justify-center gap-3 text-sm text-muted"
+      className={
+        fullscreen
+          ? "fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-[var(--nm-bg)] text-sm text-muted backdrop-blur-sm"
+          : "flex min-h-48 flex-col items-center justify-center gap-3 text-sm text-muted"
+      }
       role="status"
     >
-      <BrandLogo animated className="size-12" />
+      <BrandLogo animated className={fullscreen ? "size-[72px]" : "size-12"} />
       {label}
     </div>
   );

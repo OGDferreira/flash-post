@@ -10,6 +10,7 @@ import {
   Infinity as InfinityIcon,
   LifeBuoy,
   Mail,
+  MessageCircle,
   MessageSquareText,
   Puzzle,
   Send,
@@ -99,6 +100,7 @@ const ownerGroups: NavGroup[] = [
     icon: LifeBuoy,
     items: [
       { label: "Dúvidas e erros", to: "/feature/support", icon: LifeBuoy },
+      { label: "Contatos", to: "/feature/contacts", icon: MessageCircle },
       { label: "Notificações", to: "/feature/notifications", icon: Bell },
     ],
   },
@@ -114,6 +116,7 @@ const collaboratorRoutes = new Set([
   "/feature/emails",
   "/feature/extensions",
   "/feature/support",
+  "/feature/contacts",
 ]);
 
 const adminGroup: NavGroup = { id: "admin", title: "Administração", icon: Shield, items: adminLinks };

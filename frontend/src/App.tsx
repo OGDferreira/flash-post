@@ -1,3 +1,4 @@
+import { ContactsPage } from "@/pages/ContactsPage";
 import { CollaboratorInvitePage } from "@/features/auth/CollaboratorInvitePage";
 import { Suspense, lazy, type ComponentType } from "react";
 import {
@@ -68,7 +69,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ConfirmHost />
-        <Suspense fallback={<LoadingState label="Carregando página" />}>
+        <Suspense fallback={<LoadingState fullscreen label="Carregando página" />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
@@ -85,6 +86,7 @@ export default function App() {
                   <Route path="/feature/emails" element={<EmailsPage />} />
                   <Route path="/feature/extensions" element={<ExtensionsPage />} />
                   <Route path="/feature/support" element={<SupportPage />} />
+                  <Route path="/feature/contacts" element={<ContactsPage />} />
                   <Route element={<RequireWorkspaceOwner />}>
                     <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
                     <Route
@@ -140,13 +142,13 @@ function WorkspaceDashboard() {
     user?.role === "SUPER_ADMIN" ? user.workspace_role : user?.role;
   if (workspaceRole === "COLLABORATOR") {
     return (
-      <Suspense fallback={<LoadingState label="Carregando seu painel" />}>
+      <Suspense fallback={<LoadingState fullscreen label="Carregando seu painel" />}>
         <CollaboratorDashboardPage />
       </Suspense>
     );
   }
   return (
-    <Suspense fallback={<LoadingState label="Carregando painel" />}>
+    <Suspense fallback={<LoadingState fullscreen label="Carregando painel" />}>
       <DashboardPage />
     </Suspense>
   );
@@ -154,7 +156,7 @@ function WorkspaceDashboard() {
 
 function RequireWorkspaceUser() {
   const { user, isLoading } = useAuth();
-  if (isLoading) return <LoadingState label="Verificando permissões" />;
+  if (isLoading) return <LoadingState fullscreen label="Verificando permissões" />;
   const workspaceRole =
     user?.role === "SUPER_ADMIN" ? user.workspace_role : user?.role;
   if (workspaceRole !== "OWNER" && workspaceRole !== "COLLABORATOR") {
@@ -165,7 +167,7 @@ function RequireWorkspaceUser() {
 
 function RequireWorkspaceOwner() {
   const { user, isLoading } = useAuth();
-  if (isLoading) return <LoadingState label="Verificando permissões" />;
+  if (isLoading) return <LoadingState fullscreen label="Verificando permissões" />;
   const isWorkspaceOwner =
     user?.role === "OWNER" ||
     (user?.role === "SUPER_ADMIN" && user.workspace_role === "OWNER");
@@ -198,7 +200,7 @@ function RequireCollaboratorAccess() {
 function RequireAuth() {
   const { user, isLoading } = useAuth();
   const location = useLocation();
-  if (isLoading) return <LoadingState label="Verificando sessão" />;
+  if (isLoading) return <LoadingState fullscreen label="Verificando sessão" />;
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
@@ -207,7 +209,7 @@ function RequireAuth() {
 
 function RequireSuperAdmin() {
   const { user, isLoading } = useAuth();
-  if (isLoading) return <LoadingState label="Verificando permissões" />;
+  if (isLoading) return <LoadingState fullscreen label="Verificando permissões" />;
   if (user?.role !== "SUPER_ADMIN") {
     return <Navigate to="/dashboard" replace />;
   }
@@ -216,7 +218,7 @@ function RequireSuperAdmin() {
 
 function HomeRedirect() {
   const { user, isLoading } = useAuth();
-  if (isLoading) return <LoadingState label="Verificando sessão" />;
+  if (isLoading) return <LoadingState fullscreen label="Verificando sessão" />;
   if (!user) return <Navigate to="/login" replace />;
   return (
     <Navigate
