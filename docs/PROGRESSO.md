@@ -79,3 +79,8 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Splash animada da logo no `index.html` (aparece antes do JS carregar) e o mesmo desenho animado nos estados de carregamento (`LoadingState`); sem movimento para quem pede "reduzir movimento".
 - Perfil > Aparência: cor do site (7 predefinidas + seletor livre + "Padrão") e "Remover animações". A paleta toda (botões, realces, brilho do fundo) vem de variáveis derivadas de uma cor (`lib/appearance.ts`); guardado no navegador. Cores claras (amarelo/verde) usam tons mais escuros para manter o contraste do texto branco.
 - Hover: cards e botões sobem de leve (só transform), campos realçam a borda.
+
+## 0.10.1 — Barra lateral por hover e pastas inline
+- Menu lateral: abre mais rápido ao passar o mouse (60 ms / fecha em 220 ms); as subabas de cada grupo abrem ao passar o mouse, animadas (grid-rows), e fecham ao tirar o mouse (teclado: foco abre). Item com leve deslize no hover.
+- Removido o selo "Sistema online" do topo.
+- Pastas: editar nome e cor agora acontece dentro do próprio card (Enter salva, Esc cancela); o formulário no topo ficou só para criar pasta.

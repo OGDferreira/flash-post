@@ -71,7 +71,7 @@ export function AppShell() {
   const openSoon = (next: boolean) => {
     window.clearTimeout(hoverTimer.current);
     // Small intent delay so sweeping the mouse past the rail doesn't flicker it open.
-    hoverTimer.current = window.setTimeout(() => setHovered(next), next ? 90 : 160);
+    hoverTimer.current = window.setTimeout(() => setHovered(next), next ? 60 : 220);
   };
   const togglePin = () => {
     setPinned((value) => {
@@ -167,6 +167,7 @@ export function AppShell() {
   });
   const navigation = buildNavigation({ isAdminRoute, isSuperAdmin, workspaceRole });
   const mobileLinks = navigation.direct;
+  const [hoverGroup, setHoverGroup] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const activeGroupId = navigation.groups.find((group) =>
     group.items.some(({ to }) => location.pathname === to || location.pathname.startsWith(`${to}/`)),
@@ -360,16 +361,22 @@ export function AppShell() {
         {navigation.groups.length > 0 && (
           <div className="mt-4 space-y-1 border-t border-line-soft pt-3">
             {navigation.groups.map((group) => {
-              const open = Boolean(openGroups[group.id]);
+              const open = hoverGroup === group.id;
               const GroupIcon = group.icon;
               return (
-                <div key={group.id}>
+                <div
+                  key={group.id}
+                  onBlur={() => setHoverGroup((current) => (current === group.id ? null : current))}
+                  onFocus={() => setHoverGroup(group.id)}
+                  onMouseEnter={() => setHoverGroup(group.id)}
+                  onMouseLeave={() => setHoverGroup((current) => (current === group.id ? null : current))}
+                >
                   <button
                     aria-expanded={open}
                     className={`nm-hover flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-sm ${
-                      group.id === activeGroupId ? "text-fg" : "text-muted"
+                      group.id === activeGroupId || open ? "text-fg" : "text-muted"
                     }`}
-                    onClick={() => toggleGroup(group.id)}
+                    onClick={() => setHoverGroup(open ? null : group.id)}
                     title={group.title}
                     type="button"
                   >
@@ -378,28 +385,37 @@ export function AppShell() {
                       {group.title}
                     </span>
                     <ChevronDown
-                      className={`hidden shrink-0 transition-transform lg:group-data-[open=true]:block ${open ? "rotate-180" : ""}`}
+                      className={`hidden shrink-0 transition-transform duration-200 lg:group-data-[open=true]:block ${open ? "rotate-180" : ""}`}
                       size={14}
                     />
                   </button>
-                  {open && (
-                    <div className="mb-1 ml-3 space-y-0.5 border-l border-line-soft pl-2 lg:hidden lg:group-data-[open=true]:block">
-                      {group.items.map(({ label, to, icon: Icon }) => (
-                        <NavLink
-                          key={to}
-                          to={to}
-                          className={({ isActive }) =>
-                            `flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] ${
-                              isActive ? "nm-active font-medium" : "nm-hover text-muted"
-                            }`
-                          }
-                        >
-                          <Icon className="shrink-0" size={15} strokeWidth={1.8} />
-                          <span className="truncate">{label}</span>
-                        </NavLink>
-                      ))}
+                  <div
+                    className={`grid transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                      open
+                        ? "grid-rows-[1fr] opacity-100 lg:grid-rows-[0fr] lg:opacity-0 lg:group-data-[open=true]:grid-rows-[1fr] lg:group-data-[open=true]:opacity-100"
+                        : "grid-rows-[0fr] opacity-0"
+                    }`}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="mb-1 ml-3 space-y-0.5 border-l border-line-soft pl-2">
+                        {group.items.map(({ label, to, icon: Icon }) => (
+                          <NavLink
+                            key={to}
+                            to={to}
+                            tabIndex={open ? 0 : -1}
+                            className={({ isActive }) =>
+                              `flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-transform duration-150 hover:translate-x-0.5 ${
+                                isActive ? "nm-active font-medium" : "nm-hover text-muted"
+                              }`
+                            }
+                          >
+                            <Icon className="shrink-0" size={15} strokeWidth={1.8} />
+                            <span className="truncate">{label}</span>
+                          </NavLink>
+                        ))}
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               );
             })}
@@ -545,11 +561,6 @@ export function AppShell() {
             >
               {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
             </button>
-            <div className="flex items-center gap-2 rounded-full border border-line-soft bg-surface p-2.5 text-xs text-muted sm:px-3 sm:py-2" title="Sistema online">
-              <span className="size-1.5 rounded-full bg-success" />
-              <span className="hidden sm:inline">Sistema online</span>
-              <span className="sr-only sm:hidden">Online</span>
-            </div>
           </div>
         </header>
         <main className="app-shell-content min-h-[calc(100dvh-72px)] w-full px-4 py-4 sm:px-6 sm:py-6">

@@ -124,7 +124,7 @@ export function ProfileFoldersPage() {
   function openEditForm(folder: ProfileFolder) {
     setEditingId(folder.id);
     setDraft({ name: folder.name, color: folder.color });
-    setFormOpen(true);
+    setFormOpen(false);
     saveFolder.reset();
   }
 
@@ -169,7 +169,7 @@ export function ProfileFoldersPage() {
 
       {mutationError && <ErrorState message={mutationError} />}
 
-      {formOpen && (
+      {formOpen && !editingId && (
         <form
           className="grid gap-4 rounded-xl border border-line bg-surface p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"
           onSubmit={(event) => {
@@ -229,6 +229,40 @@ export function ProfileFoldersPage() {
               key={folder.id}
               style={{ borderColor: `${folder.color}55` }}
             >
+              {editingId === folder.id ? (
+                <form
+                  className="flex flex-wrap items-center gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    saveFolder.mutate();
+                  }}
+                >
+                  <input
+                    aria-label="Nome da pasta"
+                    autoFocus
+                    className="field min-h-10 min-w-0 flex-1"
+                    maxLength={80}
+                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                    onKeyDown={(event) => event.key === "Escape" && setEditingId(null)}
+                    required
+                    value={draft.name}
+                  />
+                  <input
+                    aria-label="Escolher cor da pasta"
+                    className="size-10 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0"
+                    onChange={(event) => setDraft({ ...draft, color: event.target.value })}
+                    type="color"
+                    value={draft.color}
+                  />
+                  <button className="btn-primary btn-sm" disabled={saveFolder.isPending || !draft.name.trim()} type="submit">
+                    <Save size={14} />
+                    {saveFolder.isPending ? "Salvando..." : "Salvar"}
+                  </button>
+                  <button aria-label="Cancelar edição da pasta" className="btn-ghost btn-sm" onClick={() => setEditingId(null)} type="button">
+                    <X size={15} />
+                  </button>
+                </form>
+              ) : (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: folder.color }} />
@@ -273,6 +307,7 @@ export function ProfileFoldersPage() {
                   </button>
                 </div>
               </div>
+              )}
               <div className="grid gap-2 sm:grid-cols-2">
                 {folder.accounts.map((account) => (
                   <div
