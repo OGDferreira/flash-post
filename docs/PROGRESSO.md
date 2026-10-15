@@ -113,3 +113,7 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Frases cômicas com emoji e variações sorteadas ("já pode comprar o pastel na feira 🥟", "Dubai te espera 🏝️", "o Zuckerberg tem medo de você 🫣", "vai com calma, quer ficar rico? 😂").
 - Cada marco é enviado uma vez por dia; se vários forem batidos entre duas checagens, vai só o maior. Migração `20261015_34` (aditiva): tabela `milestone_notifications`.
 - Limite: depende do push estar ativado no aparelho (no iPhone, só com o app instalado na Tela de Início) e de a Meta devolver as visualizações.
+
+## 0.11.1 — Login/cadastro compactos
+- Espaçamentos menores no celular: o login inteiro cabe na tela (390×844). Campos 40 px no celular, 44 px no desktop.
+- Copy explica o que a plataforma faz: "Seu Instagram no piloto automático" / "Menos trabalho manual, mais resultado" — conectar contas, agenda de publicações, automações para pessoas e empresas. Frase rotativa (7 variações, troca a cada 3,5 s) e 4 benefícios no desktop. Removido o cartão de valor ilustrativo.

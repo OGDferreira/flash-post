@@ -77,9 +77,9 @@ export function LoginPage() {
 
   return (
     <AuthShell mode="login">
-        <section className="flex items-center border-t border-line-soft p-5 sm:p-8 md:border-l md:border-t-0 md:p-10">
+        <section className="flex items-center border-t border-line-soft p-4 sm:p-8 md:border-l md:border-t-0 md:p-10">
           <div className="w-full max-w-md md:mx-auto">
-          <div className="mb-7">
+          <div className="mb-4 sm:mb-7">
             <h2 className="text-xl font-semibold tracking-[-0.035em] text-fg">
               Entrar
             </h2>
@@ -96,12 +96,12 @@ export function LoginPage() {
             )}
           </div>
           <form
-            className="space-y-4"
+            className="space-y-3 sm:space-y-4"
             onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
             noValidate
           >
             <div>
-              <label htmlFor="email" className="mb-2 block text-sm font-medium text-fg-2">
+              <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-fg-2 sm:mb-2">
                 E-mail
               </label>
               <input
@@ -114,7 +114,7 @@ export function LoginPage() {
                 {...form.register("email")}
                 aria-invalid={Boolean(form.formState.errors.email)}
                 aria-describedby={form.formState.errors.email ? "email-error" : undefined}
-                className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                className="h-10 w-full sm:h-11 rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
                 placeholder="voce@empresa.com"
               />
               {form.formState.errors.email && (
@@ -125,7 +125,7 @@ export function LoginPage() {
             </div>
 
             <div>
-              <label htmlFor="password" className="mb-2 block text-sm font-medium text-fg-2">
+              <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-fg-2 sm:mb-2">
                 Senha
               </label>
               <div className="relative">
@@ -136,7 +136,7 @@ export function LoginPage() {
                   {...form.register("password")}
                   aria-invalid={Boolean(form.formState.errors.password)}
                   aria-describedby={form.formState.errors.password ? "password-error" : undefined}
-                  className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 pr-12 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                  className="h-10 w-full sm:h-11 rounded-lg border border-line bg-surface-inset px-3.5 pr-12 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
                   placeholder="Sua senha"
                 />
                 <button
@@ -167,13 +167,13 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={mutation.isPending}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 focus:ring-offset-[#0d1015] disabled:cursor-wait disabled:opacity-70"
+              className="flex h-10 w-full items-center sm:h-11 justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 focus:ring-offset-[#0d1015] disabled:cursor-wait disabled:opacity-70"
             >
               {mutation.isPending && <LoaderCircle size={16} className="animate-spin" />}
               {mutation.isPending ? "Entrando..." : "Entrar"}
             </button>
           </form>
-          <p className="mt-6 border-t border-line-soft pt-5 text-xs leading-5 text-muted">
+          <p className="mt-4 border-t border-line-soft pt-4 sm:mt-6 sm:pt-5 text-xs leading-5 text-muted">
             Ainda não tem uma conta?{" "}
             <Link to="/register" className="font-medium text-accent hover:text-white">
               Criar conta

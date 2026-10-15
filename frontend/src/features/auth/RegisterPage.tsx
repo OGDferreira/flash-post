@@ -112,9 +112,9 @@ export function RegisterPage() {
 
   return (
     <AuthShell mode="register">
-        <section className="flex items-center border-t border-line-soft p-5 sm:p-8 md:border-l md:border-t-0 md:p-10">
+        <section className="flex items-center border-t border-line-soft p-4 sm:p-8 md:border-l md:border-t-0 md:p-10">
           <div className="w-full max-w-md md:mx-auto">
-          <div className="mb-7">
+          <div className="mb-4 sm:mb-7">
             <h2 className="text-xl font-semibold tracking-[-0.035em] text-fg">
               Criar conta
             </h2>
@@ -123,7 +123,7 @@ export function RegisterPage() {
             </p>
           </div>
           <form
-            className="space-y-4"
+            className="space-y-3 sm:space-y-4"
             onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
             noValidate
           >
@@ -150,7 +150,7 @@ export function RegisterPage() {
               }}
             />
             <div>
-              <label htmlFor="register-nickname" className="mb-2 block text-sm font-medium text-fg-2">
+              <label htmlFor="register-nickname" className="mb-1.5 block text-sm font-medium text-fg-2 sm:mb-2">
                 Apelido
               </label>
               <input
@@ -171,7 +171,7 @@ export function RegisterPage() {
                     availability.data?.available === false)
                 }
                 aria-describedby="register-nickname-hint register-nickname-status"
-                className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                className="h-10 w-full sm:h-11 rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
                 placeholder="Ex.: Gui Ferreira"
               />
               <p id="register-nickname-hint" className="mt-1.5 text-xs text-muted">
@@ -205,7 +205,7 @@ export function RegisterPage() {
             />
 
             <div>
-              <label htmlFor="register-invite" className="mb-2 block text-sm font-medium text-fg-2">
+              <label htmlFor="register-invite" className="mb-1.5 block text-sm font-medium text-fg-2 sm:mb-2">
                 Código de convite <span className="font-normal text-muted">(opcional)</span>
               </label>
               <input
@@ -235,13 +235,13 @@ export function RegisterPage() {
             <button
               type="submit"
               disabled={mutation.isPending || availability.data?.available === false}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 focus:ring-offset-[#0d1015] disabled:cursor-wait disabled:opacity-70"
+              className="flex h-10 w-full items-center sm:h-11 justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 focus:ring-offset-[#0d1015] disabled:cursor-wait disabled:opacity-70"
             >
               {mutation.isPending && <LoaderCircle size={16} className="animate-spin" />}
               {mutation.isPending ? "Criando conta..." : "Criar conta"}
             </button>
           </form>
-          <p className="mt-6 border-t border-line-soft pt-5 text-sm text-muted">
+          <p className="mt-4 border-t border-line-soft pt-4 sm:mt-6 sm:pt-5 text-sm text-muted">
             Já tem uma conta?{" "}
             <Link to="/login" className="font-medium text-accent hover:text-white">
               Entrar
@@ -266,14 +266,14 @@ function Field({
 }) {
   return (
     <div>
-      <label htmlFor={id} className="mb-2 block text-sm font-medium text-fg-2">
+      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-fg-2 sm:mb-2">
         {label}
       </label>
       <input
         id={id}
         {...inputProps}
         aria-invalid={Boolean(error)}
-        className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+        className="h-10 w-full sm:h-11 rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
       />
       {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
     </div>
@@ -299,7 +299,7 @@ function PasswordField({
 }) {
   return (
     <div>
-      <label htmlFor={id} className="mb-2 block text-sm font-medium text-fg-2">
+      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-fg-2 sm:mb-2">
         {label}
       </label>
       <div className="relative">
@@ -309,7 +309,7 @@ function PasswordField({
           autoComplete={autoComplete}
           {...register}
           aria-invalid={Boolean(error)}
-          className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 pr-12 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+          className="h-10 w-full sm:h-11 rounded-lg border border-line bg-surface-inset px-3.5 pr-12 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
         />
         <button
           type="button"

@@ -19,7 +19,7 @@ test("rota protegida sem sessão leva ao login", async ({ page }) => {
 
 test("login mostra a copy financeira e rejeita senha errada", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByText("dinheiro no bolso.")).toBeVisible();
+  await expect(page.getByText("piloto automático.")).toBeVisible();
   // e-mail inexistente: não aciona o bloqueio por tentativas do usuário real
   await page.getByLabel("E-mail").fill("nao-existe@flashpost.dev");
   await page.getByLabel("Senha", { exact: true }).fill("senha-errada-123");
@@ -30,7 +30,7 @@ test("login mostra a copy financeira e rejeita senha errada", async ({ page }) =
 
 test("cadastro abre com o mesmo layout", async ({ page }) => {
   await page.goto("/register");
-  await expect(page.getByText("receita previsível.")).toBeVisible();
+  await expect(page.getByText("mais resultado.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Criar conta" })).toBeVisible();
 });
 
