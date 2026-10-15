@@ -73,11 +73,11 @@ export function BotPerformancePanel({ period }: { period: MetricsPeriod }) {
       <div className="glass-panel p-4 sm:p-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h3 id="bots-title" className="flex items-center gap-2 text-base font-semibold text-[#f5f7fb]">
-              <Bot size={17} className="text-[#8295ff]" />
+            <h3 id="bots-title" className="flex items-center gap-2 text-base font-semibold text-fg">
+              <Bot size={17} className="text-accent" />
               Desempenho dos bots e fluxos
             </h3>
-            <p className="mt-1 text-xs text-[#94a3b8]">
+            <p className="mt-1 text-xs text-muted">
               {data.data?.period_label ?? "…"} · dados recebidos do Sharkbot
             </p>
           </div>
@@ -128,14 +128,14 @@ export function BotPerformancePanel({ period }: { period: MetricsPeriod }) {
               ["PIX → pago", formatPercent(totals.pix_to_paid_rate)],
             ].map(([title, value]) => (
               <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={title}>
-                <dt className="text-[11px] text-[#94a3b8]">{title}</dt>
-                <dd className="mt-1 text-lg font-semibold text-[#f5f7fb]">{value}</dd>
+                <dt className="text-[11px] text-muted">{title}</dt>
+                <dd className="mt-1 text-lg font-semibold text-fg">{value}</dd>
               </div>
             ))}
           </dl>
         )}
         {missingAmounts > 0 && (
-          <p className="mt-3 text-xs text-[#f2d48a]">
+          <p className="mt-3 text-xs text-warning">
             {missingAmounts} pagamento(s) aprovado(s) chegaram sem valor e não entram na receita.
           </p>
         )}
@@ -149,7 +149,7 @@ export function BotPerformancePanel({ period }: { period: MetricsPeriod }) {
       {data.data && data.data.rows.length > 0 && (
         <div className="glass-panel overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-xs">
-            <thead className="text-[#94a3b8]">
+            <thead className="text-muted">
               <tr className="border-b border-line-soft">
                 <th className="px-4 py-3 font-medium">#</th>
                 <th className="px-2 py-3 font-medium">{groupBy === "bot" ? "Bot" : "Bot · fluxo"}</th>
@@ -165,20 +165,20 @@ export function BotPerformancePanel({ period }: { period: MetricsPeriod }) {
             <tbody>
               {data.data.rows.map((row, index) => (
                 <tr className="border-b border-line-soft last:border-0" key={row.key}>
-                  <td className="px-4 py-3 text-[#64748b]">{index + 1}</td>
-                  <td className="max-w-[260px] truncate px-2 py-3 text-[#e6eaf2]">{label(row, groupBy)}</td>
-                  <td className="px-2 py-3 text-right text-[#dbe4f3]">{formatNumber(row.leads)}</td>
-                  <td className="px-2 py-3 text-right text-[#dbe4f3]">{formatNumber(row.pix_generated)}</td>
-                  <td className="px-2 py-3 text-right text-[#dbe4f3]">{formatNumber(row.payments_approved)}</td>
-                  <td className="px-2 py-3 text-right font-semibold text-[#7ee2bd]">{money(row.revenue)}</td>
-                  <td className="px-2 py-3 text-right text-[#dbe4f3]">{money(row.average_ticket)}</td>
-                  <td className="px-2 py-3 text-right text-[#dbe4f3]">
+                  <td className="px-4 py-3 text-muted">{index + 1}</td>
+                  <td className="max-w-[260px] truncate px-2 py-3 text-fg">{label(row, groupBy)}</td>
+                  <td className="px-2 py-3 text-right text-fg">{formatNumber(row.leads)}</td>
+                  <td className="px-2 py-3 text-right text-fg">{formatNumber(row.pix_generated)}</td>
+                  <td className="px-2 py-3 text-right text-fg">{formatNumber(row.payments_approved)}</td>
+                  <td className="px-2 py-3 text-right font-semibold text-success">{money(row.revenue)}</td>
+                  <td className="px-2 py-3 text-right text-fg">{money(row.average_ticket)}</td>
+                  <td className="px-2 py-3 text-right text-fg">
                     {formatPercent(row.lead_to_buyer_rate)}
-                    <span className="block text-[10px] text-[#64748b]">{row.lead_buyers}/{row.leads}</span>
+                    <span className="block text-[10px] text-muted">{row.lead_buyers}/{row.leads}</span>
                   </td>
-                  <td className="px-4 py-3 text-right text-[#dbe4f3]">
+                  <td className="px-4 py-3 text-right text-fg">
                     {formatPercent(row.pix_to_paid_rate)}
-                    <span className="block text-[10px] text-[#64748b]">{row.pix_paid_from_period}/{row.pix_generated}</span>
+                    <span className="block text-[10px] text-muted">{row.pix_paid_from_period}/{row.pix_generated}</span>
                   </td>
                 </tr>
               ))}
@@ -187,8 +187,8 @@ export function BotPerformancePanel({ period }: { period: MetricsPeriod }) {
         </div>
       )}
       {data.data && (
-        <details className="glass-panel p-4 text-xs text-[#94a3b8]">
-          <summary className="flex cursor-pointer items-center gap-2 text-[#cbd5e1]">
+        <details className="glass-panel p-4 text-xs text-muted">
+          <summary className="flex cursor-pointer items-center gap-2 text-fg-2">
             <Info size={14} /> Como cada número é calculado
           </summary>
           <ul className="mt-3 space-y-1.5 leading-5">

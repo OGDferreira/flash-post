@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 
 import { LoadingState } from "@/components/PageState";
+import { ConfirmHost } from "@/lib/confirm";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
@@ -65,6 +66,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ConfirmHost />
         <Suspense fallback={<LoadingState label="Carregando página" />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -234,14 +236,14 @@ function HomeRedirect() {
 
 function NotFound() {
   return (
-    <main className="grid min-h-screen place-items-center bg-transparent px-4 text-center text-[#94a3b8]">
+    <main className="grid min-h-screen place-items-center bg-transparent px-4 text-center text-muted">
       <div>
-        <p className="text-sm font-medium text-[#7186ff]">404</p>
-        <h1 className="mt-2 text-2xl font-semibold text-[#f5f7fb]">
+        <p className="text-sm font-medium text-accent">404</p>
+        <h1 className="mt-2 text-2xl font-semibold text-fg">
           Página não encontrada
         </h1>
         <a
-          className="mt-5 inline-block text-sm text-[#aab7ff] hover:text-white"
+          className="mt-5 inline-block text-sm text-accent hover:text-white"
           href="/"
         >
           Voltar ao início

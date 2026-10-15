@@ -190,18 +190,18 @@ export function FinancePage() {
     <div className="mx-auto w-full max-w-7xl space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
             Fluxo de caixa
           </p>
-          <h1 className="mt-2 text-2xl font-semibold text-[#f5f7fb] sm:text-3xl">
+          <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">
             Financeiro
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-[#94a3b8]">
+          <p className="mt-2 max-w-2xl text-sm text-muted">
             Entradas líquidas das vendas Smokepay, pagamentos de colaboradores e
             saques registrados neste workspace.
           </p>
         </div>
-        <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[#cbd5e1]">
+        <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-fg-2">
           <input
             checked={soundEnabled}
             onChange={(event) => {
@@ -221,62 +221,62 @@ export function FinancePage() {
 
       <section aria-label="Resumo do fluxo de caixa" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <article className="dashboard-card rounded-xl p-4">
-          <div className="flex items-center gap-2 text-[#94a3b8]">
-            <ArrowDownLeft className="text-[#76c8a0]" size={16} />
+          <div className="flex items-center gap-2 text-muted">
+            <ArrowDownLeft className="text-success" size={16} />
             <p className="text-xs">Entradas líquidas</p>
           </div>
-          <p className="mt-3 text-xl font-semibold text-[#76c8a0]">
+          <p className="mt-3 text-xl font-semibold text-success">
             {formatMoney(data.income)}
           </p>
-          <p className="mt-1 text-[11px] text-[#78839b]">
+          <p className="mt-1 text-[11px] text-muted">
             Após os splits Smokepay
           </p>
         </article>
         <article className="dashboard-card rounded-xl p-4">
-          <div className="flex items-center gap-2 text-[#94a3b8]">
-            <CircleDollarSign className="text-[#aab7ff]" size={16} />
+          <div className="flex items-center gap-2 text-muted">
+            <CircleDollarSign className="text-accent" size={16} />
             <p className="text-xs">Vendas brutas</p>
           </div>
-          <p className="mt-3 text-xl font-semibold text-[#e6eaf2]">
+          <p className="mt-3 text-xl font-semibold text-fg">
             {formatMoney(data.gross_sales)}
           </p>
-          <p className="mt-1 text-[11px] text-[#78839b]">
+          <p className="mt-1 text-[11px] text-muted">
             Antes da divisão de cada operação
           </p>
         </article>
         <article className="dashboard-card rounded-xl p-4">
-          <div className="flex items-center gap-2 text-[#94a3b8]">
-            <UsersRound className="text-[#f2d48a]" size={16} />
+          <div className="flex items-center gap-2 text-muted">
+            <UsersRound className="text-warning" size={16} />
             <p className="text-xs">Colaboradores pagos</p>
           </div>
-          <p className="mt-3 text-xl font-semibold text-[#f2d48a]">
+          <p className="mt-3 text-xl font-semibold text-warning">
             {formatMoney(data.collaborator_payments)}
           </p>
-          <p className="mt-1 text-[11px] text-[#78839b]">
+          <p className="mt-1 text-[11px] text-muted">
             Saídas baixadas na gestão de colaboradores
           </p>
         </article>
         <article className="dashboard-card rounded-xl p-4">
-          <div className="flex items-center gap-2 text-[#94a3b8]">
-            <ArrowUpRight className="text-[#f1a3ad]" size={16} />
+          <div className="flex items-center gap-2 text-muted">
+            <ArrowUpRight className="text-danger" size={16} />
             <p className="text-xs">Saques registrados</p>
           </div>
-          <p className="mt-3 text-xl font-semibold text-[#f1a3ad]">
+          <p className="mt-3 text-xl font-semibold text-danger">
             {formatMoney(data.withdrawals)}
           </p>
-          <p className="mt-1 text-[11px] text-[#78839b]">
+          <p className="mt-1 text-[11px] text-muted">
             Total histórico de retiradas
           </p>
         </article>
-        <article className="dashboard-card rounded-xl border border-[#35436f] p-4">
-          <div className="flex items-center gap-2 text-[#c3ccff]">
+        <article className="dashboard-card rounded-xl border border-line p-4">
+          <div className="flex items-center gap-2 text-accent">
             <Wallet size={16} />
             <p className="text-xs">Saldo atual</p>
           </div>
-          <p className="mt-3 text-xl font-semibold text-[#f5f7fb]">
+          <p className="mt-3 text-xl font-semibold text-fg">
             {formatMoney(data.balance)}
           </p>
-          <p className="mt-1 text-[11px] text-[#78839b]">
+          <p className="mt-1 text-[11px] text-muted">
             Entradas líquidas menos todas as saídas
           </p>
         </article>
@@ -285,12 +285,12 @@ export function FinancePage() {
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <article className="dashboard-card rounded-xl p-4">
           <div className="flex items-center gap-2">
-            <Banknote className="text-[#aab7ff]" size={17} />
-            <h2 className="text-base font-semibold text-[#eef1f8]">
+            <Banknote className="text-accent" size={17} />
+            <h2 className="text-base font-semibold text-fg">
               Registrar saque
             </h2>
           </div>
-          <p className="mt-1 text-xs text-[#78839b]">
+          <p className="mt-1 text-xs text-muted">
             Registre aqui cada retirada feita da plataforma para a conta bancária.
           </p>
           <form
@@ -300,7 +300,7 @@ export function FinancePage() {
               registerWithdrawal.mutate();
             }}
           >
-            <label className="grid gap-1.5 text-xs text-[#94a3b8]">
+            <label className="grid gap-1.5 text-xs text-muted">
               Valor (R$)
               <input
                 className="collaborator-input"
@@ -312,7 +312,7 @@ export function FinancePage() {
                 value={withdrawalAmount}
               />
             </label>
-            <label className="grid gap-1.5 text-xs text-[#94a3b8]">
+            <label className="grid gap-1.5 text-xs text-muted">
               Observação (opcional)
               <input
                 className="collaborator-input"
@@ -323,7 +323,7 @@ export function FinancePage() {
               />
             </label>
             <button
-              className="min-h-10 self-end rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white disabled:opacity-50"
+              className="min-h-10 self-end rounded-lg bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50"
               disabled={registerWithdrawal.isPending}
               type="submit"
             >
@@ -335,14 +335,14 @@ export function FinancePage() {
         <article className="dashboard-card rounded-xl p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-[#eef1f8]">
+              <h2 className="text-base font-semibold text-fg">
                 Meta diária de saque
               </h2>
-              <p className="mt-1 text-xs text-[#78839b]">
+              <p className="mt-1 text-xs text-muted">
                 {formatMoney(data.withdrawals_today)} sacados hoje · {withdrawalProgress}% da meta
               </p>
             </div>
-            <Banknote className="text-[#aab7ff]" size={18} />
+            <Banknote className="text-accent" size={18} />
           </div>
           <form
             className="mt-4 flex gap-2"
@@ -367,7 +367,7 @@ export function FinancePage() {
               value={goalDraft ?? data.daily_withdrawal_goal}
             />
             <button
-              className="rounded-lg border border-[#34446f] px-4 text-xs font-medium text-[#c3ccff] disabled:opacity-50"
+              className="rounded-lg border border-line px-4 text-xs font-medium text-accent disabled:opacity-50"
               disabled={saveGoal.isPending || goalDraft === null}
               type="submit"
             >
@@ -379,11 +379,11 @@ export function FinancePage() {
             aria-valuemax={100}
             aria-valuemin={0}
             aria-valuenow={withdrawalProgress}
-            className="mt-4 h-2 overflow-hidden rounded-full bg-[#202838]"
+            className="mt-4 h-2 overflow-hidden rounded-full bg-well"
             role="progressbar"
           >
             <div
-              className="h-full rounded-full bg-[#8295ff] transition-[width]"
+              className="h-full rounded-full bg-brand-strong transition-[width]"
               style={{ width: `${withdrawalProgress}%` }}
             />
           </div>
@@ -392,33 +392,33 @@ export function FinancePage() {
 
       <section className="grid gap-4 xl:grid-cols-2">
         <article className="dashboard-card rounded-xl p-4">
-          <h2 className="text-base font-semibold text-[#eef1f8]">Histórico de Saques</h2>
+          <h2 className="text-base font-semibold text-fg">Histórico de Saques</h2>
           {data.withdrawal_history.length ? (
             <ul className="mt-3 divide-y divide-line-soft">
               {data.withdrawal_history.map((item) => (
                 <li className="flex items-center justify-between gap-3 py-3" key={item.id}>
                   <div className="min-w-0">
-                    <p className="truncate text-sm text-[#e6eaf2]">
+                    <p className="truncate text-sm text-fg">
                       {item.note || "Saque do administrador"}
                     </p>
-                    <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#78839b]">
+                    <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
                       <Clock3 size={12} />
                       {formatDateTime(item.created_at)}
                     </p>
                   </div>
-                  <strong className="shrink-0 text-sm text-[#f1a3ad]">
+                  <strong className="shrink-0 text-sm text-danger">
                     −{formatMoney(item.amount)}
                   </strong>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-[#78839b]">Nenhum saque registrado.</p>
+            <p className="mt-3 text-sm text-muted">Nenhum saque registrado.</p>
           )}
         </article>
 
         <article className="dashboard-card rounded-xl p-4">
-          <h2 className="text-base font-semibold text-[#eef1f8]">
+          <h2 className="text-base font-semibold text-fg">
             Despesas / Colaboradores Pagos
           </h2>
           {data.collaborator_payment_history.length ? (
@@ -426,10 +426,10 @@ export function FinancePage() {
               {data.collaborator_payment_history.map((item) => (
                 <li className="flex items-center justify-between gap-3 py-3" key={item.id}>
                   <div className="min-w-0">
-                    <p className="truncate text-sm text-[#e6eaf2]">
+                    <p className="truncate text-sm text-fg">
                       {item.collaborator_name}
                     </p>
-                    <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#78839b]">
+                    <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
                       <Clock3 size={12} />
                       Pago {formatDateTime(item.paid_at)} · competência{" "}
                       {new Intl.DateTimeFormat("pt-BR", {
@@ -439,14 +439,14 @@ export function FinancePage() {
                       }).format(new Date(`${item.period_start}T00:00:00Z`))}
                     </p>
                   </div>
-                  <strong className="shrink-0 text-sm text-[#f2d48a]">
+                  <strong className="shrink-0 text-sm text-warning">
                     −{formatMoney(item.amount)}
                   </strong>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-[#78839b]">
+            <p className="mt-3 text-sm text-muted">
               Nenhum pagamento de colaborador registrado.
             </p>
           )}
@@ -455,7 +455,7 @@ export function FinancePage() {
 
       <section className="grid gap-4 xl:grid-cols-2">
         <article className="dashboard-card rounded-xl p-4">
-          <h2 className="text-base font-semibold text-[#eef1f8]">
+          <h2 className="text-base font-semibold text-fg">
             Faturamento por operação
           </h2>
           {data.operation_revenue.length ? (
@@ -466,28 +466,28 @@ export function FinancePage() {
                   key={operation.operation_name}
                 >
                   <div>
-                    <p className="text-sm text-[#e6eaf2]">
+                    <p className="text-sm text-fg">
                       {operation.operation_name}
                     </p>
-                    <p className="mt-1 text-[11px] text-[#78839b]">
+                    <p className="mt-1 text-[11px] text-muted">
                       {operation.sale_count} venda(s) · Bruto{" "}
                       {formatMoney(operation.gross_amount)}
                     </p>
                   </div>
-                  <strong className="text-sm text-[#76c8a0]">
+                  <strong className="text-sm text-success">
                     Líquido {formatMoney(operation.net_amount)}
                   </strong>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-[#78839b]">
+            <p className="mt-3 text-sm text-muted">
               As vendas aprovadas serão agrupadas por operação aqui.
             </p>
           )}
         </article>
         <article aria-live="polite" className="dashboard-card rounded-xl p-4">
-          <h2 className="text-base font-semibold text-[#eef1f8]">
+          <h2 className="text-base font-semibold text-fg">
             Feed de vendas ao vivo
           </h2>
           {data.transactions.some((item) => item.kind === "sale") ? (
@@ -501,41 +501,41 @@ export function FinancePage() {
                     key={item.id}
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-medium text-[#e6eaf2]">
+                      <p className="truncate text-xs font-medium text-fg">
                         {item.description}
                       </p>
-                      <p className="mt-1 text-[10px] text-[#78839b]">
+                      <p className="mt-1 text-[10px] text-muted">
                         {formatDateTime(item.occurred_at)}
                       </p>
                     </div>
-                    <strong className="shrink-0 text-xs text-[#76c8a0]">
+                    <strong className="shrink-0 text-xs text-success">
                       +{formatMoney(item.amount)}
                     </strong>
                   </li>
                 ))}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-[#78839b]">
+            <p className="mt-3 text-sm text-muted">
               Aguardando vendas aprovadas.
             </p>
           )}
           {soundError && (
-            <p className="mt-2 text-[11px] text-[#f2d48a]">{soundError}</p>
+            <p className="mt-2 text-[11px] text-warning">{soundError}</p>
           )}
         </article>
       </section>
 
       <section className="dashboard-card rounded-xl p-4">
-        <h2 className="text-base font-semibold text-[#eef1f8]">
+        <h2 className="text-base font-semibold text-fg">
           Movimentações · 100 mais recentes
         </h2>
-        <p className="mt-1 text-xs text-[#78839b]">
+        <p className="mt-1 text-xs text-muted">
           Entradas exibidas pelo valor líquido da operação; a venda bruta fica no resumo.
         </p>
         {data.transactions.length ? (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[620px] text-left text-sm">
-              <thead className="text-[11px] uppercase tracking-wide text-[#78839b]">
+              <thead className="text-[11px] uppercase tracking-wide text-muted">
                 <tr>
                   <th className="py-2 pr-3 font-medium">Data e hora</th>
                   <th className="py-2 pr-3 font-medium">Movimentação</th>
@@ -546,19 +546,19 @@ export function FinancePage() {
               <tbody className="divide-y divide-line-soft">
                 {data.transactions.map((item) => (
                   <tr key={item.id}>
-                    <td className="py-3 pr-3 text-xs text-[#94a3b8]">
+                    <td className="py-3 pr-3 text-xs text-muted">
                       {formatDateTime(item.occurred_at)}
                     </td>
-                    <td className="py-3 pr-3 text-[#e6eaf2]">{item.description}</td>
+                    <td className="py-3 pr-3 text-fg">{item.description}</td>
                     <td
                       className={`py-3 pr-3 text-right font-medium ${
-                        item.direction === "inflow" ? "text-[#76c8a0]" : "text-[#f1a3ad]"
+                        item.direction === "inflow" ? "text-success" : "text-danger"
                       }`}
                     >
                       {item.direction === "inflow" ? "+" : "−"}
                       {formatMoney(item.amount)}
                     </td>
-                    <td className="py-3 text-right text-xs text-[#94a3b8]">
+                    <td className="py-3 text-right text-xs text-muted">
                       {item.kind === "sale"
                         ? "Entrada"
                         : item.kind === "withdrawal"
@@ -571,7 +571,7 @@ export function FinancePage() {
             </table>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-[#78839b]">
+          <p className="mt-3 text-sm text-muted">
             As vendas Smokepay e as saídas registradas aparecerão aqui.
           </p>
         )}

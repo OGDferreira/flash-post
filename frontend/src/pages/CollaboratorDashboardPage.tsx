@@ -135,19 +135,19 @@ export function CollaboratorDashboardPage() {
         {data.avatar_url ? (
           <img
             alt=""
-            className="size-10 rounded-full border border-[#34446f] object-cover"
+            className="size-10 rounded-full border border-line object-cover"
             src={data.avatar_url}
           />
         ) : (
-          <span className="grid size-10 place-items-center rounded-full bg-[#171e31] text-sm font-semibold text-[#aab7ff]">
+          <span className="grid size-10 place-items-center rounded-full bg-brand-soft text-sm font-semibold text-accent">
             {(data.full_name || data.nickname || "C").slice(0, 1).toUpperCase()}
           </span>
         )}
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
             Seu painel de produção
           </p>
-          <h1 className="mt-0.5 text-lg font-semibold text-[#f5f7fb]">
+          <h1 className="mt-0.5 text-lg font-semibold text-fg">
             Olá, {data.nickname || data.full_name || "colaborador"}
           </h1>
         </div>
@@ -172,44 +172,44 @@ export function CollaboratorDashboardPage() {
           <section className="grid gap-3 sm:grid-cols-2">
             <article className="dashboard-card space-y-2 rounded-xl p-3">
               <div className="flex items-center gap-2">
-                <Target className="text-[#8295ff]" size={16} />
-                <h2 className="text-xs font-semibold text-[#eef1f8]">Meta diária</h2>
+                <Target className="text-accent" size={16} />
+                <h2 className="text-xs font-semibold text-fg">Meta diária</h2>
               </div>
               <div className="flex items-end justify-between gap-2">
-                <p className="text-2xl font-semibold text-[#f5f7fb]">
+                <p className="text-2xl font-semibold text-fg">
                   {data.connections_today ?? 0}
-                  <span className="text-sm font-normal text-[#78839b]">
+                  <span className="text-sm font-normal text-muted">
                     {" "}/ {data.daily_connection_goal || "—"}
                   </span>
                 </p>
-                <p className="text-sm font-semibold text-[#aab7ff]">
+                <p className="text-sm font-semibold text-accent">
                   {progressValue(data.daily_progress)}%
                 </p>
               </div>
               <ProgressBar value={progressValue(data.daily_progress)} />
-              <p className="text-[11px] text-[#94a3b8]">
+              <p className="text-[11px] text-muted">
                 {progressMessage(progressValue(data.daily_progress), data.daily_connection_goal)}
               </p>
             </article>
 
             <article className="dashboard-card space-y-2 rounded-xl p-3">
               <div className="flex items-center gap-2">
-                <Flame className="text-[#f2d48a]" size={16} />
-                <h2 className="text-xs font-semibold text-[#eef1f8]">Meta mensal</h2>
+                <Flame className="text-warning" size={16} />
+                <h2 className="text-xs font-semibold text-fg">Meta mensal</h2>
               </div>
               <div className="flex items-end justify-between gap-2">
-                <p className="text-2xl font-semibold text-[#f5f7fb]">
+                <p className="text-2xl font-semibold text-fg">
                   {data.connections_month ?? 0}
-                  <span className="text-sm font-normal text-[#78839b]">
+                  <span className="text-sm font-normal text-muted">
                     {" "}/ {data.monthly_connection_goal || "—"}
                   </span>
                 </p>
-                <p className="text-sm font-semibold text-[#f2d48a]">
+                <p className="text-sm font-semibold text-warning">
                   {progressValue(data.monthly_progress)}%
                 </p>
               </div>
               <ProgressBar value={progressValue(data.monthly_progress)} color="gold" />
-              <div className="flex justify-between gap-2 text-[11px] text-[#94a3b8]">
+              <div className="flex justify-between gap-2 text-[11px] text-muted">
                 <span>A receber: {money(data.due_month)}</span>
                 <span>Bónus: {money(data.monthly_bonus)}</span>
               </div>
@@ -220,10 +220,10 @@ export function CollaboratorDashboardPage() {
             <article className="dashboard-card flex min-h-[300px] min-w-0 flex-col rounded-xl p-3 xl:min-h-0">
               <header className="dashboard-panel-header">
                 <div className="flex items-center gap-2">
-                  <BarChart3 className="shrink-0 text-[#8295ff]" size={16} />
+                  <BarChart3 className="shrink-0 text-accent" size={16} />
                   <h2 className="dashboard-panel-title mt-0">Contas conectadas por dia</h2>
                 </div>
-                <span className="shrink-0 text-[10px] text-[#78839b]">7 dias</span>
+                <span className="shrink-0 text-[10px] text-muted">7 dias</span>
               </header>
               <div className="mt-2 min-h-[250px] w-full flex-1 xl:min-h-0">
                 <ResponsiveContainer height="100%" width="100%">
@@ -243,7 +243,7 @@ export function CollaboratorDashboardPage() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <p className="mt-1 text-[10px] text-[#78839b]">
+              <p className="mt-1 text-[10px] text-muted">
                 Valor por conexão: {money(ratePerConnection)}
               </p>
             </article>
@@ -251,10 +251,10 @@ export function CollaboratorDashboardPage() {
             <article className="dashboard-card flex min-h-[300px] min-w-0 flex-col rounded-xl p-3 xl:min-h-0">
               <header className="dashboard-panel-header">
                 <div className="flex items-center gap-2">
-                  <CircleDollarSign className="shrink-0 text-[#76c8a0]" size={16} />
+                  <CircleDollarSign className="shrink-0 text-success" size={16} />
                   <h2 className="dashboard-panel-title mt-0">A receber e pagos por dia</h2>
                 </div>
-                <span className="shrink-0 text-[10px] text-[#78839b]">7 dias</span>
+                <span className="shrink-0 text-[10px] text-muted">7 dias</span>
               </header>
               <div className="mt-2 min-h-[250px] w-full flex-1 xl:min-h-0">
                 <ResponsiveContainer height="100%" width="100%">
@@ -287,19 +287,19 @@ export function CollaboratorDashboardPage() {
 
         <section aria-label="Ranking mensal de produção" className="dashboard-card flex min-h-0 flex-col rounded-xl p-3">
           <header className="mb-2 flex items-center gap-2">
-            <Medal className="shrink-0 text-[#f2d48a]" size={17} />
-            <h2 className="text-sm font-semibold text-[#eef1f8]">
+            <Medal className="shrink-0 text-warning" size={17} />
+            <h2 className="text-sm font-semibold text-fg">
               Ranking de produção
             </h2>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {ranking.isLoading ? (
-              <p className="text-sm text-[#94a3b8]">Carregando ranking...</p>
+              <p className="text-sm text-muted">Carregando ranking...</p>
             ) : ranking.error ? (
-              <p className="text-sm text-[#f1a3ad]">Não foi possível carregar o ranking.</p>
+              <p className="text-sm text-danger">Não foi possível carregar o ranking.</p>
             ) : rankedCollaborators.length ? (
               <table className="w-full text-left text-xs">
-                <thead className="text-[10px] uppercase text-[#78839b]">
+                <thead className="text-[10px] uppercase text-muted">
                   <tr>
                     <th className="py-1.5 pr-2 font-medium">#</th>
                     <th className="py-1.5 pr-2 font-medium">Colaborador</th>
@@ -309,18 +309,18 @@ export function CollaboratorDashboardPage() {
                 <tbody>
                   {rankedCollaborators.slice(0, 6).map((person) => (
                     <tr className="border-t border-line-soft" key={person.user_id}>
-                      <td className="py-2 pr-2 font-semibold text-[#f2d48a]">{person.position}</td>
-                      <td className="max-w-0 truncate py-2 pr-2 text-[#e6eaf2]">
+                      <td className="py-2 pr-2 font-semibold text-warning">{person.position}</td>
+                      <td className="max-w-0 truncate py-2 pr-2 text-fg">
                         @{person.nickname}
                       </td>
-                      <td className="py-2 text-right font-semibold text-[#f5f7fb]">
+                      <td className="py-2 text-right font-semibold text-fg">
                         {person.connections}
                       </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t border-[#34446f] text-[#cbd5e1]">
+                  <tr className="border-t border-line text-fg-2">
                     <th className="py-2 pr-2" colSpan={2}>Total da equipe</th>
                     <td className="py-2 text-right font-semibold">
                       {totalRankedConnections}
@@ -329,7 +329,7 @@ export function CollaboratorDashboardPage() {
                 </tfoot>
               </table>
             ) : (
-              <p className="text-sm text-[#94a3b8]">Ainda não há produção neste mês.</p>
+              <p className="text-sm text-muted">Ainda não há produção neste mês.</p>
             )}
 
           </div>
@@ -337,7 +337,7 @@ export function CollaboratorDashboardPage() {
       </section>
 
       <section aria-label="Valores das minhas contas" className="dashboard-card rounded-xl p-4">
-        <h2 className="mb-3 text-sm font-semibold text-[#eef1f8]">
+        <h2 className="mb-3 text-sm font-semibold text-fg">
           Valores das minhas contas
         </h2>
         {Array.isArray(data.account_earnings) && data.account_earnings.length ? (
@@ -347,20 +347,20 @@ export function CollaboratorDashboardPage() {
                 className="flex items-center justify-between gap-2 border-t border-line-soft py-2 text-xs"
                 key={account.account_id}
               >
-                <span className="min-w-0 truncate text-[#e6eaf2]">
+                <span className="min-w-0 truncate text-fg">
                   @{account.username}
-                  <span className="ml-2 text-[10px] text-[#78839b]">
+                  <span className="ml-2 text-[10px] text-muted">
                     {accountDateLabel(account.connected_at)}
                   </span>
                 </span>
-                <strong className="shrink-0 font-medium text-[#f2d48a]">
+                <strong className="shrink-0 font-medium text-warning">
                   {money(account.rate_per_connection)}
                 </strong>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-[#78839b]">
+          <p className="text-xs text-muted">
             Os valores aparecerão quando suas contas forem conectadas.
           </p>
         )}
@@ -381,10 +381,10 @@ function Metric({
   return (
     <article className="dashboard-card rounded-lg px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
-        <Icon className="shrink-0 text-[#8295ff]" size={14} />
-        <p className="truncate text-[11px] text-[#94a3b8]">{label}</p>
+        <Icon className="shrink-0 text-accent" size={14} />
+        <p className="truncate text-[11px] text-muted">{label}</p>
       </div>
-      <p className="mt-1 text-lg font-semibold leading-tight text-[#f5f7fb]">{value}</p>
+      <p className="mt-1 text-lg font-semibold leading-tight text-fg">{value}</p>
     </article>
   );
 }

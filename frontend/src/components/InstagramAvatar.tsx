@@ -27,7 +27,7 @@ export function InstagramAvatar({ src, username, className }: InstagramAvatarPro
   return (
     <span
       aria-label={`Foto de perfil indisponível para @${username}`}
-      className={`grid shrink-0 place-items-center bg-[#171e31] text-[#8295ff] ${className}`}
+      className={`grid shrink-0 place-items-center bg-brand-soft text-accent ${className}`}
       role="img"
     >
       <Instagram size={16} />

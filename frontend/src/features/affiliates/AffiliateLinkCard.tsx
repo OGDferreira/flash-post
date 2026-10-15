@@ -30,24 +30,24 @@ export function AffiliateLinkCard() {
 
   return (
     <section className="glass-panel p-4 sm:p-5" aria-labelledby="affiliate-link-title">
-      <h3 id="affiliate-link-title" className="flex items-center gap-2 text-base font-semibold text-[#f5f7fb]">
-        <Handshake size={17} className="text-[#8295ff]" />
+      <h3 id="affiliate-link-title" className="flex items-center gap-2 text-base font-semibold text-fg">
+        <Handshake size={17} className="text-accent" />
         Filiação
       </h3>
       {me.data?.has_chief ? (
-        <div className="mt-3 space-y-2 text-sm text-[#cbd5e1]">
+        <div className="mt-3 space-y-2 text-sm text-fg-2">
           <p>
-            Você é filiado de <strong className="text-[#f5f7fb]">{me.data.chief_name}</strong>
+            Você é filiado de <strong className="text-fg">{me.data.chief_name}</strong>
             {me.data.chief_nickname ? ` (${me.data.chief_nickname})` : ""}.
           </p>
           <p>
             Participação combinada:{" "}
-            <strong className="text-[#f5f7fb]">
+            <strong className="text-fg">
               {Number(me.data.participation_percent ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%
             </strong>{" "}
             da receita aprovada da sua operação.
           </p>
-          <p className="text-xs leading-5 text-[#94a3b8]">
+          <p className="text-xs leading-5 text-muted">
             Seu chefe vê as métricas das suas contas e do SharkBot. Ele não acessa suas contas, tokens ou senha. O
             percentual é definido por ele; o FlashPost não faz repasses.
           </p>
@@ -60,7 +60,7 @@ export function AffiliateLinkCard() {
             if (code.trim()) join.mutate();
           }}
         >
-          <p className="text-xs leading-5 text-[#94a3b8]">
+          <p className="text-xs leading-5 text-muted">
             Recebeu um código de convite? Informe-o para se tornar filiado de quem convidou. Você só pode ter um chefe.
           </p>
           <div className="flex gap-2">
@@ -77,7 +77,7 @@ export function AffiliateLinkCard() {
               {join.isPending ? "Vinculando..." : "Usar código"}
             </button>
           </div>
-          {error && <p className="text-xs text-[#f1a3ad]" role="alert">{error}</p>}
+          {error && <p className="text-xs text-danger" role="alert">{error}</p>}
         </form>
       )}
     </section>

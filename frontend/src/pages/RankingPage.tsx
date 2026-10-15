@@ -54,13 +54,13 @@ export function RankingPage() {
   return (
     <div className="mx-auto max-w-[1320px] space-y-4">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
           Equipe
         </p>
-        <h1 className="mt-2 text-2xl font-semibold text-[#f5f7fb] sm:text-3xl">
+        <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">
           Ranking de conexões
         </h1>
-        <p className="mt-2 text-sm text-[#94a3b8]">
+        <p className="mt-2 text-sm text-muted">
           Compare as contas conectadas pelo chefe e pelos colaboradores.
         </p>
       </header>
@@ -74,8 +74,8 @@ export function RankingPage() {
             aria-pressed={period === option.value}
             className={`min-h-9 rounded-lg px-3 text-xs font-medium transition ${
               period === option.value
-                ? "bg-[#536dfe] text-white"
-                : "text-[#94a3b8] hover:bg-[#171e31] hover:text-white"
+                ? "bg-brand text-white"
+                : "text-muted hover:bg-brand-soft hover:text-white"
             }`}
             key={option.value}
             onClick={() => setPeriod(option.value)}
@@ -94,20 +94,20 @@ export function RankingPage() {
         <>
           <section className="grid gap-3 sm:grid-cols-2">
             <article className="dashboard-card rounded-xl p-4">
-              <div className="flex items-center gap-2 text-xs text-[#94a3b8]">
-                <UsersRound className="text-[#8295ff]" size={16} />
+              <div className="flex items-center gap-2 text-xs text-muted">
+                <UsersRound className="text-accent" size={16} />
                 Contas conectadas no período
               </div>
-              <p className="mt-2 text-3xl font-semibold text-[#f5f7fb]">
+              <p className="mt-2 text-3xl font-semibold text-fg">
                 {count(ranking.data.total_connections)}
               </p>
             </article>
             <article className="dashboard-card rounded-xl p-4">
-              <div className="flex items-center gap-2 text-xs text-[#94a3b8]">
-                <Medal className="text-[#f2d48a]" size={16} />
+              <div className="flex items-center gap-2 text-xs text-muted">
+                <Medal className="text-warning" size={16} />
                 Dias considerados na média
               </div>
-              <p className="mt-2 text-3xl font-semibold text-[#f5f7fb]">
+              <p className="mt-2 text-3xl font-semibold text-fg">
                 {count(ranking.data.days_in_period)}
               </p>
             </article>
@@ -115,17 +115,17 @@ export function RankingPage() {
 
           <section className="dashboard-card overflow-hidden rounded-xl">
             <div className="border-b border-line-soft px-4 py-4">
-              <h2 className="font-semibold text-[#f5f7fb]">
+              <h2 className="font-semibold text-fg">
                 Produção por integrante
               </h2>
-              <p className="mt-1 text-xs text-[#94a3b8]">
+              <p className="mt-1 text-xs text-muted">
                 Média diária = contas conectadas ÷ dias do período selecionado.
               </p>
             </div>
             {ranking.data.collaborators.length ? (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[560px] text-left text-sm">
-                  <thead className="bg-surface text-xs text-[#94a3b8]">
+                  <thead className="bg-surface text-xs text-muted">
                     <tr>
                       <th className="px-4 py-3 font-medium">Posição</th>
                       <th className="px-4 py-3 font-medium">Integrante</th>
@@ -140,22 +140,22 @@ export function RankingPage() {
                   <tbody>
                     {ranking.data.collaborators.map((member) => (
                       <tr
-                        className="border-t border-line-soft text-[#e6eaf2]"
+                        className="border-t border-line-soft text-fg"
                         key={member.user_id}
                       >
-                        <td className="px-4 py-3 font-semibold text-[#f2d48a]">
+                        <td className="px-4 py-3 font-semibold text-warning">
                           #{member.position}
                         </td>
                         <td className="px-4 py-3">
                           <span className="font-medium">{member.full_name}</span>
-                          <span className="ml-2 text-xs text-[#718096]">
+                          <span className="ml-2 text-xs text-muted">
                             @{member.nickname}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right font-semibold">
                           {count(member.connections)}
                         </td>
-                        <td className="px-4 py-3 text-right text-[#aab7ff]">
+                        <td className="px-4 py-3 text-right text-accent">
                           {average(member.average_daily_connections)}
                         </td>
                       </tr>
@@ -164,7 +164,7 @@ export function RankingPage() {
                 </table>
               </div>
             ) : (
-              <p className="p-4 text-sm text-[#94a3b8]">
+              <p className="p-4 text-sm text-muted">
                 Não há integrantes ativos neste workspace.
               </p>
             )}

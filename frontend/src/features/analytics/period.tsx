@@ -50,7 +50,7 @@ export function PeriodFilter({
         ))}
       </div>
       {value.period === "custom" && (
-        <div className="flex items-center gap-2 text-xs text-[#94a3b8]">
+        <div className="flex items-center gap-2 text-xs text-muted">
           <input
             aria-label="Data inicial"
             className="field !min-h-9 !w-auto !text-xs"

@@ -6,6 +6,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Modal } from "@/components/ui/Modal";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ApiError, apiRequest } from "@/services/api";
+import { confirmAction } from "@/lib/confirm";
 
 type Extension = {
   id: string;
@@ -94,18 +95,18 @@ function EditorModal({ item, open, onClose }: { item: Extension | null; open: bo
     >
       <form className="space-y-3" id="extension-form" onSubmit={submit}>
         <label className="block text-sm">
-          <span className="mb-1 block text-[#c7cfdd]">Nome</span>
+          <span className="mb-1 block text-fg-2">Nome</span>
           <input className="field" maxLength={120} onChange={(e) => setName(e.target.value)} value={name} />
         </label>
         <label className="block text-sm">
-          <span className="mb-1 block text-[#c7cfdd]">Descrição</span>
+          <span className="mb-1 block text-fg-2">Descrição</span>
           <input className="field" maxLength={1000} onChange={(e) => setDescription(e.target.value)} value={description} />
         </label>
         <label className="block text-sm">
-          <span className="mb-1 block text-[#c7cfdd]">Instruções de instalação/uso</span>
+          <span className="mb-1 block text-fg-2">Instruções de instalação/uso</span>
           <textarea className="field min-h-24 py-2" maxLength={8000} onChange={(e) => setInstructions(e.target.value)} value={instructions} />
         </label>
-        <label className="flex items-center gap-2 text-sm text-[#c7cfdd]">
+        <label className="flex items-center gap-2 text-sm text-fg-2">
           <input checked={visible} onChange={(e) => setVisible(e.target.checked)} type="checkbox" />
           Colaboradores podem baixar
         </label>
@@ -114,9 +115,9 @@ function EditorModal({ item, open, onClose }: { item: Extension | null; open: bo
           <button className="btn-secondary" onClick={() => fileInput.current?.click()} type="button">
             <Upload size={15} /> {item ? "Trocar ZIP" : "Escolher ZIP"}
           </button>
-          <span className="ml-2 text-xs text-[#94a3b8]">{file ? `${file.name} (${sizeLabel(file.size)})` : item?.file_name ?? ""}</span>
+          <span className="ml-2 text-xs text-muted">{file ? `${file.name} (${sizeLabel(file.size)})` : item?.file_name ?? ""}</span>
         </div>
-        {error && <p className="text-xs text-[#f1a3ad]" role="alert">{error}</p>}
+        {error && <p className="text-xs text-danger" role="alert">{error}</p>}
       </form>
     </Modal>
   );
@@ -143,11 +144,11 @@ export function ExtensionsPage() {
     <div className="mx-auto max-w-[1100px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Ferramentas</p>
-          <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb]">
-            <Puzzle className="text-[#8295ff]" size={24} /> Extensões
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Ferramentas</p>
+          <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg">
+            <Puzzle className="text-accent" size={24} /> Extensões
           </h2>
-          <p className="mt-1 text-sm text-[#94a3b8]">
+          <p className="mt-1 text-sm text-muted">
             {isOwner ? "Envie arquivos ZIP e libere o download para seus colaboradores." : "Baixe as extensões liberadas pelo seu chefe."}
           </p>
         </div>
@@ -170,20 +171,20 @@ export function ExtensionsPage() {
           <article className="glass-panel space-y-2 p-4" key={item.id}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <h3 className="truncate font-medium text-[#f5f7fb]">{item.name}</h3>
-                {item.description && <p className="mt-0.5 text-sm text-[#94a3b8]">{item.description}</p>}
+                <h3 className="truncate font-medium text-fg">{item.name}</h3>
+                {item.description && <p className="mt-0.5 text-sm text-muted">{item.description}</p>}
               </div>
               {isOwner && (
-                <span className="flex shrink-0 items-center gap-1 text-xs text-[#94a3b8]" title={item.visible_to_collaborators ? "Visível para colaboradores" : "Oculta para colaboradores"}>
+                <span className="flex shrink-0 items-center gap-1 text-xs text-muted" title={item.visible_to_collaborators ? "Visível para colaboradores" : "Oculta para colaboradores"}>
                   {item.visible_to_collaborators ? <Eye size={14} /> : <EyeOff size={14} />}
                 </span>
               )}
             </div>
             {item.instructions && (
-              <p className="whitespace-pre-wrap rounded-lg bg-black/25 p-2.5 text-xs leading-5 text-[#c7cfdd]">{item.instructions}</p>
+              <p className="whitespace-pre-wrap rounded-lg bg-black/25 p-2.5 text-xs leading-5 text-fg-2">{item.instructions}</p>
             )}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <span className="text-xs text-[#64748b]">
+              <span className="text-xs text-muted">
                 {item.has_file ? `${item.file_name} · ${sizeLabel(item.file_size)}` : "Sem arquivo"}
               </span>
               <span className="flex gap-1.5">
@@ -199,7 +200,7 @@ export function ExtensionsPage() {
                       aria-label="Excluir"
                       className="btn-ghost"
                       disabled={remove.isPending}
-                      onClick={() => { if (window.confirm(`Excluir "${item.name}"?`)) { setActionError(null); remove.mutate(item.id); } }}
+                      onClick={async () => { if (await confirmAction(`Excluir "${item.name}"?`)) { setActionError(null); remove.mutate(item.id); } }}
                       type="button"
                     >
                       <Trash2 size={15} />

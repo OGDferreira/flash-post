@@ -122,25 +122,25 @@ export function RegisterPage() {
               height="40"
               className="size-10 shrink-0 object-contain"
             />
-            <span className="text-base font-semibold tracking-[-0.03em] text-[#f5f7fb]">
-              FlashPost<span className="text-[#7186ff]">.</span>
+            <span className="text-base font-semibold tracking-[-0.03em] text-fg">
+              FlashPost<span className="text-accent">.</span>
             </span>
           </Link>
           <div className="max-w-sm md:my-auto">
-            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-[#aeb9ce]">
-              <ShieldCheck size={14} className="text-[#8295ff]" />
+            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-fg-2">
+              <ShieldCheck size={14} className="text-accent" />
               Crie seu acesso seguro
             </p>
-            <h1 className="text-4xl font-semibold leading-tight tracking-[-0.06em] text-[#f5f7fb] sm:text-5xl">
+            <h1 className="text-4xl font-semibold leading-tight tracking-[-0.06em] text-fg sm:text-5xl">
               Sua operação,
               <br />
-              <span className="text-[#7186ff]">em um só lugar.</span>
+              <span className="text-accent">em um só lugar.</span>
             </h1>
-            <p className="mt-5 max-w-md text-base leading-7 text-[#94a3b8]">
+            <p className="mt-5 max-w-md text-base leading-7 text-muted">
               Crie sua conta e comece a organizar seu espaço de trabalho no FlashPost.
             </p>
           </div>
-          <p className="hidden text-xs text-[#64748b] md:block">
+          <p className="hidden text-xs text-muted md:block">
             FlashPost · Acesso protegido
           </p>
         </section>
@@ -148,10 +148,10 @@ export function RegisterPage() {
         <section className="flex items-center border-t border-line-soft p-4 sm:p-6 md:border-l md:border-t-0 md:p-9">
           <div className="w-full max-w-md md:mx-auto">
           <div className="mb-7">
-            <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#f5f7fb]">
+            <h2 className="text-xl font-semibold tracking-[-0.035em] text-fg">
               Criar conta
             </h2>
-            <p className="mt-2 text-sm text-[#94a3b8]">
+            <p className="mt-2 text-sm text-muted">
               Cadastre-se para criar seu workspace de proprietário.
             </p>
           </div>
@@ -183,7 +183,7 @@ export function RegisterPage() {
               }}
             />
             <div>
-              <label htmlFor="register-nickname" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+              <label htmlFor="register-nickname" className="mb-2 block text-sm font-medium text-fg-2">
                 Apelido
               </label>
               <input
@@ -204,16 +204,16 @@ export function RegisterPage() {
                     availability.data?.available === false)
                 }
                 aria-describedby="register-nickname-hint register-nickname-status"
-                className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-[#f5f7fb] outline-none transition placeholder:text-[#536176] focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+                className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
                 placeholder="Ex.: Gui Ferreira"
               />
-              <p id="register-nickname-hint" className="mt-1.5 text-xs text-[#64748b]">
+              <p id="register-nickname-hint" className="mt-1.5 text-xs text-muted">
                 Este será o nome público exibido no ranking e na plataforma. Use o nome pelo qual você quer ser conhecido.
               </p>
               <p
                 id="register-nickname-status"
                 role={availability.data?.available === false || form.formState.errors.nickname ? "alert" : "status"}
-                className={`mt-1 text-xs ${availability.data?.available ? "text-[#2dd4a0]" : "text-[#f1a3ad]"}`}
+                className={`mt-1 text-xs ${availability.data?.available ? "text-success" : "text-danger"}`}
               >
                 {nicknameMessage}
               </p>
@@ -238,8 +238,8 @@ export function RegisterPage() {
             />
 
             <div>
-              <label htmlFor="register-invite" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
-                Código de convite <span className="font-normal text-[#64748b]">(opcional)</span>
+              <label htmlFor="register-invite" className="mb-2 block text-sm font-medium text-fg-2">
+                Código de convite <span className="font-normal text-muted">(opcional)</span>
               </label>
               <input
                 id="register-invite"
@@ -250,7 +250,7 @@ export function RegisterPage() {
                 placeholder="Se alguém convidou você"
                 {...form.register("invite_code")}
               />
-              <p className="mt-1.5 text-xs text-[#64748b]">
+              <p className="mt-1.5 text-xs text-muted">
                 Ao usar o código você passa a ser filiado de quem convidou. Essa pessoa vê as métricas da sua operação,
                 mas não tem acesso às suas contas nem à sua senha.
               </p>
@@ -258,7 +258,7 @@ export function RegisterPage() {
 
             {apiError && (
               <div
-                className="rounded-lg border border-[#47252d] bg-[#1a1013] px-3.5 py-3 text-sm text-[#f1a3ad]"
+                className="rounded-lg border border-danger/30 bg-danger-soft px-3.5 py-3 text-sm text-danger"
                 role="alert"
               >
                 {apiError}
@@ -268,15 +268,15 @@ export function RegisterPage() {
             <button
               type="submit"
               disabled={mutation.isPending || availability.data?.available === false}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white transition hover:bg-[#667eea] focus:outline-none focus:ring-2 focus:ring-[#8da0ff] focus:ring-offset-2 focus:ring-offset-[#0d1015] disabled:cursor-wait disabled:opacity-70"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 focus:ring-offset-[#0d1015] disabled:cursor-wait disabled:opacity-70"
             >
               {mutation.isPending && <LoaderCircle size={16} className="animate-spin" />}
               {mutation.isPending ? "Criando conta..." : "Criar conta"}
             </button>
           </form>
-          <p className="mt-6 border-t border-line-soft pt-5 text-sm text-[#64748b]">
+          <p className="mt-6 border-t border-line-soft pt-5 text-sm text-muted">
             Já tem uma conta?{" "}
-            <Link to="/login" className="font-medium text-[#aab7ff] hover:text-white">
+            <Link to="/login" className="font-medium text-accent hover:text-white">
               Entrar
             </Link>
           </p>
@@ -300,16 +300,16 @@ function Field({
 }) {
   return (
     <div>
-      <label htmlFor={id} className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+      <label htmlFor={id} className="mb-2 block text-sm font-medium text-fg-2">
         {label}
       </label>
       <input
         id={id}
         {...inputProps}
         aria-invalid={Boolean(error)}
-        className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-[#f5f7fb] outline-none transition placeholder:text-[#536176] focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+        className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
       />
-      {error && <p className="mt-1.5 text-xs text-[#f1a3ad]">{error}</p>}
+      {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
     </div>
   );
 }
@@ -333,7 +333,7 @@ function PasswordField({
 }) {
   return (
     <div>
-      <label htmlFor={id} className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+      <label htmlFor={id} className="mb-2 block text-sm font-medium text-fg-2">
         {label}
       </label>
       <div className="relative">
@@ -343,25 +343,25 @@ function PasswordField({
           autoComplete={autoComplete}
           {...register}
           aria-invalid={Boolean(error)}
-          className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 pr-12 text-sm text-[#f5f7fb] outline-none transition placeholder:text-[#536176] focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+          className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 pr-12 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
         />
         <button
           type="button"
           onClick={onToggle}
           aria-label={visible ? "Ocultar senha" : "Mostrar senha"}
-          className="absolute inset-y-0 right-0 grid w-11 place-items-center text-[#64748b] hover:text-[#c7cfdd]"
+          className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted hover:text-fg-2"
         >
           {visible ? <EyeOff size={17} /> : <Eye size={17} />}
         </button>
       </div>
-      {error && <p className="mt-1.5 text-xs text-[#f1a3ad]">{error}</p>}
+      {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
     </div>
   );
 }
 
 function RegisterLoading() {
   return (
-    <main className="grid min-h-screen place-items-center bg-transparent text-sm text-[#94a3b8]">
+    <main className="grid min-h-screen place-items-center bg-transparent text-sm text-muted">
       Verificando sessão segura...
     </main>
   );

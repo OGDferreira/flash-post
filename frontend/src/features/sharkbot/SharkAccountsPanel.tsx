@@ -6,6 +6,7 @@ import { CopyField } from "@/components/ui/CopyField";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { formatDateTime } from "@/features/analytics/period";
 import { ApiError, apiRequest } from "@/services/api";
+import { confirmAction } from "@/lib/confirm";
 
 export type SharkAccount = {
   id: string | null;
@@ -76,12 +77,12 @@ export function SharkAccountsPanel() {
   return (
     <section className="glass-panel space-y-4 p-4 sm:p-5">
       <div>
-        <h3 className="font-medium text-[#f5f7fb]">Contas Shark</h3>
-        <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+        <h3 className="font-medium text-fg">Contas Shark</h3>
+        <p className="mt-2 text-sm leading-6 text-muted">
           Cadastre uma conta Shark por loja/operação. Cada uma tem a própria URL de webhook, e cada venda mostra de qual
           conta veio. O mesmo evento recebido duas vezes (ou por duas URLs) conta uma única vez.
         </p>
-        <p className="mt-2 rounded-xl border border-[#6b552b]/60 bg-[#1c180e]/60 p-3 text-xs leading-5 text-[#f2d48a]">
+        <p className="mt-2 rounded-xl border border-warning/30/60 bg-warning-soft/60 p-3 text-xs leading-5 text-warning">
           Só o ID da conta Shark não faz as compras chegarem ao FlashPost: o SharkBot envia os eventos por webhook. Cole
           a URL da conta no campo de webhook do SharkBot e ative os eventos de entrada de lead, PIX gerado e pagamento
           aprovado. O ID abaixo é opcional e serve só para você identificar a conta.
@@ -103,11 +104,11 @@ export function SharkAccountsPanel() {
                 </div>
               ) : (
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[#f5f7fb]">
+                  <p className="truncate text-sm font-medium text-fg">
                     {account.name}
-                    {account.is_default && <span className="ml-2 rounded-full bg-[#536dfe]/20 px-2 py-0.5 text-[10px] text-[#aab7ff]">padrão</span>}
+                    {account.is_default && <span className="ml-2 rounded-full bg-brand/20 px-2 py-0.5 text-[10px] text-accent">padrão</span>}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-[#64748b]">
+                  <p className="mt-0.5 text-[11px] text-muted">
                     {account.external_account_id ? `ID Shark: ${account.external_account_id} · ` : ""}
                     {account.is_default
                       ? "Recebe eventos que chegam pela URL antiga do workspace."
@@ -124,14 +125,14 @@ export function SharkAccountsPanel() {
                     aria-label={`Gerar nova URL de ${account.name}`}
                     className="btn-ghost !min-h-9 !px-2"
                     disabled={rotate.isPending}
-                    onClick={() => { if (window.confirm("A URL atual deixará de funcionar. Atualize-a no SharkBot. Continuar?")) rotate.mutate(account.id!); }}
+                    onClick={async () => { if (await confirmAction("A URL atual deixará de funcionar. Atualize-a no SharkBot. Continuar?")) rotate.mutate(account.id!); }}
                     type="button"
                   ><RefreshCw size={14} /></button>
                   <button
                     aria-label={`Remover ${account.name}`}
-                    className="btn-ghost !min-h-9 !px-2 text-[#f1a3ad]"
+                    className="btn-ghost !min-h-9 !px-2 text-danger"
                     disabled={remove.isPending}
-                    onClick={() => { if (window.confirm(`Remover "${account.name}"? As vendas já recebidas são mantidas.`)) remove.mutate(account.id!); }}
+                    onClick={async () => { if (await confirmAction(`Remover "${account.name}"? As vendas já recebidas são mantidas.`)) remove.mutate(account.id!); }}
                     type="button"
                   ><Trash2 size={14} /></button>
                 </div>
@@ -150,11 +151,11 @@ export function SharkAccountsPanel() {
           if (name.trim()) create.mutate();
         }}
       >
-        <label className="grid min-w-40 flex-1 gap-1 text-xs text-[#94a3b8]">
+        <label className="grid min-w-40 flex-1 gap-1 text-xs text-muted">
           Nome da conta Shark
           <input className="field" maxLength={80} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Loja principal" required value={name} />
         </label>
-        <label className="grid min-w-40 flex-1 gap-1 text-xs text-[#94a3b8]">
+        <label className="grid min-w-40 flex-1 gap-1 text-xs text-muted">
           ID na Shark (opcional)
           <input className="field" maxLength={120} onChange={(e) => setExternalId(e.target.value)} value={externalId} />
         </label>

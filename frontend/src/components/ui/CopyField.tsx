@@ -44,7 +44,7 @@ export function CopyField({
   };
 
   return (
-    <div className="grid gap-1.5 text-sm text-[#cbd5e1]">
+    <div className="grid gap-1.5 text-sm text-fg-2">
       <span>{label}</span>
       <div className="flex gap-2">
         <input
@@ -59,7 +59,7 @@ export function CopyField({
           <span aria-live="polite">{state === "copied" ? "Copiado" : state === "failed" ? "Falhou" : "Copiar"}</span>
         </button>
       </div>
-      {hint && <span className="text-xs leading-5 text-[#94a3b8]">{hint}</span>}
+      {hint && <span className="text-xs leading-5 text-muted">{hint}</span>}
     </div>
   );
 }

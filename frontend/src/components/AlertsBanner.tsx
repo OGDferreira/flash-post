@@ -44,7 +44,7 @@ export function AlertsBanner() {
     <section aria-label="Alertas" className="space-y-2">
       {messages.map((message) => (
         <Link
-          className="flex items-center gap-2 rounded-lg border border-[#5c4a1f] bg-[#1e1a0f] px-3 py-2 text-sm text-[#f2d48a] hover:bg-[#241f10]"
+          className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-sm text-warning hover:bg-warning-soft"
           key={message.text}
           to={message.to}
         >

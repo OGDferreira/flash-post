@@ -92,19 +92,19 @@ export function NotificationsPage() {
     <div className="mx-auto max-w-[1100px] space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
             Sistema e workspace
           </p>
-          <h1 className="mt-2 text-2xl font-semibold text-[#f5f7fb] sm:text-3xl">
+          <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">
             Central de notificações
           </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#94a3b8]">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
             Alertas de métricas da Meta e de publicações recentes. Contas com erro
             ou desconectadas ficam na aba oculta de erros do Hub de contas.
           </p>
         </div>
         <button
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 text-sm text-[#cbd5e1] hover:bg-[#101923]"
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 text-sm text-fg-2 hover:bg-well"
           onClick={() => {
             void accounts.refetch();
             void failures.refetch();
@@ -117,7 +117,7 @@ export function NotificationsPage() {
         </button>
       </header>
 
-      <aside className="rounded-lg border border-line bg-surface p-4 text-xs leading-5 text-[#94a3b8]">
+      <aside className="rounded-lg border border-line bg-surface p-4 text-xs leading-5 text-muted">
         Os detalhes abaixo vêm dos retornos da Meta, do estado das contas e dos
         erros de publicação guardados pelo FlashPost. O Render não disponibiliza
         os logs brutos ao aplicativo sem uma integração autenticada; para
@@ -132,10 +132,10 @@ export function NotificationsPage() {
 
       {!hasLoading && !hasIssues && (
         <section className="dashboard-card flex items-center gap-3 rounded-xl p-4">
-          <CheckCircle2 className="text-[#76c8a0]" size={20} />
+          <CheckCircle2 className="text-success" size={20} />
           <div>
-            <h2 className="font-medium text-[#e6eaf2]">Nenhum problema registrado</h2>
-            <p className="mt-1 text-xs text-[#94a3b8]">
+            <h2 className="font-medium text-fg">Nenhum problema registrado</h2>
+            <p className="mt-1 text-xs text-muted">
               Contas, Insights e publicações não reportaram erros recentes.
             </p>
           </div>
@@ -146,12 +146,12 @@ export function NotificationsPage() {
         metrics.data?.missing_permissions.length ||
         metrics.data?.profile_metrics_unavailable) && (
         <section className="dashboard-card rounded-xl p-4">
-          <h2 className="flex items-center gap-2 font-semibold text-[#f2d48a]">
+          <h2 className="flex items-center gap-2 font-semibold text-warning">
             <AlertTriangle size={16} />
             Métricas da Meta
           </h2>
           {metrics.data.missing_permissions.length > 0 && (
-            <p className="mt-3 rounded-lg border border-[#544526] bg-[#211c10] p-3 text-sm text-[#f2d48a]">
+            <p className="mt-3 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm text-warning">
               Permissão sinalizada pela Meta:{" "}
               {metrics.data.missing_permissions.join(", ")}. Reconecte a conta
               para conceder a permissão ao token.
@@ -161,16 +161,16 @@ export function NotificationsPage() {
             <ul className="mt-3 divide-y divide-line-soft">
               {insightsIssues.map((account) => (
                 <li className="py-3 first:pt-0 last:pb-0" key={account.account_id}>
-                  <p className="text-sm font-medium text-[#e6eaf2]">
+                  <p className="text-sm font-medium text-fg">
                     @{account.username}
                   </p>
                   {account.insights_error && (
-                    <p className="mt-1 text-xs leading-5 text-[#f1a3ad]">
+                    <p className="mt-1 text-xs leading-5 text-danger">
                       Insights: {account.insights_error}
                     </p>
                   )}
                   {account.profile_metrics_error && (
-                    <p className="mt-1 text-xs leading-5 text-[#f2d48a]">
+                    <p className="mt-1 text-xs leading-5 text-warning">
                       Seguidores/posts: {account.profile_metrics_error}
                     </p>
                   )}
@@ -178,7 +178,7 @@ export function NotificationsPage() {
               ))}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-[#94a3b8]">
+            <p className="mt-3 text-sm text-muted">
               A Meta não retornou todas as métricas, mas não forneceu detalhes
               por conta nesta consulta. O último snapshot permanece disponível
               quando existe.
@@ -189,7 +189,7 @@ export function NotificationsPage() {
 
       {activeFailures.length > 0 && (
         <section className="dashboard-card rounded-xl p-4">
-          <h2 className="flex items-center gap-2 font-semibold text-[#f1a3ad]">
+          <h2 className="flex items-center gap-2 font-semibold text-danger">
             <AlertTriangle size={16} />
             Publicações com falha ({activeFailures.length})
           </h2>
@@ -197,19 +197,19 @@ export function NotificationsPage() {
             {activeFailures.map((failure) => (
               <li className="py-3 first:pt-0 last:pb-0" key={failure.id}>
                 <div className="flex flex-wrap justify-between gap-2">
-                  <p className="text-sm font-medium text-[#e6eaf2]">
+                  <p className="text-sm font-medium text-fg">
                     @{failure.account_username} · {failure.loop_name}
                   </p>
-                  <p className="text-xs text-[#94a3b8]">
+                  <p className="text-xs text-muted">
                     {dateTime(failure.updated_at)} · {failure.attempts} tentativas
                   </p>
                 </div>
                 {failure.media_filename && (
-                  <p className="mt-1 text-xs text-[#94a3b8]">
+                  <p className="mt-1 text-xs text-muted">
                     Mídia: {failure.media_filename}
                   </p>
                 )}
-                <p className="mt-1 break-words text-xs leading-5 text-[#f1a3ad]">
+                <p className="mt-1 break-words text-xs leading-5 text-danger">
                   {failure.error}
                 </p>
               </li>

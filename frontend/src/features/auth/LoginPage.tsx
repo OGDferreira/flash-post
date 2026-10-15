@@ -87,25 +87,25 @@ export function LoginPage() {
               height="40"
               className="size-10 shrink-0 object-contain"
             />
-            <span className="text-base font-semibold tracking-[-0.03em] text-[#f5f7fb]">
-              FlashPost<span className="text-[#7186ff]">.</span>
+            <span className="text-base font-semibold tracking-[-0.03em] text-fg">
+              FlashPost<span className="text-accent">.</span>
             </span>
           </Link>
           <div className="max-w-sm md:my-auto">
-            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-[#aeb9ce]">
-              <ShieldCheck size={14} className="text-[#8295ff]" />
+            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-fg-2">
+              <ShieldCheck size={14} className="text-accent" />
               Acesso seguro à sua operação
             </p>
-            <h1 className="text-4xl font-semibold leading-tight tracking-[-0.06em] text-[#f5f7fb] sm:text-5xl">
+            <h1 className="text-4xl font-semibold leading-tight tracking-[-0.06em] text-fg sm:text-5xl">
               Bom ter você
               <br />
-              <span className="text-[#7186ff]">de volta.</span>
+              <span className="text-accent">de volta.</span>
             </h1>
-            <p className="mt-5 max-w-md text-base leading-7 text-[#94a3b8]">
+            <p className="mt-5 max-w-md text-base leading-7 text-muted">
               Entre no FlashPost para continuar acompanhando seu espaço de trabalho.
             </p>
           </div>
-          <p className="hidden text-xs text-[#64748b] md:block">
+          <p className="hidden text-xs text-muted md:block">
             FlashPost · Acesso protegido
           </p>
         </section>
@@ -113,15 +113,15 @@ export function LoginPage() {
         <section className="flex items-center border-t border-line-soft p-4 sm:p-6 md:border-l md:border-t-0 md:p-9">
           <div className="w-full max-w-md md:mx-auto">
           <div className="mb-7">
-            <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#f5f7fb]">
+            <h2 className="text-xl font-semibold tracking-[-0.035em] text-fg">
               Entrar
             </h2>
-            <p className="mt-2 text-sm text-[#94a3b8]">
+            <p className="mt-2 text-sm text-muted">
               Use o e-mail e a senha da sua conta.
             </p>
             {registrationPending && (
               <p
-                className="mt-4 rounded-lg border border-[#3a3651] bg-[#151426] px-3.5 py-3 text-sm text-[#c8c8ff]"
+                className="mt-4 rounded-lg border border-line bg-brand-soft px-3.5 py-3 text-sm text-[#c8c8ff]"
                 role="status"
               >
                 Cadastro recebido. Seu acesso será liberado após aprovação do administrador.
@@ -134,7 +134,7 @@ export function LoginPage() {
             noValidate
           >
             <div>
-              <label htmlFor="email" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+              <label htmlFor="email" className="mb-2 block text-sm font-medium text-fg-2">
                 E-mail
               </label>
               <input
@@ -147,18 +147,18 @@ export function LoginPage() {
                 {...form.register("email")}
                 aria-invalid={Boolean(form.formState.errors.email)}
                 aria-describedby={form.formState.errors.email ? "email-error" : undefined}
-                className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-[#f5f7fb] outline-none transition placeholder:text-[#536176] focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+                className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
                 placeholder="voce@empresa.com"
               />
               {form.formState.errors.email && (
-                <p id="email-error" className="mt-1.5 text-xs text-[#f1a3ad]">
+                <p id="email-error" className="mt-1.5 text-xs text-danger">
                   {form.formState.errors.email.message}
                 </p>
               )}
             </div>
 
             <div>
-              <label htmlFor="password" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+              <label htmlFor="password" className="mb-2 block text-sm font-medium text-fg-2">
                 Senha
               </label>
               <div className="relative">
@@ -169,20 +169,20 @@ export function LoginPage() {
                   {...form.register("password")}
                   aria-invalid={Boolean(form.formState.errors.password)}
                   aria-describedby={form.formState.errors.password ? "password-error" : undefined}
-                  className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 pr-12 text-sm text-[#f5f7fb] outline-none transition placeholder:text-[#536176] focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+                  className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 pr-12 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
                   placeholder="Sua senha"
                 />
                 <button
                   type="button"
                   onClick={() => setPasswordVisible((visible) => !visible)}
                   aria-label={passwordVisible ? "Ocultar senha" : "Mostrar senha"}
-                  className="absolute inset-y-0 right-0 grid w-11 place-items-center text-[#64748b] hover:text-[#c7cfdd]"
+                  className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted hover:text-fg-2"
                 >
                   {passwordVisible ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>
               {form.formState.errors.password && (
-                <p id="password-error" className="mt-1.5 text-xs text-[#f1a3ad]">
+                <p id="password-error" className="mt-1.5 text-xs text-danger">
                   {form.formState.errors.password.message}
                 </p>
               )}
@@ -190,7 +190,7 @@ export function LoginPage() {
 
             {apiError && (
               <div
-                className="rounded-lg border border-[#47252d] bg-[#1a1013] px-3.5 py-3 text-sm text-[#f1a3ad]"
+                className="rounded-lg border border-danger/30 bg-danger-soft px-3.5 py-3 text-sm text-danger"
                 role="alert"
               >
                 {apiError}
@@ -200,15 +200,15 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={mutation.isPending}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white transition hover:bg-[#667eea] focus:outline-none focus:ring-2 focus:ring-[#8da0ff] focus:ring-offset-2 focus:ring-offset-[#0d1015] disabled:cursor-wait disabled:opacity-70"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 focus:ring-offset-[#0d1015] disabled:cursor-wait disabled:opacity-70"
             >
               {mutation.isPending && <LoaderCircle size={16} className="animate-spin" />}
               {mutation.isPending ? "Entrando..." : "Entrar"}
             </button>
           </form>
-          <p className="mt-6 border-t border-line-soft pt-5 text-xs leading-5 text-[#64748b]">
+          <p className="mt-6 border-t border-line-soft pt-5 text-xs leading-5 text-muted">
             Ainda não tem uma conta?{" "}
-            <Link to="/register" className="font-medium text-[#aab7ff] hover:text-white">
+            <Link to="/register" className="font-medium text-accent hover:text-white">
               Criar conta
             </Link>
           </p>
@@ -221,7 +221,7 @@ export function LoginPage() {
 
 function LoginLoading() {
   return (
-    <main className="grid min-h-screen place-items-center bg-transparent text-sm text-[#94a3b8]">
+    <main className="grid min-h-screen place-items-center bg-transparent text-sm text-muted">
       Verificando sessão segura...
     </main>
   );

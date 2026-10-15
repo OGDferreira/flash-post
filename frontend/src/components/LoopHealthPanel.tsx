@@ -56,10 +56,10 @@ const stateLabel: Record<AccountState, { text: string; tone: "ok" | "info" | "wa
 };
 
 const toneClass = {
-  ok: "bg-[#2dd4a0]/12 text-[#7ee2bd]",
-  info: "bg-[#536dfe]/14 text-[#aab7ff]",
-  warn: "bg-[#f2d48a]/12 text-[#f2d48a]",
-  error: "bg-[#f16f82]/12 text-[#f1a3ad]",
+  ok: "bg-success/12 text-success",
+  info: "bg-brand/14 text-accent",
+  warn: "bg-warning/12 text-warning",
+  error: "bg-danger/12 text-danger",
 };
 
 const timeFormat = new Intl.DateTimeFormat("pt-BR", {
@@ -100,7 +100,7 @@ export function LoopHealthPanel({ loopId }: { loopId: string }) {
     <div className="mt-3">
       <button
         aria-expanded={open}
-        className="text-xs text-[#aab7ff] hover:text-white"
+        className="text-xs text-accent hover:text-white"
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
@@ -115,10 +115,10 @@ export function LoopHealthPanel({ loopId }: { loopId: string }) {
             </div>
           )}
           {health.error && (
-            <p className="text-xs text-[#f1a3ad]">Não foi possível carregar o status das contas.</p>
+            <p className="text-xs text-danger">Não foi possível carregar o status das contas.</p>
           )}
           {health.data && accounts.length === 0 && (
-            <p className="text-xs text-[#94a3b8]">Nenhuma conta neste loop.</p>
+            <p className="text-xs text-muted">Nenhuma conta neste loop.</p>
           )}
           {accounts.map((account) => {
             const label = stateLabel[account.state] ?? stateLabel.due;
@@ -129,18 +129,18 @@ export function LoopHealthPanel({ loopId }: { loopId: string }) {
                 key={account.account_id}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-[#dbe4f3]">@{account.username}</span>
+                  <span className="text-sm font-medium text-fg">@{account.username}</span>
                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${toneClass[label.tone]}`}>
                     {label.text}
                   </span>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-[#94a3b8] sm:grid-cols-4">
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted sm:grid-cols-4">
                   <span>
-                    Hoje: <strong className="text-[#dbe4f3]">{account.published_today}/{account.target}</strong>
+                    Hoje: <strong className="text-fg">{account.published_today}/{account.target}</strong>
                   </span>
                   <span>
                     Próximo vídeo:{" "}
-                    <strong className="text-[#dbe4f3]">
+                    <strong className="text-fg">
                       {account.next_video_number ? `${account.next_video_number} de ${account.playlist_size}` : "—"}
                     </strong>
                   </span>
@@ -154,12 +154,12 @@ export function LoopHealthPanel({ loopId }: { loopId: string }) {
                   <div className="h-full rounded bg-gradient-to-r from-[#536dfe] to-[#00c9d8]" style={{ width: `${percent}%` }} />
                 </div>
                 {account.cycles_completed > 0 && (
-                  <p className="mt-1.5 text-[11px] text-[#64748b]">
+                  <p className="mt-1.5 text-[11px] text-muted">
                     {account.cycles_completed} ciclo(s) completo(s) da playlist
                   </p>
                 )}
                 {account.last_error && (account.state === "failing" || account.state === "disconnected" || account.state === "needs_review") && (
-                  <p className="mt-1.5 break-words text-[11px] leading-4 text-[#f1a3ad]">
+                  <p className="mt-1.5 break-words text-[11px] leading-4 text-danger">
                     {account.last_error}
                     {account.last_error_at ? ` (${when(account.last_error_at)})` : ""}
                   </p>

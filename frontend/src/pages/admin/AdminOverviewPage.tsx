@@ -32,13 +32,13 @@ export function AdminOverviewPage() {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
           Plataforma
         </p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
+        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
           Visão geral
         </h2>
-        <p className="mt-2 text-sm text-[#94a3b8]">
+        <p className="mt-2 text-sm text-muted">
           Indicadores reais de usuários e workspaces cadastrados.
         </p>
       </div>
@@ -50,12 +50,12 @@ export function AdminOverviewPage() {
             className="rounded-xl border border-line-soft bg-surface p-4"
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium uppercase tracking-[0.12em] text-[#64748b]">
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-muted">
                 {label}
               </span>
-              <Icon size={17} className="text-[#7186ff]" strokeWidth={1.8} />
+              <Icon size={17} className="text-accent" strokeWidth={1.8} />
             </div>
-            <p className="mt-5 text-3xl font-semibold tracking-[-0.05em] text-[#f5f7fb]">
+            <p className="mt-5 text-3xl font-semibold tracking-[-0.05em] text-fg">
               {value}
             </p>
           </article>

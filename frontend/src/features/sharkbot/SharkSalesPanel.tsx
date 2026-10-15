@@ -96,11 +96,11 @@ export function SharkSalesPanel({ period }: { period: MetricsPeriod }) {
       <div className="glass-panel p-4 sm:p-4">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h3 id="sales-title" className="flex items-center gap-2 text-base font-semibold text-[#f5f7fb]">
-              <ShoppingBag size={17} className="text-[#7ee2bd]" />
+            <h3 id="sales-title" className="flex items-center gap-2 text-base font-semibold text-fg">
+              <ShoppingBag size={17} className="text-success" />
               Vendas do SharkBot
             </h3>
-            <p className="mt-1 text-xs text-[#94a3b8]">{data?.period_label ?? "…"} · dias no fuso {data?.time_zone ?? "…"}</p>
+            <p className="mt-1 text-xs text-muted">{data?.period_label ?? "…"} · dias no fuso {data?.time_zone ?? "…"}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <select aria-label="Situação" className="field !min-h-9 !w-auto !py-0 !text-xs" onChange={(e) => setStatus(e.target.value as typeof status)} value={status}>
@@ -137,9 +137,9 @@ export function SharkSalesPanel({ period }: { period: MetricsPeriod }) {
               ["Sem valor", formatNumber(summary.purchases_without_amount), "fora da receita"],
             ].map(([title, value, note]) => (
               <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={title}>
-                <dt className="text-[11px] text-[#94a3b8]">{title}</dt>
-                <dd className="mt-1 text-lg font-semibold text-[#f5f7fb]">{value}</dd>
-                <dd className="text-[10px] text-[#64748b]">{note}</dd>
+                <dt className="text-[11px] text-muted">{title}</dt>
+                <dd className="mt-1 text-lg font-semibold text-fg">{value}</dd>
+                <dd className="text-[10px] text-muted">{note}</dd>
               </div>
             ))}
           </dl>
@@ -152,7 +152,7 @@ export function SharkSalesPanel({ period }: { period: MetricsPeriod }) {
       {data && data.total > 0 && (
         <div className="glass-panel overflow-x-auto">
           <table className="w-full min-w-[820px] text-left text-xs">
-            <thead className="text-[#94a3b8]">
+            <thead className="text-muted">
               <tr className="border-b border-line-soft">
                 <th className="px-4 py-3 font-medium">{status === "paid" ? "Pago em" : "Gerado em"}</th>
                 <th className="px-2 py-3 font-medium">Situação</th>
@@ -167,23 +167,23 @@ export function SharkSalesPanel({ period }: { period: MetricsPeriod }) {
             <tbody>
               {data.items.map((sale) => (
                 <tr className="border-b border-line-soft last:border-0" key={sale.id}>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-[#cbd5e1]">{formatDateTime(sale.paid_at ?? sale.created_at)}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-fg-2">{formatDateTime(sale.paid_at ?? sale.created_at)}</td>
                   <td className="px-2 py-2.5">
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] ${sale.status === "paid" ? "bg-[#2dd4a0]/15 text-[#7ee2bd]" : "bg-[#f2d48a]/15 text-[#f2d48a]"}`}>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] ${sale.status === "paid" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
                       {sale.status === "paid" ? "Paga" : "PIX pendente"}
                     </span>
                   </td>
-                  <td className="px-2 py-2.5 text-right font-semibold text-[#f5f7fb]">{money(sale.amount)}</td>
-                  <td className="max-w-[160px] truncate px-2 py-2.5 text-[#dbe4f3]">{sale.plan_name ?? "—"}</td>
-                  <td className="max-w-[200px] truncate px-2 py-2.5 text-[#dbe4f3]">{[sale.bot_name, sale.flow_name].filter(Boolean).join(" · ") || "—"}</td>
-                  <td className="max-w-[160px] truncate px-2 py-2.5 text-[#dbe4f3]">{sale.customer_name ?? (sale.customer_username ? `@${sale.customer_username}` : "—")}</td>
-                  <td className="px-2 py-2.5 text-[#dbe4f3]">{sale.shark_account_name ?? "Conta principal"}</td>
-                  <td className="px-4 py-2.5 text-[#dbe4f3]">{sale.instagram_username ? `@${sale.instagram_username}` : "não atribuída"}</td>
+                  <td className="px-2 py-2.5 text-right font-semibold text-fg">{money(sale.amount)}</td>
+                  <td className="max-w-[160px] truncate px-2 py-2.5 text-fg">{sale.plan_name ?? "—"}</td>
+                  <td className="max-w-[200px] truncate px-2 py-2.5 text-fg">{[sale.bot_name, sale.flow_name].filter(Boolean).join(" · ") || "—"}</td>
+                  <td className="max-w-[160px] truncate px-2 py-2.5 text-fg">{sale.customer_name ?? (sale.customer_username ? `@${sale.customer_username}` : "—")}</td>
+                  <td className="px-2 py-2.5 text-fg">{sale.shark_account_name ?? "Conta principal"}</td>
+                  <td className="px-4 py-2.5 text-fg">{sale.instagram_username ? `@${sale.instagram_username}` : "não atribuída"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <nav aria-label="Paginação" className="flex items-center justify-between gap-3 border-t border-line-soft px-4 py-3 text-xs text-[#94a3b8]">
+          <nav aria-label="Paginação" className="flex items-center justify-between gap-3 border-t border-line-soft px-4 py-3 text-xs text-muted">
             <span>{formatNumber(data.total)} registros · página {data.page} de {pages}</span>
             <span className="flex gap-1">
               <button aria-label="Página anterior" className="btn-secondary !min-h-8 !px-2.5" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} type="button"><ChevronLeft size={14} /></button>
@@ -193,8 +193,8 @@ export function SharkSalesPanel({ period }: { period: MetricsPeriod }) {
         </div>
       )}
       {data && (
-        <details className="glass-panel p-4 text-xs text-[#94a3b8]">
-          <summary className="flex cursor-pointer items-center gap-2 text-[#cbd5e1]"><Info size={14} /> Como cada número é calculado</summary>
+        <details className="glass-panel p-4 text-xs text-muted">
+          <summary className="flex cursor-pointer items-center gap-2 text-fg-2"><Info size={14} /> Como cada número é calculado</summary>
           <ul className="mt-3 space-y-1.5 leading-5">
             {Object.entries(data.criteria).map(([key, text]) => <li key={key}>{text}</li>)}
             <li>Vendas sem conta do Instagram aparecem como "não atribuída": o SharkBot não informa a conta de origem.</li>

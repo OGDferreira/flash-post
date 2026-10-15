@@ -16,6 +16,7 @@ import {
   type MetricsPeriod,
 } from "@/features/analytics/period";
 import { ApiError, apiRequest } from "@/services/api";
+import { confirmAction } from "@/lib/confirm";
 
 type Row = {
   id: string;
@@ -80,8 +81,8 @@ function InviteCard() {
     <section className="glass-panel space-y-3 p-4 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-[#f5f7fb]">Seu código de convite</h3>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-[#94a3b8]">
+          <h3 className="text-base font-semibold text-fg">Seu código de convite</h3>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-muted">
             Quem se cadastrar (ou informar o código no perfil) com este código vira seu filiado. Você define a porcentagem
             de participação de cada um e acompanha as métricas deles aqui. Filiados não veem seus dados.
           </p>
@@ -89,8 +90,8 @@ function InviteCard() {
         <button
           className="btn-secondary !min-h-9 text-xs"
           disabled={rotate.isPending}
-          onClick={() => {
-            if (window.confirm("Gerar um novo código? O código antigo deixa de funcionar para novos cadastros. Seus filiados atuais continuam vinculados.")) rotate.mutate();
+          onClick={async () => {
+            if (await confirmAction("Gerar um novo código? O código antigo deixa de funcionar para novos cadastros. Seus filiados atuais continuam vinculados.")) rotate.mutate();
           }}
           type="button"
         >
@@ -133,7 +134,7 @@ function PercentEditor({ row, period }: { row: Row; period: MetricsPeriod }) {
         onChange={(event) => setValue(event.target.value)}
         value={value}
       />
-      <span className="text-xs text-[#94a3b8]">%</span>
+      <span className="text-xs text-muted">%</span>
       <button className="btn-primary !min-h-8 !px-3 text-xs" disabled={!dirty || save.isPending} onClick={() => save.mutate()} type="button">
         {save.isPending ? "…" : "Salvar"}
       </button>
@@ -173,24 +174,24 @@ function DetailModal({ id, period, onClose }: { id: string | null; period: Metri
               ["Leads por compra", data.leads_per_purchase === null ? "—" : data.leads_per_purchase.toLocaleString("pt-BR")],
             ].map(([title, value]) => (
               <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={title}>
-                <dt className="text-[11px] text-[#94a3b8]">{title}</dt>
-                <dd className="mt-1 text-base font-semibold text-[#f5f7fb]">{value}</dd>
+                <dt className="text-[11px] text-muted">{title}</dt>
+                <dd className="mt-1 text-base font-semibold text-fg">{value}</dd>
               </div>
             ))}
           </dl>
           {data.purchases_without_amount > 0 && (
-            <p className="text-xs text-[#f2d48a]">{data.purchases_without_amount} compra(s) paga(s) chegaram sem valor e não entram na receita.</p>
+            <p className="text-xs text-warning">{data.purchases_without_amount} compra(s) paga(s) chegaram sem valor e não entram na receita.</p>
           )}
           <div>
-            <h4 className="text-sm font-medium text-[#f5f7fb]">Contas do Instagram ({data.accounts.length})</h4>
+            <h4 className="text-sm font-medium text-fg">Contas do Instagram ({data.accounts.length})</h4>
             {data.accounts.length === 0 ? (
-              <p className="mt-2 text-xs text-[#94a3b8]">Nenhuma conta conectada.</p>
+              <p className="mt-2 text-xs text-muted">Nenhuma conta conectada.</p>
             ) : (
               <ul className="mt-2 divide-y divide-[color:var(--color-line-soft)] rounded-xl border border-line-soft">
                 {data.accounts.map((account) => (
                   <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs" key={account.account_id}>
-                    <span className="text-[#e6eaf2]">@{account.username}</span>
-                    <span className="text-[#94a3b8]">
+                    <span className="text-fg">@{account.username}</span>
+                    <span className="text-muted">
                       {account.status === "connected" ? "conectada" : account.status} · {formatNumber(account.published_posts)} publicações ·{" "}
                       {account.video_views_lifetime === null ? "views indisponíveis" : `${formatNumber(account.video_views_lifetime)} views acumuladas`}
                       {account.follower_count !== null && ` · ${formatNumber(account.follower_count)} seguidores`}
@@ -200,7 +201,7 @@ function DetailModal({ id, period, onClose }: { id: string | null; period: Metri
               </ul>
             )}
           </div>
-          <p className="rounded-xl border border-line-soft bg-surface-inset p-3 text-[11px] leading-5 text-[#94a3b8]">{data.criteria.participation}</p>
+          <p className="rounded-xl border border-line-soft bg-surface-inset p-3 text-[11px] leading-5 text-muted">{data.criteria.participation}</p>
         </div>
       )}
     </Modal>
@@ -228,11 +229,11 @@ export function AffiliatesPage() {
     <div className="mx-auto max-w-[1200px] space-y-4">
       <header className="space-y-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Rede</p>
-          <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
-            <Handshake className="text-[#8295ff]" size={26} /> Filiados
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Rede</p>
+          <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
+            <Handshake className="text-accent" size={26} /> Filiados
           </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#94a3b8]">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
             Acompanhe as contas e as vendas do SharkBot de quem entrou pelo seu convite e veja sua participação.
           </p>
         </div>
@@ -253,12 +254,12 @@ export function AffiliatesPage() {
                 ["Sua participação (referência)", money(data.totals_participation)],
               ].map(([title, value]) => (
                 <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={title}>
-                  <dt className="text-[11px] text-[#94a3b8]">{title}</dt>
-                  <dd className="mt-1 text-lg font-semibold text-[#f5f7fb]">{value}</dd>
+                  <dt className="text-[11px] text-muted">{title}</dt>
+                  <dd className="mt-1 text-lg font-semibold text-fg">{value}</dd>
                 </div>
               ))}
             </dl>
-            <p className="mt-3 flex gap-2 text-[11px] leading-5 text-[#94a3b8]">
+            <p className="mt-3 flex gap-2 text-[11px] leading-5 text-muted">
               <Info className="mt-0.5 shrink-0" size={13} />
               {data.basis} Período: {data.period_label} (fuso {data.time_zone}).
             </p>
@@ -268,7 +269,7 @@ export function AffiliatesPage() {
           ) : (
             <div className="glass-panel overflow-x-auto">
               <table className="w-full min-w-[900px] text-left text-xs">
-                <thead className="text-[#94a3b8]">
+                <thead className="text-muted">
                   <tr className="border-b border-line-soft">
                     <th className="px-4 py-3 font-medium">Filiado</th>
                     <th className="px-2 py-3 text-right font-medium">Contas</th>
@@ -285,25 +286,25 @@ export function AffiliatesPage() {
                   {data.rows.map((row) => (
                     <tr className="border-b border-line-soft last:border-0" key={row.id}>
                       <td className="px-4 py-3">
-                        <button className="text-left text-[#e6eaf2] hover:text-white" onClick={() => setOpenId(row.id)} type="button">
+                        <button className="text-left text-fg hover:text-white" onClick={() => setOpenId(row.id)} type="button">
                           <span className="block font-medium">{row.full_name}</span>
-                          <span className="text-[10px] text-[#64748b]">{row.nickname}</span>
+                          <span className="text-[10px] text-muted">{row.nickname}</span>
                         </button>
                       </td>
-                      <td className="px-2 py-3 text-right text-[#dbe4f3]">{row.accounts_connected}/{row.accounts_total}</td>
-                      <td className="px-2 py-3 text-right text-[#dbe4f3]">{formatNumber(row.published_posts)}</td>
-                      <td className="px-2 py-3 text-right text-[#dbe4f3]">{formatNumber(row.leads)}</td>
-                      <td className="px-2 py-3 text-right text-[#dbe4f3]">{formatNumber(row.purchases)}</td>
-                      <td className="px-2 py-3 text-right font-semibold text-[#7ee2bd]">{money(row.revenue)}</td>
-                      <td className="px-2 py-3 text-right font-semibold text-[#f5f7fb]">{money(row.participation_amount)}</td>
+                      <td className="px-2 py-3 text-right text-fg">{row.accounts_connected}/{row.accounts_total}</td>
+                      <td className="px-2 py-3 text-right text-fg">{formatNumber(row.published_posts)}</td>
+                      <td className="px-2 py-3 text-right text-fg">{formatNumber(row.leads)}</td>
+                      <td className="px-2 py-3 text-right text-fg">{formatNumber(row.purchases)}</td>
+                      <td className="px-2 py-3 text-right font-semibold text-success">{money(row.revenue)}</td>
+                      <td className="px-2 py-3 text-right font-semibold text-fg">{money(row.participation_amount)}</td>
                       <td className="px-2 py-3"><PercentEditor key={`${row.id}-${row.participation_percent}`} period={period} row={row} /></td>
                       <td className="px-4 py-3 text-right">
                         <button
                           aria-label={`Remover ${row.full_name}`}
-                          className="btn-ghost !min-h-8 !px-2 text-[#f1a3ad]"
+                          className="btn-ghost !min-h-8 !px-2 text-danger"
                           disabled={remove.isPending}
-                          onClick={() => {
-                            if (window.confirm(`Remover ${row.full_name} dos seus filiados? Ele continua com a própria conta, só deixa de ser filiado.`)) remove.mutate(row.id);
+                          onClick={async () => {
+                            if (await confirmAction(`Remover ${row.full_name} dos seus filiados? Ele continua com a própria conta, só deixa de ser filiado.`)) remove.mutate(row.id);
                           }}
                           type="button"
                         >

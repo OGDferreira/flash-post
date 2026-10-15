@@ -15,6 +15,7 @@ import {
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { ApiError, apiRequest, type CollaboratorReport } from "@/services/api";
+import { confirmAction } from "@/lib/confirm";
 
 type CollaboratorsResponse = {
   collaborators: CollaboratorReport[];
@@ -182,63 +183,63 @@ export function CollaboratorsPage() {
   return (
     <div className="mx-auto max-w-[1320px] space-y-5">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
           Workspace
         </p>
-        <h1 className="mt-2 text-2xl font-semibold text-[#f5f7fb] sm:text-3xl">
+        <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">
           Gestão de colaboradores
         </h1>
-        <p className="mt-2 text-sm text-[#94a3b8]">
+        <p className="mt-2 text-sm text-muted">
           Gerencie acessos, metas, remuneração e os pagamentos registrados para a equipe.
         </p>
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <article className="dashboard-card rounded-xl p-4">
-          <p className="text-xs text-[#94a3b8]">Conexões feitas por você hoje</p>
-          <p className="mt-2 text-3xl font-semibold text-[#f5f7fb]">
+          <p className="text-xs text-muted">Conexões feitas por você hoje</p>
+          <p className="mt-2 text-3xl font-semibold text-fg">
             {report.data.owner_connections_today}
           </p>
         </article>
         <article className="dashboard-card rounded-xl p-4">
-          <p className="text-xs text-[#94a3b8]">Conexões da equipe hoje</p>
-          <p className="mt-2 text-3xl font-semibold text-[#aab7ff]">
+          <p className="text-xs text-muted">Conexões da equipe hoje</p>
+          <p className="mt-2 text-3xl font-semibold text-accent">
             {report.data.team_connections_today}
           </p>
         </article>
         <article className="dashboard-card rounded-xl p-4 sm:col-span-2 lg:col-span-1">
           <div className="flex items-center gap-2">
-            <Medal className="text-[#f2d48a]" size={16} />
-            <h2 className="text-xs font-semibold text-[#edf0f8]">Ranking mensal da equipe</h2>
+            <Medal className="text-warning" size={16} />
+            <h2 className="text-xs font-semibold text-fg">Ranking mensal da equipe</h2>
           </div>
           {ranking.isLoading ? (
-            <p className="mt-3 text-xs text-[#94a3b8]">Carregando ranking...</p>
+            <p className="mt-3 text-xs text-muted">Carregando ranking...</p>
           ) : ranking.error ? (
-            <p className="mt-3 text-xs text-[#f1a3ad]">Não foi possível carregar o ranking.</p>
+            <p className="mt-3 text-xs text-danger">Não foi possível carregar o ranking.</p>
           ) : ranking.data?.collaborators.length ? (
             <ol className="mt-3 max-h-52 space-y-1.5 overflow-y-auto pr-1">
               {ranking.data.collaborators.map((person) => (
                 <li className="flex items-center justify-between gap-3 text-xs" key={person.user_id}>
-                  <span className="min-w-0 truncate text-[#cbd5e1]">
-                    <strong className="mr-2 text-[#f2d48a]">#{person.position}</strong>
+                  <span className="min-w-0 truncate text-fg-2">
+                    <strong className="mr-2 text-warning">#{person.position}</strong>
                     @{person.nickname}
                   </span>
-                  <strong className="shrink-0 text-[#f5f7fb]">
+                  <strong className="shrink-0 text-fg">
                     {person.connections} {person.connections === 1 ? "conta" : "contas"}
                   </strong>
                 </li>
               ))}
             </ol>
           ) : (
-            <p className="mt-3 text-xs text-[#94a3b8]">Ainda não há conexões neste mês.</p>
+            <p className="mt-3 text-xs text-muted">Ainda não há conexões neste mês.</p>
           )}
         </article>
       </section>
 
       <section className="dashboard-card rounded-xl p-4 sm:p-5">
         <div className="mb-5 flex items-center gap-2">
-          <Plus className="text-[#8295ff]" size={17} />
-          <h2 className="text-sm font-semibold text-[#edf0f8]">Criar acesso de colaborador</h2>
+          <Plus className="text-accent" size={17} />
+          <h2 className="text-sm font-semibold text-fg">Criar acesso de colaborador</h2>
         </div>
         <form
           className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
@@ -308,13 +309,13 @@ export function CollaboratorsPage() {
             value={form.monthly_bonus}
           />
           {createError && (
-            <p className="text-sm text-[#f1a3ad] sm:col-span-2 xl:col-span-4" role="alert">
+            <p className="text-sm text-danger sm:col-span-2 xl:col-span-4" role="alert">
               {createError}
             </p>
           )}
           <div className="sm:col-span-2 xl:col-span-4">
             <button
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#586eff] px-4 text-sm font-semibold text-white hover:bg-[#7187ff] disabled:opacity-60"
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong disabled:opacity-60"
               disabled={create.isPending}
               type="submit"
             >
@@ -327,8 +328,8 @@ export function CollaboratorsPage() {
 
       <section className="space-y-4">
         <div className="flex items-center gap-2">
-          <UsersRound className="text-[#8295ff]" size={17} />
-          <h2 className="text-sm font-semibold text-[#edf0f8]">
+          <UsersRound className="text-accent" size={17} />
+          <h2 className="text-sm font-semibold text-fg">
             Produção da equipe · hoje e mês atual
           </h2>
         </div>
@@ -357,15 +358,15 @@ export function CollaboratorsPage() {
                   type="button"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate font-semibold text-[#f5f7fb]">{item.full_name}</span>
-                    <span className="block text-xs text-[#94a3b8]">
+                    <span className="block truncate font-semibold text-fg">{item.full_name}</span>
+                    <span className="block text-xs text-muted">
                       {item.connections_today}{" "}
                       {item.connections_today === 1 ? "conta conectada hoje" : "contas conectadas hoje"}
                     </span>
                   </span>
                   <ChevronDown
                     aria-hidden="true"
-                    className={`shrink-0 text-[#8295ff] transition-transform duration-200 ${openMembers.has(item.member_id) ? "rotate-180" : ""}`}
+                    className={`shrink-0 text-accent transition-transform duration-200 ${openMembers.has(item.member_id) ? "rotate-180" : ""}`}
                     size={18}
                   />
                 </button>
@@ -373,15 +374,15 @@ export function CollaboratorsPage() {
                 <div className="space-y-4 border-t border-line-soft p-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
-                    <h3 className="font-semibold text-[#f5f7fb]">{item.full_name}</h3>
-                    <p className="mt-1 text-xs text-[#8295ff]">
+                    <h3 className="font-semibold text-fg">{item.full_name}</h3>
+                    <p className="mt-1 text-xs text-accent">
                       @{item.nickname} · {item.email}
                     </p>
                     <span
                       className={`mt-2 inline-flex rounded-full border px-2 py-1 text-[10px] font-medium ${
                         item.access_status === "ACTIVE"
-                          ? "border-[#315843] bg-[#10231a] text-[#a9e5c0]"
-                          : "border-[#5a3037] bg-[#241216] text-[#f1a3ad]"
+                          ? "border-success/30 bg-success-soft text-success"
+                          : "border-danger/30 bg-danger-soft text-danger"
                       }`}
                     >
                       {item.access_status === "ACTIVE" ? "Acesso liberado" : "Acesso bloqueado"}
@@ -391,15 +392,15 @@ export function CollaboratorsPage() {
                     <button
                       className={`inline-flex min-h-10 items-center gap-2 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50 ${
                         item.access_status === "ACTIVE"
-                          ? "border-[#5a3037] text-[#f1a3ad] hover:bg-[#241216]"
-                          : "border-[#315843] text-[#a9e5c0] hover:bg-[#10231a]"
+                          ? "border-danger/30 text-danger hover:bg-danger-soft"
+                          : "border-success/30 text-success hover:bg-success-soft"
                       }`}
                       disabled={accessToggle.isPending}
-                      onClick={() => {
+                      onClick={async () => {
                         const enabled = item.access_status !== "ACTIVE";
                         const action = enabled ? "liberar" : "bloquear";
                         if (
-                          window.confirm(
+                          await confirmAction(
                             `Deseja ${action} o acesso de ${item.full_name}? ${enabled ? "O colaborador poderá voltar a entrar neste workspace." : "Ele perderá acesso ao workspace imediatamente; seus dados e resultados serão preservados."}`,
                           )
                         ) {
@@ -416,11 +417,11 @@ export function CollaboratorsPage() {
                       {item.access_status === "ACTIVE" ? "Bloquear acesso" : "Liberar acesso"}
                     </button>
                     <button
-                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#5a3037] px-3 text-xs font-semibold text-[#f1a3ad] hover:bg-[#241216] disabled:opacity-50"
+                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-danger/30 px-3 text-xs font-semibold text-danger hover:bg-danger-soft disabled:opacity-50"
                       disabled={removeCollaborator.isPending}
-                      onClick={() => {
+                      onClick={async () => {
                         if (
-                          window.confirm(
+                          await confirmAction(
                             `Excluir ${item.full_name} deste workspace? Os dados de pagamento e dias registrados serão removidos; as contas conectadas serão preservadas.`,
                           )
                         ) {
@@ -433,9 +434,9 @@ export function CollaboratorsPage() {
                       Excluir colaborador
                     </button>
                     <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-inset px-3 py-2 text-xs">
-                      <CircleDollarSign className="text-[#f2d48a]" size={15} />
-                      <span className="text-[#94a3b8]">Devido</span>
-                      <strong className="text-[#f2d48a]">{money(item.due_month)}</strong>
+                      <CircleDollarSign className="text-warning" size={15} />
+                      <span className="text-muted">Devido</span>
+                      <strong className="text-warning">{money(item.due_month)}</strong>
                     </div>
                   </div>
                 </div>
@@ -456,10 +457,10 @@ export function CollaboratorsPage() {
                   <SummaryMetric label="Pago no mês" value={money(item.paid_month)} />
                 </div>
 
-                <div className="rounded-lg border border-[#252c3e] bg-surface-inset p-4">
+                <div className="rounded-lg border border-line bg-surface-inset p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <span className="font-medium text-[#cbd5e1]">Meta mensal de conexões</span>
-                    <span className="text-[#aab7ff]">
+                    <span className="font-medium text-fg-2">Meta mensal de conexões</span>
+                    <span className="text-accent">
                       {item.connections_month} / {item.monthly_connection_goal || "—"} contas
                       {item.monthly_connection_goal > 0
                         ? ` · ${Math.min(
@@ -474,7 +475,7 @@ export function CollaboratorsPage() {
                   {item.monthly_connection_goal > 0 ? (
                     <div
                       aria-label={`${item.connections_month} de ${item.monthly_connection_goal} contas da meta mensal`}
-                      className="mt-3 h-2 overflow-hidden rounded-full bg-[#202838]"
+                      className="mt-3 h-2 overflow-hidden rounded-full bg-well"
                       role="progressbar"
                       aria-valuemin={0}
                       aria-valuemax={item.monthly_connection_goal}
@@ -494,22 +495,22 @@ export function CollaboratorsPage() {
                       />
                     </div>
                   ) : (
-                    <p className="mt-2 text-xs text-[#78839b]">
+                    <p className="mt-2 text-xs text-muted">
                       Ainda não há uma meta mensal definida.
                     </p>
                   )}
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
-                  <div className="rounded-lg border border-[#252c3e] bg-surface-inset p-4">
-                    <div className="mb-3 flex items-center gap-2 text-xs text-[#b7bfd0]">
-                      <BarChart3 className="text-[#8295ff]" size={15} />
+                  <div className="rounded-lg border border-line bg-surface-inset p-4">
+                    <div className="mb-3 flex items-center gap-2 text-xs text-fg-2">
+                      <BarChart3 className="text-accent" size={15} />
                       Conexões por dia · últimos 7 dias
                     </div>
                     <div className="flex h-20 items-end gap-2">
                       {item.recent_days.map((count, index) => (
                         <div className="flex h-full flex-1 flex-col justify-end gap-1" key={item.recent_dates[index]}>
-                          <span className="text-center text-[10px] text-[#78839b]">{count}</span>
+                          <span className="text-center text-[10px] text-muted">{count}</span>
                           <div
                             className="min-h-1 rounded-t bg-gradient-to-t from-[#536dfe] to-[#b171ff]"
                             style={{ height: `${Math.max(4, (count / maxDaily) * 58)}px` }}
@@ -519,7 +520,7 @@ export function CollaboratorsPage() {
                     </div>
                     <div className="mt-1 grid grid-cols-7 gap-2">
                       {item.recent_dates.map((day) => (
-                        <span className="text-center text-[9px] text-[#78839b]" key={day}>
+                        <span className="text-center text-[9px] text-muted" key={day}>
                           {new Intl.DateTimeFormat("pt-BR", {
                             day: "2-digit",
                             month: "2-digit",
@@ -537,7 +538,7 @@ export function CollaboratorsPage() {
                       }
                       value={draft.rate_per_connection}
                     />
-                    <p className="text-xs leading-5 text-[#78839b] sm:col-span-2">
+                    <p className="text-xs leading-5 text-muted sm:col-span-2">
                       Ao alterar o valor, você poderá escolher se ele também vale para as contas já conectadas.
                     </p>
                     <NumberField
@@ -566,14 +567,17 @@ export function CollaboratorsPage() {
                     />
                     <div className="flex flex-wrap items-end gap-2 sm:col-span-2">
                       <button
-                        className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#34446f] px-3 text-xs font-semibold text-[#c3ccff] hover:bg-[#151b2d] disabled:opacity-50"
+                        className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 text-xs font-semibold text-accent hover:bg-brand-soft disabled:opacity-50"
                         disabled={update.isPending}
-                        onClick={() => {
+                        onClick={async () => {
                           const applyRateToExistingAccounts =
                             draft.rate_per_connection !== item.rate_per_connection &&
-                            window.confirm(
-                              "Aplicar este valor também a todas as contas já conectadas?\n\nOK: atualizar as contas já conectadas.\nCancelar: aplicar somente às próximas conexões.",
-                            );
+                            await confirmAction({
+                              title: "Aplicar este valor às contas já conectadas?",
+                              message: "Escolha se o novo valor vale também para as contas que já estão conectadas ou só para as próximas conexões.",
+                              confirmLabel: "Atualizar também as conectadas",
+                              cancelLabel: "Só as próximas",
+                            });
                           update.mutate({
                             memberId: item.member_id,
                             values: {
@@ -588,10 +592,10 @@ export function CollaboratorsPage() {
                         Guardar metas e valores
                       </button>
                       <button
-                        className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#315843] px-3 text-xs font-semibold text-[#a9e5c0] hover:bg-[#10231a] disabled:opacity-50"
+                        className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-success/30 px-3 text-xs font-semibold text-success hover:bg-success-soft disabled:opacity-50"
                         disabled={payout.isPending || item.due_month <= 0}
-                        onClick={() => {
-                          if (window.confirm(`Registrar pagamento de ${money(item.due_month)} para ${item.full_name}?`)) {
+                        onClick={async () => {
+                          if (await confirmAction(`Registrar pagamento de ${money(item.due_month)} para ${item.full_name}?`)) {
                             payout.mutate(item.member_id);
                           }
                         }}
@@ -599,7 +603,7 @@ export function CollaboratorsPage() {
                       >
                         Registrar pagamento do saldo
                       </button>
-                      <span className="text-xs text-[#78839b]">
+                      <span className="text-xs text-muted">
                         Projeção na meta: {money(item.projected_month)}
                       </span>
                     </div>
@@ -609,11 +613,11 @@ export function CollaboratorsPage() {
                 <WorkDaysPanel memberId={item.member_id} collaboratorName={item.full_name} />
 
                 <details className="border-t border-line-soft pt-4">
-                  <summary className="cursor-pointer list-none text-xs font-medium text-[#cbd5e1] marker:hidden">
+                  <summary className="cursor-pointer list-none text-xs font-medium text-fg-2 marker:hidden">
                     <span className="inline-flex items-center gap-2">
-                      <UsersRound className="text-[#8295ff]" size={14} />
+                      <UsersRound className="text-accent" size={14} />
                       Contas vinculadas e valores salvos
-                      <span className="rounded-full border border-line px-2 py-0.5 text-[10px] text-[#94a3b8]">
+                      <span className="rounded-full border border-line px-2 py-0.5 text-[10px] text-muted">
                         {item.account_earnings.length}
                       </span>
                     </span>
@@ -622,7 +626,7 @@ export function CollaboratorsPage() {
                     {item.account_earnings.length ? (
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-[420px] text-left text-xs">
-                        <thead className="text-[#78839b]">
+                        <thead className="text-muted">
                           <tr>
                             <th className="py-2 pr-3 font-medium">Conta</th>
                             <th className="py-2 pr-3 font-medium">Conectada em</th>
@@ -632,11 +636,11 @@ export function CollaboratorsPage() {
                         <tbody>
                           {item.account_earnings.map((account) => (
                             <tr className="border-t border-line-soft" key={account.account_id}>
-                              <td className="py-2 pr-3 text-[#e6eaf2]">@{account.username}</td>
-                              <td className="py-2 pr-3 text-[#94a3b8]">
+                              <td className="py-2 pr-3 text-fg">@{account.username}</td>
+                              <td className="py-2 pr-3 text-muted">
                                 {formatConnectionDate(account.connected_at)}
                               </td>
-                              <td className="py-2 text-right font-medium text-[#f2d48a]">
+                              <td className="py-2 text-right font-medium text-warning">
                                 {money(account.rate_per_connection)}
                               </td>
                             </tr>
@@ -645,11 +649,11 @@ export function CollaboratorsPage() {
                       </table>
                     </div>
                   ) : (
-                    <p className="text-xs text-[#78839b]">
+                    <p className="text-xs text-muted">
                       O valor atual será salvo quando uma nova conta for conectada.
                     </p>
                   )}
-                  <p className="text-xs text-[#78839b]">
+                  <p className="text-xs text-muted">
                     Ao salvar um novo valor, ele passa a valer para conexões futuras; os valores já salvos não mudam.
                   </p>
                   </div>
@@ -711,15 +715,15 @@ function WorkDaysPanel({
   const daysByDate = new Map(selectedDays.map((item) => [item.day, item]));
 
   return (
-    <section className="rounded-lg border border-[#252c3e] bg-surface-inset p-4">
+    <section className="rounded-lg border border-line bg-surface-inset p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h4 className="text-sm font-medium text-[#e6eaf2]">Dias trabalhados · {collaboratorName}</h4>
-          <p className="mt-1 text-xs text-[#78839b]">
+          <h4 className="text-sm font-medium text-fg">Dias trabalhados · {collaboratorName}</h4>
+          <p className="mt-1 text-xs text-muted">
             Os dias agrupam o valor das contas conectadas (não acrescentam uma diária). Cada conta usa seu valor salvo.
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-[#94a3b8]">
+        <label className="flex items-center gap-2 text-xs text-muted">
           Mês
           <input
             aria-label={`Mês dos dias trabalhados de ${collaboratorName}`}
@@ -732,14 +736,14 @@ function WorkDaysPanel({
         </label>
       </div>
       {workDays.isLoading ? (
-        <p className="mt-4 text-xs text-[#78839b]">Carregando dias...</p>
+        <p className="mt-4 text-xs text-muted">Carregando dias...</p>
       ) : workDays.error ? (
-        <p className="mt-4 text-xs text-[#f1a3ad]">Não foi possível carregar os dias trabalhados.</p>
+        <p className="mt-4 text-xs text-danger">Não foi possível carregar os dias trabalhados.</p>
       ) : (
         <>
           <div className="mt-4 grid grid-cols-7 gap-1 text-center">
             {["D", "S", "T", "Q", "Q", "S", "S"].map((label, index) => (
-              <span className="py-1 text-[10px] text-[#64748b]" key={`${label}-${index}`}>
+              <span className="py-1 text-[10px] text-muted" key={`${label}-${index}`}>
                 {label}
               </span>
             ))}
@@ -755,10 +759,10 @@ function WorkDaysPanel({
                   aria-pressed={Boolean(workDay)}
                   className={`min-h-9 rounded-md border text-xs disabled:cursor-not-allowed disabled:opacity-45 ${
                     workDay?.paid
-                      ? "border-[#315843] bg-[#10231a] text-[#a9e5c0]"
+                      ? "border-success/30 bg-success-soft text-success"
                       : workDay
-                        ? "border-[#536dfe] bg-[#151b2d] text-[#d5dcff]"
-                        : "border-line-soft text-[#94a3b8] hover:bg-[#171e31]"
+                        ? "border-brand bg-brand-soft text-accent"
+                        : "border-line-soft text-muted hover:bg-brand-soft"
                   }`}
                   disabled={isFuture || workDay?.paid || saveDays.isPending}
                   key={date}
@@ -783,7 +787,7 @@ function WorkDaysPanel({
                   <span className="flex flex-col items-center leading-tight">
                     <span>{index + 1}</span>
                     {workDay && (
-                      <span className="mt-0.5 text-[9px] text-[#aab7ff]">
+                      <span className="mt-0.5 text-[9px] text-accent">
                         {workDay.connections}
                       </span>
                     )}
@@ -793,16 +797,16 @@ function WorkDaysPanel({
             })}
           </div>
           {saveDays.error && (
-            <p className="mt-3 text-xs text-[#f1a3ad]">
+            <p className="mt-3 text-xs text-danger">
               {displayError(saveDays.error, "Não foi possível salvar os dias trabalhados.")}
             </p>
           )}
           <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-line-soft pt-3 text-xs">
-            <span className="text-[#94a3b8]">
+            <span className="text-muted">
               {selectedDays.length} dia(s) marcado(s) · {workDays.data?.total_connections ?? 0} conta(s)
               {selectedDays.some((item) => item.paid) && " · verde = pago"}
             </span>
-            <strong className="text-[#f2d48a]">
+            <strong className="text-warning">
               Total dos dias: {money(workDays.data?.total_amount ?? 0)}
             </strong>
           </div>
@@ -814,7 +818,7 @@ function WorkDaysPanel({
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="grid gap-1.5 text-xs text-[#94a3b8]">
+    <label className="grid gap-1.5 text-xs text-muted">
       {label}
       {children}
     </label>
@@ -869,9 +873,9 @@ function NumberField({
 
 function SummaryMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-[#252c3e] bg-surface-inset p-3">
-      <p className="text-[10px] uppercase tracking-[0.1em] text-[#78839b]">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-[#e8ebf4]">{value}</p>
+    <div className="rounded-lg border border-line bg-surface-inset p-3">
+      <p className="text-[10px] uppercase tracking-[0.1em] text-muted">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-fg">{value}</p>
     </div>
   );
 }

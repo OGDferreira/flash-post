@@ -25,6 +25,7 @@ import {
   formatAccountConnectedAt,
   formatConnectedDuration,
 } from "@/features/instagram/accountDates";
+import { confirmAction } from "@/lib/confirm";
 
 type LoopAccount = {
   id: string;
@@ -391,17 +392,17 @@ export function LoopsPage() {
     <div className="mx-auto max-w-5xl space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
             Publicação automatizada
           </p>
-          <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
-            <Infinity size={27} className="text-[#00c9d8]" />
+          <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
+            <Infinity size={27} className="text-accent" />
             Loops
           </h2>
         </div>
         {loops.data.can_configure && (
           <button
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#00c9d8] px-4 py-2 text-sm font-semibold text-[#062027] hover:bg-[#42dbe5]"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-strong"
             type="button"
             onClick={() => {
               setEditingId(null);
@@ -417,7 +418,7 @@ export function LoopsPage() {
       </header>
 
       {!loops.data.publishing_enabled ? (
-        <div className="rounded-lg border border-[#6b552b] bg-[#1c180e] p-4 text-sm text-[#f2d48a]">
+        <div className="rounded-lg border border-warning/30 bg-warning-soft p-4 text-sm text-warning">
           <p className="flex items-start gap-2">
             <AlertTriangle size={17} className="mt-0.5 shrink-0" />
             <span className="min-w-0">
@@ -428,13 +429,13 @@ export function LoopsPage() {
           </p>
         </div>
       ) : (
-        <div className="rounded-lg border border-[#23513e] bg-[#0e1b17] p-4 text-sm text-[#9de0c0]">
+        <div className="rounded-lg border border-success/30 bg-success-soft p-4 text-sm text-success">
           Publicações automáticas habilitadas. O worker precisa estar ativo para processar a fila.
         </div>
       )}
       {mutationError && <ErrorState message={mutationError} />}
       {!loops.data.can_manage && (
-        <p className="rounded-lg border border-line bg-surface-raised px-4 py-3 text-sm text-[#aeb9ce]">
+        <p className="rounded-lg border border-line bg-surface-raised px-4 py-3 text-sm text-fg-2">
           Você pode consultar os loops. Somente o OWNER pode configurá-los.
         </p>
       )}
@@ -446,8 +447,8 @@ export function LoopsPage() {
           <button
             className={`border-b-2 px-4 py-3 text-sm ${
               tab === value
-                ? "border-[#00c9d8] font-medium text-white"
-                : "border-transparent text-[#94a3b8] hover:text-white"
+                ? "border-brand font-medium text-white"
+                : "border-transparent text-muted hover:text-white"
             }`}
             key={value}
             type="button"
@@ -460,8 +461,8 @@ export function LoopsPage() {
         <button
           className={`border-b-2 px-4 py-3 text-sm ${
             tab === "errors"
-              ? "border-[#00c9d8] font-medium text-white"
-              : "border-transparent text-[#94a3b8] hover:text-white"
+              ? "border-brand font-medium text-white"
+              : "border-transparent text-muted hover:text-white"
           }`}
           type="button"
           onClick={() => setTab("errors")}
@@ -483,7 +484,7 @@ export function LoopsPage() {
             const open = openFailureAccounts.has(group.accountId);
             return (
               <article
-                className="rounded-xl border border-[#47252d] bg-[#130e11]"
+                className="rounded-xl border border-danger/30 bg-danger-soft"
                 key={group.accountId}
               >
                 <button
@@ -499,39 +500,39 @@ export function LoopsPage() {
                   }
                 >
                   <span>
-                    <span className="flex flex-wrap items-center gap-2 font-medium text-[#f5f7fb]">
+                    <span className="flex flex-wrap items-center gap-2 font-medium text-fg">
                       @{group.username}
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
                           group.inLoop
-                            ? "bg-[#12301f] text-[#7fd9a6]"
-                            : "bg-[#2b2a1a] text-[#f2d48a]"
+                            ? "bg-success-soft text-success"
+                            : "bg-[#2b2a1a] text-warning"
                         }`}
                       >
                         {group.inLoop ? "Ativa" : "Desativada"}
                       </span>
                       {group.accountStatus && group.accountStatus !== "connected" && (
-                        <span className="rounded-full bg-[#3a1a22] px-2 py-0.5 text-[10px] font-semibold uppercase text-[#f1a3ad]">
+                        <span className="rounded-full bg-danger-soft px-2 py-0.5 text-[10px] font-semibold uppercase text-danger">
                           {group.accountStatus === "error" ? "Conta com erro" : "Conta desconectada"}
                         </span>
                       )}
                     </span>
-                    <span className="block text-xs text-[#94a3b8]">
+                    <span className="block text-xs text-muted">
                       {group.loopNames.join(", ")}
                     </span>
                   </span>
                   <span className="flex items-center gap-3 text-xs">
-                    <span className="rounded-full bg-[#3a1a22] px-2 py-1 text-[#f1a3ad]">
+                    <span className="rounded-full bg-danger-soft px-2 py-1 text-danger">
                       {group.failures.length}{" "}
                       {group.failures.length === 1 ? "falha" : "falhas"}
                     </span>
-                    <span className="text-[#94a3b8]">{open ? "Ocultar" : "Ver detalhes"}</span>
+                    <span className="text-muted">{open ? "Ocultar" : "Ver detalhes"}</span>
                   </span>
                 </button>
                 {open && (
-                  <div className="space-y-2 border-t border-[#47252d] p-4">
+                  <div className="space-y-2 border-t border-danger/30 p-4">
                     <p
-                      className={`text-xs ${group.inLoop ? "text-[#7fd9a6]" : "text-[#f2d48a]"}`}
+                      className={`text-xs ${group.inLoop ? "text-success" : "text-warning"}`}
                     >
                       {group.inLoop
                         ? "A conta continua no loop e tentará o próximo vídeo na próxima rodada."
@@ -539,7 +540,7 @@ export function LoopsPage() {
                     </p>
                     {loops.data.can_manage && (
                       <button
-                        className="rounded-lg border border-[#536dfe] px-3 py-1.5 text-xs text-white hover:bg-[#171d35] disabled:opacity-60"
+                        className="rounded-lg border border-brand px-3 py-1.5 text-xs text-white hover:bg-well disabled:opacity-60"
                         disabled={retryJobs.isPending}
                         onClick={() => retryJobs.mutate(group.failures.map((item) => item.id))}
                         type="button"
@@ -549,23 +550,23 @@ export function LoopsPage() {
                     )}
                     {group.failures.map((failure) => (
                       <div
-                        className="space-y-1 rounded-lg border border-[#2a1c21] bg-[#0f0b0d] p-3"
+                        className="space-y-1 rounded-lg border border-line bg-danger-soft p-3"
                         key={failure.id}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="break-all text-sm text-[#f5f7fb]">
+                          <span className="break-all text-sm text-fg">
                             {failure.media_filename ?? "Mídia não identificada"}
                           </span>
-                          <time className="text-xs text-[#94a3b8]">
+                          <time className="text-xs text-muted">
                             {formatDate(failure.updated_at)}
                           </time>
                         </div>
-                        <p className="text-xs text-[#94a3b8]">
+                        <p className="text-xs text-muted">
                           {failure.loop_name} · {failure.attempts}{" "}
                           {failure.attempts === 1 ? "tentativa" : "tentativas"}
                           {failure.error_category ? ` · ${failure.error_category}` : ""}
                         </p>
-                        <p className="break-words text-sm leading-6 text-[#f1a3ad]">
+                        <p className="break-words text-sm leading-6 text-danger">
                           {failure.error}
                         </p>
                       </div>
@@ -579,7 +580,7 @@ export function LoopsPage() {
         )
       ) : (
         <div className="space-y-4">
-      <p className="text-sm leading-6 text-[#94a3b8]">
+      <p className="text-sm leading-6 text-muted">
         Cada loop escolhe a próxima execução aleatoriamente dentro do intervalo configurado e
         usa uma lista de mídias independente. A primeira publicação entra na fila assim que o loop
         é criado com contas e mídias; o intervalo controla as publicações seguintes.
@@ -608,11 +609,11 @@ export function LoopsPage() {
           }}
         >
           <fieldset className="space-y-3 rounded-lg border border-line bg-surface-inset p-3">
-            <legend className="px-1 text-sm font-medium text-[#cbd5e1]">
+            <legend className="px-1 text-sm font-medium text-fg-2">
               Contas Instagram ({form.account_ids.length} selecionadas)
             </legend>
             {loops.data.available_accounts.length === 0 ? (
-              <p className="text-sm text-[#f2d48a]">
+              <p className="text-sm text-warning">
                 Não há contas ativas com token válido. Conecte ou reconecte uma conta no Hub de
                 Contas antes de criar o loop.
               </p>
@@ -640,12 +641,12 @@ export function LoopsPage() {
                   .map((folder) => (
                     <section key={folder.id}>
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <h4 className="flex items-center gap-2 text-xs text-[#94a3b8]">
+                        <h4 className="flex items-center gap-2 text-xs text-muted">
                           <Folder size={13} style={{ color: folder.color }} />
                           {folder.label} ({folder.accounts.length})
                         </h4>
                         <button
-                          className="text-[11px] font-medium text-[#8af2fa] hover:text-white disabled:opacity-50"
+                          className="text-[11px] font-medium text-accent hover:text-white disabled:opacity-50"
                           disabled={!loops.data.can_manage}
                           onClick={() => {
                             const folderAccountIds = folder.accounts.map(({ id }) => id);
@@ -675,8 +676,8 @@ export function LoopsPage() {
                             <label
                               className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs ${
                                 checked
-                                  ? "border-[#00c9d8] bg-[#0d3036] text-[#e7fdff]"
-                                  : "border-line text-[#cbd5e1]"
+                                  ? "border-brand bg-brand-soft text-fg"
+                                  : "border-line text-fg-2"
                               }`}
                               key={account.id}
                               style={checked ? undefined : { borderColor: `${folder.color}66` }}
@@ -705,12 +706,12 @@ export function LoopsPage() {
             )}
           </fieldset>
           <section className="space-y-2 rounded-lg border border-line bg-surface-inset p-3">
-            <h4 className="flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-[#cbd5e1]">
+            <h4 className="flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-fg-2">
               <span>Mídias do loop ({form.media_ids.length})</span>
               {loops.data.can_configure && form.media_ids.length > 0 && (
                 <span className="flex flex-wrap items-center gap-2 text-xs font-normal">
                   <button
-                    className="text-[#8af2fa] hover:text-white"
+                    className="text-accent hover:text-white"
                     type="button"
                     onClick={() =>
                       setPoolSelected(
@@ -725,12 +726,12 @@ export function LoopsPage() {
                       : "Selecionar todos"}
                   </button>
                   <button
-                    className="rounded border border-[#47252d] px-2 py-1 text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-40"
+                    className="rounded border border-danger/30 px-2 py-1 text-danger hover:bg-danger-soft disabled:opacity-40"
                     type="button"
                     disabled={poolSelected.size === 0}
-                    onClick={() => {
+                    onClick={async () => {
                       if (
-                        !window.confirm(
+                        !await confirmAction(
                           `Remover ${poolSelected.size} mídia(s) deste loop?`,
                         )
                       )
@@ -748,7 +749,7 @@ export function LoopsPage() {
               )}
             </h4>
             {form.media_ids.length === 0 ? (
-              <p className="text-xs text-[#94a3b8]">
+              <p className="text-xs text-muted">
                 Nenhuma mídia no loop. Envie arquivos do seu computador na seção de configurações.
               </p>
             ) : (
@@ -757,7 +758,7 @@ export function LoopsPage() {
                   const item = media.data?.media.find((entry) => entry.id === mediaId);
                   return (
                     <li
-                      className="flex items-center justify-between gap-3 rounded border border-line-soft px-2 py-1.5 text-xs text-[#cbd5e1]"
+                      className="flex items-center justify-between gap-3 rounded border border-line-soft px-2 py-1.5 text-xs text-fg-2"
                       key={mediaId}
                     >
                       {loops.data.can_configure && (
@@ -776,7 +777,7 @@ export function LoopsPage() {
                       <span className="flex-1 truncate">{item?.filename ?? "Arquivo indisponível"}</span>
                       {loops.data.can_configure && (
                         <button
-                          className="shrink-0 text-[#f1a3ad] hover:text-white"
+                          className="shrink-0 text-danger hover:text-white"
                           onClick={() =>
                             setForm((current) => ({
                               ...current,
@@ -795,14 +796,14 @@ export function LoopsPage() {
             )}
           </section>
           <details className="rounded-lg border border-line bg-surface-inset">
-            <summary className="cursor-pointer px-3 py-3 text-sm font-medium text-[#cbd5e1]">
+            <summary className="cursor-pointer px-3 py-3 text-sm font-medium text-fg-2">
               Configurações do loop e biblioteca de mídias
             </summary>
           <fieldset disabled={!loops.data.can_configure} className="space-y-4">
-          <label className="grid gap-2 text-sm text-[#cbd5e1]">
+          <label className="grid gap-2 text-sm text-fg-2">
             Nome do loop
             <input
-              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
               maxLength={120}
               required
               value={form.name}
@@ -812,10 +813,10 @@ export function LoopsPage() {
           </label>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-2 text-sm text-[#cbd5e1]">
+            <label className="grid gap-2 text-sm text-fg-2">
               Intervalo mínimo (min)
               <input
-                className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+                className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
                 type="number"
                 min={1}
                 max={1440}
@@ -826,10 +827,10 @@ export function LoopsPage() {
                 }
               />
             </label>
-            <label className="grid gap-2 text-sm text-[#cbd5e1]">
+            <label className="grid gap-2 text-sm text-fg-2">
               Intervalo máximo (min)
               <input
-                className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+                className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
                 type="number"
                 min={form.interval_min_minutes}
                 max={1440}
@@ -842,14 +843,14 @@ export function LoopsPage() {
             </label>
           </div>
           {form.interval_max_minutes < form.interval_min_minutes && (
-            <p className="text-xs text-[#f1a3ad]" role="alert">
+            <p className="text-xs text-danger" role="alert">
               O intervalo máximo precisa ser maior ou igual ao mínimo.
             </p>
           )}
-          <label className="grid gap-2 text-sm text-[#cbd5e1]">
+          <label className="grid gap-2 text-sm text-fg-2">
             Máximo de publicações por conta por dia
             <input
-              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
               type="number"
               min={1}
               max={100}
@@ -860,7 +861,7 @@ export function LoopsPage() {
               }
             />
           </label>
-          <p className="text-xs leading-5 text-[#78839b]">
+          <p className="text-xs leading-5 text-muted">
             Cada conta segue sua própria sequência (vídeo 1, 2, 3… e depois recomeça) e só
             avança quando a Meta confirma a publicação. O próximo envio de cada conta é
             sorteado entre o intervalo mínimo e o máximo (fixo se forem iguais). Ao atingir o
@@ -869,7 +870,7 @@ export function LoopsPage() {
           </p>
 
           <fieldset>
-            <legend className="mb-2 text-sm text-[#cbd5e1]">Tipo de publicação</legend>
+            <legend className="mb-2 text-sm text-fg-2">Tipo de publicação</legend>
             <div className="flex flex-wrap gap-2">
               {([
                 ["reels", "Reels (vídeo)", Video],
@@ -879,8 +880,8 @@ export function LoopsPage() {
                 <button
                   className={`inline-flex min-h-10 items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
                     form.post_type === value
-                      ? "border-[#00c9d8] bg-[#0d3036] text-[#8af2fa]"
-                      : "border-line text-[#94a3b8] hover:bg-surface-raised"
+                      ? "border-brand bg-brand-soft text-accent"
+                      : "border-line text-muted hover:bg-surface-raised"
                   }`}
                   key={value}
                   type="button"
@@ -903,24 +904,24 @@ export function LoopsPage() {
           </fieldset>
 
           <fieldset className="space-y-3">
-            <legend className="mb-2 text-sm text-[#cbd5e1]">
+            <legend className="mb-2 text-sm text-fg-2">
               Pool de mídias ({form.media_ids.length} selecionadas)
             </legend>
             <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
-              <label className="grid gap-2 text-sm text-[#cbd5e1]">
+              <label className="grid gap-2 text-sm text-fg-2">
                 Legenda para esta mídia (opcional)
                 <input
-                  className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+                  className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
                   maxLength={2200}
                   value={uploadCaption}
                   onChange={(event) => setUploadCaption(event.target.value)}
                   placeholder="Legenda do post"
                 />
               </label>
-              <label className="grid gap-2 text-sm text-[#cbd5e1]">
+              <label className="grid gap-2 text-sm text-fg-2">
                 Enviar arquivos para este loop (JPEG ou MP4 de até 50 MB cada)
                 <input
-                  className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 py-2 text-sm text-[#cbd5e1] file:mr-3 file:rounded file:border-0 file:bg-[#17202b] file:px-3 file:py-1 file:text-[#cbd5e1]"
+                  className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 py-2 text-sm text-fg-2 file:mr-3 file:rounded file:border-0 file:bg-well file:px-3 file:py-1 file:text-fg-2"
                   type="file"
                   accept={
                     form.post_type === "reels"
@@ -942,19 +943,19 @@ export function LoopsPage() {
                 />
               </label>
             </div>
-            <p className="text-xs text-[#94a3b8]">
+            <p className="text-xs text-muted">
               Adicione quantos arquivos quiser. Eles serão associados somente a este loop quando
               você salvar; a primeira publicação começa assim que houver contas e mídias.
             </p>
             {uploadingBatch && (
-              <p className="text-sm text-[#8af2fa]">Enviando arquivos para o Storage...</p>
+              <p className="text-sm text-accent">Enviando arquivos para o Storage...</p>
             )}
             {uploadValidationError && (
-              <p className="rounded-lg border border-[#6b552b] bg-[#1c180e] p-3 text-sm text-[#f2d48a]">
+              <p className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm text-warning">
                 {uploadValidationError}
               </p>
             )}
-            <p className="text-xs text-[#94a3b8]">
+            <p className="text-xs text-muted">
               Imagens aceitas: JPEG. Vídeos aceitos: MP4. Os arquivos ficam privados e o servidor
               gera uma URL temporária somente durante a publicação.
             </p>
@@ -963,7 +964,7 @@ export function LoopsPage() {
 
           </details>
           <button
-            className="min-h-11 w-full rounded-lg bg-[#00c9d8] px-4 py-2 text-sm font-semibold text-[#062027] hover:bg-[#42dbe5] disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-11 w-full rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
             type="submit"
             disabled={
               saveLoop.isPending ||
@@ -1010,21 +1011,21 @@ export function LoopsPage() {
               <div className="flex flex-col justify-between gap-4 sm:flex-row">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-[#f5f7fb]">{loop.name}</h3>
+                    <h3 className="font-semibold text-fg">{loop.name}</h3>
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs ${
                         loop.status === "active"
-                          ? "bg-[#123d2c] text-[#9de0c0]"
-                          : "bg-[#272a31] text-[#aeb9ce]"
+                          ? "bg-success-soft text-success"
+                          : "bg-[#272a31] text-fg-2"
                       }`}
                     >
                       {loop.status === "active" ? "ativo" : "pausado"}
                     </span>
-                    <span className="rounded-full bg-[#17202b] px-2 py-0.5 text-xs text-[#94a3b8]">
+                    <span className="rounded-full bg-well px-2 py-0.5 text-xs text-muted">
                       {loop.repeat_media ? "Contínuo" : "Limitado"}
                     </span>
                   </div>
-                  <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#94a3b8]">
+                  <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
                     <span className="inline-flex items-center gap-1">
                       <Clock3 size={13} />
                       {loop.interval_min_minutes === loop.interval_max_minutes
@@ -1042,7 +1043,7 @@ export function LoopsPage() {
                   </p>
                   <button
                     aria-expanded={expandedLoops.includes(loop.id)}
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-[#aab7ff] nm-hover"
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-accent nm-hover"
                     onClick={() => toggleLoop(loop.id)}
                     type="button"
                   >
@@ -1056,15 +1057,15 @@ export function LoopsPage() {
                 <div className="mt-3 flex flex-wrap gap-1.5">
                       {loop.accounts.map((account) => (
                         <div
-                          className="rounded bg-[#101923] px-2 py-1 text-xs text-[#cbd5e1]"
+                          className="rounded bg-well px-2 py-1 text-xs text-fg-2"
                           key={account.id}
                         >
                           <p>@{account.username}</p>
-                          <p className="mt-0.5 text-[10px] text-[#94a3b8]">
+                          <p className="mt-0.5 text-[10px] text-muted">
                             Conectada em {formatAccountConnectedAt(account.connected_at)}
                           </p>
                           {account.status === "error" && (
-                            <p className="mt-0.5 text-[10px] text-[#f1a3ad]">
+                            <p className="mt-0.5 text-[10px] text-danger">
                               Duração antes do erro:{" "}
                               {formatConnectedDuration(account.connected_at, account.error_at)}
                             </p>
@@ -1073,10 +1074,10 @@ export function LoopsPage() {
                       ))}
                     </div>
                   )}
-                  <p className="mt-3 text-xs text-[#94a3b8]">
+                  <p className="mt-3 text-xs text-muted">
                     Próxima execução: {formatDate(loop.next_run_at)}
                   </p>
-                  <p className="mt-1 text-xs text-[#a9e5c0]">
+                  <p className="mt-1 text-xs text-success">
                     {loop.active_accounts_count}{" "}
                     {loop.active_accounts_count === 1
                       ? "conta ativa no loop"
@@ -1085,7 +1086,7 @@ export function LoopsPage() {
                     {loop.video_count}{" "}
                     {loop.video_count === 1 ? "vídeo no loop" : "vídeos no loop"}
                   </p>
-                  <p className="mt-1 text-xs text-[#f2d48a]">
+                  <p className="mt-1 text-xs text-warning">
                     {loop.queued_publication_count}{" "}
                     {loop.queued_publication_count === 1
                       ? "vídeo na fila"
@@ -1096,7 +1097,7 @@ export function LoopsPage() {
                     {loop.failed_today_count} falhas hoje
                   </p>
                   {loop.latest_failed_at && (
-                    <p className="mt-1 text-xs text-[#f1a3ad]">
+                    <p className="mt-1 text-xs text-danger">
                       Última falha: {formatDate(loop.latest_failed_at)}
                     </p>
                   )}
@@ -1106,7 +1107,7 @@ export function LoopsPage() {
                   <div className="flex shrink-0 items-start gap-1">
                     {loops.data.can_configure && (
                       <button
-                        className="grid size-9 place-items-center rounded-lg border border-line text-[#cbd5e1] hover:bg-surface-raised disabled:opacity-50"
+                        className="grid size-9 place-items-center rounded-lg border border-line text-fg-2 hover:bg-surface-raised disabled:opacity-50"
                         type="button"
                         aria-label={`Clonar ${loop.name}`}
                         title="Clonar loop"
@@ -1117,7 +1118,7 @@ export function LoopsPage() {
                       </button>
                     )}
                     <button
-                      className="grid size-9 place-items-center rounded-lg border border-line text-[#cbd5e1] hover:bg-surface-raised"
+                      className="grid size-9 place-items-center rounded-lg border border-line text-fg-2 hover:bg-surface-raised"
                       type="button"
                       aria-label={
                         loops.data.can_configure
@@ -1130,7 +1131,7 @@ export function LoopsPage() {
                     </button>
                     {loops.data.can_configure && (
                     <button
-                      className="grid size-9 place-items-center rounded-lg border border-line text-[#cbd5e1] hover:bg-surface-raised disabled:opacity-50"
+                      className="grid size-9 place-items-center rounded-lg border border-line text-fg-2 hover:bg-surface-raised disabled:opacity-50"
                       type="button"
                       aria-label={loop.status === "active" ? `Pausar ${loop.name}` : `Ativar ${loop.name}`}
                       disabled={changeStatus.isPending}
@@ -1143,12 +1144,12 @@ export function LoopsPage() {
                     )}
                     {loops.data.can_delete && (
                       <button
-                        className="grid size-9 place-items-center rounded-lg border border-[#47252d] text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-50"
+                        className="grid size-9 place-items-center rounded-lg border border-danger/30 text-danger hover:bg-danger-soft disabled:opacity-50"
                         type="button"
                         aria-label={`Excluir ${loop.name}`}
                         disabled={deleteLoop.isPending}
-                        onClick={() => {
-                          if (window.confirm(`Excluir o loop "${loop.name}" e suas execuções pendentes?`)) {
+                        onClick={async () => {
+                          if (await confirmAction(`Excluir o loop "${loop.name}" e suas execuções pendentes?`)) {
                             deleteLoop.mutate(loop.id);
                           }
                         }}

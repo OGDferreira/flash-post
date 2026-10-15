@@ -33,13 +33,13 @@ export function AdminWorkspacesPage() {
     <div className="space-y-4">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
             Administração
           </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
             Workspaces
           </h2>
-          <p className="mt-2 text-sm text-[#94a3b8]">
+          <p className="mt-2 text-sm text-muted">
             Espaços de trabalho e seus respectivos owners.
           </p>
         </div>
@@ -48,17 +48,17 @@ export function AdminWorkspacesPage() {
             <span className="sr-only">Buscar workspaces</span>
             <Search
               size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748b]"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
             />
             <input
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
               placeholder="Workspace ou owner"
               maxLength={120}
-              className="h-10 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe]"
+              className="h-10 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-sm text-fg outline-none focus:border-brand"
             />
           </label>
-          <button className="h-10 rounded-lg border border-line bg-surface-raised px-4 text-sm text-[#c7cfdd] hover:bg-[#171e31]">
+          <button className="h-10 rounded-lg border border-line bg-surface-raised px-4 text-sm text-fg-2 hover:bg-brand-soft">
             Buscar
           </button>
         </form>
@@ -75,7 +75,7 @@ export function AdminWorkspacesPage() {
           <div className="overflow-hidden rounded-xl border border-line-soft bg-surface">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1050px] border-collapse text-left">
-                <thead className="border-b border-line-soft bg-[#0a0d11] text-[11px] uppercase tracking-[0.12em] text-[#64748b]">
+                <thead className="border-b border-line-soft bg-well text-[11px] uppercase tracking-[0.12em] text-muted">
                   <tr>
                     <th className="px-4 py-3.5 font-medium">Chefe autorizado</th>
                     <th className="px-4 py-3.5 font-medium">Workspace</th>
@@ -85,32 +85,32 @@ export function AdminWorkspacesPage() {
                     <th className="px-4 py-3.5 font-medium">Colaboradores</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1b2330] text-sm">
+                <tbody className="divide-y divide-line text-sm">
                   {workspaces.data.items.map((workspace) => (
                     <tr key={workspace.id} className="hover:bg-surface-raised">
                       <td className="px-4 py-4">
-                        <p className="font-medium text-[#e6eaf2]">{workspace.owner_name}</p>
-                        <p className="mt-1 text-xs text-[#64748b]">{workspace.owner_email}</p>
+                        <p className="font-medium text-fg">{workspace.owner_name}</p>
+                        <p className="mt-1 text-xs text-muted">{workspace.owner_email}</p>
                       </td>
-                      <td className="px-4 py-4 text-[#94a3b8]">
-                        <p className="text-[#c7cfdd]">{workspace.name}</p>
-                        <p className="mt-1 text-xs text-[#64748b]">{workspace.slug}</p>
-                        <p className="mt-1 text-xs text-[#64748b]">{workspace.members_count} membros · {workspace.status}</p>
+                      <td className="px-4 py-4 text-muted">
+                        <p className="text-fg-2">{workspace.name}</p>
+                        <p className="mt-1 text-xs text-muted">{workspace.slug}</p>
+                        <p className="mt-1 text-xs text-muted">{workspace.members_count} membros · {workspace.status}</p>
                       </td>
-                      <td className="px-4 py-4 text-[#c7cfdd]">{workspace.connected_accounts}</td>
-                      <td className="px-4 py-4 text-[#f2d48a]">{workspace.errored_accounts}</td>
-                      <td className="px-4 py-4 text-[#c7cfdd]">{workspace.active_posts}</td>
+                      <td className="px-4 py-4 text-fg-2">{workspace.connected_accounts}</td>
+                      <td className="px-4 py-4 text-warning">{workspace.errored_accounts}</td>
+                      <td className="px-4 py-4 text-fg-2">{workspace.active_posts}</td>
                       <td className="px-4 py-4">
                         {workspace.collaborators.length ? (
-                          <ul className="space-y-1 text-xs text-[#c7cfdd]">
+                          <ul className="space-y-1 text-xs text-fg-2">
                             {workspace.collaborators.map((person) => (
                               <li key={person.id}>
-                                {person.full_name} <span className="text-[#64748b]">({person.email})</span>
+                                {person.full_name} <span className="text-muted">({person.email})</span>
                               </li>
                             ))}
                           </ul>
                         ) : (
-                          <span className="text-xs text-[#64748b]">Nenhum</span>
+                          <span className="text-xs text-muted">Nenhum</span>
                         )}
                       </td>
                     </tr>

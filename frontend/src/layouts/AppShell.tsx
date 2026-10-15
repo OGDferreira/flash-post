@@ -361,15 +361,15 @@ export function AppShell() {
           }
           onClick={() => setMobileOpen(false)}
         >
-          <span className="grid size-9 place-items-center rounded-xl border border-[#33447c] bg-[#11182d] text-sm font-bold text-[#9baaff]">
+          <span className="grid size-9 place-items-center rounded-xl border border-line bg-brand-soft text-sm font-bold text-accent">
             F
           </span>
-          <span className="max-w-[140px] overflow-hidden whitespace-nowrap text-base font-semibold tracking-[-0.03em] text-[#f5f7fb] opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[140px] lg:group-data-[open=true]:opacity-100">
-            FlashPost<span className="text-[#7186ff]">.</span>
+          <span className="max-w-[140px] overflow-hidden whitespace-nowrap text-base font-semibold tracking-[-0.03em] text-fg opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[140px] lg:group-data-[open=true]:opacity-100">
+            FlashPost<span className="text-accent">.</span>
           </span>
         </Link>
         <button
-          className="grid size-9 place-items-center rounded-lg text-[#94a3b8] hover:bg-[#151922] lg:hidden"
+          className="grid size-9 place-items-center rounded-lg text-muted hover:bg-well lg:hidden"
           onClick={() => setMobileOpen(false)}
           aria-label="Fechar menu"
         >
@@ -378,7 +378,7 @@ export function AppShell() {
         <button
           aria-label={pinned ? "Desafixar menu" : "Fixar menu aberto"}
           aria-pressed={pinned}
-          className={`hidden size-8 shrink-0 place-items-center rounded-lg transition-opacity duration-200 hover:bg-[#151922] lg:group-data-[open=true]:grid ${pinned ? "text-[#8295ff]" : "text-[#64748b]"}`}
+          className={`hidden size-8 shrink-0 place-items-center rounded-lg transition-opacity duration-200 hover:bg-well lg:group-data-[open=true]:grid ${pinned ? "text-accent" : "text-muted"}`}
           onClick={togglePin}
           title={pinned ? "Desafixar menu" : "Fixar menu aberto"}
           type="button"
@@ -388,8 +388,8 @@ export function AppShell() {
       </div>
 
       {isAdminRoute && (
-        <div className="mx-4 mt-5 flex items-center gap-2 overflow-hidden rounded-lg border border-line bg-surface-raised px-3 py-2 text-xs font-medium text-[#aeb9ce] lg:group-data-[open=true]:mx-3">
-          <Shield className="shrink-0 text-[#8295ff]" size={14} />
+        <div className="mx-4 mt-5 flex items-center gap-2 overflow-hidden rounded-lg border border-line bg-surface-raised px-3 py-2 text-xs font-medium text-fg-2 lg:group-data-[open=true]:mx-3">
+          <Shield className="shrink-0 text-accent" size={14} />
           <span className="max-w-[180px] overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[180px] lg:group-data-[open=true]:opacity-100">
             Administração da plataforma
           </span>
@@ -403,7 +403,7 @@ export function AppShell() {
             key={group.title}
           >
             {visibleLinkGroups.length > 1 && (
-              <h2 className="mb-2 overflow-hidden px-3 text-[10px] font-medium uppercase tracking-[0.12em] text-[#64748b] opacity-100 transition-all lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
+              <h2 className="mb-2 overflow-hidden px-3 text-[10px] font-medium uppercase tracking-[0.12em] text-muted opacity-100 transition-all lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
                 {group.title}
               </h2>
             )}
@@ -419,7 +419,7 @@ export function AppShell() {
                     `flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm transition-[color,box-shadow] ${
                       isActive
                         ? "nm-active font-medium"
-                        : "nm-hover text-[#94a3b8]"
+                        : "nm-hover text-muted"
                     }`
                   }
                 >
@@ -438,7 +438,7 @@ export function AppShell() {
         <Link
           to="/profile"
           onClick={() => setMobileOpen(false)}
-          className="flex items-center justify-center gap-3 rounded-lg px-3 py-3 hover:bg-[#12151b] lg:px-0 lg:group-data-[open=true]:justify-start lg:group-data-[open=true]:px-3"
+          className="flex items-center justify-center gap-3 rounded-lg px-3 py-3 hover:bg-well lg:px-0 lg:group-data-[open=true]:justify-start lg:group-data-[open=true]:px-3"
         >
           {user?.avatar_url ? (
             <img
@@ -447,26 +447,26 @@ export function AppShell() {
               className="size-9 rounded-full border border-line object-cover"
             />
           ) : (
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#171e31] text-sm font-semibold text-[#aab7ff]">
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-soft text-sm font-semibold text-accent">
               {(user?.full_name || user?.nickname || "F").slice(0, 1).toUpperCase()}
             </span>
           )}
           <span className="min-w-0 max-w-[145px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[145px] lg:group-data-[open=true]:opacity-100">
-            <span className="block truncate text-sm font-medium text-[#e6eaf2]">
+            <span className="block truncate text-sm font-medium text-fg">
               {user?.full_name}
             </span>
-            <span className="block truncate text-xs text-[#64748b]">
+            <span className="block truncate text-xs text-muted">
               {user?.role}
             </span>
           </span>
-          <ChevronDown size={15} className="hidden shrink-0 text-[#64748b] lg:group-data-[open=true]:block" />
+          <ChevronDown size={15} className="hidden shrink-0 text-muted lg:group-data-[open=true]:block" />
         </Link>
         <button
           onClick={() => {
             logout.mutate();
           }}
           disabled={logout.isPending}
-          className="mt-1 flex min-h-10 w-full items-center justify-center gap-3 rounded-lg px-3 text-sm text-[#94a3b8] hover:bg-[#171317] hover:text-[#f1a3ad] disabled:opacity-50 lg:px-0 lg:group-data-[open=true]:justify-start lg:group-data-[open=true]:px-3"
+          className="mt-1 flex min-h-10 w-full items-center justify-center gap-3 rounded-lg px-3 text-sm text-muted hover:bg-danger-soft hover:text-danger disabled:opacity-50 lg:px-0 lg:group-data-[open=true]:justify-start lg:group-data-[open=true]:px-3"
         >
           <LogOut className="shrink-0" size={16} />
           <span className="max-w-[120px] overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[120px] lg:group-data-[open=true]:opacity-100">
@@ -478,7 +478,7 @@ export function AppShell() {
   );
 
   return (
-    <div className="min-h-screen bg-transparent text-[#f5f7fb]">
+    <div className="min-h-screen bg-transparent text-fg">
       <aside className="glass-bar group fixed inset-y-0 left-0 z-30 hidden w-[68px] !border-y-0 !border-l-0 transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] data-[open=true]:w-[252px] lg:block"
         data-open={sidebarOpen}
         onMouseEnter={() => openSoon(true)}
@@ -502,17 +502,17 @@ export function AppShell() {
         <header className="app-shell-header glass-bar sticky top-0 z-20 flex items-center justify-between !border-x-0 !border-t-0 px-4 sm:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <button
-              className="grid size-9 place-items-center rounded-lg border border-line-soft text-[#94a3b8] hover:bg-surface-raised lg:hidden"
+              className="grid size-9 place-items-center rounded-lg border border-line-soft text-muted hover:bg-surface-raised lg:hidden"
               onClick={() => setMobileOpen(true)}
               aria-label="Abrir menu"
             >
               <Menu size={18} />
             </button>
             <div className="min-w-0">
-              <p className="text-xs text-[#64748b]">
+              <p className="text-xs text-muted">
                 {isAdminRoute ? "FlashPost / Administração" : "FlashPost / Workspace"}
               </p>
-              <h1 className="mt-0.5 truncate text-sm font-medium text-[#e6eaf2]">
+              <h1 className="mt-0.5 truncate text-sm font-medium text-fg">
                 {isAdminRoute ? (
                   "Painel da plataforma"
                 ) : (
@@ -531,13 +531,13 @@ export function AppShell() {
                 }
                 aria-expanded={notificationsOpen}
                 aria-haspopup="dialog"
-                className="relative grid size-9 place-items-center rounded-full border border-line-soft bg-surface text-[#94a3b8] transition-colors hover:border-[#536dfe]/40 hover:text-white"
+                className="relative grid size-9 place-items-center rounded-full border border-line-soft bg-surface text-muted transition-colors hover:border-brand/40 hover:text-white"
                 onClick={() => setNotificationsOpen((open) => !open)}
                 type="button"
               >
                 <Bell size={16} />
                 {notificationItems.length > 0 && (
-                  <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-[#f16f82] px-1 text-[9px] font-semibold text-[#17090c]">
+                  <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[9px] font-semibold text-white">
                     {notificationItems.length > 9 ? "9+" : notificationItems.length}
                   </span>
                 )}
@@ -549,9 +549,9 @@ export function AppShell() {
                   role="dialog"
                 >
                   <div className="flex items-center justify-between border-b border-line-soft pb-2">
-                    <h2 className="text-sm font-semibold text-[#e6eaf2]">Notificações</h2>
+                    <h2 className="text-sm font-semibold text-fg">Notificações</h2>
                     <button
-                      className="text-xs text-[#94a3b8] hover:text-white"
+                      className="text-xs text-muted hover:text-white"
                       onClick={() => setNotificationsOpen(false)}
                       type="button"
                     >
@@ -564,12 +564,12 @@ export function AppShell() {
                         <li className="flex gap-2.5 py-3" key={`${item.title}-${index}`}>
                           <AlertTriangle
                             aria-hidden="true"
-                            className="mt-0.5 shrink-0 text-[#f2d48a]"
+                            className="mt-0.5 shrink-0 text-warning"
                             size={15}
                           />
                           <div>
-                            <h3 className="text-xs font-medium text-[#f2d48a]">{item.title}</h3>
-                            <p className="mt-1 text-xs leading-5 text-[#aeb9ce]">
+                            <h3 className="text-xs font-medium text-warning">{item.title}</h3>
+                            <p className="mt-1 text-xs leading-5 text-fg-2">
                               {item.message}
                             </p>
                           </div>
@@ -577,7 +577,7 @@ export function AppShell() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="py-4 text-xs text-[#94a3b8]">
+                    <p className="py-4 text-xs text-muted">
                       Nenhum aviso no momento.
                     </p>
                   )}
@@ -586,7 +586,7 @@ export function AppShell() {
             </div>
             <button
               aria-label={theme === "light" ? "Ativar modo escuro" : "Ativar modo claro"}
-              className="grid size-10 place-items-center rounded-full border border-line-soft bg-surface text-[#94a3b8] hover:text-[#f5f7fb]"
+              className="grid size-10 place-items-center rounded-full border border-line-soft bg-surface text-muted hover:text-fg"
               onClick={() => {
                 const next: Theme = theme === "light" ? "dark" : "light";
                 applyTheme(next, true);
@@ -597,8 +597,8 @@ export function AppShell() {
             >
               {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
             </button>
-            <div className="flex items-center gap-2 rounded-full border border-line-soft bg-surface p-2.5 text-xs text-[#94a3b8] sm:px-3 sm:py-2" title="Sistema online">
-              <span className="size-1.5 rounded-full bg-[#2dd4a0]" />
+            <div className="flex items-center gap-2 rounded-full border border-line-soft bg-surface p-2.5 text-xs text-muted sm:px-3 sm:py-2" title="Sistema online">
+              <span className="size-1.5 rounded-full bg-success" />
               <span className="hidden sm:inline">Sistema online</span>
               <span className="sr-only sm:hidden">Online</span>
             </div>
@@ -624,7 +624,7 @@ export function AppShell() {
               `group/nav flex min-h-[52px] min-w-0 flex-auto flex-col items-center justify-center gap-1 rounded-[20px] px-0 text-[9px] tracking-[-0.02em] min-[360px]:px-1 min-[360px]:tracking-[-0.01em] min-[360px]:text-[10px] font-medium transition-colors ${
                 isActive
                   ? "nm-active"
-                  : "text-[#8390a8] active:text-[#cbd5e1]"
+                  : "text-muted active:text-fg-2"
               }`
             }
           >
@@ -632,7 +632,7 @@ export function AppShell() {
               <>
                 <span
                   className={`grid h-7 w-10 place-items-center rounded-full transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                    isActive ? "text-[#aab7ff]" : ""
+                    isActive ? "text-accent" : ""
                   }`}
                 >
                   <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />
@@ -657,16 +657,16 @@ export function AppShell() {
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#8295ff]">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-accent">
                   App FlashPost
                 </p>
-                <h2 id="install-guide-title" className="mt-2 text-lg font-semibold text-[#f5f7fb]">
+                <h2 id="install-guide-title" className="mt-2 text-lg font-semibold text-fg">
                   Adicione à tela de início
                 </h2>
               </div>
               <button
                 aria-label="Fechar instruções"
-                className="grid size-9 shrink-0 place-items-center rounded-lg text-[#94a3b8] hover:bg-[#151922]"
+                className="grid size-9 shrink-0 place-items-center rounded-lg text-muted hover:bg-well"
                 onClick={dismissInstallGuide}
                 type="button"
               >
@@ -674,32 +674,32 @@ export function AppShell() {
               </button>
             </div>
             {isIosDevice ? (
-              <ol className="mt-4 space-y-3 text-sm leading-6 text-[#cbd5e1]">
+              <ol className="mt-4 space-y-3 text-sm leading-6 text-fg-2">
                 <li className="flex gap-3">
-                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs text-[#aab7ff]">1</span>
-                  No Safari, toque em <Share className="mt-1 inline shrink-0 text-[#aab7ff]" size={15} />{" "}
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-brand-soft text-xs text-accent">1</span>
+                  No Safari, toque em <Share className="mt-1 inline shrink-0 text-accent" size={15} />{" "}
                   Compartilhar.
                 </li>
                 <li className="flex gap-3">
-                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs text-[#aab7ff]">2</span>
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-brand-soft text-xs text-accent">2</span>
                   Escolha “Adicionar à Tela de Início” e confirme em “Adicionar”.
                 </li>
               </ol>
             ) : (
-              <p className="mt-4 text-sm leading-6 text-[#cbd5e1]">
+              <p className="mt-4 text-sm leading-6 text-fg-2">
                 {installPrompt
                   ? "Adicione o FlashPost à tela inicial para abrir em modo de aplicativo."
                   : "Abra o menu do navegador e escolha “Instalar app” ou “Adicionar à tela inicial”."}
               </p>
             )}
-            <p className="mt-4 rounded-lg border border-line bg-surface p-3 text-xs leading-5 text-[#94a3b8]">
+            <p className="mt-4 rounded-lg border border-line bg-surface p-3 text-xs leading-5 text-muted">
               {isIosDevice
                 ? "Depois de adicionar, abra o ícone FlashPost pela tela de início. O app abrirá sem a barra de endereço."
                 : "A instalação mantém sua sessão e abre o FlashPost numa janela própria."}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="min-h-10 rounded-lg px-3 text-sm text-[#94a3b8] hover:bg-[#151922]"
+                className="min-h-10 rounded-lg px-3 text-sm text-muted hover:bg-well"
                 onClick={dismissInstallGuide}
                 type="button"
               >
@@ -707,7 +707,7 @@ export function AppShell() {
               </button>
               {!isIosDevice && installPrompt && (
                 <button
-                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#586eff] px-4 text-sm font-semibold text-white hover:bg-[#7187ff]"
+                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong"
                   onClick={() => void installApp()}
                   type="button"
                 >
@@ -716,7 +716,7 @@ export function AppShell() {
               )}
               {!isIosDevice && !installPrompt && (
                 <button
-                  className="min-h-10 rounded-lg bg-[#586eff] px-4 text-sm font-semibold text-white hover:bg-[#7187ff]"
+                  className="min-h-10 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong"
                   onClick={dismissInstallGuide}
                   type="button"
                 >
@@ -729,7 +729,7 @@ export function AppShell() {
       )}
       {toast && (
         <div
-          className="glass-modal modal-enter fixed left-4 right-4 top-[calc(5rem+env(safe-area-inset-top))] z-[95] mx-auto max-w-sm !rounded-2xl !border-[#315843] px-4 py-3 text-sm text-[#a9e5c0] sm:left-auto sm:right-5"
+          className="glass-modal modal-enter fixed left-4 right-4 top-[calc(5rem+env(safe-area-inset-top))] z-[95] mx-auto max-w-sm !rounded-2xl !border-success/30 px-4 py-3 text-sm text-success sm:left-auto sm:right-5"
           role="status"
         >
           {toast}

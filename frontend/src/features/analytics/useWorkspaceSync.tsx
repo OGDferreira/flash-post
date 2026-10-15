@@ -73,21 +73,21 @@ export function SyncStatusBar({
   return (
     <div
       aria-live="polite"
-      className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line-soft bg-surface-inset px-3 py-2 text-xs text-[#94a3b8]"
+      className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line-soft bg-surface-inset px-3 py-2 text-xs text-muted"
     >
       <span className="flex items-center gap-2">
         {running ? (
           <>
-            <RefreshCw className="animate-spin text-[#8295ff]" size={13} />
+            <RefreshCw className="animate-spin text-accent" size={13} />
             Atualizando dados da Meta em segundo plano
             {status && status.total > 0 ? ` (${status.done}/${status.total} contas)` : "…"} — você pode continuar navegando.
           </>
         ) : status?.finished_at ? (
           <>
             {status.failed > 0 ? (
-              <TriangleAlert className="text-[#f2d48a]" size={13} />
+              <TriangleAlert className="text-warning" size={13} />
             ) : (
-              <CheckCircle2 className="text-[#7ee2bd]" size={13} />
+              <CheckCircle2 className="text-success" size={13} />
             )}
             Última atualização: {formatDateTime(status.finished_at)}
             {status.failed > 0 ? ` · ${status.failed} conta(s) com falha na Meta` : ""}

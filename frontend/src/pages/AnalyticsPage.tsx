@@ -229,11 +229,11 @@ export function AnalyticsPage() {
     <div className="tab-host mx-auto max-w-[1440px] space-y-4">
       <header className="space-y-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Métricas</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Métricas</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
             Analytics
           </h2>
-          <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+          <p className="mt-2 text-sm leading-6 text-muted">
             Métricas reais por conta, publicações em alta, ranking de engajamento e vendas por bot. O
             período vale para todas as abas.
           </p>
@@ -244,8 +244,8 @@ export function AnalyticsPage() {
               aria-current={tab === item.value ? "page" : undefined}
               className={`shrink-0 rounded-full px-4 py-2 text-sm transition ${
                 tab === item.value
-                  ? "bg-[#536dfe]/20 font-medium text-[#dfe4ff] shadow-[inset_0_0_0_1px_rgba(130,149,255,0.45)]"
-                  : "text-[#94a3b8] hover:bg-white/5 hover:text-[#f5f7fb]"
+                  ? "bg-brand/20 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(130,149,255,0.45)]"
+                  : "text-muted hover:bg-white/5 hover:text-fg"
               }`}
               key={item.value}
               onClick={() => setTab(item.value)}
@@ -282,7 +282,7 @@ export function AnalyticsPage() {
         />
         <div className="min-w-0 space-y-4">
           {!activeAccounts.length ? (
-            <section className="rounded-xl border border-dashed border-line p-5 text-center text-sm text-[#94a3b8]">
+            <section className="rounded-xl border border-dashed border-line p-5 text-center text-sm text-muted">
               Conecte uma conta ativa no Hub de Contas para consultar o Analytics.
             </section>
           ) : (
@@ -298,11 +298,11 @@ export function AnalyticsPage() {
                   }
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs uppercase tracking-[0.13em] text-[#7186ff]">Conta atual</p>
-                  <h3 className="font-medium text-[#f5f7fb]">
+                  <p className="text-xs uppercase tracking-[0.13em] text-accent">Conta atual</p>
+                  <h3 className="font-medium text-fg">
                     @{accountMetrics?.username ?? selectedAccount?.username}
                   </h3>
-                  <p className="text-[11px] text-[#64748b]">
+                  <p className="text-[11px] text-muted">
                     Publicações sincronizadas: {formatDateTime(selectedAccount?.insights_synced_at)}
                     {selectedAccount?.insights_sync_error ? ` · ${selectedAccount.insights_sync_error}` : ""}
                   </p>
@@ -336,17 +336,17 @@ export function AnalyticsPage() {
                     className="rounded-xl border border-line-soft bg-surface p-4"
                     key={title}
                   >
-                    <div className="flex items-center gap-2 text-xs text-[#94a3b8]">
-                      <Icon className="text-[#8295ff]" size={15} />
+                    <div className="flex items-center gap-2 text-xs text-muted">
+                      <Icon className="text-accent" size={15} />
                       {title}
                     </div>
-                    <p className="mt-3 text-xl font-semibold text-[#f5f7fb]">{value}</p>
-                    <p className="mt-1 text-xs leading-5 text-[#64748b]">{helper}</p>
+                    <p className="mt-3 text-xl font-semibold text-fg">{value}</p>
+                    <p className="mt-1 text-xs leading-5 text-muted">{helper}</p>
                   </article>
                 ))}
               </div>
               <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-4">
-                <h3 className="text-sm font-medium text-[#e6eaf2]">
+                <h3 className="text-sm font-medium text-fg">
                   Publicações feitas pelo FlashPost no período
                 </h3>
                 <div className="mt-4 h-[260px]">
@@ -399,7 +399,7 @@ export function AnalyticsPage() {
                 </div>
               </section>
               {selectedAccountId && <TopVideosPanel accountId={selectedAccountId} compact period={period} />}
-              <p className="rounded-lg border border-line bg-surface-raised px-4 py-3 text-xs leading-5 text-[#94a3b8]">
+              <p className="rounded-lg border border-line bg-surface-raised px-4 py-3 text-xs leading-5 text-muted">
                 Os cards acima são consultados na Meta no momento da abertura para o período
                 selecionado (Insights podem atrasar até 48 h). A lista de publicações usa os dados
                 sincronizados automaticamente a cada 3 horas. Um “—” indica que a Meta não

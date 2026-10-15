@@ -140,13 +140,13 @@ export function ProfilePage() {
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <div>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
           Conta
         </p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
+        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
           Perfil
         </h2>
-        <p className="mt-2 text-sm text-[#94a3b8]">
+        <p className="mt-2 text-sm text-muted">
           Consulte seus dados e atualize seu nome, apelido e imagem de perfil.
         </p>
       </div>
@@ -160,18 +160,18 @@ export function ProfilePage() {
               className="size-14 rounded-full border border-line object-cover"
             />
           ) : (
-            <span className="grid size-14 place-items-center rounded-full bg-[#171e31] text-lg font-semibold text-[#aab7ff]">
+            <span className="grid size-14 place-items-center rounded-full bg-brand-soft text-lg font-semibold text-accent">
               {profile.data.full_name.slice(0, 1).toUpperCase()}
             </span>
           )}
           <div className="min-w-0">
-            <p className="truncate font-medium text-[#f5f7fb]">
+            <p className="truncate font-medium text-fg">
               {profile.data.full_name}
             </p>
-            <p className="mt-1 truncate text-sm text-[#64748b]">
+            <p className="mt-1 truncate text-sm text-muted">
               {profile.data.email}
             </p>
-            <p className="mt-1 truncate text-xs text-[#8295ff]">
+            <p className="mt-1 truncate text-xs text-accent">
               {profile.data.nickname}
             </p>
           </div>
@@ -183,7 +183,7 @@ export function ProfilePage() {
           noValidate
         >
           <div>
-            <label htmlFor="profile-name" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+            <label htmlFor="profile-name" className="mb-2 block text-sm font-medium text-fg-2">
               Nome
             </label>
             <input
@@ -191,27 +191,27 @@ export function ProfilePage() {
               autoComplete="name"
               {...form.register("full_name")}
               aria-invalid={Boolean(form.formState.errors.full_name)}
-              className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+              className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
             />
             {form.formState.errors.full_name && (
-              <p className="mt-1.5 text-xs text-[#f1a3ad]">
+              <p className="mt-1.5 text-xs text-danger">
                 {form.formState.errors.full_name.message}
               </p>
             )}
           </div>
           <div>
-            <label htmlFor="profile-email" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+            <label htmlFor="profile-email" className="mb-2 block text-sm font-medium text-fg-2">
               E-mail
             </label>
             <input
               id="profile-email"
               value={profile.data.email}
               readOnly
-              className="h-11 w-full cursor-not-allowed rounded-lg border border-line-soft bg-[#0a0d11] px-3.5 text-sm text-[#64748b]"
+              className="h-11 w-full cursor-not-allowed rounded-lg border border-line-soft bg-well px-3.5 text-sm text-muted"
             />
           </div>
           <div>
-            <label htmlFor="profile-nickname" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
+            <label htmlFor="profile-nickname" className="mb-2 block text-sm font-medium text-fg-2">
               Apelido
             </label>
             <input
@@ -227,20 +227,20 @@ export function ProfilePage() {
                 });
               }}
               aria-invalid={Boolean(form.formState.errors.nickname)}
-              className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe] focus:ring-2 focus:ring-[#536dfe]/20"
+              className="h-11 w-full rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
             />
-            <p className="mt-1.5 text-xs text-[#64748b]">
+            <p className="mt-1.5 text-xs text-muted">
               Este será o nome público exibido no ranking e na plataforma.
             </p>
             {form.formState.errors.nickname && (
-              <p className="mt-1.5 text-xs text-[#f1a3ad]">
+              <p className="mt-1.5 text-xs text-danger">
                 {form.formState.errors.nickname.message}
               </p>
             )}
           </div>
           <div>
-            <label htmlFor="profile-avatar" className="mb-2 block text-sm font-medium text-[#c7cfdd]">
-              Foto de perfil <span className="font-normal text-[#64748b]">(JPEG, PNG ou WebP; enviada ao selecionar)</span>
+            <label htmlFor="profile-avatar" className="mb-2 block text-sm font-medium text-fg-2">
+              Foto de perfil <span className="font-normal text-muted">(JPEG, PNG ou WebP; enviada ao selecionar)</span>
             </label>
             <input
               id="profile-avatar"
@@ -266,15 +266,15 @@ export function ProfilePage() {
                   uploadAvatar.mutate(small);
                 });
               }}
-              className="block min-h-11 w-full rounded-lg border border-line bg-surface-inset text-sm text-[#c7cfdd] file:mr-3 file:min-h-11 file:border-0 file:bg-[#171e31] file:px-4 file:font-medium file:text-[#aab7ff]"
+              className="block min-h-11 w-full rounded-lg border border-line bg-surface-inset text-sm text-fg-2 file:mr-3 file:min-h-11 file:border-0 file:bg-brand-soft file:px-4 file:font-medium file:text-accent"
             />
             {avatarError && (
-              <p className="mt-1.5 text-xs text-[#f1a3ad]">
+              <p className="mt-1.5 text-xs text-danger">
                 {avatarError}
               </p>
             )}
             {avatarFile && !avatarError && (
-              <p className="mt-1.5 text-xs text-[#94a3b8]">Enviando…</p>
+              <p className="mt-1.5 text-xs text-muted">Enviando…</p>
             )}
           </div>
           <div className="grid gap-3 border-t border-line-soft pt-5 sm:grid-cols-2">
@@ -291,19 +291,19 @@ export function ProfilePage() {
             />
           </div>
           {apiError && (
-            <p role="alert" className="text-sm text-[#f1a3ad]">
+            <p role="alert" className="text-sm text-danger">
               {apiError}
             </p>
           )}
           {update.isSuccess && (
-            <p role="status" className="text-sm text-[#2dd4a0]">
+            <p role="status" className="text-sm text-success">
               Perfil atualizado.
             </p>
           )}
           <button
             type="submit"
             disabled={update.isPending}
-            className="min-h-11 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white transition hover:bg-[#667eea] disabled:opacity-60"
+            className="min-h-11 rounded-lg bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand disabled:opacity-60"
           >
             {update.isPending || uploadAvatar.isPending ? "Salvando..." : "Salvar alterações"}
           </button>
@@ -318,8 +318,8 @@ export function ProfilePage() {
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs uppercase tracking-[0.12em] text-[#64748b]">{label}</p>
-      <p className="mt-1.5 text-sm text-[#c7cfdd]">{value}</p>
+      <p className="text-xs uppercase tracking-[0.12em] text-muted">{label}</p>
+      <p className="mt-1.5 text-sm text-fg-2">{value}</p>
     </div>
   );
 }

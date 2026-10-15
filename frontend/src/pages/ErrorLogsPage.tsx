@@ -90,20 +90,20 @@ export function ErrorLogsPage() {
     <div className="mx-auto max-w-6xl space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
             Diagnóstico
           </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb]">
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg">
             Log de erros
           </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#94a3b8]">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
             Erros JavaScript e do console do navegador, respostas 5xx da API e erros
             inesperados registrados pelo servidor deste workspace.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#536dfe] px-3 py-2 text-sm text-white hover:bg-[#171d35] disabled:opacity-60"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-brand px-3 py-2 text-sm text-white hover:bg-well disabled:opacity-60"
             disabled={retryFailures.isPending}
             onClick={() => retryFailures.mutate()}
             type="button"
@@ -112,14 +112,14 @@ export function ErrorLogsPage() {
             Reenviar falhas de hoje
           </button>
           <a
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-[#dbe4f3] hover:bg-[#101923]"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-fg hover:bg-well"
             href={`/api/diagnostics/events.csv?${params}`}
           >
             <Download size={15} />
             Exportar CSV
           </a>
           <button
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-[#dbe4f3] hover:bg-[#101923] disabled:opacity-60"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-fg hover:bg-well disabled:opacity-60"
             disabled={events.isFetching}
             onClick={() => void events.refetch()}
             type="button"
@@ -131,7 +131,7 @@ export function ErrorLogsPage() {
       </header>
 
       {retryMessage && (
-        <p className="rounded-lg border border-line bg-[#101923] px-3 py-2 text-sm text-[#dbe4f3]" role="status">
+        <p className="rounded-lg border border-line bg-well px-3 py-2 text-sm text-fg" role="status">
           {retryMessage}
         </p>
       )}
@@ -139,7 +139,7 @@ export function ErrorLogsPage() {
       <div className="flex flex-wrap gap-2">
         <input
           aria-label="Buscar no log"
-          className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-sm text-white placeholder:text-[#64748b]"
+          className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-sm text-white placeholder:text-muted"
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Buscar conta, vídeo ou texto"
           value={search}
@@ -184,8 +184,8 @@ export function ErrorLogsPage() {
             aria-pressed={filter === value}
             className={`rounded-lg border px-3 py-2 text-xs ${
               filter === value
-                ? "border-[#536dfe] bg-[#171d35] text-white"
-                : "border-line text-[#94a3b8] hover:text-white"
+                ? "border-brand bg-well text-white"
+                : "border-line text-muted hover:text-white"
             }`}
             key={value}
             onClick={() => setFilter(value)}
@@ -206,32 +206,32 @@ export function ErrorLogsPage() {
         <section aria-label="Erros registrados" className="space-y-3">
           {visibleEvents.map((event) => (
             <article
-              className="rounded-xl border border-[#47252d] bg-[#130e11] p-4"
+              className="rounded-xl border border-danger/30 bg-danger-soft p-4"
               key={event.id}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-2 text-sm font-medium text-[#f1a3ad]">
+                <span className="inline-flex items-center gap-2 text-sm font-medium text-danger">
                   <AlertTriangle size={15} />
                   {sourceLabels[event.source]}
                   {event.category && (
-                    <span className="rounded bg-[#2a1a20] px-2 py-0.5 text-xs text-[#f5c0c8]">
+                    <span className="rounded bg-danger-soft px-2 py-0.5 text-xs text-danger">
                       {categoryLabels[event.category] ?? event.category}
                       {event.meta_code ? ` · código ${event.meta_code}` : ""}
                     </span>
                   )}
                 </span>
-                <time className="text-xs text-[#94a3b8]">{formatDate(event.created_at)}</time>
+                <time className="text-xs text-muted">{formatDate(event.created_at)}</time>
               </div>
-              <p className="mt-2 break-words text-sm leading-6 text-[#f5f7fb]">
+              <p className="mt-2 break-words text-sm leading-6 text-fg">
                 {event.message}
               </p>
-              <p className="mt-1 break-all text-xs text-[#94a3b8]">{event.path}</p>
+              <p className="mt-1 break-all text-xs text-muted">{event.path}</p>
               {event.stack && (
                 <details className="mt-3">
-                  <summary className="cursor-pointer text-xs text-[#aab7ff]">
+                  <summary className="cursor-pointer text-xs text-accent">
                     Detalhes técnicos
                   </summary>
-                  <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-inset p-3 text-xs leading-5 text-[#cbd5e1]">
+                  <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-inset p-3 text-xs leading-5 text-fg-2">
                     {event.stack}
                   </pre>
                 </details>

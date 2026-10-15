@@ -83,11 +83,11 @@ export function TopVideosPanel({
     <section className="glass-panel p-4 sm:p-4" aria-labelledby={`videos-${accountId ?? "all"}`}>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 id={`videos-${accountId ?? "all"}`} className="flex items-center gap-2 text-base font-semibold text-[#f5f7fb]">
-            <Flame size={17} className="text-[#ff9f6b]" />
+          <h3 id={`videos-${accountId ?? "all"}`} className="flex items-center gap-2 text-base font-semibold text-fg">
+            <Flame size={17} className="text-warning" />
             {compact ? "Publicações desta conta" : "Vídeos em alta"}
           </h3>
-          <p className="mt-1 text-xs text-[#94a3b8]">
+          <p className="mt-1 text-xs text-muted">
             {videos.data?.period_label ?? "…"} · {videos.data?.scope ?? "Publicações do período"}
           </p>
         </div>
@@ -138,39 +138,39 @@ export function TopVideosPanel({
         <ol className="mt-4 space-y-2">
           {videos.data.items.map((item, index) => (
             <li className="flex gap-3 rounded-xl border border-line-soft bg-surface-inset p-3" key={item.id}>
-              <span className="w-6 shrink-0 pt-1 text-center text-xs font-semibold text-[#64748b]">{index + 1}</span>
+              <span className="w-6 shrink-0 pt-1 text-center text-xs font-semibold text-muted">{index + 1}</span>
               {item.thumbnail_url ? (
                 <img alt="" className="size-14 shrink-0 rounded-lg object-cover" loading="lazy" src={item.thumbnail_url} />
               ) : (
-                <span className="grid size-14 shrink-0 place-items-center rounded-lg bg-white/5 text-[10px] text-[#64748b]">sem prévia</span>
+                <span className="grid size-14 shrink-0 place-items-center rounded-lg bg-white/5 text-[10px] text-muted">sem prévia</span>
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
-                  {!compact && <span className="font-medium text-[#dbe4f3]">@{item.username}</span>}
-                  <span className="text-[#64748b]">{formatDateTime(item.posted_at)}</span>
+                  {!compact && <span className="font-medium text-fg">@{item.username}</span>}
+                  <span className="text-muted">{formatDateTime(item.posted_at)}</span>
                   {item.permalink && (
-                    <a className="inline-flex items-center gap-1 text-[#aab7ff] hover:text-white" href={item.permalink} rel="noreferrer" target="_blank">
+                    <a className="inline-flex items-center gap-1 text-accent hover:text-white" href={item.permalink} rel="noreferrer" target="_blank">
                       abrir <ExternalLink size={11} />
                     </a>
                   )}
                 </div>
-                {item.caption && <p className="mt-0.5 truncate text-xs text-[#94a3b8]">{item.caption}</p>}
-                <dl className="mt-1.5 grid grid-cols-3 gap-x-3 gap-y-0.5 text-[11px] text-[#94a3b8] sm:grid-cols-6">
-                  <div><dt className="inline">Views </dt><dd className="inline font-semibold text-[#f5f7fb]">{formatNumber(item.views)}</dd></div>
-                  <div><dt className="inline">Engaj. </dt><dd className="inline font-semibold text-[#7ee2bd]">{formatPercent(item.engagement_rate)}</dd></div>
-                  <div><dt className="inline">Interações </dt><dd className="inline text-[#dbe4f3]">{formatNumber(item.interactions)}</dd></div>
-                  <div><dt className="inline">Curtidas </dt><dd className="inline text-[#dbe4f3]">{formatNumber(item.likes)}</dd></div>
-                  <div><dt className="inline">Coment. </dt><dd className="inline text-[#dbe4f3]">{formatNumber(item.comments)}</dd></div>
-                  <div><dt className="inline">Compart. </dt><dd className="inline text-[#dbe4f3]">{formatNumber(item.shares)}</dd></div>
+                {item.caption && <p className="mt-0.5 truncate text-xs text-muted">{item.caption}</p>}
+                <dl className="mt-1.5 grid grid-cols-3 gap-x-3 gap-y-0.5 text-[11px] text-muted sm:grid-cols-6">
+                  <div><dt className="inline">Views </dt><dd className="inline font-semibold text-fg">{formatNumber(item.views)}</dd></div>
+                  <div><dt className="inline">Engaj. </dt><dd className="inline font-semibold text-success">{formatPercent(item.engagement_rate)}</dd></div>
+                  <div><dt className="inline">Interações </dt><dd className="inline text-fg">{formatNumber(item.interactions)}</dd></div>
+                  <div><dt className="inline">Curtidas </dt><dd className="inline text-fg">{formatNumber(item.likes)}</dd></div>
+                  <div><dt className="inline">Coment. </dt><dd className="inline text-fg">{formatNumber(item.comments)}</dd></div>
+                  <div><dt className="inline">Compart. </dt><dd className="inline text-fg">{formatNumber(item.shares)}</dd></div>
                 </dl>
-                {item.metrics_error && <p className="mt-1 text-[11px] text-[#f2d48a]">{item.metrics_error}</p>}
+                {item.metrics_error && <p className="mt-1 text-[11px] text-warning">{item.metrics_error}</p>}
               </div>
             </li>
           ))}
         </ol>
       )}
       {videos.data && (
-        <p className="mt-4 flex gap-2 text-[11px] leading-5 text-[#64748b]">
+        <p className="mt-4 flex gap-2 text-[11px] leading-5 text-muted">
           <Info size={13} className="mt-0.5 shrink-0" />
           {videos.data.formula}
         </p>

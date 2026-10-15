@@ -5,6 +5,7 @@ import { Copy } from "lucide-react";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { SharkAccountsPanel } from "@/features/sharkbot/SharkAccountsPanel";
 import { ApiError, apiRequest } from "@/services/api";
+import { confirmAction } from "@/lib/confirm";
 
 type SharkbotWebhookSettings = {
   webhook_url: string;
@@ -58,29 +59,29 @@ export function SharkIntegrationPanel() {
       )}
       <section className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
         <div>
-          <h3 className="font-medium text-[#f5f7fb]">Integração Sharkbot</h3>
-          <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+          <h3 className="font-medium text-fg">Integração Sharkbot</h3>
+          <p className="mt-2 text-sm leading-6 text-muted">
             Uma única URL serve para todos os seus bots e fluxos do Sharkbot: as vendas são
             separadas pelo bot e pelo fluxo informados em cada evento e ficam restritas a este
             workspace. Reenvios do mesmo evento não duplicam leads nem vendas.
           </p>
         </div>
-        <label className="grid gap-2 text-sm text-[#cbd5e1]">
+        <label className="grid gap-2 text-sm text-fg-2">
           URL do webhook para cadastrar no Sharkbot
           <input
-            className="min-h-11 rounded-lg border border-line bg-surface-inset px-3 font-mono text-xs text-[#cbd5e1] outline-none focus:border-[#7186ff]"
+            className="min-h-11 rounded-lg border border-line bg-surface-inset px-3 font-mono text-xs text-fg-2 outline-none focus:border-brand"
             readOnly
             value={settings.data.webhook_url}
           />
         </label>
         {copyFeedback && (
-          <p className="text-sm text-[#9de0c0]" role="status">
+          <p className="text-sm text-success" role="status">
             {copyFeedback}
           </p>
         )}
         <div className="flex flex-wrap gap-2">
           <button
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-3 py-2 text-sm text-white disabled:opacity-60"
             type="button"
             onClick={() => {
               void navigator.clipboard
@@ -95,12 +96,12 @@ export function SharkIntegrationPanel() {
             Copiar URL
           </button>
           <button
-            className="min-h-10 rounded-lg border border-[#47252d] px-3 py-2 text-sm text-[#f1a3ad] disabled:opacity-60"
+            className="min-h-10 rounded-lg border border-danger/30 px-3 py-2 text-sm text-danger disabled:opacity-60"
             type="button"
             disabled={rotateSharkbotWebhook.isPending}
-            onClick={() => {
+            onClick={async () => {
               if (
-                window.confirm(
+                await confirmAction(
                   "Gerar uma nova URL invalidará imediatamente a URL atual. Será necessário atualizá-la no Sharkbot. Continuar?",
                 )
               ) {
@@ -113,10 +114,10 @@ export function SharkIntegrationPanel() {
         </div>
         {settings.data.account_webhooks.length > 0 && (
           <details className="rounded-xl border border-line-soft bg-surface-inset p-4">
-            <summary className="cursor-pointer text-sm font-medium text-[#dfe4ff]">
+            <summary className="cursor-pointer text-sm font-medium text-accent">
               Atribuir as vendas de um bot a uma conta do Instagram
             </summary>
-            <p className="mt-2 text-xs leading-5 text-[#94a3b8]">
+            <p className="mt-2 text-xs leading-5 text-muted">
               O Sharkbot não envia qual conta do Instagram originou o lead. Se um bot atende a uma
               única conta, cadastre nele a URL dessa conta: as vendas desse bot passam a aparecer
               nas métricas da conta. Sem isso, as vendas contam só no total do workspace.
@@ -124,10 +125,10 @@ export function SharkIntegrationPanel() {
             <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
               {settings.data.account_webhooks.map((item) => (
                 <li className="flex items-center gap-2" key={item.account_id}>
-                  <span className="w-32 shrink-0 truncate text-xs text-[#cbd5e1]">@{item.username}</span>
+                  <span className="w-32 shrink-0 truncate text-xs text-fg-2">@{item.username}</span>
                   <input
                     aria-label={`URL do webhook para @${item.username}`}
-                    className="min-h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 font-mono text-[11px] text-[#94a3b8]"
+                    className="min-h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 font-mono text-[11px] text-muted"
                     readOnly
                     value={item.webhook_url}
                   />

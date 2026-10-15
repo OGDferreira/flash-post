@@ -52,11 +52,11 @@ export function EngagementRankingPanel({
     <section className="glass-panel p-4 sm:p-4" aria-labelledby="engagement-ranking-title">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 id="engagement-ranking-title" className="flex items-center gap-2 text-base font-semibold text-[#f5f7fb]">
-            <Trophy size={17} className="text-[#f2d48a]" />
+          <h3 id="engagement-ranking-title" className="flex items-center gap-2 text-base font-semibold text-fg">
+            <Trophy size={17} className="text-warning" />
             Ranking de engajamento das contas
           </h3>
-          <p className="mt-1 text-xs text-[#94a3b8]">{ranking.data?.period_label ?? "…"} · clique em uma conta para ver as métricas dela</p>
+          <p className="mt-1 text-xs text-muted">{ranking.data?.period_label ?? "…"} · clique em uma conta para ver as métricas dela</p>
         </div>
         <button
           className="btn-secondary !min-h-9 !px-3 text-xs"
@@ -85,14 +85,14 @@ export function EngagementRankingPanel({
                 onClick={() => onSelectAccount(row.account_id)}
                 type="button"
               >
-                <span className="w-6 text-center text-xs font-semibold text-[#64748b]">
+                <span className="w-6 text-center text-xs font-semibold text-muted">
                   {row.engagement_rate === null ? "—" : index + 1}
                 </span>
                 <InstagramAvatar className="size-8 rounded-full object-cover" src={row.profile_picture_url} username={row.username} />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-sm text-[#e6eaf2]">@{row.username}</span>
-                    <span className="shrink-0 text-sm font-semibold text-[#7ee2bd]">{formatPercent(row.engagement_rate)}</span>
+                    <span className="truncate text-sm text-fg">@{row.username}</span>
+                    <span className="shrink-0 text-sm font-semibold text-success">{formatPercent(row.engagement_rate)}</span>
                   </span>
                   <span className="mt-1 block h-1 overflow-hidden rounded bg-white/5">
                     <span
@@ -100,7 +100,7 @@ export function EngagementRankingPanel({
                       style={{ width: `${row.engagement_rate === null ? 0 : (row.engagement_rate / best) * 100}%` }}
                     />
                   </span>
-                  <span className="mt-1 block text-[11px] text-[#64748b]">
+                  <span className="mt-1 block text-[11px] text-muted">
                     {row.publications_with_complete_metrics}/{row.publications} publicações com dados completos ·{" "}
                     {formatNumber(row.views)} views · {formatNumber(row.interactions)} interações · sincronizado{" "}
                     {formatDateTime(row.synced_at)}
@@ -113,7 +113,7 @@ export function EngagementRankingPanel({
         </ol>
       )}
       {ranking.data && (
-        <p className="mt-4 flex gap-2 text-[11px] leading-5 text-[#64748b]">
+        <p className="mt-4 flex gap-2 text-[11px] leading-5 text-muted">
           <Info size={13} className="mt-0.5 shrink-0" />
           {ranking.data.formula}
         </p>

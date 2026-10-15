@@ -79,12 +79,12 @@ function FeedMetric({
   icon: typeof UsersRound;
 }) {
   return (
-    <div className="rounded-lg border border-line-soft bg-[#0d151c] p-3">
-      <div className="flex items-center gap-2 text-xs text-[#94a3b8]">
-        <Icon className="text-[#8295ff]" size={14} />
+    <div className="rounded-lg border border-line-soft bg-well p-3">
+      <div className="flex items-center gap-2 text-xs text-muted">
+        <Icon className="text-accent" size={14} />
         {label}
       </div>
-      <p className="mt-2 text-lg font-semibold text-[#f5f7fb]">{value}</p>
+      <p className="mt-2 text-lg font-semibold text-fg">{value}</p>
     </div>
   );
 }
@@ -154,7 +154,7 @@ export function FeedPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <FeedHeading />
         <button
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-[#0d151c] px-3 text-sm text-[#cbd5e1] transition hover:bg-[#151b24] disabled:opacity-60"
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-well px-3 text-sm text-fg-2 transition hover:bg-well disabled:opacity-60"
           type="button"
           disabled={feed.isFetching || accounts.isFetching}
           onClick={() => {
@@ -178,8 +178,8 @@ export function FeedPage() {
               <button
                 className={`flex min-w-[190px] items-center gap-3 rounded-lg border p-2.5 text-left transition xl:w-full ${
                   selected
-                    ? "border-[#00c9d8] bg-[#0d2229]"
-                    : "border-line-soft bg-[#0d151c] hover:border-[#3a4a60]"
+                    ? "border-brand bg-well"
+                    : "border-line-soft bg-well hover:border-line"
                 }`}
                 key={account.id}
                 type="button"
@@ -192,10 +192,10 @@ export function FeedPage() {
                   username={account.username}
                 />
                 <span className="min-w-0">
-                  <span className="block truncate text-xs font-semibold text-[#f5f7fb]">
+                  <span className="block truncate text-xs font-semibold text-fg">
                     @{account.username}
                   </span>
-                  <span className="mt-0.5 block text-[10px] text-[#94a3b8]">
+                  <span className="mt-0.5 block text-[10px] text-muted">
                     {formatCount(account.follower_count)} seguidores
                   </span>
                 </span>
@@ -206,22 +206,22 @@ export function FeedPage() {
 
         {selectedAccount && (
           <section className="min-w-0 space-y-3" aria-label={`Feed de ${selectedAccount.username}`}>
-            <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line-soft bg-[#0d151c] px-3 py-2.5">
+            <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line-soft bg-well px-3 py-2.5">
               <div className="flex min-w-0 items-center gap-2">
-                <Star className="shrink-0 text-[#f2d48a]" size={15} />
-                <h2 className="truncate text-sm font-semibold text-[#f5f7fb]">
+                <Star className="shrink-0 text-warning" size={15} />
+                <h2 className="truncate text-sm font-semibold text-fg">
                   @{selectedAccount.username}
                 </h2>
                 <span
                   className={`size-2 shrink-0 rounded-full ${
-                    selectedAccount.status === "connected" ? "bg-[#22c58b]" : "bg-[#f17380]"
+                    selectedAccount.status === "connected" ? "bg-[#22c58b]" : "bg-danger"
                   }`}
                   aria-label={
                     selectedAccount.status === "connected" ? "Conta conectada" : "Conta com erro"
                   }
                 />
               </div>
-              <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[#cbd5e1]">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-fg-2">
                 <input
                   className="size-3.5 accent-[#00c9d8]"
                   type="checkbox"
@@ -254,7 +254,7 @@ export function FeedPage() {
             </div>
             {feed.data?.profile_metrics_error && (
               <div
-                className="rounded-lg border border-[#544526] bg-[#211c10] p-3 text-xs leading-5 text-[#f2d48a]"
+                className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-xs leading-5 text-warning"
                 role="status"
               >
                 A Meta não disponibilizou as métricas atuais deste perfil:{" "}
@@ -264,9 +264,9 @@ export function FeedPage() {
             )}
 
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-xs font-medium text-[#94a3b8]">Mídias recentes</h3>
+              <h3 className="text-xs font-medium text-muted">Mídias recentes</h3>
               {feed.data && (
-                <span className="text-[10px] text-[#64748b]">
+                <span className="text-[10px] text-muted">
                   {feed.data.media.length} exibidas
                 </span>
               )}
@@ -285,12 +285,12 @@ export function FeedPage() {
               <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                 {feed.data.media.map((item) => (
                   <article
-                    className="overflow-hidden rounded-lg border border-line-soft bg-[#0d151c]"
+                    className="overflow-hidden rounded-lg border border-line-soft bg-well"
                     key={item.id}
                   >
                     {item.permalink ? (
                       <a
-                        className="group relative block aspect-square overflow-hidden bg-[#080b10]"
+                        className="group relative block aspect-square overflow-hidden bg-well"
                         href={item.permalink}
                         target="_blank"
                         rel="noreferrer"
@@ -300,13 +300,13 @@ export function FeedPage() {
                         <MediaTypeBadge mediaType={item.media_type} />
                       </a>
                     ) : (
-                      <div className="relative aspect-square overflow-hidden bg-[#080b10]">
+                      <div className="relative aspect-square overflow-hidden bg-well">
                         <MediaImage item={item} />
                         <MediaTypeBadge mediaType={item.media_type} />
                       </div>
                     )}
                     <div className="space-y-2 p-2.5">
-                      <div className="flex items-center gap-3 text-[10px] text-[#94a3b8]">
+                      <div className="flex items-center gap-3 text-[10px] text-muted">
                         <span className="inline-flex items-center gap-1">
                           <UsersRound size={11} />
                           {formatCount(item.like_count)}
@@ -316,11 +316,11 @@ export function FeedPage() {
                           {formatCount(item.comments_count)}
                         </span>
                       </div>
-                      <time className="block text-[9px] text-[#64748b]">
+                      <time className="block text-[9px] text-muted">
                         {formatTimestamp(item.timestamp)}
                       </time>
                       {item.caption && (
-                        <p className="line-clamp-2 text-[10px] leading-4 text-[#aeb9ce]">
+                        <p className="line-clamp-2 text-[10px] leading-4 text-fg-2">
                           {item.caption}
                         </p>
                       )}
@@ -335,7 +335,7 @@ export function FeedPage() {
         )}
       </div>
 
-      <p className="text-[11px] leading-5 text-[#64748b]">
+      <p className="text-[11px] leading-5 text-muted">
         A contagem de perfis seguidos depende dos campos disponibilizados pela Meta; “—” indica que
         esse dado não foi retornado. O Feed mostra até 25 publicações recentes por perfil.
       </p>
@@ -346,10 +346,10 @@ export function FeedPage() {
 function FeedHeading() {
   return (
     <header>
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
         Perfis &amp; Métricas
       </p>
-      <h1 className="mt-1 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb]">
+      <h1 className="mt-1 text-2xl font-semibold tracking-[-0.045em] text-fg">
         Veja seguidores, posts e mídias de cada perfil.
       </h1>
     </header>
@@ -360,7 +360,7 @@ function MediaImage({ item }: { item: InstagramFeedMedia }) {
   const source = item.thumbnail_url ?? item.media_url;
   if (!source) {
     return (
-      <div className="grid size-full place-items-center text-[#64748b]">
+      <div className="grid size-full place-items-center text-muted">
         <ImageIcon size={28} />
       </div>
     );
@@ -378,7 +378,7 @@ function MediaImage({ item }: { item: InstagramFeedMedia }) {
 
 function MediaTypeBadge({ mediaType }: { mediaType: string }) {
   return (
-    <span className="absolute right-2 top-2 rounded bg-[#080b10]/75 p-1 text-white">
+    <span className="absolute right-2 top-2 rounded bg-well/75 p-1 text-white">
       {mediaType === "VIDEO" || mediaType === "REELS" ? (
         <span className="text-[9px] font-semibold">REEL</span>
       ) : (

@@ -32,11 +32,11 @@ export function MemberGoalsPanel() {
 
   return (
     <section className="glass-panel p-4" aria-labelledby="member-goals-title">
-      <h2 id="member-goals-title" className="flex items-center gap-2 text-base font-semibold text-[#f5f7fb]">
-        <Target size={16} className="text-[#8295ff]" />
+      <h2 id="member-goals-title" className="flex items-center gap-2 text-base font-semibold text-fg">
+        <Target size={16} className="text-accent" />
         Metas diárias de visualizações
       </h2>
-      <p className="mt-1 text-sm text-[#94a3b8]">
+      <p className="mt-1 text-sm text-muted">
         Colaboradores são medidos nas contas que conectaram; o responsável, em todas as contas ativas.
       </p>
       {goals.isLoading ? (
@@ -45,7 +45,7 @@ export function MemberGoalsPanel() {
           <div className="skeleton h-12" />
         </div>
       ) : goals.error ? (
-        <p className="mt-4 text-sm text-[#f1a3ad]">Não foi possível carregar as metas.</p>
+        <p className="mt-4 text-sm text-danger">Não foi possível carregar as metas.</p>
       ) : (
         <ul className="mt-4 divide-y divide-line-soft">
           {goals.data?.goals.map((goal) => {
@@ -55,13 +55,13 @@ export function MemberGoalsPanel() {
             return (
               <li className="flex flex-wrap items-center gap-3 py-3" key={goal.user_id}>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-[#e6eaf2]">
+                  <p className="truncate text-sm font-medium text-fg">
                     {goal.full_name ?? "Membro"}
-                    <span className="ml-2 text-xs font-normal text-[#64748b]">
+                    <span className="ml-2 text-xs font-normal text-muted">
                       {goal.role === "OWNER" ? "Responsável" : "Colaborador"}
                     </span>
                   </p>
-                  <p className="mt-0.5 text-xs text-[#94a3b8]">
+                  <p className="mt-0.5 text-xs text-muted">
                     {!goal.configured
                       ? "Sem meta"
                       : goal.progress_views === null
@@ -104,7 +104,7 @@ export function MemberGoalsPanel() {
         </ul>
       )}
       {save.error && (
-        <p className="mt-3 text-sm text-[#f1a3ad]" role="alert">
+        <p className="mt-3 text-sm text-danger" role="alert">
           {save.error instanceof ApiError ? save.error.message : "Não foi possível salvar a meta."}
         </p>
       )}

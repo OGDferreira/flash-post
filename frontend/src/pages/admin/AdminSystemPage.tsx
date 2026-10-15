@@ -20,13 +20,13 @@ export function AdminSystemPage() {
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
           Administração
         </p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
+        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
           Sistema
         </h2>
-        <p className="mt-2 text-sm text-[#94a3b8]">
+        <p className="mt-2 text-sm text-muted">
           Configurações operacionais não sensíveis da plataforma.
         </p>
       </div>
@@ -43,15 +43,15 @@ export function AdminSystemPage() {
               className="flex flex-col gap-3 rounded-xl border border-line-soft bg-surface p-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
-                <p className="text-sm font-medium text-[#e6eaf2]">{setting.key}</p>
-                <p className="mt-1 text-xs text-[#64748b]">
+                <p className="text-sm font-medium text-fg">{setting.key}</p>
+                <p className="mt-1 text-xs text-muted">
                   {setting.is_public ? "Pública" : "Operacional"} · Atualizada{" "}
                   {new Date(setting.updated_at).toLocaleString("pt-BR", {
                     timeZone: "America/Sao_Paulo",
                   })}
                 </p>
               </div>
-              <code className="max-w-full overflow-auto rounded-lg border border-line-soft bg-surface-inset px-3 py-2 text-xs text-[#aeb9ce]">
+              <code className="max-w-full overflow-auto rounded-lg border border-line-soft bg-surface-inset px-3 py-2 text-xs text-fg-2">
                 {JSON.stringify(setting.value)}
               </code>
             </article>
@@ -60,7 +60,7 @@ export function AdminSystemPage() {
       ) : (
         <div className="space-y-4">
           <EmptyState message="Ainda não há configurações operacionais cadastradas." />
-          <p className="flex items-center gap-2 text-xs text-[#64748b]">
+          <p className="flex items-center gap-2 text-xs text-muted">
             <Settings2 size={14} />
             Credenciais e chaves permanecem exclusivamente nas variáveis seguras do Render.
           </p>

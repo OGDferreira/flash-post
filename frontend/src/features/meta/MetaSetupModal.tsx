@@ -55,14 +55,14 @@ export function MetaSetupModal({ open, onClose, callbackUrl }: { open: boolean; 
       <ol className="space-y-3">
         {steps.map((step, index) => (
           <li className="flex gap-3" key={step.title}>
-            <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-[#536dfe]/25 text-xs font-semibold text-[#dfe4ff]">
+            <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-brand/25 text-xs font-semibold text-accent">
               {index + 1}
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-medium text-[#f5f7fb]">{step.title}</p>
-              <p className="mt-0.5 text-xs leading-5 text-[#94a3b8]">{step.body}</p>
+              <p className="text-sm font-medium text-fg">{step.title}</p>
+              <p className="mt-0.5 text-xs leading-5 text-muted">{step.body}</p>
               {index === 2 && callbackUrl && (
-                <code className="mt-1.5 block break-all rounded-lg border border-line-soft bg-surface-inset px-2 py-1.5 text-[11px] text-[#cbd5e1]">
+                <code className="mt-1.5 block break-all rounded-lg border border-line-soft bg-surface-inset px-2 py-1.5 text-[11px] text-fg-2">
                   {callbackUrl}
                 </code>
               )}
@@ -71,21 +71,21 @@ export function MetaSetupModal({ open, onClose, callbackUrl }: { open: boolean; 
         ))}
       </ol>
       <div className="mt-4 rounded-xl border border-line-soft bg-surface-inset p-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#8295ff]">Permissões pedidas na autorização</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-accent">Permissões pedidas na autorização</p>
         <ul className="mt-2 space-y-1.5">
           {permissions.map(([name, why]) => (
-            <li className="text-xs leading-5 text-[#94a3b8]" key={name}>
-              <code className="text-[#dfe4ff]">{name}</code> — {why}
+            <li className="text-xs leading-5 text-muted" key={name}>
+              <code className="text-accent">{name}</code> — {why}
             </li>
           ))}
         </ul>
-        <p className="mt-2 text-[11px] leading-5 text-[#64748b]">
+        <p className="mt-2 text-[11px] leading-5 text-muted">
           Com acesso Padrão, o app atende contas que você possui ou administra e adicionou ao app. Para contas de terceiros é
           preciso Acesso Avançado (App Review da Meta).
         </p>
       </div>
       <a
-        className="mt-3 inline-flex items-center gap-1.5 text-xs text-[#aab7ff] hover:text-white"
+        className="mt-3 inline-flex items-center gap-1.5 text-xs text-accent hover:text-white"
         href="https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login"
         rel="noreferrer"
         target="_blank"

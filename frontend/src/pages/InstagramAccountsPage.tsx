@@ -24,6 +24,7 @@ import {
 } from "@/features/instagram/accountDates";
 import { ApiError, apiRequest } from "@/services/api";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { confirmAction } from "@/lib/confirm";
 
 type InstagramAccount = {
   id: string;
@@ -233,13 +234,13 @@ export function InstagramAccountsPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Workspace</p>
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Workspace</p>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
+            <h2 className="text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
               Hub de Contas
             </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#94a3b8]">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
               Acompanhe as contas profissionais conectadas e o estado de cada autorização.
             </p>
           </div>
@@ -258,7 +259,7 @@ export function InstagramAccountsPage() {
                 !metaApps.isLoading &&
                 !metaApps.error && (
                 <Link
-                  className="text-xs text-[#aab7ff] hover:text-white"
+                  className="text-xs text-accent hover:text-white"
                   to="/feature/meta-apps"
                 >
                   Configurar aplicativo Meta
@@ -275,10 +276,10 @@ export function InstagramAccountsPage() {
         <div
           className={`rounded-lg border px-4 py-3 text-sm ${
             callbackMessage.kind === "success"
-              ? "border-[#23513e] bg-[#0e1b17] text-[#9de0c0]"
+              ? "border-success/30 bg-success-soft text-success"
               : callbackMessage.kind === "error"
-                ? "border-[#47252d] bg-[#1a1013] text-[#f1a3ad]"
-                : "border-line bg-surface-raised text-[#aeb9ce]"
+                ? "border-danger/30 bg-danger-soft text-danger"
+                : "border-line bg-surface-raised text-fg-2"
           }`}
           role="status"
         >
@@ -292,8 +293,8 @@ export function InstagramAccountsPage() {
         <div
           className={`rounded-lg border px-4 py-3 text-sm ${
             disconnectMessage.complete
-              ? "border-[#23513e] bg-[#0e1b17] text-[#9de0c0]"
-              : "border-[#6b552b] bg-[#1c180e] text-[#f2d48a]"
+              ? "border-success/30 bg-success-soft text-success"
+              : "border-warning/30 bg-warning-soft text-warning"
           }`}
           role="status"
         >
@@ -302,39 +303,39 @@ export function InstagramAccountsPage() {
       )}
 
       {!accounts.data.can_manage && !accounts.data.can_connect && (
-        <p className="rounded-lg border border-line bg-surface-raised px-4 py-3 text-sm text-[#aeb9ce]">
+        <p className="rounded-lg border border-line bg-surface-raised px-4 py-3 text-sm text-fg-2">
           Você pode ver as contas conectadas. Somente o OWNER do workspace pode gerenciá-las.
         </p>
       )}
 
       <section className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-[#23513e] bg-[#0e1b17] p-4">
-            <p className="text-xs uppercase tracking-wide text-[#76c8a0]">Conectadas e ativas</p>
-            <p className="mt-1 text-2xl font-semibold text-[#b4f0d0]">{activeAccountCount}</p>
+          <div className="rounded-xl border border-success/30 bg-success-soft p-4">
+            <p className="text-xs uppercase tracking-wide text-success">Conectadas e ativas</p>
+            <p className="mt-1 text-2xl font-semibold text-success">{activeAccountCount}</p>
           </div>
-          <div className="rounded-xl border border-[#6b3c2d] bg-[#1c1410] p-4">
-            <p className="text-xs uppercase tracking-wide text-[#f2b884]">Precisam de atenção</p>
-            <p className="mt-1 text-2xl font-semibold text-[#ffd1a8]">{issueAccountCount}</p>
+          <div className="rounded-xl border border-danger/30 bg-warning-soft p-4">
+            <p className="text-xs uppercase tracking-wide text-warning">Precisam de atenção</p>
+            <p className="mt-1 text-2xl font-semibold text-warning">{issueAccountCount}</p>
           </div>
         </div>
         {folders.error && (
-          <p className="text-sm text-[#f1a3ad]">Não foi possível carregar a organização por pastas.</p>
+          <p className="text-sm text-danger">Não foi possível carregar a organização por pastas.</p>
         )}
         <section
           aria-label="Quantidade de contas por pasta"
           className="rounded-xl border border-line bg-surface p-4"
         >
           <div className="mb-3 flex items-center gap-2">
-            <Folder size={15} className="text-[#aab7ff]" />
-            <h3 className="text-sm font-medium text-[#e6eaf2]">Contas por pasta</h3>
+            <Folder size={15} className="text-accent" />
+            <h3 className="text-sm font-medium text-fg">Contas por pasta</h3>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               className={`rounded-full border px-3 py-1.5 text-xs ${
                 selectedFolderId === "all"
-                  ? "border-[#536dfe] bg-[#151b2d] text-white"
-                  : "border-line text-[#94a3b8]"
+                  ? "border-brand bg-brand-soft text-white"
+                  : "border-line text-muted"
               }`}
               onClick={() => setSelectedFolderId("all")}
               type="button"
@@ -351,8 +352,8 @@ export function InstagramAccountsPage() {
                 <button
                   className={`rounded-full border px-3 py-1.5 text-xs ${
                     selectedFolderId === folder.id
-                      ? "bg-[#151b2d] text-white"
-                      : "text-[#cbd5e1]"
+                      ? "bg-brand-soft text-white"
+                      : "text-fg-2"
                   }`}
                   key={folder.id}
                   onClick={() => setSelectedFolderId(folder.id)}
@@ -369,8 +370,8 @@ export function InstagramAccountsPage() {
             <button
               className={`rounded-full border px-3 py-1.5 text-xs ${
                 selectedFolderId === "unassigned"
-                  ? "border-[#536dfe] bg-[#151b2d] text-white"
-                  : "border-line text-[#94a3b8]"
+                  ? "border-brand bg-brand-soft text-white"
+                  : "border-line text-muted"
               }`}
               onClick={() => setSelectedFolderId("unassigned")}
               type="button"
@@ -380,10 +381,10 @@ export function InstagramAccountsPage() {
           </div>
         </section>
         <div className="flex flex-col gap-3 sm:flex-row">
-          <label className="flex min-h-11 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-[#94a3b8]">
+          <label className="flex min-h-11 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-muted">
             <Search size={16} />
             <input
-              className="w-full bg-transparent text-sm text-[#f5f7fb] outline-none placeholder:text-[#64748b]"
+              className="w-full bg-transparent text-sm text-fg outline-none placeholder:text-muted"
               value={accountSearch}
               onChange={(event) => setAccountSearch(event.target.value)}
               placeholder="Buscar por usuário..."
@@ -391,7 +392,7 @@ export function InstagramAccountsPage() {
             />
           </label>
           <select
-            className="min-h-11 rounded-lg border border-line bg-surface px-3 text-xs text-[#f5f7fb] outline-none"
+            className="min-h-11 rounded-lg border border-line bg-surface px-3 text-xs text-fg outline-none"
             value={accountSort}
             onChange={(event) => setAccountSort(event.target.value as typeof accountSort)}
             aria-label="Ordenar contas Instagram"
@@ -408,8 +409,8 @@ export function InstagramAccountsPage() {
               <button
                 className={`rounded-md px-3 py-2 text-xs font-medium transition ${
                   accountFilter === filter
-                    ? "bg-[#536dfe] text-white"
-                    : "text-[#94a3b8] hover:text-white"
+                    ? "bg-brand text-white"
+                    : "text-muted hover:text-white"
                 }`}
                 key={filter}
                 type="button"
@@ -420,10 +421,10 @@ export function InstagramAccountsPage() {
             ))}
           </div>
         </div>
-        <div className="flex items-center justify-between text-sm text-[#94a3b8]">
+        <div className="flex items-center justify-between text-sm text-muted">
           <h3>Contas Instagram ({visibleAccounts.length})</h3>
           {issueAccountCount > 0 && (
-            <span className="text-xs text-[#f1a3ad]">{issueAccountCount} com erro ou expiradas</span>
+            <span className="text-xs text-danger">{issueAccountCount} com erro ou expiradas</span>
           )}
         </div>
         {visibleAccounts.length === 0 ? (
@@ -453,7 +454,7 @@ export function InstagramAccountsPage() {
             return (
               <article
                 className={`flex flex-col justify-between gap-3 rounded-xl border p-4 ${
-                  active ? "border-[#23513e] bg-[#0e1b17]"                   : "border-[#47252d] bg-[#1a1013]"
+                  active ? "border-success/30 bg-success-soft"                   : "border-danger/30 bg-danger-soft"
                 }`}
                 key={account.id}
               >
@@ -461,27 +462,27 @@ export function InstagramAccountsPage() {
                   <InstagramAvatar
                     className={`size-11 rounded-xl border object-cover ${
                       active
-                        ? "border-[#23513e] bg-[#14251d] text-[#9de0c0]"
-                        : "border-[#47252d] bg-[#211318] text-[#f1a3ad]"
+                        ? "border-success/30 bg-success-soft text-success"
+                        : "border-danger/30 bg-danger-soft text-danger"
                     }`}
                     src={account.profile_picture_url}
                     username={account.username}
                   />
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-[#f5f7fb]">@{account.username}</p>
+                    <p className="truncate font-medium text-fg">@{account.username}</p>
                     <p
                       className={`mt-1 flex items-center gap-1.5 text-xs ${
-                        active ? "text-[#9de0c0]"                         : "text-[#f1a3ad]"
+                        active ? "text-success"                         : "text-danger"
                       }`}
                     >
                       {active ? <Check size={13} /> : <Clock3 size={13} />}
                       {label}
                     </p>
-                    <p className="mt-1 text-xs text-[#94a3b8]">
+                    <p className="mt-1 text-xs text-muted">
                       Conectada em {formatAccountConnectedAt(account.connected_at)}
                     </p>
                     {account.status === "error" && (
-                      <p className="mt-1 text-xs text-[#f1a3ad]">
+                      <p className="mt-1 text-xs text-danger">
                         Permaneceu conectada por{" "}
                         {formatConnectedDuration(account.connected_at, account.error_at)} antes do erro
                       </p>
@@ -492,7 +493,7 @@ export function InstagramAccountsPage() {
                   <div className="flex flex-wrap gap-2">
                     {!active && accounts.data.can_connect && (
                       <button
-                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-brand px-3 py-2 text-sm text-white disabled:opacity-60"
                         type="button"
                         onClick={startConnection}
                         disabled={!metaApps.data?.apps.length}
@@ -503,12 +504,12 @@ export function InstagramAccountsPage() {
                     )}
                     {account.status === "connected" && accounts.data.can_manage && (
                       <button
-                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#47252d] px-3 py-2 text-sm text-[#f1a3ad] transition hover:bg-[#1a1013] disabled:opacity-60"
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-danger/30 px-3 py-2 text-sm text-danger transition hover:bg-danger-soft disabled:opacity-60"
                         type="button"
                         disabled={disconnect.isPending}
-                        onClick={() => {
+                        onClick={async () => {
                           if (
-                            window.confirm(
+                            await confirmAction(
                               `Desconectar @${account.username}? A conta será mantida no hub como desconectada, mas o token salvo será apagado.`,
                             )
                           ) {
@@ -522,12 +523,12 @@ export function InstagramAccountsPage() {
                     )}
                     {account.status === "error" && accounts.data.can_manage && (
                       <button
-                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#47252d] px-3 py-2 text-sm text-[#f1a3ad] transition hover:bg-[#1a1013] disabled:opacity-60"
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-danger/30 px-3 py-2 text-sm text-danger transition hover:bg-danger-soft disabled:opacity-60"
                         type="button"
                         disabled={removeErroredAccount.isPending}
-                        onClick={() => {
+                        onClick={async () => {
                           if (
-                            window.confirm(
+                            await confirmAction(
                               `Remover @${account.username} do FlashPost? A conta e o histórico de publicações associado serão excluídos.`,
                             )
                           ) {
@@ -548,7 +549,7 @@ export function InstagramAccountsPage() {
         )}
       </section>
 
-      <p className="text-xs leading-5 text-[#64748b]">
+      <p className="text-xs leading-5 text-muted">
         Contas desconectadas e contas em erro ficam fora do fluxo ativo e permanecem visíveis para
         que você possa reconectá-las.
       </p>

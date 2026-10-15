@@ -91,14 +91,14 @@ export function Modal({ open, title, description, onClose, children, footer, bus
         role="dialog"
         tabIndex={-1}
       >
-        <div className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-white/15 sm:hidden" />
+        <div className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-muted/30 sm:hidden" />
         <header className="flex items-start justify-between gap-4 px-4 pb-3 pt-4 sm:px-5 sm:pt-6">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#f5f7fb]" id={titleId}>
+            <h2 className="text-lg font-semibold tracking-[-0.02em] text-fg" id={titleId}>
               {title}
             </h2>
             {description && (
-              <p className="mt-1 text-sm leading-6 text-[#94a3b8]" id={descriptionId}>
+              <p className="mt-1 text-sm leading-6 text-muted" id={descriptionId}>
                 {description}
               </p>
             )}

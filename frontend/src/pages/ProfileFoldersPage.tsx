@@ -10,6 +10,7 @@ import {
   formatConnectedDuration,
 } from "@/features/instagram/accountDates";
 import { ApiError, apiRequest } from "@/services/api";
+import { confirmAction } from "@/lib/confirm";
 
 type ProfileFolderAccount = {
   id: string;
@@ -144,20 +145,20 @@ export function ProfileFoldersPage() {
     <div className="mx-auto max-w-6xl space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
             Organização
           </p>
-          <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
-            <Folder size={25} className="text-[#aeb9ce]" />
+          <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
+            <Folder size={25} className="text-fg-2" />
             Pastas de perfis
           </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#94a3b8]">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
             Agrupe contas Instagram por tema ou operação. Cada pasta pode ter uma cor para facilitar
             a identificação dos perfis.
           </p>
         </div>
         <button
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#00c9d8] px-4 py-2 text-sm font-semibold text-[#062027] hover:bg-[#42dbe5]"
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-strong"
           type="button"
           onClick={openCreateForm}
         >
@@ -176,10 +177,10 @@ export function ProfileFoldersPage() {
             saveFolder.mutate();
           }}
         >
-          <label className="grid gap-2 text-sm text-[#cbd5e1]">
+          <label className="grid gap-2 text-sm text-fg-2">
             Nome da pasta
             <input
-              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
               maxLength={80}
               required
               value={draft.name}
@@ -187,7 +188,7 @@ export function ProfileFoldersPage() {
               placeholder="Ex.: Humor, Notícias, Lifestyle"
             />
           </label>
-          <label className="flex min-h-10 items-center gap-3 text-sm text-[#cbd5e1]">
+          <label className="flex min-h-10 items-center gap-3 text-sm text-fg-2">
             Cor da pasta
             <input
               className="size-10 cursor-pointer rounded border-0 bg-transparent p-0"
@@ -199,7 +200,7 @@ export function ProfileFoldersPage() {
           </label>
           <div className="flex gap-2">
             <button
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#00c9d8] px-3 text-sm font-semibold text-[#062027] disabled:opacity-60"
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-3 text-sm font-semibold text-white disabled:opacity-60"
               type="submit"
               disabled={saveFolder.isPending || !draft.name.trim()}
             >
@@ -207,7 +208,7 @@ export function ProfileFoldersPage() {
               {saveFolder.isPending ? "Salvando..." : "Salvar"}
             </button>
             <button
-              className="grid size-10 place-items-center rounded-lg border border-line text-[#94a3b8] hover:text-white"
+              className="grid size-10 place-items-center rounded-lg border border-line text-muted hover:text-white"
               type="button"
               onClick={() => setFormOpen(false)}
               aria-label="Cancelar edição da pasta"
@@ -224,21 +225,21 @@ export function ProfileFoldersPage() {
         <section className="grid items-start gap-4 lg:grid-cols-2" aria-label="Pastas criadas">
           {folderData.folders.map((folder) => (
             <article
-              className="space-y-4 rounded-xl border bg-[#0d151c] p-4 sm:p-4"
+              className="space-y-4 rounded-xl border bg-well p-4 sm:p-4"
               key={folder.id}
               style={{ borderColor: `${folder.color}55` }}
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: folder.color }} />
-                  <h3 className="truncate font-semibold text-[#f5f7fb]">{folder.name}</h3>
-                  <span className="text-xs text-[#94a3b8]">
+                  <h3 className="truncate font-semibold text-fg">{folder.name}</h3>
+                  <span className="text-xs text-muted">
                     ({folder.accounts.length} {folder.accounts.length === 1 ? "conta" : "contas"})
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs font-medium text-[#cbd5e1] hover:text-white"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs font-medium text-fg-2 hover:text-white"
                     type="button"
                     onClick={() => openAccountManager(folder)}
                   >
@@ -246,7 +247,7 @@ export function ProfileFoldersPage() {
                     Organizar contas
                   </button>
                   <button
-                    className="grid size-9 place-items-center rounded-lg border border-line text-[#aeb9ce] hover:text-white"
+                    className="grid size-9 place-items-center rounded-lg border border-line text-fg-2 hover:text-white"
                     type="button"
                     aria-label={`Editar pasta ${folder.name}`}
                     onClick={() => openEditForm(folder)}
@@ -254,13 +255,13 @@ export function ProfileFoldersPage() {
                     <Pencil size={15} />
                   </button>
                   <button
-                    className="grid size-9 place-items-center rounded-lg border border-[#47252d] text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-60"
+                    className="grid size-9 place-items-center rounded-lg border border-danger/30 text-danger hover:bg-danger-soft disabled:opacity-60"
                     type="button"
                     aria-label={`Excluir pasta ${folder.name}`}
                     disabled={removeFolder.isPending}
-                    onClick={() => {
+                    onClick={async () => {
                       if (
-                        window.confirm(
+                        await confirmAction(
                           `Excluir a pasta "${folder.name}"? As contas serão mantidas e ficarão sem pasta.`,
                         )
                       ) {
@@ -275,7 +276,7 @@ export function ProfileFoldersPage() {
               <div className="grid gap-2 sm:grid-cols-2">
                 {folder.accounts.map((account) => (
                   <div
-                    className="flex min-w-0 items-start gap-2 rounded-lg border bg-[#101923] px-2.5 py-2 text-sm text-[#e6eaf2]"
+                    className="flex min-w-0 items-start gap-2 rounded-lg border bg-well px-2.5 py-2 text-sm text-fg"
                     key={account.id}
                     style={{ borderColor: `${folder.color}99` }}
                   >
@@ -286,11 +287,11 @@ export function ProfileFoldersPage() {
                     />
                     <div className="min-w-0">
                       <p className="truncate">@{account.username}</p>
-                      <p className="mt-0.5 text-[10px] text-[#94a3b8]">
+                      <p className="mt-0.5 text-[10px] text-muted">
                         Conectada em {formatAccountConnectedAt(account.connected_at)}
                       </p>
                       {account.status === "error" && (
-                        <p className="mt-0.5 text-[10px] text-[#f1a3ad]">
+                        <p className="mt-0.5 text-[10px] text-danger">
                           Duração antes do erro:{" "}
                           {formatConnectedDuration(account.connected_at, account.error_at)}
                         </p>
@@ -299,7 +300,7 @@ export function ProfileFoldersPage() {
                   </div>
                 ))}
                 {folder.accounts.length === 0 && (
-                  <p className="text-sm text-[#64748b]">Nenhuma conta nesta pasta ainda.</p>
+                  <p className="text-sm text-muted">Nenhuma conta nesta pasta ainda.</p>
                 )}
               </div>
             </article>
@@ -308,8 +309,8 @@ export function ProfileFoldersPage() {
       )}
 
       <section className="rounded-xl border border-line bg-surface p-4">
-        <h3 className="font-medium text-[#f5f7fb]">Contas sem pasta ({unassignedCount})</h3>
-        <p className="mt-1 text-xs text-[#94a3b8]">
+        <h3 className="font-medium text-fg">Contas sem pasta ({unassignedCount})</h3>
+        <p className="mt-1 text-xs text-muted">
           Toque em uma conta para escolher a pasta dela, ou use “Organizar contas” em uma pasta.
         </p>
         {unassignedCount > 0 && (
@@ -318,7 +319,7 @@ export function ProfileFoldersPage() {
               .filter((account) => !account.profile_folder_id)
               .map((account) => (
                 <button
-                  className="inline-flex items-start gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-left text-xs text-[#cbd5e1] transition-shadow active:shadow-none"
+                  className="inline-flex items-start gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-left text-xs text-fg-2 transition-shadow active:shadow-none"
                   key={account.id}
                   onClick={() => {
                     saveFolderAccounts.reset();
@@ -333,11 +334,11 @@ export function ProfileFoldersPage() {
                   />
                   <div>
                     <p>@{account.username}</p>
-                    <p className="mt-0.5 text-[10px] text-[#94a3b8]">
+                    <p className="mt-0.5 text-[10px] text-muted">
                       Conectada em {formatAccountConnectedAt(account.connected_at)}
                     </p>
                     {account.status === "error" && (
-                      <p className="mt-0.5 text-[10px] text-[#f1a3ad]">
+                      <p className="mt-0.5 text-[10px] text-danger">
                         Duração antes do erro:{" "}
                         {formatConnectedDuration(account.connected_at, account.error_at)}
                       </p>
@@ -367,10 +368,10 @@ export function ProfileFoldersPage() {
                     });
                   }}
                 >
-                  <label className="grid gap-1.5 text-xs text-[#94a3b8]">
+                  <label className="grid gap-1.5 text-xs text-muted">
                     Buscar perfil pelo nome
                     <input
-                      className="min-h-9 rounded-lg border border-line bg-surface-raised px-3 text-sm text-[#f5f7fb] outline-none focus:border-[#00c9d8]"
+                      className="min-h-9 rounded-lg border border-line bg-surface-raised px-3 text-sm text-fg outline-none focus:border-brand"
                       type="search"
                       value={accountSearch}
                       onChange={(event) => setAccountSearch(event.target.value)}
@@ -378,12 +379,12 @@ export function ProfileFoldersPage() {
                     />
                   </label>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-[#94a3b8]">
+                    <p className="text-xs text-muted">
                       {visibleAccounts.length} {visibleAccounts.length === 1 ? "perfil" : "perfis"}
                       {" "}correspondem à busca
                     </p>
                     <button
-                      className="min-h-8 rounded-lg border border-line px-3 text-xs font-medium text-[#cbd5e1] hover:bg-[#101923] disabled:opacity-50"
+                      className="min-h-8 rounded-lg border border-line px-3 text-xs font-medium text-fg-2 hover:bg-well disabled:opacity-50"
                       type="button"
                       disabled={visibleAccounts.length === 0}
                       onClick={() =>
@@ -398,7 +399,7 @@ export function ProfileFoldersPage() {
                     </button>
                   </div>
                   {visibleAccounts.length === 0 ? (
-                    <p className="py-2 text-xs text-[#94a3b8]">
+                    <p className="py-2 text-xs text-muted">
                       Nenhum perfil corresponde à busca.
                     </p>
                   ) : (
@@ -409,8 +410,8 @@ export function ProfileFoldersPage() {
                         <label
                           className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-xs ${
                             checked
-                              ? "border-[#00c9d8] bg-[#0d3036] text-[#e7fdff]"
-                              : "border-line bg-surface-raised text-[#cbd5e1]"
+                              ? "border-brand bg-brand-soft text-fg"
+                              : "border-line bg-surface-raised text-fg-2"
                           }`}
                           key={account.id}
                         >
@@ -439,14 +440,14 @@ export function ProfileFoldersPage() {
                   )}
                   <div className="flex justify-end gap-2">
                     <button
-                      className="min-h-9 rounded-lg border border-line px-3 text-xs text-[#cbd5e1]"
+                      className="min-h-9 rounded-lg border border-line px-3 text-xs text-fg-2"
                       type="button"
                       onClick={() => setManagingFolderId(null)}
                     >
                       Cancelar
                     </button>
                     <button
-                      className="min-h-9 rounded-lg bg-[#00c9d8] px-3 text-xs font-semibold text-[#062027] disabled:opacity-60"
+                      className="min-h-9 rounded-lg bg-brand px-3 text-xs font-semibold text-white disabled:opacity-60"
                       type="submit"
                       disabled={saveFolderAccounts.isPending}
                     >
@@ -465,13 +466,13 @@ export function ProfileFoldersPage() {
         title={assigningAccount ? `Mover @${assigningAccount.username}` : "Mover conta"}
       >
         {folderData.folders.length === 0 ? (
-          <p className="text-sm text-[#94a3b8]">Crie uma pasta primeiro.</p>
+          <p className="text-sm text-muted">Crie uma pasta primeiro.</p>
         ) : (
           <ul className="space-y-2.5">
             {folderData.folders.map((folder) => (
               <li key={folder.id}>
                 <button
-                  className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-3.5 text-left text-sm text-[#f5f7fb] disabled:opacity-60"
+                  className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-3.5 text-left text-sm text-fg disabled:opacity-60"
                   disabled={saveFolderAccounts.isPending}
                   onClick={() =>
                     assigningAccount &&
@@ -484,14 +485,14 @@ export function ProfileFoldersPage() {
                 >
                   <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: folder.color }} />
                   <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
-                  <span className="text-xs text-[#94a3b8]">{folder.accounts.length}</span>
+                  <span className="text-xs text-muted">{folder.accounts.length}</span>
                 </button>
               </li>
             ))}
           </ul>
         )}
         {saveFolderAccounts.error && (
-          <p className="mt-3 text-sm text-[#f1a3ad]" role="alert">
+          <p className="mt-3 text-sm text-danger" role="alert">
             {getErrorMessage(saveFolderAccounts.error, "Não foi possível mover a conta.")}
           </p>
         )}

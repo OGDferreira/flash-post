@@ -6,6 +6,7 @@ import { ErrorState, LoadingState } from "@/components/PageState";
 import { CopyField } from "@/components/ui/CopyField";
 import { MetaSetupModal } from "@/features/meta/MetaSetupModal";
 import { ApiError, apiRequest } from "@/services/api";
+import { confirmAction } from "@/lib/confirm";
 
 type InstagramMetaApp = {
   id: string;
@@ -92,8 +93,8 @@ export function MetaAppsPage() {
   if (!accounts.data.can_manage) {
     return (
       <section className="mx-auto max-w-3xl rounded-xl border border-line bg-surface p-4">
-        <h2 className="text-2xl font-semibold text-[#f5f7fb]">Aplicativos Meta</h2>
-        <p className="mt-3 text-sm leading-6 text-[#94a3b8]">
+        <h2 className="text-2xl font-semibold text-fg">Aplicativos Meta</h2>
+        <p className="mt-3 text-sm leading-6 text-muted">
           Somente o OWNER do workspace pode cadastrar e gerenciar aplicativos Meta.
         </p>
       </section>
@@ -126,11 +127,11 @@ export function MetaAppsPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-5">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Workspace</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Workspace</p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
           Apps Meta
         </h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#94a3b8]">
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
           Gerencie os aplicativos Meta usados para autorizar novas contas Instagram neste workspace.
         </p>
       </header>
@@ -138,8 +139,8 @@ export function MetaAppsPage() {
       <section className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h3 className="font-medium text-[#f5f7fb]">Aplicativos Meta</h3>
-            <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+            <h3 className="font-medium text-fg">Aplicativos Meta</h3>
+            <p className="mt-2 text-sm leading-6 text-muted">
               Cadastre as credenciais de Instagram Business Login. O segredo é criptografado no
               servidor e nunca é exibido novamente.
             </p>
@@ -163,7 +164,7 @@ export function MetaAppsPage() {
             <article
               className={`space-y-4 rounded-lg border p-4 ${
                 app.is_selected
-                  ? "border-[#536dfe] bg-[#11182d]"
+                  ? "border-brand bg-brand-soft"
                   : "border-line bg-surface-inset"
               }`}
               key={app.id}
@@ -171,17 +172,17 @@ export function MetaAppsPage() {
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="font-medium text-[#f5f7fb]">{app.display_name}</h4>
+                    <h4 className="font-medium text-fg">{app.display_name}</h4>
                     {app.is_selected && (
-                      <span className="rounded-full bg-[#26366f] px-2 py-0.5 text-xs text-[#c4ceff]">
+                      <span className="rounded-full bg-[#26366f] px-2 py-0.5 text-xs text-accent">
                         Selecionado
                       </span>
                     )}
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs ${
                         app.connected_accounts
-                          ? "bg-[#2dd4a0]/10 text-[#7ee2bd]"
-                          : "bg-[#f2d48a]/10 text-[#f2d48a]"
+                          ? "bg-success/10 text-success"
+                          : "bg-warning/10 text-warning"
                       }`}
                     >
                       {app.connected_accounts === 0
@@ -191,10 +192,10 @@ export function MetaAppsPage() {
                           : `${app.connected_accounts} contas conectadas`}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-[#94a3b8]">
+                  <p className="mt-1 text-sm text-muted">
                     Instagram App ID: {app.app_id}
                   </p>
-                  <p className="mt-1 text-xs text-[#64748b]">
+                  <p className="mt-1 text-xs text-muted">
                     {app.credential_kind === "legacy"
                       ? "App legado: credenciais e contas vinculadas preservadas."
                       : "Credenciais de Instagram Business Login."}
@@ -202,7 +203,7 @@ export function MetaAppsPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
-                    className="grid size-10 place-items-center rounded-lg border border-line text-[#cbd5e1] hover:bg-surface-raised"
+                    className="grid size-10 place-items-center rounded-lg border border-line text-fg-2 hover:bg-surface-raised"
                     type="button"
                     aria-label={`Editar ${app.display_name}`}
                     onClick={() => {
@@ -216,7 +217,7 @@ export function MetaAppsPage() {
                   </button>
                   {!app.is_selected && (
                     <button
-                      className="min-h-10 rounded-lg border border-[#33447c] px-3 py-2 text-sm text-[#c4ceff] hover:bg-[#11182d] disabled:opacity-60"
+                      className="min-h-10 rounded-lg border border-line px-3 py-2 text-sm text-accent hover:bg-brand-soft disabled:opacity-60"
                       type="button"
                       disabled={selectMetaApp.isPending}
                       onClick={() => selectMetaApp.mutate(app.id)}
@@ -225,13 +226,13 @@ export function MetaAppsPage() {
                     </button>
                   )}
                   <button
-                    className="grid size-10 place-items-center rounded-lg border border-[#47252d] text-[#f1a3ad] hover:bg-[#1a1013] disabled:opacity-60"
+                    className="grid size-10 place-items-center rounded-lg border border-danger/30 text-danger hover:bg-danger-soft disabled:opacity-60"
                     type="button"
                     aria-label={`Remover ${app.display_name}`}
                     disabled={removeMetaApp.isPending}
-                    onClick={() => {
+                    onClick={async () => {
                       if (
-                        window.confirm(
+                        await confirmAction(
                           `Remover o aplicativo "${app.display_name}"? Apps com contas Instagram conectadas não podem ser removidos.`,
                         )
                       ) {
@@ -255,21 +256,21 @@ export function MetaAppsPage() {
                     });
                   }}
                 >
-                  <label className="grid gap-2 text-sm text-[#cbd5e1]">
+                  <label className="grid gap-2 text-sm text-fg-2">
                     Nome interno
                     <input
-                      className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
+                      className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
                       maxLength={120}
                       required
                       value={editDisplayName}
                       onChange={(event) => setEditDisplayName(event.target.value)}
                     />
                   </label>
-                  <label className="grid gap-2 text-sm text-[#cbd5e1]">
+                  <label className="grid gap-2 text-sm text-fg-2">
                     Novo Instagram App Secret (opcional)
                     <input
                       autoComplete="new-password"
-                      className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
+                      className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
                       maxLength={512}
                       type="password"
                       value={editAppSecret}
@@ -279,7 +280,7 @@ export function MetaAppsPage() {
                   </label>
                   <div className="flex items-center gap-2 sm:col-span-2">
                     <button
-                      className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#536dfe] px-3 py-2 text-sm text-white disabled:opacity-60"
+                      className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-3 py-2 text-sm text-white disabled:opacity-60"
                       type="submit"
                       disabled={updateMetaApp.isPending || !editDisplayName.trim()}
                     >
@@ -287,7 +288,7 @@ export function MetaAppsPage() {
                       {updateMetaApp.isPending ? "Salvando..." : "Salvar alterações"}
                     </button>
                     <button
-                      className="grid size-10 place-items-center rounded-lg border border-line text-[#cbd5e1]"
+                      className="grid size-10 place-items-center rounded-lg border border-line text-fg-2"
                       type="button"
                       aria-label="Cancelar edição"
                       onClick={() => {
@@ -304,7 +305,7 @@ export function MetaAppsPage() {
             </article>
           ))}
           {metaApps.data.apps.length === 0 && (
-            <p className="rounded-lg border border-dashed border-line px-4 py-3 text-sm text-[#94a3b8]">
+            <p className="rounded-lg border border-dashed border-line px-4 py-3 text-sm text-muted">
               Nenhum aplicativo cadastrado. Adicione as credenciais do Instagram Business Login abaixo.
             </p>
           )}
@@ -316,11 +317,11 @@ export function MetaAppsPage() {
             createMetaApp.mutate();
           }}
         >
-          <label className="grid gap-2 text-sm text-[#cbd5e1] sm:col-span-2">
+          <label className="grid gap-2 text-sm text-fg-2 sm:col-span-2">
             Nome para identificar o aplicativo
             <input
               autoComplete="off"
-              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
               maxLength={120}
               required
               value={displayName}
@@ -328,15 +329,15 @@ export function MetaAppsPage() {
               placeholder="Ex.: App principal da marca"
             />
           </label>
-          <label className="grid gap-2 text-sm text-[#cbd5e1]">
+          <label className="grid gap-2 text-sm text-fg-2">
             Instagram App ID
-            <span className="text-xs leading-5 text-[#94a3b8]">
+            <span className="text-xs leading-5 text-muted">
               No painel da Meta, use o Instagram App ID em Instagram → API setup with Instagram
               login → Business login settings. Não use o App ID de Configurações Básicas.
             </span>
             <input
               autoComplete="off"
-              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
               inputMode="numeric"
               maxLength={64}
               pattern="[0-9]+"
@@ -345,15 +346,15 @@ export function MetaAppsPage() {
               onChange={(event) => setAppId(event.target.value)}
             />
           </label>
-          <label className="grid gap-2 text-sm text-[#cbd5e1]">
+          <label className="grid gap-2 text-sm text-fg-2">
             Instagram App Secret
-            <span className="text-xs leading-5 text-[#94a3b8]">
+            <span className="text-xs leading-5 text-muted">
               Use o Instagram App Secret na mesma tela Business login settings, não o App Secret
               de Configurações Básicas.
             </span>
             <input
               autoComplete="new-password"
-              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-[#f5f7fb] outline-none focus:border-[#7186ff]"
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
               maxLength={512}
               type="password"
               required
@@ -362,14 +363,14 @@ export function MetaAppsPage() {
               placeholder="Cole o Instagram App Secret"
             />
           </label>
-          <p className="text-xs leading-5 text-[#64748b] sm:col-span-2">
+          <p className="text-xs leading-5 text-muted sm:col-span-2">
             O app Meta deve ser do tipo Business e ter o Instagram Business Login configurado.
             Cadastre o URI de callback exibido pelo FlashPost entre os OAuth redirect URIs nessa
             mesma configuração. O segredo não é retornado nem compartilhado com outros workspaces.
           </p>
           <div className="flex items-center gap-3 sm:col-span-2">
             <button
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#667eea] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition hover:bg-brand disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
               disabled={
                 createMetaApp.isPending ||

@@ -158,14 +158,14 @@ export function DailyViewsGoalCard() {
   return (
     <section className="glass-panel p-4 sm:p-5" aria-labelledby="daily-goal-title">
       <header className="flex items-start gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-[#33447c] bg-[#11182d] text-[#9baaff]">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-line bg-brand-soft text-accent">
           <Target size={18} />
         </span>
         <div>
-          <h2 id="daily-goal-title" className="text-lg font-semibold text-[#f5f7fb]">
+          <h2 id="daily-goal-title" className="text-lg font-semibold text-fg">
             Meta diária de visualizações
           </h2>
-          <p className="mt-1 text-sm leading-6 text-[#94a3b8]">
+          <p className="mt-1 text-sm leading-6 text-muted">
             Receba um aviso no celular quando suas contas atingirem a meta do dia, mesmo com o app fechado.
           </p>
         </div>
@@ -177,13 +177,13 @@ export function DailyViewsGoalCard() {
           <div className="skeleton h-11" />
         </div>
       ) : goal.error ? (
-        <p className="mt-6 text-sm text-[#f1a3ad]">Não foi possível carregar sua meta.</p>
+        <p className="mt-6 text-sm text-danger">Não foi possível carregar sua meta.</p>
       ) : (
         <>
           {data?.configured && (
             <div className="mt-6 rounded-2xl border border-line bg-surface-inset p-4">
               <div className="flex items-baseline justify-between gap-3">
-                <p className="text-xs uppercase tracking-[0.12em] text-[#64748b]">Hoje</p>
+                <p className="text-xs uppercase tracking-[0.12em] text-muted">Hoje</p>
                 <button
                   className="btn-ghost min-h-9 !px-2 text-xs"
                   disabled={refresh.isPending}
@@ -194,9 +194,9 @@ export function DailyViewsGoalCard() {
                   Atualizar
                 </button>
               </div>
-              <p className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#f5f7fb]">
+              <p className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-fg">
                 {data.progress_views === null ? "—" : numberFormat.format(data.progress_views)}
-                <span className="text-sm font-normal text-[#64748b]">
+                <span className="text-sm font-normal text-muted">
                   {" "}
                   / {numberFormat.format(data.target_views ?? 0)}
                 </span>
@@ -214,7 +214,7 @@ export function DailyViewsGoalCard() {
                   style={{ width: `${progress ?? 0}%` }}
                 />
               </div>
-              <p className="mt-2 text-xs leading-5 text-[#94a3b8]">
+              <p className="mt-2 text-xs leading-5 text-muted">
                 {data.notified_today
                   ? "Meta atingida hoje — notificação enviada."
                   : data.progress_error
@@ -239,7 +239,7 @@ export function DailyViewsGoalCard() {
             }}
           >
             <label className="block">
-              <span className="text-sm text-[#cbd5e1]">Visualizações por dia</span>
+              <span className="text-sm text-fg-2">Visualizações por dia</span>
               <input
                 className="field mt-2"
                 inputMode="numeric"
@@ -251,7 +251,7 @@ export function DailyViewsGoalCard() {
               />
             </label>
             <label className="block">
-              <span className="text-sm text-[#cbd5e1]">Fuso horário do dia</span>
+              <span className="text-sm text-fg-2">Fuso horário do dia</span>
               <select className="field mt-2" onChange={(event) => setTimeZone(event.target.value)} value={timeZone}>
                 {zoneOptions.map(([value, label]) => (
                   <option key={value} value={value}>
@@ -267,7 +267,7 @@ export function DailyViewsGoalCard() {
                 onChange={(event) => setEnabled(event.target.checked)}
                 type="checkbox"
               />
-              <span className="text-sm text-[#cbd5e1]">Acompanhar esta meta</span>
+              <span className="text-sm text-fg-2">Acompanhar esta meta</span>
             </label>
             <div className="sm:col-span-2">
               <button className="btn-primary w-full sm:w-auto" disabled={!targetValid || save.isPending} type="submit">
@@ -279,18 +279,18 @@ export function DailyViewsGoalCard() {
       )}
 
       <div className="mt-6 border-t border-line-soft pt-5">
-        <h3 className="text-sm font-medium text-[#e6eaf2]">Notificações neste dispositivo</h3>
+        <h3 className="text-sm font-medium text-fg">Notificações neste dispositivo</h3>
         {availability === "ios-needs-install" ? (
-          <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+          <p className="mt-2 text-sm leading-6 text-muted">
             No iPhone e iPad, adicione o FlashPost à Tela de Início (Compartilhar → Adicionar à Tela de
             Início), abra pelo ícone e ative aqui. Requer iOS 16.4 ou superior.
           </p>
         ) : availability !== "supported" ? (
-          <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+          <p className="mt-2 text-sm leading-6 text-muted">
             Este navegador não oferece notificações push. Use Chrome, Edge, Firefox ou Safari atualizados.
           </p>
         ) : pushConfig.data && !pushConfig.data.supported ? (
-          <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+          <p className="mt-2 text-sm leading-6 text-muted">
             O servidor ainda não está configurado para enviar notificações.
           </p>
         ) : (
@@ -322,11 +322,11 @@ export function DailyViewsGoalCard() {
           </div>
         )}
         {pushConfig.data && pushConfig.data.devices > 0 && (
-          <p className="mt-2 text-xs text-[#64748b]">
+          <p className="mt-2 text-xs text-muted">
             {pushConfig.data.devices} dispositivo(s) recebendo avisos nesta conta.
           </p>
         )}
-        <p className="mt-3 text-xs leading-5 text-[#64748b]">
+        <p className="mt-3 text-xs leading-5 text-muted">
           As visualizações vêm dos Insights da Meta, que podem atrasar até 48 horas. Você recebe no máximo um
           aviso por meta por dia.
         </p>
@@ -334,7 +334,7 @@ export function DailyViewsGoalCard() {
 
       {feedback && (
         <p
-          className={`mt-4 text-sm ${feedback.kind === "ok" ? "text-[#2dd4a0]" : "text-[#f1a3ad]"}`}
+          className={`mt-4 text-sm ${feedback.kind === "ok" ? "text-success" : "text-danger"}`}
           role={feedback.kind === "ok" ? "status" : "alert"}
         >
           {feedback.text}

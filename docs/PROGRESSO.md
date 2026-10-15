@@ -40,3 +40,8 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - App instalado (display-mode standalone): zoom por pinça/duplo toque bloqueado (viewport, gestos e touch-action).
 - Loops: card mostra todo o relatório; lista de contas só aparece ao clicar no card ("Ver contas").
 - Não validado com dados reais (demo sem pastas/contas); zoom só testável no PWA instalado.
+
+## 0.6.0 — Parte 1: tokens e componentes base
+- 1.310 cores hex soltas viraram tokens semânticos (`text-fg/fg-2/muted/accent`, `danger/warning/success(+soft)`, `brand`, `well`) definidos por tema em `index.css`; remap do tema claro removido. Ciano unificado no azul da marca.
+- Novos componentes: `ui/Button`, `ui/Card`, `ui/Badge`; `lib/confirm.tsx` (`confirmAction` + `ConfirmHost`) substitui os 22 `window.confirm` por pop-up do design (título/detalhe/verbo inferidos; perigo = botão vermelho).
+- Pendências do plano: 2 navegação mobile, 3 polling/Error Boundary, 4 dividir páginas, 5 testes Playwright, 6 worker de sync. Migrar botões artesanais para `<Button>` ao tocar cada tela.

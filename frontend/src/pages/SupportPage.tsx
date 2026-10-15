@@ -30,10 +30,10 @@ const STATUS_LABEL: Record<Status, string> = {
   CLOSED: "Encerrado",
 };
 const STATUS_TONE: Record<Status, string> = {
-  OPEN: "text-[#8295ff] border-[#536dfe]/40",
-  IN_PROGRESS: "text-[#f3c969] border-[#f3c969]/40",
-  RESOLVED: "text-[#6ee7b7] border-[#6ee7b7]/40",
-  CLOSED: "text-[#94a3b8] border-line",
+  OPEN: "text-accent border-brand/40",
+  IN_PROGRESS: "text-warning border-warning/40",
+  RESOLVED: "text-success border-success/40",
+  CLOSED: "text-muted border-line",
 };
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : "Não foi possível concluir a ação.");
 const when = (iso: string) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
@@ -88,14 +88,14 @@ function NewTicketModal({ onClose }: { onClose: () => void }) {
           ))}
         </div>
         <label className="block text-sm">
-          <span className="mb-1 block text-[#c7cfdd]">Título</span>
+          <span className="mb-1 block text-fg-2">Título</span>
           <input className="field" maxLength={160} onChange={(e) => setTitle(e.target.value)} value={title} />
         </label>
         <label className="block text-sm">
-          <span className="mb-1 block text-[#c7cfdd]">Descrição</span>
+          <span className="mb-1 block text-fg-2">Descrição</span>
           <textarea className="field min-h-28 py-2" maxLength={5000} onChange={(e) => setDescription(e.target.value)} value={description} />
         </label>
-        {error && <p className="text-xs text-[#f1a3ad]" role="alert">{error}</p>}
+        {error && <p className="text-xs text-danger" role="alert">{error}</p>}
       </form>
     </Modal>
   );
@@ -116,16 +116,16 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
     <article className="glass-panel space-y-2 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="font-medium text-[#f5f7fb]">{ticket.title}</h3>
-          <p className="text-xs text-[#64748b]">
+          <h3 className="font-medium text-fg">{ticket.title}</h3>
+          <p className="text-xs text-muted">
             {ticket.kind === "QUESTION" ? "Dúvida" : "Erro / problema"} · {ticket.author_name} · {when(ticket.created_at)}
           </p>
         </div>
         <span className={`rounded-full border px-2.5 py-0.5 text-xs ${STATUS_TONE[ticket.status]}`}>{STATUS_LABEL[ticket.status]}</span>
       </div>
-      <p className="whitespace-pre-wrap text-sm leading-6 text-[#c7cfdd]">{ticket.description}</p>
+      <p className="whitespace-pre-wrap text-sm leading-6 text-fg-2">{ticket.description}</p>
       {ticket.resolution_note && !ticket.can_manage && (
-        <p className="rounded-lg bg-black/25 p-2.5 text-sm text-[#c7cfdd]"><strong className="text-[#6ee7b7]">Resposta:</strong> {ticket.resolution_note}</p>
+        <p className="rounded-lg bg-black/25 p-2.5 text-sm text-fg-2"><strong className="text-success">Resposta:</strong> {ticket.resolution_note}</p>
       )}
       {ticket.can_manage && (
         <div className="space-y-2 border-t border-line-soft pt-2">
@@ -150,7 +150,7 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
           Encerrar chamado
         </button>
       )}
-      {error && <p className="text-xs text-[#f1a3ad]" role="alert">{error}</p>}
+      {error && <p className="text-xs text-danger" role="alert">{error}</p>}
     </article>
   );
 }
@@ -169,11 +169,11 @@ export function SupportPage() {
     <div className="mx-auto max-w-[900px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">Suporte</p>
-          <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb]">
-            <LifeBuoy className="text-[#8295ff]" size={24} /> Dúvidas e erros
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Suporte</p>
+          <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg">
+            <LifeBuoy className="text-accent" size={24} /> Dúvidas e erros
           </h2>
-          <p className="mt-1 text-sm text-[#94a3b8]">Registre dúvidas e problemas e acompanhe a resolução.</p>
+          <p className="mt-1 text-sm text-muted">Registre dúvidas e problemas e acompanhe a resolução.</p>
         </div>
         <button className="btn-primary" onClick={() => setCreating(true)} type="button"><Plus size={16} /> Novo registro</button>
       </header>

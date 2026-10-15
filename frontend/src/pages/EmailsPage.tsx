@@ -15,6 +15,7 @@ import {
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { ApiError, apiRequest } from "@/services/api";
+import { confirmAction } from "@/lib/confirm";
 
 type EmailStatus = "available" | "in_use" | "completed" | "error" | "returned";
 type EmailAccount = {
@@ -71,11 +72,11 @@ const nextStatus: Record<EmailStatus, EmailStatus> = {
   returned: "available",
 };
 const statusStyles: Record<EmailStatus, string> = {
-  available: "border-[#315843] bg-[#10231a] text-[#a9e5c0]",
-  in_use: "border-[#34446f] bg-[#151b2d] text-[#c3ccff]",
-  completed: "border-[#4c356a] bg-[#21172f] text-[#d9b8ff]",
-  error: "border-[#63343b] bg-[#2b171b] text-[#f1a3ad]",
-  returned: "border-[#51422b] bg-[#211b12] text-[#f2d48a]",
+  available: "border-success/30 bg-success-soft text-success",
+  in_use: "border-line bg-brand-soft text-accent",
+  completed: "border-line bg-well text-accent",
+  error: "border-danger/30 bg-danger-soft text-danger",
+  returned: "border-warning/30 bg-warning-soft text-warning",
 };
 
 function errorMessage(error: unknown, fallback: string) {
@@ -101,10 +102,10 @@ function SummaryCard({
 }) {
   return (
     <article className="dashboard-card rounded-xl p-4">
-      <p className="text-xs text-[#94a3b8]">{label}</p>
+      <p className="text-xs text-muted">{label}</p>
       <p
         className={`mt-2 text-2xl font-semibold ${
-          status ? statusStyles[status].split(" ").at(-1) : "text-[#f5f7fb]"
+          status ? statusStyles[status].split(" ").at(-1) : "text-fg"
         }`}
       >
         {count}
@@ -125,13 +126,13 @@ function CopyValue({ value, label }: { value: string; label: string }) {
 
   return (
     <button
-      className="inline-flex max-w-full items-center gap-1.5 break-all text-left text-[#dbe3f4] hover:text-[#aab7ff]"
+      className="inline-flex max-w-full items-center gap-1.5 break-all text-left text-fg hover:text-accent"
       onClick={() => void copy()}
       title={`Copiar ${label}`}
       type="button"
     >
       <span>{value || "—"}</span>
-      <Clipboard className="shrink-0 text-[#64748b]" size={12} />
+      <Clipboard className="shrink-0 text-muted" size={12} />
     </button>
   );
 }
@@ -443,19 +444,19 @@ export function EmailsPage() {
     <div className="mx-auto max-w-[1600px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
             Workspace
           </p>
-          <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-[#f5f7fb] sm:text-3xl">
-            <Mail className="text-[#8295ff]" size={25} />
+          <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
+            <Mail className="text-accent" size={25} />
             Controle de E-mails
           </h1>
-          <p className="mt-2 text-sm text-[#94a3b8]">
+          <p className="mt-2 text-sm text-muted">
             Contas, responsáveis, status e registros de erro do workspace.
           </p>
         </div>
         <a
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#34446f] bg-[#11182d] px-4 text-sm font-semibold text-[#c3ccff] hover:bg-[#151b2d]"
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-brand-soft px-4 text-sm font-semibold text-accent hover:bg-brand-soft"
           href="https://2fagen.com/"
           rel="noopener noreferrer"
           target="_blank"
@@ -478,13 +479,13 @@ export function EmailsPage() {
       ))}
       {importError && (
         <div
-          className="rounded-xl border border-[#63343b] bg-[#2b171b] p-4 text-sm text-[#f1a3ad]"
+          className="rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger"
           role="alert"
         >
           {importError.split(/([^\s,;:()]+@[^\s,;:()]+?)(?=[\s,;:()]|\.(?:\s|$)|$)/g).map((part, index) =>
             index % 2 === 1 ? (
               <mark
-                className="rounded bg-[#f5c451] px-1 font-semibold text-[#1c1405]"
+                className="rounded bg-warning px-1 font-semibold text-white"
                 key={index}
               >
                 {part}
@@ -498,8 +499,8 @@ export function EmailsPage() {
 
       {emails.data.can_manage && (
         <details className="dashboard-card rounded-xl p-4">
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-[#edf0f8]">
-            <Plus className="text-[#8295ff]" size={16} />
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-fg">
+            <Plus className="text-accent" size={16} />
             Adicionar conta de e-mail
           </summary>
           <form
@@ -511,7 +512,7 @@ export function EmailsPage() {
           >
             {renderFormFields(createForm, setCreateForm)}
             <button
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white disabled:opacity-50 sm:col-span-2 xl:col-span-4"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50 sm:col-span-2 xl:col-span-4"
               disabled={createAccount.isPending}
               type="submit"
             >
@@ -524,8 +525,8 @@ export function EmailsPage() {
 
       {emails.data.can_manage && (
         <details className="dashboard-card rounded-xl p-4">
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-[#edf0f8]">
-            <Plus className="text-[#8295ff]" size={16} />
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-fg">
+            <Plus className="text-accent" size={16} />
             Importar contas por arquivo ou texto
           </summary>
           <div className="mt-4 space-y-3">
@@ -534,8 +535,8 @@ export function EmailsPage() {
                 aria-pressed={importMode === "file"}
                 className={`min-h-9 rounded-lg border px-3 text-sm font-medium ${
                   importMode === "file"
-                    ? "border-[#536dfe] bg-[#18234a] text-[#d8ddff]"
-                    : "border-[#34446f] text-[#94a3b8]"
+                    ? "border-brand bg-brand-soft text-accent"
+                    : "border-line text-muted"
                 }`}
                 onClick={() => setImportMode("file")}
                 type="button"
@@ -546,8 +547,8 @@ export function EmailsPage() {
                 aria-pressed={importMode === "text"}
                 className={`min-h-9 rounded-lg border px-3 text-sm font-medium ${
                   importMode === "text"
-                    ? "border-[#536dfe] bg-[#18234a] text-[#d8ddff]"
-                    : "border-[#34446f] text-[#94a3b8]"
+                    ? "border-brand bg-brand-soft text-accent"
+                    : "border-line text-muted"
                 }`}
                 onClick={() => setImportMode("text")}
                 type="button"
@@ -569,7 +570,7 @@ export function EmailsPage() {
                   type="file"
                 />
                 {importFile && (
-                  <span className="text-xs text-[#94a3b8]">{importFile.name}</span>
+                  <span className="text-xs text-muted">{importFile.name}</span>
                 )}
               </div>
             ) : (
@@ -590,8 +591,8 @@ export function EmailsPage() {
                 className="fixed inset-0 z-[100] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/70 p-4"
                 role="dialog"
               >
-                <div className="flex h-[85dvh] max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-5xl flex-col gap-3 rounded-xl border border-[#34446f] bg-[#0f1320] p-4">
-                  <h2 className="text-sm font-semibold text-[#edf0f8]">
+                <div className="flex h-[85dvh] max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-5xl flex-col gap-3 rounded-xl border border-line bg-well p-4">
+                  <h2 className="text-sm font-semibold text-fg">
                     Digite ou cole as contas
                   </h2>
                   <textarea
@@ -606,11 +607,11 @@ export function EmailsPage() {
                     value={importText}
                   />
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-[#94a3b8]">
+                    <span className="text-xs text-muted">
                       {importText.split("\n").filter((line) => line.trim()).length} linha(s)
                     </span>
                     <button
-                      className="inline-flex min-h-10 items-center rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white"
+                      className="inline-flex min-h-10 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white"
                       onClick={() => setTextModalOpen(false)}
                       type="button"
                     >
@@ -621,13 +622,13 @@ export function EmailsPage() {
               </div>,
               document.body,
             )}
-            <p className="text-xs text-[#94a3b8]">
+            <p className="text-xs text-muted">
               Uma conta por linha: fornecedor : e-mail : senha. Os demais campos (código 2FA e senha 2FA) são
               preenchidos com "-" se omitidos. Se enviar só e-mail : senha, perguntaremos o fornecedor e
               aplicaremos a todas essas linhas. Também aceitamos tabulação.
             </p>
             <button
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white disabled:opacity-50"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50"
               disabled={
                 importAccounts.isPending ||
                 (importMode === "file" ? !importFile : !importText.trim())
@@ -645,7 +646,7 @@ export function EmailsPage() {
                 role="dialog"
               >
                 <form
-                  className="grid w-full max-w-md gap-3 rounded-xl border border-[#34446f] bg-[#0f1320] p-4"
+                  className="grid w-full max-w-md gap-3 rounded-xl border border-line bg-well p-4"
                   onSubmit={(event: FormEvent) => {
                     event.preventDefault();
                     const supplier = bulkSupplier.trim();
@@ -654,8 +655,8 @@ export function EmailsPage() {
                     void startImport(supplier);
                   }}
                 >
-                  <h2 className="text-sm font-semibold text-[#edf0f8]">Qual o fornecedor?</h2>
-                  <p className="text-xs text-[#94a3b8]">
+                  <h2 className="text-sm font-semibold text-fg">Qual o fornecedor?</h2>
+                  <p className="text-xs text-muted">
                     Algumas linhas têm só e-mail e senha. O fornecedor informado será aplicado a elas.
                   </p>
                   <input
@@ -668,14 +669,14 @@ export function EmailsPage() {
                   />
                   <div className="flex justify-end gap-2">
                     <button
-                      className="min-h-10 rounded-lg border border-[#34446f] px-4 text-sm text-[#94a3b8]"
+                      className="min-h-10 rounded-lg border border-line px-4 text-sm text-muted"
                       onClick={() => setSupplierPromptOpen(false)}
                       type="button"
                     >
                       Cancelar
                     </button>
                     <button
-                      className="min-h-10 rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white disabled:opacity-50"
+                      className="min-h-10 rounded-lg bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50"
                       disabled={!bulkSupplier.trim()}
                       type="submit"
                     >
@@ -686,14 +687,14 @@ export function EmailsPage() {
               </div>,
               document.body,
             )}
-            {importMessage && <p className="text-sm text-[#a9e5c0]">{importMessage}</p>}
+            {importMessage && <p className="text-sm text-success">{importMessage}</p>}
           </div>
         </details>
       )}
 
       <section className="dashboard-card space-y-4 rounded-xl p-4 sm:p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <label className="grid gap-1 text-xs text-[#94a3b8]">
+          <label className="grid gap-1 text-xs text-muted">
             Filtrar por Status
             <select
               className="collaborator-input min-w-44"
@@ -706,7 +707,7 @@ export function EmailsPage() {
               ))}
             </select>
           </label>
-          <label className="grid gap-1 text-xs text-[#94a3b8]">
+          <label className="grid gap-1 text-xs text-muted">
             Filtrar por Responsável
             <select
               className="collaborator-input min-w-44"
@@ -722,14 +723,14 @@ export function EmailsPage() {
               ))}
             </select>
           </label>
-          <span className="ml-auto text-xs text-[#78839b]">
+          <span className="ml-auto text-xs text-muted">
             {filteredAccounts.length} de {accounts.length} conta(s)
           </span>
         </div>
 
         {emails.data.can_manage && (
           <div className="flex flex-wrap items-end gap-3">
-            <label className="grid gap-1 text-xs text-[#94a3b8]">
+            <label className="grid gap-1 text-xs text-muted">
               Lote importado
               <select
                 className="collaborator-input min-w-64"
@@ -743,11 +744,11 @@ export function EmailsPage() {
               </select>
             </label>
             <button
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#5a3037] px-3 text-sm text-[#f1a3ad] hover:bg-[#241216] disabled:opacity-40"
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-danger/30 px-3 text-sm text-danger hover:bg-danger-soft disabled:opacity-40"
               disabled={batchFilter === "all" || bulkDelete.isPending}
-              onClick={() => {
+              onClick={async () => {
                 const batch = batches.find((item) => item.id === batchFilter);
-                if (batch && window.confirm(`Excluir todas as ${batch.count} contas deste lote?`)) {
+                if (batch && await confirmAction(`Excluir todas as ${batch.count} contas deste lote?`)) {
                   bulkDelete.mutate({ import_batch_id: batch.id });
                 }
               }}
@@ -756,10 +757,10 @@ export function EmailsPage() {
               <Trash2 size={14} /> Excluir lote
             </button>
             <button
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#5a3037] px-3 text-sm text-[#f1a3ad] hover:bg-[#241216] disabled:opacity-40"
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-danger/30 px-3 text-sm text-danger hover:bg-danger-soft disabled:opacity-40"
               disabled={selectedVisible.length === 0 || bulkDelete.isPending}
-              onClick={() => {
-                if (window.confirm(`Excluir ${selectedVisible.length} conta(s) selecionada(s)?`)) {
+              onClick={async () => {
+                if (await confirmAction(`Excluir ${selectedVisible.length} conta(s) selecionada(s)?`)) {
                   bulkDelete.mutate({ ids: selectedVisible.map((account) => account.id) });
                 }
               }}
@@ -775,7 +776,7 @@ export function EmailsPage() {
         ) : (
           <div className="overflow-x-auto rounded-lg border border-line-soft">
             <table className="w-full min-w-[1500px] border-collapse text-left text-xs">
-              <thead className="bg-[#11151d] text-[10px] uppercase tracking-[0.1em] text-[#94a3b8]">
+              <thead className="bg-well text-[10px] uppercase tracking-[0.1em] text-muted">
                 <tr>
                   {emails.data.can_manage && (
                     <th className="px-3 py-3">
@@ -813,7 +814,7 @@ export function EmailsPage() {
                         />
                       </td>
                     )}
-                    <td className="px-3 py-3 text-[#78839b]">{accountIndex + 1}</td>
+                    <td className="px-3 py-3 text-muted">{accountIndex + 1}</td>
                     {editingId === account.id ? (
                       <>
                         <td className="px-2 py-2">
@@ -825,29 +826,29 @@ export function EmailsPage() {
                         <td className="px-2 py-2">
                           <input aria-label="Senha" className="collaborator-input min-w-36" value={editForm.password} onChange={(event) => setEditForm({ ...editForm, password: event.target.value })} />
                         </td>
-                        <td className="px-3 py-3 text-[#94a3b8]">{account.responsible ?? "—"}</td>
+                        <td className="px-3 py-3 text-muted">{account.responsible ?? "—"}</td>
                         <td className="px-3 py-3"><span className={`rounded-full border px-2 py-1 ${statusStyles[account.status]}`}><StatusLabel status={account.status} /></span></td>
-                        <td className="px-3 py-3 text-[#94a3b8]">{account.observation || "—"}</td>
+                        <td className="px-3 py-3 text-muted">{account.observation || "—"}</td>
                         <td className="px-2 py-2">
                           <input aria-label="Código 2FA" className="collaborator-input min-w-36" value={editForm.two_factor_code} onChange={(event) => setEditForm({ ...editForm, two_factor_code: event.target.value })} />
                         </td>
                         <td className="px-2 py-2">
                           <input aria-label="Senha do 2FA" className="collaborator-input min-w-36" value={editForm.two_factor_password} onChange={(event) => setEditForm({ ...editForm, two_factor_password: event.target.value })} />
                         </td>
-                        <td className="px-3 py-3">{account.attachment_url ? <a className="text-[#aab7ff]" href={account.attachment_url} rel="noreferrer" target="_blank">Ver imagem</a> : "—"}</td>
+                        <td className="px-3 py-3">{account.attachment_url ? <a className="text-accent" href={account.attachment_url} rel="noreferrer" target="_blank">Ver imagem</a> : "—"}</td>
                         <td className="px-2 py-2">
                           <div className="flex gap-2">
-                            <button aria-label="Salvar edição" className="rounded border border-[#315843] p-2 text-[#a9e5c0]" disabled={updateAccount.isPending} onClick={() => updateAccount.mutate({ id: account.id, form: editForm })} type="button"><Save size={14} /></button>
-                            <button aria-label="Cancelar edição" className="rounded border border-line p-2 text-[#94a3b8]" onClick={() => setEditingId(null)} type="button">×</button>
+                            <button aria-label="Salvar edição" className="rounded border border-success/30 p-2 text-success" disabled={updateAccount.isPending} onClick={() => updateAccount.mutate({ id: account.id, form: editForm })} type="button"><Save size={14} /></button>
+                            <button aria-label="Cancelar edição" className="rounded border border-line p-2 text-muted" onClick={() => setEditingId(null)} type="button">×</button>
                           </div>
                         </td>
                       </>
                     ) : (
                       <>
-                        <td className="px-3 py-3 font-medium text-[#cbd5e1]">{account.supplier}</td>
+                        <td className="px-3 py-3 font-medium text-fg-2">{account.supplier}</td>
                         <td className="px-3 py-3"><CopyValue label="E-mail" value={account.email} /></td>
                         <td className="px-3 py-3"><CopyValue label="Senha" value={account.password} /></td>
-                        <td className="px-3 py-3 text-[#cbd5e1]">{account.responsible ?? "—"}</td>
+                        <td className="px-3 py-3 text-fg-2">{account.responsible ?? "—"}</td>
                         <td className="px-3 py-3">
                           <button
                             className={`rounded-full border px-2.5 py-1 font-medium hover:brightness-125 ${statusStyles[account.status]}`}
@@ -870,7 +871,7 @@ export function EmailsPage() {
                           />
                           {observationDrafts[account.id] !== undefined && (
                             <button
-                              className="mt-1 inline-flex items-center gap-1 rounded border border-[#34446f] px-2 py-1 text-[10px] text-[#c3ccff]"
+                              className="mt-1 inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[10px] text-accent"
                               disabled={saveObservation.isPending}
                               onClick={() => saveObservation.mutate({ id: account.id, observation: observationDrafts[account.id] })}
                               type="button"
@@ -888,7 +889,7 @@ export function EmailsPage() {
                                 <img alt="Anexo de erro" className="size-10 rounded border border-line object-cover" src={account.attachment_url} />
                               </a>
                             )}
-                            <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-line px-2 py-2 text-[#aab7ff] hover:bg-[#151b2d]">
+                            <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-line px-2 py-2 text-accent hover:bg-brand-soft">
                               <ImagePlus size={14} />
                               <span>{account.attachment_url ? "Trocar" : "Anexar"}</span>
                               <input accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={uploadAttachment.isPending} onChange={(event) => handleAttachment(account.id, event)} type="file" />
@@ -900,7 +901,7 @@ export function EmailsPage() {
                             <div className="flex gap-2">
                               <button
                                 aria-label={`Editar ${account.email}`}
-                                className="rounded border border-line p-2 text-[#aab7ff] hover:bg-[#151b2d]"
+                                className="rounded border border-line p-2 text-accent hover:bg-brand-soft"
                                 onClick={() => {
                                   setEditingId(account.id);
                                   setEditForm({
@@ -917,9 +918,9 @@ export function EmailsPage() {
                               </button>
                               <button
                                 aria-label={`Excluir ${account.email}`}
-                                className="rounded border border-[#5a3037] p-2 text-[#f1a3ad] hover:bg-[#241216]"
-                                onClick={() => {
-                                  if (window.confirm(`Excluir a conta ${account.email}?`)) deleteAccount.mutate(account.id);
+                                className="rounded border border-danger/30 p-2 text-danger hover:bg-danger-soft"
+                                onClick={async () => {
+                                  if (await confirmAction(`Excluir a conta ${account.email}?`)) deleteAccount.mutate(account.id);
                                 }}
                                 type="button"
                               >

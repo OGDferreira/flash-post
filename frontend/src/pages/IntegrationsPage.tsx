@@ -5,6 +5,7 @@ import { Copy, KeyRound, PlugZap, Plus, Save, Trash2 } from "lucide-react";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { SharkIntegrationPanel } from "@/features/sharkbot/SharkIntegrationPanel";
 import { ApiError, apiRequest } from "@/services/api";
+import { confirmAction } from "@/lib/confirm";
 
 type SmokepayOperation = {
   id: string;
@@ -121,20 +122,20 @@ export function IntegrationsPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
           Conexões externas
         </p>
-        <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-[#f5f7fb] sm:text-3xl">
-          <PlugZap className="text-[#8295ff]" size={25} />
+        <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
+          <PlugZap className="text-accent" size={25} />
           Integrações
         </h1>
-        <p className="mt-2 text-sm text-[#94a3b8]">
+        <p className="mt-2 text-sm text-muted">
           Crie um endpoint por operação e configure a parte da venda que fica
           como faturamento líquido.
         </p>
       </header>
 
-      <h2 className="text-lg font-semibold text-[#f5f7fb]">Smokepay</h2>
+      <h2 className="text-lg font-semibold text-fg">Smokepay</h2>
       {errors.map((error) => (
         <ErrorState key={error} message={error} />
       ))}
@@ -146,7 +147,7 @@ export function IntegrationsPage() {
           createOperation.mutate();
         }}
       >
-        <label className="grid gap-1.5 text-xs text-[#94a3b8]">
+        <label className="grid gap-1.5 text-xs text-muted">
           Nome da operação
           <input
             className="collaborator-input"
@@ -157,7 +158,7 @@ export function IntegrationsPage() {
             value={name}
           />
         </label>
-        <label className="grid gap-1.5 text-xs text-[#94a3b8]">
+        <label className="grid gap-1.5 text-xs text-muted">
           Split líquido (%)
           <input
             className="collaborator-input"
@@ -171,21 +172,21 @@ export function IntegrationsPage() {
           />
         </label>
         <button
-          className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg bg-[#536dfe] px-4 text-sm font-semibold text-white disabled:opacity-50"
+          className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50"
           disabled={createOperation.isPending}
           type="submit"
         >
           <Plus size={15} />
           {createOperation.isPending ? "Criando..." : "Criar webhook"}
         </button>
-        <p className="text-xs text-[#78839b] sm:col-span-3">
+        <p className="text-xs text-muted sm:col-span-3">
           O padrão é 100%. Alterar o split só afeta vendas recebidas depois da
           alteração; cada venda salva sua própria taxa líquida.
         </p>
       </form>
 
       {integrations.data.operations.length === 0 ? (
-        <section className="dashboard-card rounded-xl p-4 text-sm text-[#94a3b8]">
+        <section className="dashboard-card rounded-xl p-4 text-sm text-muted">
           Nenhuma operação cadastrada. Crie uma para gerar uma URL de webhook
           exclusiva.
         </section>
@@ -203,7 +204,7 @@ export function IntegrationsPage() {
                 key={operation.id}
               >
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px_auto]">
-                  <label className="grid gap-1.5 text-xs text-[#94a3b8]">
+                  <label className="grid gap-1.5 text-xs text-muted">
                     Operação
                     <input
                       className="collaborator-input"
@@ -220,7 +221,7 @@ export function IntegrationsPage() {
                       value={values.name}
                     />
                   </label>
-                  <label className="grid gap-1.5 text-xs text-[#94a3b8]">
+                  <label className="grid gap-1.5 text-xs text-muted">
                     Split líquido (%)
                     <input
                       className="collaborator-input"
@@ -241,7 +242,7 @@ export function IntegrationsPage() {
                     />
                   </label>
                   <button
-                    className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg border border-[#34446f] px-3 text-sm font-medium text-[#c3ccff] disabled:opacity-50"
+                    className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg border border-line px-3 text-sm font-medium text-accent disabled:opacity-50"
                     disabled={updateOperation.isPending}
                     onClick={() => updateOperation.mutate(operation)}
                     type="button"
@@ -249,7 +250,7 @@ export function IntegrationsPage() {
                     <Save size={14} />
                     Salvar
                   </button>
-                  <label className="flex items-center gap-2 text-xs text-[#cbd5e1] sm:col-span-3">
+                  <label className="flex items-center gap-2 text-xs text-fg-2 sm:col-span-3">
                     <input
                       checked={values.is_active}
                       onChange={(event) =>
@@ -267,17 +268,17 @@ export function IntegrationsPage() {
                   </label>
                 </div>
 
-                <div className="rounded-lg border border-line bg-[#090c11] p-3">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#8295ff]">
+                <div className="rounded-lg border border-line bg-well p-3">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-accent">
                     URL para cadastrar na Smokepay
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
-                    <code className="min-w-0 flex-1 break-all text-xs text-[#cbd5e1]">
+                    <code className="min-w-0 flex-1 break-all text-xs text-fg-2">
                       {operation.webhook_url}
                     </code>
                     <button
                       aria-label={`Copiar URL de ${operation.name}`}
-                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[#34446f] px-3 text-xs text-[#c3ccff]"
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-xs text-accent"
                       onClick={() => void copyWebhookUrl(operation.webhook_url)}
                       type="button"
                     >
@@ -285,7 +286,7 @@ export function IntegrationsPage() {
                       Copiar
                     </button>
                   </div>
-                  <p className="mt-2 text-[10px] text-[#78839b]">
+                  <p className="mt-2 text-[10px] text-muted">
                     Trate esta URL como uma credencial: qualquer pessoa que a
                     possua pode enviar eventos para esta operação.
                   </p>
@@ -293,11 +294,11 @@ export function IntegrationsPage() {
 
                 <div className="flex flex-wrap gap-2">
                   <button
-                    className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#51422b] px-3 text-xs font-medium text-[#f2d48a] disabled:opacity-50"
+                    className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-warning/30 px-3 text-xs font-medium text-warning disabled:opacity-50"
                     disabled={rotateKey.isPending}
-                    onClick={() => {
+                    onClick={async () => {
                       if (
-                        window.confirm(
+                        await confirmAction(
                           "Gerar uma nova URL invalidará a URL anterior configurada na Smokepay. Continuar?",
                         )
                       ) {
@@ -310,11 +311,11 @@ export function IntegrationsPage() {
                     Renovar URL
                   </button>
                   <button
-                    className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#63343b] px-3 text-xs font-medium text-[#f1a3ad] disabled:opacity-50"
+                    className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-danger/30 px-3 text-xs font-medium text-danger disabled:opacity-50"
                     disabled={deleteOperation.isPending}
-                    onClick={() => {
+                    onClick={async () => {
                       if (
-                        window.confirm(
+                        await confirmAction(
                           `Excluir "${operation.name}"? As vendas existentes serão preservadas, mas deixarão de aparecer nesta operação.`,
                         )
                       ) {
@@ -333,7 +334,7 @@ export function IntegrationsPage() {
         </section>
       )}
 
-      <h2 className="pt-2 text-lg font-semibold text-[#f5f7fb]">Sharkbot</h2>
+      <h2 className="pt-2 text-lg font-semibold text-fg">Sharkbot</h2>
       <SharkIntegrationPanel />
     </div>
   );

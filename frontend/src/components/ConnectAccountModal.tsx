@@ -61,8 +61,8 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
     <section aria-label="Conectar conta do Instagram" className="glass-panel p-4 sm:p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-[#f5f7fb]">Escolha o aplicativo</h3>
-          <p className="mt-1 text-xs leading-5 text-[#94a3b8]">
+          <h3 className="text-base font-semibold text-fg">Escolha o aplicativo</h3>
+          <p className="mt-1 text-xs leading-5 text-muted">
             A nova conta será vinculada ao aplicativo escolhido. As contas já conectadas não mudam.
           </p>
         </div>
@@ -85,7 +85,7 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
       )}
 
       {apps.error && (
-        <div className="flex items-start gap-3 rounded-xl border border-[#47252d] bg-[#1a1013]/80 p-4 text-sm text-[#f1a3ad]">
+        <div className="flex items-start gap-3 rounded-xl border border-danger/30 bg-danger-soft/80 p-4 text-sm text-danger">
           <CircleAlert className="mt-0.5 shrink-0" size={16} />
           <div>
             <p>Não foi possível carregar os aplicativos Meta.</p>
@@ -98,14 +98,14 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
 
       {apps.data && appList.length === 0 && (
         <div className="rounded-xl border border-dashed border-line px-4 py-5 text-center">
-          <Smartphone className="mx-auto text-[#7186ff]" size={22} />
-          <p className="mt-3 text-sm text-[#cbd5e1]">Nenhum aplicativo Meta configurado.</p>
+          <Smartphone className="mx-auto text-accent" size={22} />
+          <p className="mt-3 text-sm text-fg-2">Nenhum aplicativo Meta configurado.</p>
           {apps.data.can_manage ? (
             <Link className="btn-secondary mt-4" onClick={onClose} to="/feature/meta-apps">
               Configurar aplicativo Meta
             </Link>
           ) : (
-            <p className="mt-1 text-xs text-[#94a3b8]">Peça ao responsável do workspace para configurar.</p>
+            <p className="mt-1 text-xs text-muted">Peça ao responsável do workspace para configurar.</p>
           )}
         </div>
       )}
@@ -118,40 +118,40 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
             return (
               <li key={app.id}>
                 <button
-                  className="group flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-4 text-left transition-shadow hover:text-[#aab7ff] active:shadow-none disabled:cursor-wait disabled:opacity-60"
+                  className="group flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-4 text-left transition-shadow hover:text-accent active:shadow-none disabled:cursor-wait disabled:opacity-60"
                   disabled={connect.isPending}
                   onClick={() => connect.mutate(app.id)}
                   type="button"
                 >
-                  <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-[#33447c] bg-[#11182d] text-sm font-semibold text-[#9baaff]">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-line bg-brand-soft text-sm font-semibold text-accent">
                     {app.display_name.slice(0, 1).toUpperCase()}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-2">
-                      <span className="truncate font-medium text-[#f5f7fb]">{app.display_name}</span>
+                      <span className="truncate font-medium text-fg">{app.display_name}</span>
                       {app.is_selected && (
-                        <span className="rounded-full bg-[#536dfe]/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-[#aab7ff]">
+                        <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-accent">
                           Padrão
                         </span>
                       )}
                     </span>
-                    <span className="mt-1 block truncate text-xs text-[#64748b]">App ID {app.app_id}</span>
+                    <span className="mt-1 block truncate text-xs text-muted">App ID {app.app_id}</span>
                     <span
                       className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                         empty
-                          ? "bg-[#f2d48a]/10 text-[#f2d48a]"
-                          : "bg-[#2dd4a0]/10 text-[#7ee2bd]"
+                          ? "bg-warning/10 text-warning"
+                          : "bg-success/10 text-success"
                       }`}
                     >
-                      <span className={`size-1.5 rounded-full ${empty ? "bg-[#f2d48a]" : "bg-[#2dd4a0]"}`} />
+                      <span className={`size-1.5 rounded-full ${empty ? "bg-warning" : "bg-success"}`} />
                       {connectedLabel(app.connected_accounts)}
                     </span>
                   </span>
                   {isPending ? (
-                    <LoaderCircle className="shrink-0 animate-spin text-[#aab7ff]" size={18} />
+                    <LoaderCircle className="shrink-0 animate-spin text-accent" size={18} />
                   ) : (
                     <ArrowUpRight
-                      className="shrink-0 text-[#64748b] transition group-hover:text-[#aab7ff]"
+                      className="shrink-0 text-muted transition group-hover:text-accent"
                       size={18}
                     />
                   )}
@@ -163,7 +163,7 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
       )}
 
       {connect.error && (
-        <p className="mt-3 rounded-xl border border-[#47252d] bg-[#1a1013]/80 px-4 py-3 text-sm text-[#f1a3ad]" role="alert">
+        <p className="mt-3 rounded-xl border border-danger/30 bg-danger-soft/80 px-4 py-3 text-sm text-danger" role="alert">
           Não foi possível iniciar a conexão. Tente novamente.
         </p>
       )}

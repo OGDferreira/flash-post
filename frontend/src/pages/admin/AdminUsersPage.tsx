@@ -4,6 +4,7 @@ import { Check, Search, Trash2 } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest, type AdminUser, type Page } from "@/services/api";
+import { confirmAction } from "@/lib/confirm";
 
 export function AdminUsersPage() {
   const queryClient = useQueryClient();
@@ -43,13 +44,13 @@ export function AdminUsersPage() {
     <div className="space-y-4">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7186ff]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
             Administração
           </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#f5f7fb] sm:text-3xl">
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
             Usuários
           </h2>
-          <p className="mt-2 text-sm text-[#94a3b8]">
+          <p className="mt-2 text-sm text-muted">
             Contas da plataforma, função e workspace associado.
           </p>
         </div>
@@ -58,17 +59,17 @@ export function AdminUsersPage() {
             <span className="sr-only">Buscar usuários</span>
             <Search
               size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748b]"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
             />
             <input
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
               placeholder="Nome ou e-mail"
               maxLength={120}
-              className="h-10 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-sm text-[#f5f7fb] outline-none focus:border-[#536dfe]"
+              className="h-10 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-sm text-fg outline-none focus:border-brand"
             />
           </label>
-          <button className="h-10 rounded-lg border border-line bg-surface-raised px-4 text-sm text-[#c7cfdd] hover:bg-[#171e31]">
+          <button className="h-10 rounded-lg border border-line bg-surface-raised px-4 text-sm text-fg-2 hover:bg-brand-soft">
             Buscar
           </button>
         </form>
@@ -103,7 +104,7 @@ export function AdminUsersPage() {
           <div className="overflow-hidden rounded-xl border border-line-soft bg-surface">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[920px] border-collapse text-left">
-                <thead className="border-b border-line-soft bg-[#0a0d11] text-[11px] uppercase tracking-[0.12em] text-[#64748b]">
+                <thead className="border-b border-line-soft bg-well text-[11px] uppercase tracking-[0.12em] text-muted">
                   <tr>
                     <th className="px-4 py-3.5 font-medium">Usuário</th>
                     <th className="px-4 py-3.5 font-medium">Role</th>
@@ -114,45 +115,45 @@ export function AdminUsersPage() {
                     <th className="px-4 py-3.5 font-medium">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1b2330] text-sm">
+                <tbody className="divide-y divide-line text-sm">
                   {users.data.items.map((user) => (
                     <tr key={user.id} className="hover:bg-surface-raised">
                       <td className="px-4 py-4">
-                        <p className="font-medium text-[#e6eaf2]">{user.full_name}</p>
-                        <p className="mt-1 text-xs text-[#64748b]">{user.email}</p>
+                        <p className="font-medium text-fg">{user.full_name}</p>
+                        <p className="mt-1 text-xs text-muted">{user.email}</p>
                       </td>
-                      <td className="px-4 py-4 text-[#c7cfdd]">{user.role}</td>
+                      <td className="px-4 py-4 text-fg-2">{user.role}</td>
                       <td className="px-4 py-4">
                         <span
                           className={`rounded-md border px-2 py-1 text-xs ${
                             user.status === "PENDING_APPROVAL"
-                              ? "border-[#6b552b] bg-[#1c180e] text-[#f2d48a]"
+                              ? "border-warning/30 bg-warning-soft text-warning"
                               : user.status === "ACTIVE"
-                                ? "border-[#1d3b37] bg-[#0c1715] text-[#9de6d1]"
-                                : "border-[#47252d] bg-[#1a1013] text-[#f1a3ad]"
+                                ? "border-success/30 bg-success-soft text-success"
+                                : "border-danger/30 bg-danger-soft text-danger"
                           }`}
                         >
                           {user.status === "PENDING_APPROVAL" ? "Aguardando aprovação" : user.status}
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-[#94a3b8]">
+                      <td className="px-4 py-4 text-muted">
                         {user.workspace_name ?? "—"}
                       </td>
-                      <td className="px-4 py-4 text-[#94a3b8]">
+                      <td className="px-4 py-4 text-muted">
                         {formatDate(user.created_at)}
                       </td>
-                      <td className="px-4 py-4 text-[#94a3b8]">
+                      <td className="px-4 py-4 text-muted">
                         {user.last_login_at ? formatDate(user.last_login_at) : "Nunca"}
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap items-center gap-2">
                           {user.is_approved ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-[#9de6d1]">
+                            <span className="inline-flex items-center gap-1 text-xs text-success">
                               <Check size={14} /> Aprovado
                             </span>
                           ) : (
                             <button
-                              className="min-h-8 rounded-lg bg-[#536dfe] px-3 text-xs font-medium text-white hover:bg-[#667eea] disabled:opacity-50"
+                              className="min-h-8 rounded-lg bg-brand px-3 text-xs font-medium text-white hover:bg-brand disabled:opacity-50"
                               disabled={approveUser.isPending}
                               onClick={() => approveUser.mutate(user.id)}
                               type="button"
@@ -163,11 +164,11 @@ export function AdminUsersPage() {
                           {user.role !== "SUPER_ADMIN" && (
                             <button
                               aria-label={`Excluir ${user.full_name}`}
-                              className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-[#5a3037] px-2.5 text-xs text-[#f1a3ad] hover:bg-[#241216] disabled:opacity-50"
+                              className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-danger/30 px-2.5 text-xs text-danger hover:bg-danger-soft disabled:opacity-50"
                               disabled={deleteUser.isPending}
-                              onClick={() => {
+                              onClick={async () => {
                                 if (
-                                  window.confirm(
+                                  await confirmAction(
                                     `Excluir permanentemente o usuário ${user.full_name}? A ação não pode ser desfeita. Contas administradoras e donos de workspace são protegidos.`,
                                   )
                                 ) {
@@ -213,7 +214,7 @@ export function Pagination({
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   return (
-    <div className="flex flex-col gap-3 text-xs text-[#64748b] sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
       <span>
         {total === 0 ? "0 resultados" : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} de ${total}`}
       </span>
@@ -221,7 +222,7 @@ export function Pagination({
         <button
           onClick={() => onChange(Math.max(1, page - 1))}
           disabled={page <= 1}
-          className="min-h-9 rounded-lg border border-line px-3 text-[#c7cfdd] hover:bg-surface-raised disabled:opacity-40"
+          className="min-h-9 rounded-lg border border-line px-3 text-fg-2 hover:bg-surface-raised disabled:opacity-40"
         >
           Anterior
         </button>
@@ -231,7 +232,7 @@ export function Pagination({
         <button
           onClick={() => onChange(Math.min(pages, page + 1))}
           disabled={page >= pages}
-          className="min-h-9 rounded-lg border border-line px-3 text-[#c7cfdd] hover:bg-surface-raised disabled:opacity-40"
+          className="min-h-9 rounded-lg border border-line px-3 text-fg-2 hover:bg-surface-raised disabled:opacity-40"
         >
           Próxima
         </button>

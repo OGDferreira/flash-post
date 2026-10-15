@@ -228,7 +228,7 @@ export function DashboardPage() {
               ? `Acumulado dos vídeos do período: ${formatCount(metrics.views_count)}`
               : "Ocorridas no período (Insights da Meta)",
       icon: ChartNoAxesCombined,
-      color: "text-[#71c8e8]",
+      color: "text-accent",
     },
     {
       title: "Contas ativas",
@@ -236,7 +236,7 @@ export function DashboardPage() {
       loading: summary.isFetching && !summary.data,
       detail: "Com autorização válida",
       icon: UsersRound,
-      color: "text-[#8295ff]",
+      color: "text-accent",
     },
     {
       title: "Colaboradores ativos",
@@ -244,7 +244,7 @@ export function DashboardPage() {
       loading: summary.isFetching && !summary.data,
       detail: "Membros ativos deste workspace",
       icon: UsersRound,
-      color: "text-[#71c8e8]",
+      color: "text-accent",
     },
     {
       title: "Seguidores",
@@ -254,7 +254,7 @@ export function DashboardPage() {
         ? "Meta indisponível; mostrando último valor salvo"
         : "Atualizado diretamente pela Meta",
       icon: UsersRound,
-      color: "text-[#aab7ff]",
+      color: "text-accent",
     },
     {
       title: "Mídias nos perfis",
@@ -272,7 +272,7 @@ export function DashboardPage() {
       loading: summary.isFetching && !summary.data,
       detail: "Publicados pelo FlashPost",
       icon: CircleCheck,
-      color: "text-[#76c8a0]",
+      color: "text-success",
     },
     {
       title: "Na fila",
@@ -280,7 +280,7 @@ export function DashboardPage() {
       loading: summary.isFetching && !summary.data,
       detail: "Aguardando processamento",
       icon: Clock3,
-      color: "text-[#f2d48a]",
+      color: "text-warning",
     },
     {
       title: "Falhas",
@@ -288,7 +288,7 @@ export function DashboardPage() {
       loading: summary.isFetching && !summary.data,
       detail: "Publicações que precisam de atenção",
       icon: AlertTriangle,
-      color: "text-[#f16f82]",
+      color: "text-danger",
     },
     {
       title: "Contas com erro",
@@ -296,7 +296,7 @@ export function DashboardPage() {
       loading: summary.isFetching && !summary.data,
       detail: "Desconectadas ou com autorização expirada",
       icon: UserRoundX,
-      color: "text-[#f16f82]",
+      color: "text-danger",
     },
     {
       title: "Leads Sharkbot",
@@ -304,7 +304,7 @@ export function DashboardPage() {
       loading: summary.isFetching && !summary.data,
       detail: "Recebidos no período",
       icon: UsersRound,
-      color: "text-[#71c8e8]",
+      color: "text-accent",
     },
     {
       title: "Pix gerados",
@@ -312,7 +312,7 @@ export function DashboardPage() {
       loading: summary.isFetching && !summary.data,
       detail: "Pagamentos iniciados no período",
       icon: Wallet,
-      color: "text-[#f2d48a]",
+      color: "text-warning",
     },
     {
       title: "Pix pagos",
@@ -320,7 +320,7 @@ export function DashboardPage() {
       loading: summary.isFetching && !summary.data,
       detail: "Pagamentos aprovados no período",
       icon: CircleCheck,
-      color: "text-[#76c8a0]",
+      color: "text-success",
     },
     {
       title: "Conversão de Pix",
@@ -338,7 +338,7 @@ export function DashboardPage() {
       <AlertsBanner />
       <header className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#8295ff]">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
             Período das métricas
           </p>
           <Link className="btn-primary" to="/feature/accounts?connect=1">
@@ -386,7 +386,7 @@ export function DashboardPage() {
       </header>
 
       {(summary.isFetching || metaSummary.isFetching) && (
-        <p className="text-xs text-[#64748b]" role="status">
+        <p className="text-xs text-muted" role="status">
           {summary.isFetching
             ? "Atualizando indicadores do painel…"
             : "Atualizando métricas da Meta em segundo plano…"}
@@ -409,13 +409,13 @@ export function DashboardPage() {
       >
         <article className="dashboard-card rounded-xl p-4">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#8295ff]">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-accent">
               Equipe
             </p>
-            <h2 className="mt-1 text-base font-semibold text-[#e6eaf2]">
+            <h2 className="mt-1 text-base font-semibold text-fg">
               Ranking de conexões
             </h2>
-            <p className="mt-1 text-xs text-[#718096]">
+            <p className="mt-1 text-xs text-muted">
               Contas conectadas no período selecionado
             </p>
           </div>
@@ -423,28 +423,28 @@ export function DashboardPage() {
             <ol className="mt-4 space-y-3">
               {metrics.account_connection_ranking.slice(0, 5).map((member, index) => (
                 <li className="flex items-center gap-3" key={member.user_id}>
-                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#171e31] text-xs font-semibold text-[#aab7ff]">
+                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand-soft text-xs font-semibold text-accent">
                     {index + 1}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-sm text-[#dce2f0]">
+                      <span className="truncate text-sm text-fg">
                         {member.full_name}
                       </span>
-                      <span className="shrink-0 text-xs text-[#94a3b8]">
+                      <span className="shrink-0 text-xs text-muted">
                         {formatCount(member.connected_accounts)}
                       </span>
                     </div>
                     <div className="mt-1 flex items-center gap-2">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#202838]">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-well">
                         <div
-                          className="h-full rounded-full bg-[#7187ff]"
+                          className="h-full rounded-full bg-brand-strong"
                           style={{
                             width: `${(member.connected_accounts / topConnectionCount) * 100}%`,
                           }}
                         />
                       </div>
-                      <span className="text-[10px] text-[#718096]">
+                      <span className="text-[10px] text-muted">
                         {member.role === "OWNER" ? "Chefe" : "Colaborador"}
                       </span>
                     </div>
@@ -453,7 +453,7 @@ export function DashboardPage() {
               ))}
             </ol>
           ) : (
-            <p className="mt-4 text-sm text-[#94a3b8]">
+            <p className="mt-4 text-sm text-muted">
               Nenhuma conexão registrada no período.
             </p>
           )}
@@ -461,13 +461,13 @@ export function DashboardPage() {
 
         <article className="dashboard-card rounded-xl p-4">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#8295ff]">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-accent">
               Crescimento
             </p>
-            <h2 className="mt-1 text-base font-semibold text-[#e6eaf2]">
+            <h2 className="mt-1 text-base font-semibold text-fg">
               Novas contas por dia
             </h2>
-            <p className="mt-1 text-xs text-[#718096]">
+            <p className="mt-1 text-xs text-muted">
               No máximo 30 dias do período selecionado
             </p>
           </div>
@@ -497,7 +497,7 @@ export function DashboardPage() {
                   vectorEffect="non-scaling-stroke"
                 />
               </svg>
-              <div className="flex justify-between text-[10px] text-[#718096]">
+              <div className="flex justify-between text-[10px] text-muted">
                 <span>
                   {new Intl.DateTimeFormat("pt-BR", {
                     day: "2-digit",
@@ -519,7 +519,7 @@ export function DashboardPage() {
               </div>
             </>
           ) : (
-            <p className="mt-4 text-sm text-[#94a3b8]">
+            <p className="mt-4 text-sm text-muted">
               Sem dados diários de conexão para exibir.
             </p>
           )}
