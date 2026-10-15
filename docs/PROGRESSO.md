@@ -55,3 +55,9 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 ## 0.7.1 — Parte 2: logo e topo
 - Logo C (F + post) aplicado: `components/BrandLogo`, `favicon.svg/.ico`, ícones 192/512 e `flashpost-logo.png` regenerados; cache do SW v11.
 - Topo mostra só o ícone + "FlashPost" (sem "Workspace"); saudação "Boa tarde, <nome>" + data com hora e minutos (sem segundos) agora fica no início do Painel (dono e colaborador), atualizando a cada 30 s.
+
+## 0.7.2 — Parte 3: navegação
+- `layouts/navigation.ts`: 6 atalhos diretos (Painel, Contas, Pastas, Loops, Métricas, Colaboradores) + grupos recolhíveis (Contas, Publicação, Métricas, Equipe, Integrações, Suporte; Administração para super admin). Colaborador vê só o permitido (inclui Extensões e Dúvidas e erros).
+- Menu lateral: atalhos no topo, grupos embaixo; grupo da página atual abre sozinho.
+- Celular: botão de 3 traços e gaveta removidos; barra inferior com os atalhos + botão "+" (Mais) que abre folha com todas as funções por grupo, Perfil e Sair.
+- Sidebar e folhas mais opacos para leitura. SW v12.

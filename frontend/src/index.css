@@ -1193,3 +1193,12 @@ html[data-theme="light"] .bg-surface-raised { background: rgb(255 255 255 / 0.55
   .dashboard-metric-card { min-height: 118px; padding: 14px 16px; gap: 8px; }
   .dashboard-metric-value { font-size: clamp(22px, 2vw, 30px); }
 }
+
+/* Sidebar and sheets sit over content: keep them mostly opaque for legibility. */
+:root { --glass-fill-strong: rgb(14 19 36 / 0.94); }
+html[data-theme="light"] { --glass-fill-strong: rgb(244 247 255 / 0.95); }
+aside.glass-bar,
+.glass-modal { background: var(--glass-fill-strong); }
+@media (min-width: 768px) {
+  .glass-modal { background: var(--glass-fill-strong); }
+}

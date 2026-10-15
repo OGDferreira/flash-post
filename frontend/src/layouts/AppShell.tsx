@@ -3,34 +3,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Bell,
-  Blocks,
-  Bug,
-  ChartNoAxesCombined,
   ChevronDown,
-  CircleDollarSign,
-  Mail,
-  Clapperboard,
-  Folder,
-  Handshake,
-  LifeBuoy,
-  Puzzle,
-  Home,
-  Infinity,
+  Plus,
   LogOut,
-  Menu,
   Pin,
   PinOff,
   Moon,
   Sun,
-  MessageSquareText,
-  Settings2,
   Share,
   Shield,
-  Trophy,
-  Users,
-  UsersRound,
   X,
 } from "lucide-react";
+import { buildNavigation } from "./navigation";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
@@ -38,58 +22,6 @@ import { applyTheme, getTheme, type Theme } from "@/lib/theme";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { setCsrfToken, apiRequest, reportClientError } from "@/services/api";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
-
-const ownerLinks = [
-  { label: "Visão geral", to: "/dashboard", icon: Home },
-  { label: "Contas", to: "/feature/accounts", icon: Users },
-  { label: "Pastas de perfis", to: "/feature/profile-folders", icon: Folder },
-  { label: "Loops", to: "/feature/loops", icon: Infinity },
-  { label: "Log de erros", to: "/feature/error-logs", icon: Bug },
-  { label: "E-mails", to: "/feature/emails", icon: Mail },
-  { label: "Analytics", to: "/feature/analytics", icon: ChartNoAxesCombined },
-  { label: "Financeiro", to: "/feature/finance", icon: CircleDollarSign },
-  { label: "Ranking", to: "/feature/ranking", icon: Trophy },
-  { label: "Feed", to: "/feature/feed", icon: Clapperboard },
-  { label: "Automações", to: "/feature/automations", icon: MessageSquareText },
-  { label: "Integrações", to: "/feature/integrations", icon: Blocks },
-  { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
-  { label: "Filiados", to: "/feature/affiliates", icon: Handshake },
-  { label: "Extensões", to: "/feature/extensions", icon: Puzzle },
-  { label: "Dúvidas e erros", to: "/feature/support", icon: LifeBuoy },
-  { label: "Notificações", to: "/feature/notifications", icon: Bell },
-  { label: "Apps Meta", to: "/feature/meta-apps", icon: Settings2 },
-];
-
-const adminLinks = [
-  { label: "Visão geral", to: "/admin", icon: Home },
-  { label: "Usuários", to: "/admin/users", icon: Users },
-  { label: "Workspaces", to: "/admin/workspaces", icon: Blocks },
-  { label: "Sistema", to: "/admin/system", icon: Settings2 },
-];
-
-const collaboratorLinks = [
-  { label: "Meu painel", to: "/dashboard", icon: Home },
-  { label: "Hub de contas", to: "/feature/accounts", icon: Users },
-  { label: "Loops", to: "/feature/loops", icon: Infinity },
-  { label: "Log de erros", to: "/feature/error-logs", icon: Bug },
-  { label: "E-mails", to: "/feature/emails", icon: Mail },
-  { label: "Extensões", to: "/feature/extensions", icon: Puzzle },
-  { label: "Dúvidas e erros", to: "/feature/support", icon: LifeBuoy },
-];
-
-// Bottom bar on phones, in this exact order. Everything else lives in the
-// collapsible menu (header button). Route guards and the API still enforce
-// permissions; this list only hides what a role cannot open.
-const mobilePrimaryLinks = [
-  { label: "Painel", to: "/dashboard", icon: Home },
-  { label: "Contas", to: "/feature/accounts", icon: Users },
-  { label: "Loops", to: "/feature/loops", icon: Infinity },
-  { label: "Pastas", to: "/feature/profile-folders", icon: Folder },
-  { label: "Ranking", to: "/feature/ranking", icon: Trophy },
-  { label: "Métricas", to: "/feature/analytics", icon: ChartNoAxesCombined },
-  { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
-];
-const collaboratorMobileRoutes = new Set(["/dashboard", "/feature/accounts", "/feature/loops"]);
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -220,21 +152,17 @@ export function AppShell() {
       navigate("/login", { replace: true });
     },
   });
-  const workspaceLinks =
-    workspaceRole === "COLLABORATOR" ? collaboratorLinks : ownerLinks;
-  const mobileLinks = isAdminRoute
-    ? adminLinks
-    : mobilePrimaryLinks.filter(({ to }) =>
-        workspaceRole === "COLLABORATOR"
-          ? collaboratorMobileRoutes.has(to)
-          : hasWorkspaceOwnerAccess,
-      );
-  const visibleLinkGroups = [
-    ...(hasWorkspaceOwnerAccess || workspaceRole === "COLLABORATOR"
-      ? [{ title: "Workspace", links: workspaceLinks }]
-      : []),
-    ...(isSuperAdmin ? [{ title: "Administração", links: adminLinks }] : []),
-  ];
+  const navigation = buildNavigation({ isAdminRoute, isSuperAdmin, workspaceRole });
+  const mobileLinks = navigation.direct;
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const activeGroupId = navigation.groups.find((group) =>
+    group.items.some(({ to }) => location.pathname === to || location.pathname.startsWith(`${to}/`)),
+  )?.id;
+  useEffect(() => {
+    if (activeGroupId) setOpenGroups((current) => (current[activeGroupId] ? current : { ...current, [activeGroupId]: true }));
+  }, [activeGroupId]);
+  useEffect(() => setMobileOpen(false), [location.pathname]);
+  const toggleGroup = (id: string) => setOpenGroups((current) => ({ ...current, [id]: !current[id] }));
   useEffect(() => {
     const showToast = (event: Event) => {
       const message = (event as CustomEvent<string>).detail;
@@ -396,41 +324,74 @@ export function AppShell() {
       )}
 
       <nav className="app-sidebar-nav flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        {visibleLinkGroups.map((group, groupIndex) => (
-          <section
-            className={groupIndex ? "mt-4 border-t border-line-soft pt-3" : ""}
-            key={group.title}
-          >
-            {visibleLinkGroups.length > 1 && (
-              <h2 className="mb-2 overflow-hidden px-3 text-[10px] font-medium uppercase tracking-[0.12em] text-muted opacity-100 transition-all lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
-                {group.title}
-              </h2>
-            )}
-            <div className="space-y-1">
-              {group.links.map(({ label, to, icon: Icon }) => (
-                <NavLink
-                  end={to === "/admin" || to === "/dashboard"}
-                  key={to}
-                  to={to}
-                  title={label}
-                  onClick={() => setMobileOpen(false)}
-                  className={({ isActive }) =>
-                    `flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm transition-[color,box-shadow] ${
-                      isActive
-                        ? "nm-active font-medium"
-                        : "nm-hover text-muted"
-                    }`
-                  }
-                >
-                  <Icon className="shrink-0" size={17} strokeWidth={1.8} />
-                  <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
-                    {label}
-                  </span>
-                </NavLink>
-              ))}
-            </div>
-          </section>
-        ))}
+        <div className="space-y-1">
+          {navigation.direct.map(({ label, to, icon: Icon }) => (
+            <NavLink
+              end={to === "/admin" || to === "/dashboard"}
+              key={to}
+              to={to}
+              title={label}
+              className={({ isActive }) =>
+                `flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm transition-[color,box-shadow] ${
+                  isActive ? "nm-active font-medium" : "nm-hover text-muted"
+                }`
+              }
+            >
+              <Icon className="shrink-0" size={17} strokeWidth={1.8} />
+              <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap lg:max-w-0 lg:opacity-0 lg:transition-[max-width,opacity] lg:duration-300 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
+                {label}
+              </span>
+            </NavLink>
+          ))}
+        </div>
+        {navigation.groups.length > 0 && (
+          <div className="mt-4 space-y-1 border-t border-line-soft pt-3">
+            {navigation.groups.map((group) => {
+              const open = Boolean(openGroups[group.id]);
+              const GroupIcon = group.icon;
+              return (
+                <div key={group.id}>
+                  <button
+                    aria-expanded={open}
+                    className={`nm-hover flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-sm ${
+                      group.id === activeGroupId ? "text-fg" : "text-muted"
+                    }`}
+                    onClick={() => toggleGroup(group.id)}
+                    title={group.title}
+                    type="button"
+                  >
+                    <GroupIcon className="shrink-0" size={17} strokeWidth={1.8} />
+                    <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap text-left lg:max-w-0 lg:opacity-0 lg:transition-[max-width,opacity] lg:duration-300 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
+                      {group.title}
+                    </span>
+                    <ChevronDown
+                      className={`hidden shrink-0 transition-transform lg:group-data-[open=true]:block ${open ? "rotate-180" : ""}`}
+                      size={14}
+                    />
+                  </button>
+                  {open && (
+                    <div className="mb-1 ml-3 space-y-0.5 border-l border-line-soft pl-2 lg:hidden lg:group-data-[open=true]:block">
+                      {group.items.map(({ label, to, icon: Icon }) => (
+                        <NavLink
+                          key={to}
+                          to={to}
+                          className={({ isActive }) =>
+                            `flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] ${
+                              isActive ? "nm-active font-medium" : "nm-hover text-muted"
+                            }`
+                          }
+                        >
+                          <Icon className="shrink-0" size={15} strokeWidth={1.8} />
+                          <span className="truncate">{label}</span>
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </nav>
 
       <div className="border-t border-line-soft p-3">
@@ -485,28 +446,9 @@ export function AppShell() {
       >
         {sidebar}
       </aside>
-      {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <button
-            className="glass-overlay absolute inset-0"
-            onClick={() => setMobileOpen(false)}
-            aria-label="Fechar menu"
-          />
-          <aside className="glass-modal group relative h-full w-[min(300px,85vw)] !rounded-l-none pt-[env(safe-area-inset-top)]">
-            {sidebar}
-          </aside>
-        </div>
-      )}
       <div className={`transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${pinned ? "lg:pl-[252px]" : "lg:pl-[68px]"}`}>
         <header className="app-shell-header glass-bar sticky top-0 z-20 flex items-center justify-between !border-x-0 !border-t-0 px-4 sm:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <button
-              className="grid size-9 place-items-center rounded-lg border border-line-soft text-muted hover:bg-surface-raised lg:hidden"
-              onClick={() => setMobileOpen(true)}
-              aria-label="Abrir menu"
-            >
-              <Menu size={18} />
-            </button>
             <Link className="flex min-w-0 items-center gap-2.5" to="/dashboard">
               <BrandLogo className="size-8 shrink-0 lg:hidden" />
               <span className="truncate text-base font-semibold tracking-[-0.03em] text-fg">
@@ -635,7 +577,75 @@ export function AppShell() {
             )}
           </NavLink>
         ))}
+        <button
+          aria-expanded={mobileOpen}
+          aria-haspopup="dialog"
+          aria-label="Todas as funções"
+          className="group/nav flex min-h-[52px] min-w-0 flex-auto flex-col items-center justify-center gap-1 rounded-[20px] px-0 text-[9px] font-medium text-muted active:text-fg-2 min-[360px]:px-1 min-[360px]:text-[10px]"
+          onClick={() => setMobileOpen(true)}
+          type="button"
+        >
+          <span className="grid h-7 w-10 place-items-center rounded-full bg-brand text-white">
+            <Plus size={18} strokeWidth={2.2} />
+          </span>
+          <span>Mais</span>
+        </button>
       </nav>
+      {mobileOpen && (
+        <div className="fixed inset-0 z-[60] lg:hidden">
+          <button aria-label="Fechar" className="glass-overlay absolute inset-0" onClick={() => setMobileOpen(false)} type="button" />
+          <section
+            aria-label="Todas as funções"
+            aria-modal="true"
+            className="glass-modal modal-enter absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-y-auto !rounded-b-none px-4 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3"
+            role="dialog"
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line" />
+            <div className="space-y-1">
+              {navigation.groups.map((group) => {
+                const open = Boolean(openGroups[group.id]);
+                const GroupIcon = group.icon;
+                return (
+                  <div key={group.id}>
+                    <button
+                      aria-expanded={open}
+                      className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-fg"
+                      onClick={() => toggleGroup(group.id)}
+                      type="button"
+                    >
+                      <GroupIcon className="text-accent" size={18} />
+                      <span className="flex-1 text-left">{group.title}</span>
+                      <ChevronDown className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} size={16} />
+                    </button>
+                    {open && (
+                      <div className="mb-1 ml-5 space-y-0.5 border-l border-line-soft pl-3">
+                        {group.items.map(({ label, to, icon: Icon }) => (
+                          <NavLink
+                            className={({ isActive }) =>
+                              `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm ${isActive ? "nm-active font-medium" : "text-muted"}`
+                            }
+                            key={to}
+                            to={to}
+                          >
+                            <Icon size={16} />
+                            {label}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-3 flex gap-2 border-t border-line-soft pt-3">
+              <Link className="btn-secondary flex-1" to="/profile">Perfil</Link>
+              <button className="btn-secondary flex-1" disabled={logout.isPending} onClick={() => logout.mutate()} type="button">
+                Sair
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {installGuideOpen && isMobileDevice && !isStandalone && (
         <div
           className="glass-overlay fixed inset-0 z-[80] grid items-end p-3 sm:items-center sm:justify-items-center"
