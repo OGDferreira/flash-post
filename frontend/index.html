@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#05070f" />
     <meta name="apple-mobile-web-app-title" content="FlashPost" />
     <meta name="color-scheme" content="dark light" />
-    <script>try{var t=localStorage.getItem("flashpost-theme");if(t==="light"){document.documentElement.dataset.theme="light";var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#e9eefc")}}catch(e){}</script>
+    <script>try{if(localStorage.getItem("flashpost-motion")==="off")document.documentElement.dataset.motion="off";var t=localStorage.getItem("flashpost-theme");if(t==="light"){document.documentElement.dataset.theme="light";var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#e9eefc")}}catch(e){}</script>
     <meta name="format-detection" content="telephone=no" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -20,9 +20,24 @@
       content="FlashPost — plataforma de operações para publicação e analytics."
     />
     <title>FlashPost</title>
+    <style>
+      html{background:#05070f}html[data-theme="light"]{background:#e9eefc}
+      .boot{position:fixed;inset:0;display:grid;place-items:center}
+      .boot svg{width:72px;height:72px;animation:l-pulse 2.6s ease-in-out 1.4s infinite}
+      .boot .l-bg{transform-box:fill-box;transform-origin:center;animation:l-bg 700ms cubic-bezier(.2,.8,.2,1) both}
+      .boot .l-f1{animation:l-in 520ms 220ms cubic-bezier(.2,.8,.2,1) both}
+      .boot .l-dot{transform-box:fill-box;transform-origin:center;animation:l-pop 480ms 620ms cubic-bezier(.3,1.7,.5,1) both}
+      .boot .l-tail{animation:l-in 420ms 780ms cubic-bezier(.2,.8,.2,1) both}
+      @keyframes l-bg{from{opacity:0;transform:scale(.6) rotate(-8deg)}to{opacity:1;transform:none}}
+      @keyframes l-in{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+      @keyframes l-pop{from{opacity:0;transform:scale(0)}to{opacity:.9;transform:scale(1)}}
+      @keyframes l-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+      @media (prefers-reduced-motion:reduce){.boot svg,.boot *{animation:none!important}}
+      html[data-motion="off"] .boot svg,html[data-motion="off"] .boot *{animation:none!important}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot" role="status" aria-label="Carregando FlashPost"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="b" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#5169f4"/><stop offset="1" stop-color="#22c1ee"/></linearGradient></defs><rect class="l-bg" width="64" height="64" rx="16" fill="url(#b)"/><path class="l-f1" d="M14 44V20h24v7H22v4h13v7H22v6z" fill="#fff"/><circle class="l-dot" cx="46" cy="22" r="5" fill="#fff" opacity=".9"/><path class="l-tail" d="M42 44l8-14v10h-5z" fill="#fff" opacity=".9"/></svg></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

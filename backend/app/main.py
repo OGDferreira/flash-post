@@ -110,7 +110,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application = FastAPI(
         title="FlashPost",
         summary="Operations platform for Instagram publishing and analytics.",
-        version="0.9.0",
+        version="0.10.0",
         lifespan=lifespan,
     )
     application.state.login_rate_limiter = LoginRateLimiter(

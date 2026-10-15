@@ -74,3 +74,8 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Colaborador: página pública `/convite/:token` faz o próprio cadastro; o vínculo nasce `INVITED` com o valor/metas do convite e o login responde 403 "aguarda a aprovação do chefe" até o chefe aprovar (vira `ACTIVE`; Extensões e Dúvidas e erros já fazem parte do acesso de colaborador). Link de uso único por padrão, expira em 7 dias (1–30), revogável; o link só aparece uma vez.
 - Recusar apaga o cadastro pendente (e o usuário, se não tiver outro vínculo). Criação manual de colaborador continua existindo.
 - Pendência: sem aviso (sino/push) ao chefe quando chega cadastro pendente além da fila na página.
+
+## 0.10.0 — Animação da logo e Aparência
+- Splash animada da logo no `index.html` (aparece antes do JS carregar) e o mesmo desenho animado nos estados de carregamento (`LoadingState`); sem movimento para quem pede "reduzir movimento".
+- Perfil > Aparência: cor do site (7 predefinidas + seletor livre + "Padrão") e "Remover animações". A paleta toda (botões, realces, brilho do fundo) vem de variáveis derivadas de uma cor (`lib/appearance.ts`); guardado no navegador. Cores claras (amarelo/verde) usam tons mais escuros para manter o contraste do texto branco.
+- Hover: cards e botões sobem de leve (só transform), campos realçam a borda.

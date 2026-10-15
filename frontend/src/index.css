@@ -5,6 +5,11 @@
    lifted or pressed with a pair of shadows: a light one from the top-left and
    a dark one to the bottom-right. Light and dark only swap the variables. */
 :root {
+  --brand-c: #536dfe;
+  --brand-strong-c: #6b81ff;
+  --grad-a: #5169f4;
+  --grad-b: #3b52e0;
+  --brand-rgb: 83 109 254;
   --nm-bg: #1b1e26;
   --nm-sl: #252a34;
   --nm-sd: #101217;
@@ -27,7 +32,7 @@
   --danger: #f1a3ad;
   --warning: #f2d48a;
   --success: #7ee2bd;
-  --brand-soft: rgb(83 109 254 / 0.16);
+  --brand-soft: rgb(var(--brand-rgb) / 0.16);
   --danger-soft: rgb(241 111 130 / 0.12);
   --warning-soft: rgb(242 212 138 / 0.11);
   --success-soft: rgb(126 226 189 / 0.1);
@@ -52,7 +57,7 @@ html[data-theme="light"] {
   --danger: #b4233a;
   --warning: #8a5a00;
   --success: #0c6e4b;
-  --brand-soft: rgb(83 109 254 / 0.12);
+  --brand-soft: rgb(var(--brand-rgb) / 0.12);
   --danger-soft: rgb(180 35 58 / 0.09);
   --warning-soft: rgb(138 90 0 / 0.1);
   --success-soft: rgb(15 122 85 / 0.09);
@@ -77,8 +82,8 @@ html[data-theme="light"] {
   --color-warning-soft: var(--warning-soft);
   --color-success-soft: var(--success-soft);
   --color-well: var(--well);
-  --color-brand: #536dfe;
-  --color-brand-strong: #6b81ff;
+  --color-brand: var(--brand-c);
+  --color-brand-strong: var(--brand-strong-c);
   --color-neon: #00c9d8;
 }
 
@@ -161,7 +166,7 @@ aside.glass-bar {
 /* Existing solid brand buttons across pages share the primary look. */
 .bg-\[\#536dfe\].text-white,
 .bg-\[\#586eff\].text-white {
-  background-image: linear-gradient(145deg, #5169f4, #3b52e0);
+  background-image: linear-gradient(145deg, var(--grad-a), var(--grad-b));
   box-shadow: 4px 4px 10px var(--nm-sd), -3px -3px 8px var(--nm-sl), inset 0 1px 0 rgb(255 255 255 / 0.25);
 }
 
@@ -196,7 +201,7 @@ aside.glass-bar {
 
 .btn-primary {
   color: #fff;
-  background: linear-gradient(145deg, #5169f4, #3b52e0);
+  background: linear-gradient(145deg, var(--grad-a), var(--grad-b));
   box-shadow: 5px 5px 12px var(--nm-sd), -4px -4px 10px var(--nm-sl), inset 0 1px 0 rgb(255 255 255 / 0.25);
 }
 
@@ -251,7 +256,7 @@ aside.glass-bar {
 .btn-secondary:focus-visible,
 .btn-ghost:focus-visible,
 .field:focus-visible {
-  outline: 2px solid rgb(106 130 255 / 0.9);
+  outline: 2px solid rgb(var(--brand-rgb) / 0.9);
   outline-offset: 2px;
 }
 
@@ -278,8 +283,8 @@ aside.glass-bar {
 
 .field:focus,
 .collaborator-input:focus {
-  border-color: rgb(106 130 255 / 0.55);
-  box-shadow: var(--nm-inset-sm), 0 0 0 3px rgb(83 109 254 / 0.16);
+  border-color: rgb(var(--brand-rgb) / 0.55);
+  box-shadow: var(--nm-inset-sm), 0 0 0 3px rgb(var(--brand-rgb) / 0.16);
   outline: none;
 }
 
@@ -400,7 +405,7 @@ aside.glass-bar {
 }
 
 .dashboard-search:focus-within {
-  border-color: rgb(106 130 255 / 0.55);
+  border-color: rgb(var(--brand-rgb) / 0.55);
 }
 
 .dashboard-search input {
@@ -446,7 +451,7 @@ aside.glass-bar {
 }
 
 .dashboard-periods button.is-selected {
-  background: linear-gradient(145deg, #5169f4, #3b52e0);
+  background: linear-gradient(145deg, var(--grad-a), var(--grad-b));
   box-shadow: 3px 3px 8px var(--nm-sd), -2px -2px 6px var(--nm-sl);
   color: #fff;
 }
@@ -829,7 +834,7 @@ html:not([data-theme="light"]) .dashboard-date-range input { color-scheme: dark;
   width: 0;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #536dfe, #b171ff);
+  background: linear-gradient(90deg, var(--brand-c), #b171ff);
 }
 
 .dashboard-traffic-note {
@@ -992,7 +997,7 @@ a {
 
 ::selection {
   color: var(--tx);
-  background: #536dfe;
+  background: var(--brand-c);
 }
 
 /* ---------- Page / tab transitions ----------
@@ -1100,10 +1105,10 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(40vmax 32vmax at 10% 0%, rgb(46 92 255 / 0.5), transparent 66%),
+    radial-gradient(40vmax 32vmax at 10% 0%, rgb(var(--brand-rgb) / 0.5), transparent 66%),
     radial-gradient(34vmax 28vmax at 100% 10%, rgb(0 170 255 / 0.28), transparent 64%),
     radial-gradient(40vmax 34vmax at 80% 80%, rgb(150 70 255 / 0.3), transparent 66%),
-    radial-gradient(46vmax 36vmax at 10% 100%, rgb(20 120 255 / 0.3), transparent 66%),
+    radial-gradient(46vmax 36vmax at 10% 100%, rgb(var(--brand-rgb) / 0.3), transparent 66%),
     #05070f;
   will-change: transform;
   animation: ambient-drift 38s ease-in-out infinite alternate;
@@ -1111,7 +1116,7 @@ body::before {
 
 html[data-theme="light"] body::before {
   background:
-    radial-gradient(40vmax 32vmax at 10% 0%, rgb(83 109 254 / 0.35), transparent 66%),
+    radial-gradient(40vmax 32vmax at 10% 0%, rgb(var(--brand-rgb) / 0.35), transparent 66%),
     radial-gradient(34vmax 28vmax at 100% 10%, rgb(0 190 220 / 0.3), transparent 64%),
     radial-gradient(40vmax 34vmax at 80% 80%, rgb(170 110 255 / 0.28), transparent 66%),
     #eaf0ff;
@@ -1167,10 +1172,10 @@ html[data-theme="light"] .bg-surface-raised { background: rgb(255 255 255 / 0.55
 .btn-ghost:hover:not(:disabled) { background: var(--well); }
 .nm-active { background: var(--well); border: 1px solid var(--glass-edge); }
 
-.btn-primary { box-shadow: 0 8px 22px rgb(59 82 224 / 0.38), inset 0 1px 0 rgb(255 255 255 / 0.25); }
-.btn-primary:hover:not(:disabled) { box-shadow: 0 10px 28px rgb(59 82 224 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.3); }
+.btn-primary { box-shadow: 0 8px 22px rgb(var(--brand-rgb) / 0.38), inset 0 1px 0 rgb(255 255 255 / 0.25); }
+.btn-primary:hover:not(:disabled) { box-shadow: 0 10px 28px rgb(var(--brand-rgb) / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.3); }
 .bg-\[\#536dfe\].text-white,
-.bg-\[\#586eff\].text-white { box-shadow: 0 8px 22px rgb(59 82 224 / 0.38), inset 0 1px 0 rgb(255 255 255 / 0.25); }
+.bg-\[\#586eff\].text-white { box-shadow: 0 8px 22px rgb(var(--brand-rgb) / 0.38), inset 0 1px 0 rgb(255 255 255 / 0.25); }
 
 @media (min-width: 768px) {
   .glass-panel,
@@ -1201,4 +1206,38 @@ aside.glass-bar,
 .glass-modal { background: var(--glass-fill-strong); }
 @media (min-width: 768px) {
   .glass-modal { background: var(--glass-fill-strong); }
+}
+
+/* ---------- Logo build animation (splash and loaders) ---------- */
+.logo-anim .l-bg { transform-box: fill-box; transform-origin: center; animation: l-bg 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.logo-anim .l-f1 { animation: l-in 520ms 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.logo-anim .l-dot { transform-box: fill-box; transform-origin: center; animation: l-pop 480ms 620ms cubic-bezier(0.3, 1.7, 0.5, 1) both; }
+.logo-anim .l-tail { animation: l-in 420ms 780ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.logo-loop { animation: l-pulse 2.6s ease-in-out 1.4s infinite; }
+@keyframes l-bg { from { opacity: 0; transform: scale(0.6) rotate(-8deg); } to { opacity: 1; transform: none; } }
+@keyframes l-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+@keyframes l-pop { from { opacity: 0; transform: scale(0); } to { opacity: 0.9; transform: scale(1); } }
+@keyframes l-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+
+/* ---------- Hover motion (transform/opacity only) ---------- */
+@media (hover: hover) {
+  .dashboard-card, .glass-panel { transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 220ms ease, border-color 220ms ease; }
+  .dashboard-card:hover, .glass-panel:hover { transform: translateY(-2px); border-color: rgb(var(--brand-rgb) / 0.35); }
+  .btn-primary:hover:not(:disabled), .btn-secondary:hover:not(:disabled) { transform: translateY(-1px); }
+  .field:hover { border-color: rgb(var(--brand-rgb) / 0.4); }
+}
+
+/* "Remover animações" (Perfil > Aparência) */
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+html[data-motion="off"] .dashboard-card:hover,
+html[data-motion="off"] .glass-panel:hover { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .logo-anim *, .logo-loop { animation: none !important; }
+  .dashboard-card:hover, .glass-panel:hover { transform: none; }
 }

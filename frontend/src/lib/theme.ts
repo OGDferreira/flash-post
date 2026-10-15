@@ -1,3 +1,5 @@
+import { applyAccent, getAccent } from "@/lib/appearance";
+
 export type Theme = "dark" | "light";
 const KEY = "flashpost-theme";
 
@@ -12,6 +14,7 @@ export function applyTheme(theme: Theme, animate = false) {
     window.setTimeout(() => root.classList.remove("theme-switching"), 260);
   }
   root.dataset.theme = theme;
+  applyAccent(getAccent(), theme);
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute("content", theme === "light" ? "#e9eefc" : "#05070f");

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { AppearanceCard } from "@/components/AppearanceCard";
 import { AffiliateLinkCard } from "@/features/affiliates/AffiliateLinkCard";
 import { DailyViewsGoalCard } from "@/components/DailyViewsGoalCard";
 import { ErrorState, LoadingState } from "@/components/PageState";
@@ -150,6 +151,8 @@ export function ProfilePage() {
           Consulte seus dados e atualize seu nome, apelido e imagem de perfil.
         </p>
       </div>
+
+      <AppearanceCard />
 
       <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
         <div className="mb-7 flex items-center gap-4 border-b border-line-soft pb-6">

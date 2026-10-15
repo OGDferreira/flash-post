@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { CircleAlert, Inbox, LoaderCircle, RotateCw } from "lucide-react";
+import { BrandLogo } from "@/components/BrandLogo";
+import { CircleAlert, Inbox, RotateCw } from "lucide-react";
 
 export function LoadingState({ label = "Carregando" }: { label?: string }) {
   return (
@@ -9,9 +10,7 @@ export function LoadingState({ label = "Carregando" }: { label?: string }) {
       className="flex min-h-48 flex-col items-center justify-center gap-3 text-sm text-muted"
       role="status"
     >
-      <span className="grid size-11 place-items-center rounded-2xl border border-line bg-surface shadow-[0_0_24px_rgba(83,109,254,0.18)]">
-        <LoaderCircle className="animate-spin text-accent" size={18} />
-      </span>
+      <BrandLogo animated className="size-12" />
       {label}
     </div>
   );

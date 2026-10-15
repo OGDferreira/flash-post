@@ -4,6 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import App from "./App";
 import "./index.css";
+import { initAppearance } from "@/lib/appearance";
+
+initAppearance();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
