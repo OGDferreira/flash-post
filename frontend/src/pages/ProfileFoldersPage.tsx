@@ -4,6 +4,7 @@ import { Folder, Pencil, Plus, Save, Trash2, Users, X } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { InstagramAvatar } from "@/components/InstagramAvatar";
+import { Modal } from "@/components/ui/Modal";
 import {
   formatAccountConnectedAt,
   formatConnectedDuration,
@@ -48,6 +49,7 @@ export function ProfileFoldersPage() {
   const [managingFolderId, setManagingFolderId] = useState<string | null>(null);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [accountSearch, setAccountSearch] = useState("");
+  const [assigningAccount, setAssigningAccount] = useState<ProfileFolderAccount | null>(null);
   const folders = useQuery({
     queryKey: ["instagram", "folders"],
     queryFn: () => apiRequest<ProfileFoldersResponse>("/api/instagram/folders"),
@@ -85,6 +87,7 @@ export function ProfileFoldersPage() {
       }),
     onSuccess: () => {
       setManagingFolderId(null);
+      setAssigningAccount(null);
       setSelectedAccountIds([]);
       void queryClient.invalidateQueries({ queryKey: ["instagram", "folders"] });
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
@@ -134,6 +137,8 @@ export function ProfileFoldersPage() {
     );
     saveFolderAccounts.reset();
   }
+
+  const managingFolder = folderData.folders.find((folder) => folder.id === managingFolderId) ?? null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
@@ -297,20 +302,71 @@ export function ProfileFoldersPage() {
                   <p className="text-sm text-[#64748b]">Nenhuma conta nesta pasta ainda.</p>
                 )}
               </div>
-              {managingFolderId === folder.id && (
-                <form
-                  className="space-y-3 rounded-lg border border-line bg-surface-inset p-3"
+            </article>
+          ))}
+        </section>
+      )}
+
+      <section className="rounded-xl border border-line bg-surface p-4">
+        <h3 className="font-medium text-[#f5f7fb]">Contas sem pasta ({unassignedCount})</h3>
+        <p className="mt-1 text-xs text-[#94a3b8]">
+          Toque em uma conta para escolher a pasta dela, ou use “Organizar contas” em uma pasta.
+        </p>
+        {unassignedCount > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {folderData.accounts
+              .filter((account) => !account.profile_folder_id)
+              .map((account) => (
+                <button
+                  className="inline-flex items-start gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-left text-xs text-[#cbd5e1] transition-shadow active:shadow-none"
+                  key={account.id}
+                  onClick={() => {
+                    saveFolderAccounts.reset();
+                    setAssigningAccount(account);
+                  }}
+                  type="button"
+                >
+                  <InstagramAvatar
+                    className="size-6 rounded-full border border-line object-cover"
+                    src={account.profile_picture_url}
+                    username={account.username}
+                  />
+                  <div>
+                    <p>@{account.username}</p>
+                    <p className="mt-0.5 text-[10px] text-[#94a3b8]">
+                      Conectada em {formatAccountConnectedAt(account.connected_at)}
+                    </p>
+                    {account.status === "error" && (
+                      <p className="mt-0.5 text-[10px] text-[#f1a3ad]">
+                        Duração antes do erro:{" "}
+                        {formatConnectedDuration(account.connected_at, account.error_at)}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              ))}
+          </div>
+        )}
+      </section>
+      <Modal
+        busy={saveFolderAccounts.isPending}
+        description="Selecione as contas que pertencem a esta pasta."
+        onClose={() => setManagingFolderId(null)}
+        open={Boolean(managingFolder)}
+        title={managingFolder ? `Organizar contas · ${managingFolder.name}` : "Organizar contas"}
+        wide
+      >
+        {managingFolder && (
+<form
+                  className="space-y-3"
                   onSubmit={(event) => {
                     event.preventDefault();
                     saveFolderAccounts.mutate({
-                      folderId: folder.id,
+                      folderId: managingFolder.id,
                       accountIds: selectedAccountIds,
                     });
                   }}
                 >
-                  <p className="text-sm font-medium text-[#f5f7fb]">
-                    Selecione as contas que pertencem a {folder.name}
-                  </p>
                   <label className="grid gap-1.5 text-xs text-[#94a3b8]">
                     Buscar perfil pelo nome
                     <input
@@ -346,7 +402,7 @@ export function ProfileFoldersPage() {
                       Nenhum perfil corresponde à busca.
                     </p>
                   ) : (
-                  <div className="grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2">
+                  <div className="grid max-h-[50vh] gap-2 overflow-y-auto sm:grid-cols-2">
                     {visibleAccounts.map((account) => {
                       const checked = selectedAccountIds.includes(account.id);
                       return (
@@ -398,48 +454,48 @@ export function ProfileFoldersPage() {
                     </button>
                   </div>
                 </form>
-              )}
-            </article>
-          ))}
-        </section>
-      )}
-
-      <section className="rounded-xl border border-line bg-surface p-4">
-        <h3 className="font-medium text-[#f5f7fb]">Contas sem pasta ({unassignedCount})</h3>
-        <p className="mt-1 text-xs text-[#94a3b8]">
-          Contas não atribuídas a nenhuma pasta podem ser movidas pelo botão “Organizar contas”.
-        </p>
-        {unassignedCount > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {folderData.accounts
-              .filter((account) => !account.profile_folder_id)
-              .map((account) => (
-                <div
-                  className="inline-flex items-start gap-2 rounded-lg border border-line bg-[#101923] px-2.5 py-1.5 text-xs text-[#cbd5e1]"
-                  key={account.id}
-                >
-                  <InstagramAvatar
-                    className="size-6 rounded-full border border-line object-cover"
-                    src={account.profile_picture_url}
-                    username={account.username}
-                  />
-                  <div>
-                    <p>@{account.username}</p>
-                    <p className="mt-0.5 text-[10px] text-[#94a3b8]">
-                      Conectada em {formatAccountConnectedAt(account.connected_at)}
-                    </p>
-                    {account.status === "error" && (
-                      <p className="mt-0.5 text-[10px] text-[#f1a3ad]">
-                        Duração antes do erro:{" "}
-                        {formatConnectedDuration(account.connected_at, account.error_at)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-          </div>
         )}
-      </section>
+      </Modal>
+
+      <Modal
+        busy={saveFolderAccounts.isPending}
+        description="Escolha a pasta para esta conta."
+        onClose={() => setAssigningAccount(null)}
+        open={Boolean(assigningAccount)}
+        title={assigningAccount ? `Mover @${assigningAccount.username}` : "Mover conta"}
+      >
+        {folderData.folders.length === 0 ? (
+          <p className="text-sm text-[#94a3b8]">Crie uma pasta primeiro.</p>
+        ) : (
+          <ul className="space-y-2.5">
+            {folderData.folders.map((folder) => (
+              <li key={folder.id}>
+                <button
+                  className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-3.5 text-left text-sm text-[#f5f7fb] disabled:opacity-60"
+                  disabled={saveFolderAccounts.isPending}
+                  onClick={() =>
+                    assigningAccount &&
+                    saveFolderAccounts.mutate({
+                      folderId: folder.id,
+                      accountIds: [...folder.accounts.map((item) => item.id), assigningAccount.id],
+                    })
+                  }
+                  type="button"
+                >
+                  <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: folder.color }} />
+                  <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
+                  <span className="text-xs text-[#94a3b8]">{folder.accounts.length}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {saveFolderAccounts.error && (
+          <p className="mt-3 text-sm text-[#f1a3ad]" role="alert">
+            {getErrorMessage(saveFolderAccounts.error, "Não foi possível mover a conta.")}
+          </p>
+        )}
+      </Modal>
     </div>
   );
 }

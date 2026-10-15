@@ -34,3 +34,9 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Tema claro corrigido: sidebar agora é clara e as cores de texto/fundo/borda hex legadas são remapeadas por script (contraste por luminância); `text-white` vira escuro no claro, exceto em botões de marca.
 - "Conectar conta" vai direto ao Hub e mostra a lista de apps Meta inline (sem pop-up, antes de carregar as contas).
 - Pendências: telas raras podem pedir ajuste fino de contraste; remap do tema claro é gerado a partir das classes `[#hex]` em uso (regerar se surgirem novas).
+
+## 0.5.1
+- Pastas: "Organizar contas" abre pop-up com todas as contas; tocar em conta sem pasta abre pop-up para escolher a pasta (usa o PUT de contas da pasta, mantendo as já existentes).
+- App instalado (display-mode standalone): zoom por pinça/duplo toque bloqueado (viewport, gestos e touch-action).
+- Loops: card mostra todo o relatório; lista de contas só aparece ao clicar no card ("Ver contas").
+- Não validado com dados reais (demo sem pastas/contas); zoom só testável no PWA instalado.

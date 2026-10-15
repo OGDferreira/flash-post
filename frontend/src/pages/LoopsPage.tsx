@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  ChevronDown,
   Clock3,
   Copy,
   Folder,
@@ -195,6 +196,9 @@ export function LoopsPage() {
   const [tab, setTab] = useState<"continuous" | "errors">("continuous");
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedLoops, setExpandedLoops] = useState<string[]>([]);
+  const toggleLoop = (id: string) =>
+    setExpandedLoops((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   const [form, setForm] = useState<LoopForm>(emptyForm);
   const [uploadCaption, setUploadCaption] = useState("");
   const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
@@ -996,8 +1000,12 @@ export function LoopsPage() {
         <div className="space-y-3">
           {visibleLoops.map((loop) => (
             <article
-              className="rounded-xl border border-line bg-surface p-4 sm:p-4"
+              className="cursor-pointer rounded-xl border border-line bg-surface p-4 sm:p-4"
               key={loop.id}
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest("button,a,input,select,textarea,details,summary,label")) return;
+                toggleLoop(loop.id);
+              }}
             >
               <div className="flex flex-col justify-between gap-4 sm:flex-row">
                 <div className="min-w-0">
@@ -1032,25 +1040,39 @@ export function LoopsPage() {
                           : "Reels e imagens"}
                     </span>
                   </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {loop.accounts.map((account) => (
-                      <div
-                        className="rounded bg-[#101923] px-2 py-1 text-xs text-[#cbd5e1]"
-                        key={account.id}
-                      >
-                        <p>@{account.username}</p>
-                        <p className="mt-0.5 text-[10px] text-[#94a3b8]">
-                          Conectada em {formatAccountConnectedAt(account.connected_at)}
-                        </p>
-                        {account.status === "error" && (
-                          <p className="mt-0.5 text-[10px] text-[#f1a3ad]">
-                            Duração antes do erro:{" "}
-                            {formatConnectedDuration(account.connected_at, account.error_at)}
+                  <button
+                    aria-expanded={expandedLoops.includes(loop.id)}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-[#aab7ff] nm-hover"
+                    onClick={() => toggleLoop(loop.id)}
+                    type="button"
+                  >
+                    <ChevronDown
+                      className={`transition-transform ${expandedLoops.includes(loop.id) ? "rotate-180" : ""}`}
+                      size={14}
+                    />
+                    {expandedLoops.includes(loop.id) ? "Ocultar contas" : "Ver contas"} ({loop.accounts.length})
+                  </button>
+                  {expandedLoops.includes(loop.id) && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                      {loop.accounts.map((account) => (
+                        <div
+                          className="rounded bg-[#101923] px-2 py-1 text-xs text-[#cbd5e1]"
+                          key={account.id}
+                        >
+                          <p>@{account.username}</p>
+                          <p className="mt-0.5 text-[10px] text-[#94a3b8]">
+                            Conectada em {formatAccountConnectedAt(account.connected_at)}
                           </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                          {account.status === "error" && (
+                            <p className="mt-0.5 text-[10px] text-[#f1a3ad]">
+                              Duração antes do erro:{" "}
+                              {formatConnectedDuration(account.connected_at, account.error_at)}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <p className="mt-3 text-xs text-[#94a3b8]">
                     Próxima execução: {formatDate(loop.next_run_at)}
                   </p>

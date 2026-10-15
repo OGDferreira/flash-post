@@ -1143,3 +1143,8 @@ html[data-theme="light"] .text-white,
 html[data-theme="light"] .hover\:text-white:hover,
 html[data-theme="light"] .group:hover .group-hover\:text-white { color: #0f1628; }
 html[data-theme="light"] :is(.bg-\[\#536dfe\], .bg-\[\#586eff\], .bg-\[\#667eea\], .bg-\[\#7187ff\], .bg-\[\#f16f82\], .btn-primary, .is-selected).text-white { color: #fff; }
+
+/* Installed app: no pinch/double-tap zoom, no text-size or rubber-band tricks. */
+@media (display-mode: standalone) {
+  html, body { touch-action: pan-x pan-y; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+}

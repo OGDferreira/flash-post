@@ -15,6 +15,30 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+// Installed app: behave like a native app, no pinch or double-tap zoom.
+const isStandalone =
+  window.matchMedia("(display-mode: standalone)").matches ||
+  (navigator as Navigator & { standalone?: boolean }).standalone === true;
+if (isStandalone) {
+  document
+    .querySelector('meta[name="viewport"]')
+    ?.setAttribute(
+      "content",
+      "width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover",
+    );
+  const block = (event: Event) => event.preventDefault();
+  document.addEventListener("gesturestart", block);
+  document.addEventListener("gesturechange", block);
+  document.addEventListener("gestureend", block);
+  document.addEventListener(
+    "touchmove",
+    (event) => {
+      if (event.touches.length > 1) event.preventDefault();
+    },
+    { passive: false },
+  );
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
