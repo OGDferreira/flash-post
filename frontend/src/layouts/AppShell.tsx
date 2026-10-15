@@ -169,13 +169,6 @@ export function AppShell() {
   });
   const navigation = buildNavigation({ isAdminRoute, isSuperAdmin, workspaceRole });
   const mobileLinks = navigation.direct;
-  const pageTitle = (() => {
-    const all = [...navigation.direct, ...navigation.groups.flatMap((group) => group.items)];
-    const match = all
-      .filter(({ to }) => location.pathname === to || location.pathname.startsWith(`${to}/`))
-      .sort((a, b) => b.to.length - a.to.length)[0];
-    return match?.label ?? (isAdminRoute ? "Administração" : "FlashPost");
-  })();
   const [hoverGroup, setHoverGroup] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const activeGroupId = navigation.groups.find((group) =>
@@ -490,14 +483,9 @@ export function AppShell() {
             <Link aria-label="FlashPost" className="shrink-0 lg:hidden" to="/dashboard">
               <BrandLogo className="size-8" />
             </Link>
-            <div className="min-w-0 leading-tight">
-              <h1 className="truncate text-[17px] font-semibold tracking-[-0.03em] text-fg sm:text-lg">
-                {pageTitle}
-              </h1>
-              <p className="hidden truncate text-xs text-muted sm:block">
-                {isAdminRoute ? "Administração da plataforma" : "FlashPost"}
-              </p>
-            </div>
+            <span className="truncate text-base font-semibold tracking-[-0.03em] text-fg sm:text-lg">
+              {isAdminRoute ? "FlashPost · Administração" : "FlashPost"}
+            </span>
           </div>
           <div className="app-header-actions flex shrink-0 items-center gap-1 pl-2">
             <div className="relative max-sm:static">

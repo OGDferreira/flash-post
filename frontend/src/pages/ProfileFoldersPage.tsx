@@ -220,6 +220,49 @@ export function ProfileFoldersPage() {
         </form>
       )}
 
+      <section className="rounded-xl border border-line bg-surface p-4">
+        <h3 className="font-medium text-fg">Contas sem pasta ({unassignedCount})</h3>
+        <p className="mt-1 text-xs text-muted">
+          Toque em uma conta para escolher a pasta dela, ou use “Organizar contas” em uma pasta.
+        </p>
+        {unassignedCount > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {folderData.accounts
+              .filter((account) => !account.profile_folder_id)
+              .map((account) => (
+                <button
+                  className="inline-flex items-start gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-left text-xs text-fg-2 transition-shadow active:shadow-none"
+                  key={account.id}
+                  onClick={() => {
+                    saveFolderAccounts.reset();
+                    setAssigningAccount(account);
+                  }}
+                  type="button"
+                >
+                  <InstagramAvatar
+                    className="size-6 rounded-full border border-line object-cover"
+                    src={account.profile_picture_url}
+                    username={account.username}
+                  />
+                  <div>
+                    <p>@{account.username}</p>
+                    <p className="mt-0.5 text-[10px] text-muted">
+                      Conectada em {formatAccountConnectedAt(account.connected_at)}
+                      {account.connected_by_name ? ` · por ${account.connected_by_name}` : ""}
+                    </p>
+                    {account.status === "error" && (
+                      <p className="mt-0.5 text-[10px] text-danger">
+                        Duração antes do erro:{" "}
+                        {formatConnectedDuration(account.connected_at, account.error_at)}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              ))}
+          </div>
+        )}
+      </section>
+
       {folderData.folders.length === 0 ? (
         <EmptyState message="Nenhuma pasta criada. Crie uma pasta e escolha uma cor para começar." />
       ) : (
@@ -345,48 +388,6 @@ export function ProfileFoldersPage() {
         </section>
       )}
 
-      <section className="rounded-xl border border-line bg-surface p-4">
-        <h3 className="font-medium text-fg">Contas sem pasta ({unassignedCount})</h3>
-        <p className="mt-1 text-xs text-muted">
-          Toque em uma conta para escolher a pasta dela, ou use “Organizar contas” em uma pasta.
-        </p>
-        {unassignedCount > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {folderData.accounts
-              .filter((account) => !account.profile_folder_id)
-              .map((account) => (
-                <button
-                  className="inline-flex items-start gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-left text-xs text-fg-2 transition-shadow active:shadow-none"
-                  key={account.id}
-                  onClick={() => {
-                    saveFolderAccounts.reset();
-                    setAssigningAccount(account);
-                  }}
-                  type="button"
-                >
-                  <InstagramAvatar
-                    className="size-6 rounded-full border border-line object-cover"
-                    src={account.profile_picture_url}
-                    username={account.username}
-                  />
-                  <div>
-                    <p>@{account.username}</p>
-                    <p className="mt-0.5 text-[10px] text-muted">
-                      Conectada em {formatAccountConnectedAt(account.connected_at)}
-                      {account.connected_by_name ? ` · por ${account.connected_by_name}` : ""}
-                    </p>
-                    {account.status === "error" && (
-                      <p className="mt-0.5 text-[10px] text-danger">
-                        Duração antes do erro:{" "}
-                        {formatConnectedDuration(account.connected_at, account.error_at)}
-                      </p>
-                    )}
-                  </div>
-                </button>
-              ))}
-          </div>
-        )}
-      </section>
       <Modal
         busy={saveFolderAccounts.isPending}
         description="Selecione as contas que pertencem a esta pasta."
