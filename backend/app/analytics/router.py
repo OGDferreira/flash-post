@@ -380,6 +380,36 @@ async def get_analytics_summary(
             .order_by(InstagramAccount.error_at.desc())
         )
     ).all()
+    period_filters = []
+    if period_start is not None:
+        period_filters.append(InstagramAccount.first_connected_at >= period_start)
+    connected_period = int(
+        await db.scalar(
+            select(func.count(InstagramAccount.id)).where(
+                InstagramAccount.workspace_id == access.workspace.id,
+                InstagramAccount.first_connected_at.is_not(None),
+                InstagramAccount.first_connected_at < connection_period_end,
+                *period_filters,
+            )
+        )
+        or 0
+    )
+    drop_filters = []
+    if period_start is not None:
+        drop_filters.append(InstagramAccount.error_at >= period_start)
+    dropped_period = (
+        await db.scalars(
+            select(InstagramAccount)
+            .where(
+                InstagramAccount.workspace_id == access.workspace.id,
+                InstagramAccount.status.in_(("error", "disconnected")),
+                InstagramAccount.error_at.is_not(None),
+                InstagramAccount.error_at < connection_period_end,
+                *drop_filters,
+            )
+            .order_by(InstagramAccount.error_at.desc())
+        )
+    ).all()
     disconnected_today_accounts = [
         DisconnectedAccountToday(
             username=account.username,
@@ -752,4 +782,15 @@ async def get_analytics_summary(
         connected_today=(owner_connections_today or 0) + (team_connections_today or 0),
         disconnected_today=len(disconnected_today_accounts),
         disconnected_today_accounts=disconnected_today_accounts,
+        connected_period=connected_period,
+        disconnected_period=len(dropped_period),
+        disconnected_period_accounts=[
+            DisconnectedAccountToday(
+                username=account.username,
+                kind=classify_inactive_account(account.status, account.status_reason),
+                reason=account.status_reason,
+                at=account.error_at,
+            )
+            for account in dropped_period[:50]
+        ],
     )

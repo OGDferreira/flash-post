@@ -21,6 +21,20 @@ export function applyTheme(theme: Theme, animate = false) {
   try {
     localStorage.setItem(KEY, theme);
   } catch {
-    /* storage unavailable: the choice just won't persist */
+    /* storage unavailable: the cookie below still remembers it */
   }
+  // Cookie backup: survives cleared site data on some browsers and PWAs.
+  document.cookie = `${KEY}=${theme}; max-age=31536000; path=/; SameSite=Lax`;
+}
+
+/** Saved choice (localStorage first, cookie second); null if the user never chose. */
+export function getStoredTheme(): Theme | null {
+  try {
+    const value = localStorage.getItem(KEY);
+    if (value === "light" || value === "dark") return value;
+  } catch {
+    /* ignore */
+  }
+  const match = document.cookie.match(new RegExp(`(?:^|; )${KEY}=(light|dark)`));
+  return match ? (match[1] as Theme) : null;
 }

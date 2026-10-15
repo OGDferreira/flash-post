@@ -132,3 +132,10 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - **Resumo da noite 🌙** às 22h: conexões, views do dia e R$ (colaborador: a receber pelas conexões; chefe: vendas pagas do dia), com frase de fechamento sorteada.
 - Painéis (chefe e colaborador): cards "Sequência" e "Recorde pessoal" via `GET /api/notifications/engagement/me`.
 - Estes textos ainda não são editáveis no admin (só as conquistas de views/posts/vendas/seguidores).
+
+## 0.13.1 — Ajustes do painel
+- Card "Sequência": removido o emoji 🔥; agora é o ícone vetorial de chama (preenchido quando há sequência, cinza quando não).
+- Tema: a escolha (claro/escuro) é guardada em localStorage **e** num cookie de 1 ano, e reaplicada na abertura; se o navegador limpar o localStorage, o cookie mantém o tema.
+- "Conexões hoje" → "Conexões do período": conectadas e desconectadas passam a seguir o filtro marcado (Hoje/Ontem/7 dias/30 dias/Total/Personalizado). Campos novos em `/api/analytics/summary`: `connected_period`, `disconnected_period`, `disconnected_period_accounts` (os `*_today` continuam para o sino).
+- Data da saudação sempre com inicial maiúscula ("Quinta-feira, 15 de outubro…").
+- Botão flutuante de atualizar (canto inferior direito, acima do menu no celular): refaz todas as consultas da tela (contas novas, métricas, ranking) com ícone girando.

@@ -210,7 +210,7 @@ export function DashboardPage() {
     ...rankingList.map(({ connected_accounts }) => connected_accounts),
     1,
   );
-  const droppedKinds = (metrics?.disconnected_today_accounts ?? []).reduce<Record<string, number>>(
+  const droppedKinds = (metrics?.disconnected_period_accounts ?? []).reduce<Record<string, number>>(
     (acc, item) => ({ ...acc, [item.kind]: (acc[item.kind] ?? 0) + 1 }),
     {},
   );
@@ -424,20 +424,20 @@ export function DashboardPage() {
               <span className="dashboard-metric-icon text-accent">
                 <Link2 size={16} />
               </span>
-              <h2 className="dashboard-metric-title">Conexões hoje</h2>
+              <h2 className="dashboard-metric-title">Conexões do período</h2>
             </div>
             <div className="flex items-end gap-3 sm:gap-4">
               <div>
-                <p className="dashboard-metric-value text-success">{formatCount(metrics?.connected_today)}</p>
+                <p className="dashboard-metric-value text-success">{formatCount(metrics?.connected_period)}</p>
                 <p className="text-[10px] text-muted sm:text-[11px]">conectadas</p>
               </div>
               <div>
-                <p className="dashboard-metric-value text-danger">{formatCount(metrics?.disconnected_today)}</p>
+                <p className="dashboard-metric-value text-danger">{formatCount(metrics?.disconnected_period)}</p>
                 <p className="text-[10px] text-muted sm:text-[11px]">desconectadas</p>
               </div>
             </div>
             <p className="dashboard-metric-detail">
-              {droppedDetail || "Nenhuma queda de conta hoje"}
+              {droppedDetail || "Nenhuma queda de conta no período"}
             </p>
           </article>
           {metricsCards.map((metric) => (

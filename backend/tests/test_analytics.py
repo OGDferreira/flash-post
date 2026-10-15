@@ -489,6 +489,12 @@ async def test_analytics_counts_only_real_drops_today_with_kind_and_day_month_ra
 
     assert result["connected_today"] == 1
     assert result["disconnected_today"] == 3
+    assert result["connected_period"] == 1
+    # The 7-day period also includes the account that dropped on an earlier day.
+    assert result["disconnected_period"] == 4
+    assert {item["username"] for item in result["disconnected_today_accounts"]} <= {
+        item["username"] for item in result["disconnected_period_accounts"]
+    }
     kinds = {item["username"]: item["kind"] for item in result["disconnected_today_accounts"]}
     assert kinds == {
         "dropped-today": "suspended",

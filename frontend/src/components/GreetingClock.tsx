@@ -11,6 +11,10 @@ const dateFormat = new Intl.DateTimeFormat("pt-BR", {
   timeZone: TZ,
 });
 
+function capitalize(text: string) {
+  return text.charAt(0).toLocaleUpperCase("pt-BR") + text.slice(1);
+}
+
 /** "Boa tarde, Fulano" + date and time (no seconds). Ticks once per 30 s. */
 export function GreetingClock({ nickname }: { nickname: string | undefined }) {
   const [now, setNow] = useState(() => new Date());
@@ -27,8 +31,8 @@ export function GreetingClock({ nickname }: { nickname: string | undefined }) {
       <h2 className="truncate text-xl font-semibold tracking-[-0.02em] text-fg sm:text-2xl">
         {greeting}, {nickname ?? "bem-vindo"}
       </h2>
-      <p className="mt-0.5 text-sm text-muted first-letter:uppercase">
-        <time dateTime={now.toISOString()}>{dateFormat.format(now)}</time>
+      <p className="mt-0.5 text-sm text-muted">
+        <time dateTime={now.toISOString()}>{capitalize(dateFormat.format(now))}</time>
       </p>
     </div>
   );

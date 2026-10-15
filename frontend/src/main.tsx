@@ -5,8 +5,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
 import { initAppearance } from "@/lib/appearance";
+import { applyTheme, getStoredTheme, getTheme } from "@/lib/theme";
 
 initAppearance();
+{
+  // Re-apply the saved theme in case the inline boot script could not read it.
+  const saved = getStoredTheme();
+  if (saved && saved !== getTheme()) applyTheme(saved);
+}
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

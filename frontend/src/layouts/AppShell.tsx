@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { buildNavigation } from "./navigation";
+import { RefreshFab } from "@/components/RefreshFab";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -572,6 +573,7 @@ export function AppShell() {
           </div>
         </main>
       </div>
+      <RefreshFab />
       <nav
         aria-label="Navegação principal"
         className="app-mobile-nav glass-bar fixed z-30 flex gap-0.5 lg:hidden"

@@ -43,14 +43,13 @@ export function EngagementCards() {
     <>
       <article className="dashboard-card dashboard-metric-card">
         <div className="dashboard-metric-heading">
-          <span className="dashboard-metric-icon text-warning">
-            <Flame size={16} />
+          <span className={`dashboard-metric-icon ${data.streak > 0 ? "text-warning" : "text-muted"}`}>
+            <Flame fill={data.streak > 0 ? "currentColor" : "none"} size={16} />
           </span>
           <h2 className="dashboard-metric-title">Sequência</h2>
         </div>
         <div>
           <p className="dashboard-metric-value">
-            {data.streak > 0 ? "🔥 " : ""}
             {data.streak} {data.streak === 1 ? "dia" : "dias"}
           </p>
           <p className="text-[10px] text-muted sm:text-[11px]">{streakHint}</p>

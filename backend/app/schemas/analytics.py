@@ -100,3 +100,6 @@ class InstagramAnalyticsSummary(BaseModel):
     connected_today: int = 0
     disconnected_today: int = 0
     disconnected_today_accounts: list[DisconnectedAccountToday] = []
+    connected_period: int = 0
+    disconnected_period: int = 0
+    disconnected_period_accounts: list[DisconnectedAccountToday] = []

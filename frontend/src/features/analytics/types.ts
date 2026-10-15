@@ -59,6 +59,14 @@ export type InstagramAnalyticsSummary = {
   account_connection_ranking_month: ConnectionRankItem[];
   connected_today: number;
   disconnected_today: number;
+  connected_period: number;
+  disconnected_period: number;
+  disconnected_period_accounts: {
+    username: string;
+    kind: "expired" | "restricted" | "suspended" | "manual";
+    reason: string | null;
+    at: string | null;
+  }[];
   disconnected_today_accounts: {
     username: string;
     kind: "expired" | "restricted" | "suspended" | "manual";
