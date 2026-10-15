@@ -416,10 +416,10 @@ export function AppShell() {
                   title={label}
                   onClick={() => setMobileOpen(false)}
                   className={({ isActive }) =>
-                    `flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm transition-colors ${
+                    `flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm transition-[color,box-shadow] ${
                       isActive
-                        ? "bg-[#151b2d] font-medium text-[#dfe4ff]"
-                        : "text-[#94a3b8] hover:bg-[#12151b] hover:text-[#f5f7fb]"
+                        ? "nm-active font-medium"
+                        : "nm-hover text-[#94a3b8]"
                     }`
                   }
                 >
@@ -479,7 +479,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-transparent text-[#f5f7fb]">
-      <aside className="glass-bar group fixed inset-y-0 left-0 z-30 hidden w-[68px] !border-y-0 !border-l-0 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] data-[open=true]:w-[252px] data-[open=true]:!bg-[rgb(6_8_14/0.95)] lg:block"
+      <aside className="glass-bar group fixed inset-y-0 left-0 z-30 hidden w-[68px] !border-y-0 !border-l-0 transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] data-[open=true]:w-[252px] lg:block"
         data-open={sidebarOpen}
         onMouseEnter={() => openSoon(true)}
         onMouseLeave={() => openSoon(false)}
@@ -623,7 +623,7 @@ export function AppShell() {
             className={({ isActive }) =>
               `group/nav flex min-h-[52px] min-w-0 flex-auto flex-col items-center justify-center gap-1 rounded-[20px] px-0 text-[9px] tracking-[-0.02em] min-[360px]:px-1 min-[360px]:tracking-[-0.01em] min-[360px]:text-[10px] font-medium transition-colors ${
                 isActive
-                  ? "bg-gradient-to-b from-[#536dfe]/25 to-[#536dfe]/10 text-[#eef1ff] shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_0_20px_rgba(83,109,254,0.22)]"
+                  ? "nm-active"
                   : "text-[#8390a8] active:text-[#cbd5e1]"
               }`
             }
@@ -632,7 +632,7 @@ export function AppShell() {
               <>
                 <span
                   className={`grid h-7 w-10 place-items-center rounded-full transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                    isActive ? "text-[#b8c3ff]" : ""
+                    isActive ? "text-[#aab7ff]" : ""
                   }`}
                 >
                   <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />

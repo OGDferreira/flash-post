@@ -28,3 +28,9 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Dashboard abre sempre em "Hoje"; colaboradores em cards recolhidos (nome + contas conectadas hoje), expandem ao clicar.
 - Performance: gzip nas respostas; assets com hash em cache imutável (index/SW/manifest sempre revalidados); resumo do dashboard não soma views por vídeo (1 chamada Meta a menos por vídeo, por conta); polling de colaboradores 30s→120s.
 - Nota: plano free do Render hiberna após ~15 min parado (primeiro acesso lento); só plano pago ou ping externo resolve.
+
+## 0.5.0 — Neumorphism
+- Design system trocado de glass para neumorphism (soft UI) em claro e escuro: tokens `--nm-*` em `index.css`, superfícies elevadas/afundadas por par de sombras; sidebar, topbar, nav mobile, cards, botões, campos, filtros de período e modais redesenhados.
+- Tema claro corrigido: sidebar agora é clara e as cores de texto/fundo/borda hex legadas são remapeadas por script (contraste por luminância); `text-white` vira escuro no claro, exceto em botões de marca.
+- "Conectar conta" vai direto ao Hub e mostra a lista de apps Meta inline (sem pop-up, antes de carregar as contas).
+- Pendências: telas raras podem pedir ajuste fino de contraste; remap do tema claro é gerado a partir das classes `[#hex]` em uso (regerar se surgirem novas).

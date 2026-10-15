@@ -14,7 +14,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { InstagramAvatar } from "@/components/InstagramAvatar";
 import {
-  ConnectAccountModal,
+  ConnectAppsPanel,
   metaAppsQueryKey,
   type InstagramMetaAppsResponse,
 } from "@/components/ConnectAccountModal";
@@ -80,7 +80,7 @@ export function InstagramAccountsPage() {
     "connection_asc" | "disconnection_desc" | "connection_desc"
   >("connection_desc");
   const [selectedFolderId, setSelectedFolderId] = useState("all");
-  const [showAppSelector, setShowAppSelector] = useState(false);
+  const [showAppSelector, setShowAppSelector] = useState(() => searchParams.get("connect") === "1");
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<InstagramAccountsResponse>("/api/instagram/accounts"),
@@ -101,12 +101,10 @@ export function InstagramAccountsPage() {
   const startConnection = () => setShowAppSelector(true);
   useEffect(() => {
     if (searchParams.get("connect") !== "1") return;
-    // Open at once; the backend re-checks permission when the connection starts.
-    if (accounts.data?.can_connect !== false) setShowAppSelector(true);
     const next = new URLSearchParams(searchParams);
     next.delete("connect");
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams, accounts.data]);
+  }, [searchParams, setSearchParams]);
   const disconnect = useMutation({
     mutationFn: (accountId: string) =>
       apiRequest<InstagramDisconnectResponse>(`/api/instagram/accounts/${accountId}`, {
@@ -161,9 +159,24 @@ export function InstagramAccountsPage() {
     setSearchParams({}, { replace: true });
   }, [queryClient, searchParams, setSearchParams, user?.role]);
 
-  if (accounts.isLoading) return <LoadingState label="Carregando contas Instagram" />;
+  const connectPanel = showAppSelector ? (
+    <ConnectAppsPanel onClose={() => setShowAppSelector(false)} returnTo="/feature/accounts" />
+  ) : null;
+  if (accounts.isLoading) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-5">
+        {connectPanel}
+        <LoadingState label="Carregando contas Instagram" />
+      </div>
+    );
+  }
   if (accounts.error || !accounts.data) {
-    return <ErrorState message="Não foi possível carregar as contas deste workspace." />;
+    return (
+      <div className="mx-auto max-w-6xl space-y-5">
+        {connectPanel}
+        <ErrorState message="Não foi possível carregar as contas deste workspace." />
+      </div>
+    );
   }
 
   const disconnectError =
@@ -236,7 +249,6 @@ export function InstagramAccountsPage() {
                 className="btn-primary"
                 type="button"
                 onClick={startConnection}
-                disabled={!metaApps.data?.apps.length || metaApps.isLoading}
               >
                 <Link2 size={16} />
                 Conectar conta
@@ -257,11 +269,7 @@ export function InstagramAccountsPage() {
         </div>
       </header>
 
-      <ConnectAccountModal
-        onClose={() => setShowAppSelector(false)}
-        open={showAppSelector}
-        returnTo="/feature/accounts"
-      />
+      {connectPanel}
 
       {callbackMessage && (
         <div

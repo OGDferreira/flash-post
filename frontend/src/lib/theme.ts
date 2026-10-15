@@ -14,7 +14,7 @@ export function applyTheme(theme: Theme, animate = false) {
   root.dataset.theme = theme;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", theme === "light" ? "#eef2fb" : "#010208");
+    ?.setAttribute("content", theme === "light" ? "#e5eaf3" : "#1b1e26");
   try {
     localStorage.setItem(KEY, theme);
   } catch {

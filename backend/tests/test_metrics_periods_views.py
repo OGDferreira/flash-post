@@ -153,7 +153,7 @@ async def test_daily_sync_writes_days_keeps_final_days_and_records_errors(
     assert rows[0].day == local_date(NOW - timedelta(days=10))
 
     calls.clear()
-    await daily_views_sync.sync_account_daily_views(db_session, account, NOW + timedelta(hours=3))
+    await daily_views_sync.sync_account_daily_views(db_session, account, NOW + timedelta(seconds=30))
     refreshed_days = {local_date(since) for since, _ in calls}
     assert refreshed_days and all(day >= TODAY - timedelta(days=daily_views_sync.FINAL_AFTER_DAYS) for day in refreshed_days)
     assert len((await db_session.scalars(select(InstagramAccountDailyViews))).all()) == len(rows)  # no duplicates

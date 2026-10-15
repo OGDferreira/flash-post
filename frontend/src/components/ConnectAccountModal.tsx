@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, CircleAlert, LoaderCircle, Smartphone } from "lucide-react";
+import { ArrowUpRight, CircleAlert, LoaderCircle, Smartphone, X } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { Modal } from "@/components/ui/Modal";
 import { apiRequest } from "@/services/api";
 
 export type InstagramMetaApp = {
@@ -22,8 +21,7 @@ export type InstagramMetaAppsResponse = {
 
 export const metaAppsQueryKey = ["instagram", "apps"] as const;
 
-type ConnectAccountModalProps = {
-  open: boolean;
+type ConnectAppsPanelProps = {
   onClose: () => void;
   /** Where the OAuth callback should send the user back to. */
   returnTo: "/dashboard" | "/feature/accounts";
@@ -39,12 +37,11 @@ function connectedLabel(count: number) {
  * re-checks membership, role and workspace for both the start and the OAuth
  * callback, so the modal only chooses which app the new account will use.
  */
-export function ConnectAccountModal({ open, onClose, returnTo }: ConnectAccountModalProps) {
+export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
   const [pendingAppId, setPendingAppId] = useState<string | null>(null);
   const apps = useQuery({
     queryKey: metaAppsQueryKey,
     queryFn: () => apiRequest<InstagramMetaAppsResponse>("/api/instagram/apps"),
-    enabled: open,
     staleTime: 30_000,
     retry: false,
   });
@@ -61,13 +58,24 @@ export function ConnectAccountModal({ open, onClose, returnTo }: ConnectAccountM
   const appList = apps.data?.apps ?? [];
 
   return (
-    <Modal
-      busy={connect.isPending}
-      description="A nova conta será vinculada ao aplicativo escolhido. As contas já conectadas não mudam."
-      onClose={onClose}
-      open={open}
-      title="Conectar conta do Instagram"
-    >
+    <section aria-label="Conectar conta do Instagram" className="glass-panel p-4 sm:p-5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-[#f5f7fb]">Escolha o aplicativo</h3>
+          <p className="mt-1 text-xs leading-5 text-[#94a3b8]">
+            A nova conta será vinculada ao aplicativo escolhido. As contas já conectadas não mudam.
+          </p>
+        </div>
+        <button
+          aria-label="Fechar"
+          className="btn-ghost !min-h-9 !px-2.5"
+          disabled={connect.isPending}
+          onClick={onClose}
+          type="button"
+        >
+          <X size={16} />
+        </button>
+      </div>
       {apps.isLoading && (
         <div className="space-y-2.5" aria-busy="true" aria-label="Carregando aplicativos">
           {[0, 1].map((item) => (
@@ -103,14 +111,14 @@ export function ConnectAccountModal({ open, onClose, returnTo }: ConnectAccountM
       )}
 
       {appList.length > 0 && (
-        <ul className="space-y-2.5">
+        <ul className="grid gap-3 md:grid-cols-2">
           {appList.map((app) => {
             const isPending = pendingAppId === app.id && connect.isPending;
             const empty = app.connected_accounts === 0;
             return (
               <li key={app.id}>
                 <button
-                  className="group flex w-full items-center gap-3 rounded-2xl border border-line bg-surface-inset p-4 text-left transition hover:border-[#536dfe]/60 hover:bg-[#536dfe]/[0.07] disabled:cursor-wait disabled:opacity-60"
+                  className="group flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-4 text-left transition-shadow hover:text-[#aab7ff] active:shadow-none disabled:cursor-wait disabled:opacity-60"
                   disabled={connect.isPending}
                   onClick={() => connect.mutate(app.id)}
                   type="button"
@@ -159,6 +167,6 @@ export function ConnectAccountModal({ open, onClose, returnTo }: ConnectAccountM
           Não foi possível iniciar a conexão. Tente novamente.
         </p>
       )}
-    </Modal>
+    </section>
   );
 }
