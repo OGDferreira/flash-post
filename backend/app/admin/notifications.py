@@ -101,11 +101,13 @@ async def send_test(payload: TestRequest, admin: SuperAdminUser, db: DbSession) 
         .limit(1)
     )
     real_value: int | None = None
+    posts_value: int | None = None
     account_name: str | None = None
     source = "simulado (sem workspace)"
     if membership is not None:
         scope = ms._Scope(membership.workspace_id, admin.id)
         _day, start, end = local_day_window(now, resolve_time_zone(None))
+        posts_value = await ms.posts_today(db, scope, membership.role, start, end)
         if payload.kind == "views":
             real_value = await ms.views_today(db, scope, now, start, {})
         elif payload.kind == "posts":
@@ -126,7 +128,9 @@ async def send_test(payload: TestRequest, admin: SuperAdminUser, db: DbSession) 
                 real_value, account_name = account.follower_count, account.username
         source = "dados reais do seu workspace de hoje" if real_value is not None else "simulado (sem dados)"
     value = real_value if real_value is not None else payload.threshold
-    title, body = ms.render(template, value, account_name, admin.nickname or admin.full_name)
+    title, body = ms.render(
+        template, value, account_name, admin.nickname or admin.full_name, posts=posts_value
+    )
     subscriptions = (
         await db.scalars(select(PushSubscription).where(PushSubscription.user_id == admin.id))
     ).all()

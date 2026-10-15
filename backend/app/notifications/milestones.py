@@ -70,6 +70,7 @@ PLACEHOLDERS = {
     "{valor}": "número real (ex.: 12.340)",
     "{conta}": "@ da conta (só seguidores)",
     "{nome}": "apelido do usuário",
+    "{posts}": "posts publicados hoje (usado nas visualizações)",
 }
 
 
@@ -77,105 +78,29 @@ def _m(*pairs: tuple[str, str]) -> list[dict[str, str]]:
     return [{"title": title, "body": body} for title, body in pairs]
 
 
+# Short on purpose: a congratulation plus the real numbers of the day.
+_SHORT = {
+    "views": (
+        ("🎉 Parabéns! {valor} views hoje", "{posts} posts postados hoje."),
+        ("👏 Parabéns, {nome}! {valor} views", "Com {posts} posts postados hoje."),
+    ),
+    "posts": (
+        ("🎉 Parabéns! {valor} posts hoje", "Continue assim 🚀"),
+        ("👏 Parabéns, {nome}! {valor} posts", "Hoje no ar."),
+    ),
+    "sales": (
+        ("🎉 Parabéns! {valor} vendas hoje", "Continue assim 💸"),
+        ("💸 Parabéns, {nome}! {valor} vendas", "Pagas hoje."),
+    ),
+    "followers": (
+        ("🎉 {conta} chegou a {valor} seguidores!", "Parabéns! 👏"),
+        ("👏 {conta} bateu {valor} seguidores!", "Parabéns!"),
+    ),
+}
+
 DEFAULT_MESSAGES: dict[str, dict[int, list[dict[str, str]]]] = {
-    "views": {
-        10_000: _m(
-            ("👀 {valor} visualizações hoje!", "Já dá pra comprar o pastel na feira 🥟😋"),
-            ("👀 {valor} views hoje!", "O caldo de cana também tá pago 🥤 Bora pra mais!"),
-            ("🔥 {valor} visualizações!", "Primeiro pastel garantido. Agora vem o de queijo 🧀"),
-            ("🍿 {valor} views hoje, {nome}!", "Já tem plateia. Faz a pipoca que o show começou 🎬"),
-        ),
-        50_000: _m(
-            ("🚀 {valor} visualizações hoje!", "Tá ficando famoso no bairro, hein? 😎"),
-            ("🚀 {valor} views!", "Sua mãe já tá mostrando pras vizinhas 👵📱"),
-            ("📈 {valor} visualizações!", "O algoritmo começou a te notar 👀"),
-            ("🎯 {valor} views hoje!", "Já dá pra pagar a pizza de sexta 🍕"),
-        ),
-        100_000: _m(
-            ("💯 {valor} visualizações hoje!", "Você já aprendeu a viralizar 🧠🔥"),
-            ("💯 {valor} views!", "Pode colocar 'influencer' na bio 😏"),
-            ("🔥 {valor} visualizações!", "O algoritmo tá comendo na sua mão 🍽️"),
-            ("📣 {valor} views hoje, {nome}!", "Cem mil pessoas viram. Nem o vizinho que reclama do som 🔊"),
-        ),
-        500_000: _m(
-            ("🤯 {valor} visualizações hoje!", "Meio milhão de olhos em você. Arruma o cabelo 💇"),
-            ("🌪️ {valor} views!", "Isso não é post, é furacão 🌀"),
-            ("🤯 {valor} visualizações!", "Já pode dar palestra sobre viralizar 🎤"),
-            ("🛸 {valor} views hoje!", "Até os ETs estão assistindo 👽"),
-        ),
-        1_000_000: _m(
-            ("🤑 {valor} visualizações em um dia?!", "Dubai te espera 🏝️✈️"),
-            ("💎 {valor} views hoje!", "Pode ir escolhendo a cor da Lamborghini 🏎️"),
-            ("🤑 {valor} visualizações!", "O Instagram tá te devendo um troféu 🏆"),
-            ("👑 1 MILHÃO hoje, {nome}!", "{valor} views. Avisa quando for abrir o fã-clube 📸"),
-        ),
-    },
-    "posts": {
-        1_000: _m(
-            ("⚡ {valor} posts hoje!", "A máquina de postar foi ligada 🤖"),
-            ("⚡ {valor} posts publicados!", "Tá aquecendo os motores 🔥"),
-            ("🏭 {valor} posts hoje!", "Fábrica de conteúdo a todo vapor 💨"),
-        ),
-        5_000: _m(
-            ("🔥 {valor} posts hoje!", "Desse jeito o Instagram vai cair 💥📉"),
-            ("🔥 {valor} posts!", "Os servidores da Meta tão suando 🥵"),
-            ("📦 {valor} posts hoje!", "Nem os Correios entregam tanto assim 🚚"),
-        ),
-        10_000: _m(
-            ("🧠 {valor} posts hoje!", "Haja memória 💾😵"),
-            ("🧠 {valor} posts!", "Alguém chama o TI da Meta 🧑‍💻🚨"),
-            ("🐙 {valor} posts hoje!", "Você tem quantos braços? 🤔"),
-        ),
-        15_000: _m(
-            ("😱 {valor} posts hoje!", "O Zuckerberg tem medo de você 🫣"),
-            ("😱 {valor} posts!", "O Zuck já tá ligando pra marcar reunião 📞"),
-            ("🦖 {valor} posts hoje!", "Isso não é perfil, é dinossauro do conteúdo 🦕"),
-        ),
-    },
-    "sales": {
-        10: _m(
-            ("💸 {valor} vendas hoje!", "O caixa começou a cantar 🎶💰"),
-            ("💸 {valor} vendas!", "Pix caindo igual chuva 🌧️💵"),
-            ("🛒 {valor} vendas hoje!", "Já paga o café da semana ☕"),
-        ),
-        50: _m(
-            ("🤑 {valor} vendas hoje!", "O banco vai te ligar perguntando o que tá acontecendo 📞😅"),
-            ("🤑 {valor} vendas!", "Já pode chamar o contador 🧾"),
-            ("💰 {valor} vendas hoje!", "A maquininha pediu férias 🏖️"),
-        ),
-        100: _m(
-            ("🚨 {valor} vendas em um dia!", "Vai com calma, quer ficar rico? 😂💰"),
-            ("🚨 {valor} vendas hoje!", "Calma, deixa um pouco pros outros 🤭"),
-            ("🔥 {valor} vendas hoje!", "O Pix tá até esquentando 🌡️"),
-        ),
-        500: _m(
-            ("👑 {valor} vendas hoje!", "Isso não é venda, é império 🏰💎"),
-            ("👑 {valor} vendas!", "Forbes já tá com sua foto na pauta 📸"),
-            ("🚀 {valor} vendas hoje!", "Elon Musk quer saber seu segredo 🛰️"),
-        ),
-    },
-    "followers": {
-        1_000: _m(
-            ("🎉 {conta} bateu {valor} seguidores!", "Mil pessoas acompanhando. Já é uma festa 🥳"),
-            ("🎉 {conta} chegou a {valor} seguidores!", "Primeiro milhar a gente nunca esquece 💙"),
-        ),
-        5_000: _m(
-            ("🌟 {conta} bateu {valor} seguidores!", "Já lota um show pequeno 🎤"),
-            ("🌟 {conta}: {valor} seguidores!", "A conta tá crescendo bonita 🌱"),
-        ),
-        10_000: _m(
-            ("🔟 {conta} bateu {valor} seguidores!", "10 mil! Agora é perfil de respeito 😎"),
-            ("🔥 {conta}: {valor} seguidores!", "Dá pra encher um ginásio 🏟️"),
-        ),
-        50_000: _m(
-            ("🚀 {conta} bateu {valor} seguidores!", "Meio caminho dos 100 mil 🧭"),
-            ("🚀 {conta}: {valor} seguidores!", "Isso já é uma cidade inteira te seguindo 🏙️"),
-        ),
-        100_000: _m(
-            ("🏆 {conta} bateu {valor} seguidores!", "Cem mil! Pode pedir o selo de prata ao YouTube 😂"),
-            ("🏆 {conta}: {valor} seguidores!", "Celebridade confirmada ⭐"),
-        ),
-    },
+    kind: {threshold: _m(*_SHORT[kind]) for threshold in thresholds}
+    for kind, thresholds in THRESHOLDS.items()
 }
 
 
@@ -184,8 +109,15 @@ class _SafeDict(dict):
         return "{" + key + "}"
 
 
-def render(template: dict[str, str], value: int, account: str | None, name: str | None) -> tuple[str, str]:
-    values = _SafeDict(valor=format_views(value), conta=f"@{account}" if account else "sua conta", nome=name or "")
+def render(
+    template: dict[str, str], value: int, account: str | None, name: str | None, posts: int | None = None
+) -> tuple[str, str]:
+    values = _SafeDict(
+        valor=format_views(value),
+        conta=f"@{account}" if account else "sua conta",
+        nome=name or "",
+        posts=format_views(posts) if posts is not None else "0",
+    )
     title = template["title"].format_map(values).replace(", !", "!").strip()
     body = template["body"].format_map(values).strip()
     return title[:120], body[:240]
@@ -322,7 +254,9 @@ async def _nickname(db, user_id) -> str | None:
     return (row[0] or row[1]) if row else None
 
 
-async def _notify_daily(db, scope, day: date, kind: str, value: int, client, keys, messages) -> int:
+async def _notify_daily(
+    db, scope, day: date, kind: str, value: int, client, keys, messages, posts: int | None = None
+) -> int:
     already = set(
         (
             await db.scalars(
@@ -357,7 +291,9 @@ async def _notify_daily(db, scope, day: date, kind: str, value: int, client, key
         return 0
     await db.commit()
     top = max(pending)
-    title, body = render(pick(messages, kind, top), value, None, await _nickname(db, scope.user_id))
+    title, body = render(
+        pick(messages, kind, top), value, None, await _nickname(db, scope.user_id), posts=posts
+    )
     payload = {"title": title, "body": body, "url": "/dashboard", "tag": f"ms-{kind}-{top}-{day.isoformat()}"}
     subscriptions = await _subscriptions(db, scope.workspace_id, [scope.user_id])
     delivered, transient = await push_to(db, subscriptions, payload, keys, client, f"ms{kind[:1]}{top}")
@@ -553,7 +489,9 @@ async def run_milestones_tick(
                 keys = await keys_getter()
                 if keys is None:
                     return total
-                total += await _notify_daily(db, scope, day, kind, value, client, keys, messages)
+                total += await _notify_daily(
+                    db, scope, day, kind, value, client, keys, messages, posts=values["posts"]
+                )
         try:
             from app.notifications.engagement import run_engagement_tick
 

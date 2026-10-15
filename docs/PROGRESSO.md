@@ -148,3 +148,7 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Pasta com "Entrada automática por nome": prefixos (alice, alic, ali.…) + chave ligar/desligar. Conta NOVA conectada e sem pasta cujo @ começa com um prefixo entra na pasta sozinha. Não mexe em contas existentes.
 - Loop com "Entrar no loop automaticamente" por pasta: toda conta que entra na pasta (manual ou auto) entra no loop e é enfileirada se ele estiver ativo. Contas nunca são removidas automaticamente. Loop pode ser criado só com pastas.
 - Migration 20261015_36 (3 colunas com default). Aba Pastas mostra "Contas sem pasta" no topo. Topo mostra só "FlashPost".
+
+## 0.14.1 — Notificações
+- Causa de "não funcionam": em produção havia 0 dispositivos com push inscritos (nada a entregar). Novo aviso "Ativar notificações" (um toque) no app; no iPhone orienta instalar na Tela de Início.
+- Frases padrão curtas: parabéns + views do dia + posts postados hoje (novo placeholder `{posts}`).

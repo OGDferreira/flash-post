@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { PushPrompt } from "@/components/PushPrompt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -566,6 +567,7 @@ export function AppShell() {
           </div>
         </header>
         <main className="app-shell-content min-h-[calc(100dvh-72px)] w-full px-4 py-4 sm:px-6 sm:py-6">
+          <PushPrompt />
           <div className="page-enter" key={location.pathname}>
             <ErrorBoundary resetKey={location.pathname}>
               <Outlet />

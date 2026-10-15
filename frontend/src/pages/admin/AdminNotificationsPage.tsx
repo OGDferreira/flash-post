@@ -26,7 +26,7 @@ type TestResponse = {
 const fmt = (value: number) => value.toLocaleString("pt-BR");
 
 function preview(text: string, value: number) {
-  return text.replaceAll("{valor}", fmt(value)).replaceAll("{conta}", "@suaconta").replaceAll("{nome}", "Gui");
+  return text.replaceAll("{valor}", fmt(value)).replaceAll("{conta}", "@suaconta").replaceAll("{nome}", "Gui").replaceAll("{posts}", "230");
 }
 
 export function AdminNotificationsPage() {
