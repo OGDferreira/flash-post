@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
-/* FlashPost neumorphism (soft UI). Every surface shares the page color and is
+/* FlashPost glassmorphism (see the glass layer at the end of this file).
+   Legacy neumorphism notes:  Every surface shares the page color and is
    lifted or pressed with a pair of shadows: a light one from the top-left and
    a dark one to the bottom-right. Light and dark only swap the variables. */
 :root {
@@ -859,17 +860,14 @@ html:not([data-theme="light"]) .dashboard-date-range input { color-scheme: dark;
   }
 }
 
-@media (min-width: 1280px) {
-  .dashboard-metrics {
-    gap: 14px;
-  }
+@media (min-width: 720px) {
+  .dashboard-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(128px, auto); }
 }
 
-@media (min-width: 1536px) {
-  .dashboard-metrics {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-  }
+@media (min-width: 1100px) {
+  .dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 }
+
 
 @media (max-width: 719px) {
   .dashboard-toolbar {
@@ -1046,3 +1044,152 @@ html[data-theme="light"] :is(.bg-brand, .bg-brand-strong, .bg-danger, .bg-succes
 .btn-sm { min-height: 36px; padding: 0 14px; font-size: 0.8125rem; }
 .btn-danger { color: var(--danger); }
 .btn-danger:hover:not(:disabled) { color: var(--danger); box-shadow: var(--nm-raised-sm), inset 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent); }
+
+
+/* ============================================================
+   Glassmorphism layer (overrides the soft-UI primitives above)
+   - mobile: translucent but opaque-ish fills, no heavy blur
+   - >=768px: backdrop blur on cards, bars and modals only
+   - ambient background drifts slowly (transform only)
+   ============================================================ */
+:root {
+  --nm-bg: #0b1020;
+  --nm-sl: transparent;
+  --nm-sd: transparent;
+  --nm-track: rgb(255 255 255 / 0.08);
+  --glass-fill: rgb(22 28 48 / 0.74);
+  --glass-fill-solid: rgb(20 26 44 / 0.86);
+  --glass-edge: rgb(255 255 255 / 0.14);
+  --glass-hi: inset 0 1px 0 rgb(255 255 255 / 0.12);
+  --nm-raised: 0 10px 34px rgb(0 0 0 / 0.38), var(--glass-hi);
+  --nm-raised-sm: 0 6px 20px rgb(0 0 0 / 0.3), var(--glass-hi);
+  --nm-inset: inset 0 1px 3px rgb(0 0 0 / 0.4);
+  --nm-inset-sm: inset 0 1px 3px rgb(0 0 0 / 0.4);
+  --nm-flat-edge: 0 0 0 1px var(--glass-edge);
+  --nm-overlay: rgb(3 5 12 / 0.66);
+  --well: rgb(255 255 255 / 0.06);
+  --color-line: rgb(255 255 255 / 0.14);
+  --color-line-soft: rgb(255 255 255 / 0.08);
+}
+
+html[data-theme="light"] {
+  --nm-bg: #e9eefc;
+  --nm-track: rgb(40 60 130 / 0.12);
+  --glass-fill: rgb(255 255 255 / 0.7);
+  --glass-fill-solid: rgb(255 255 255 / 0.82);
+  --glass-edge: rgb(255 255 255 / 0.85);
+  --glass-hi: inset 0 1px 0 rgb(255 255 255 / 0.9);
+  --nm-raised: 0 10px 34px rgb(40 60 130 / 0.16), var(--glass-hi);
+  --nm-raised-sm: 0 6px 18px rgb(40 60 130 / 0.12), var(--glass-hi);
+  --nm-inset: inset 0 1px 3px rgb(40 60 130 / 0.2);
+  --nm-inset-sm: inset 0 1px 3px rgb(40 60 130 / 0.2);
+  --nm-overlay: rgb(200 210 240 / 0.6);
+  --well: rgb(255 255 255 / 0.55);
+  --color-line: rgb(255 255 255 / 0.85);
+  --color-line-soft: rgb(120 135 175 / 0.3);
+}
+
+html { background: #05070f; }
+html[data-theme="light"] { background: #e9eefc; }
+body { background: transparent; position: relative; }
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: -10%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40vmax 32vmax at 10% 0%, rgb(46 92 255 / 0.5), transparent 66%),
+    radial-gradient(34vmax 28vmax at 100% 10%, rgb(0 170 255 / 0.28), transparent 64%),
+    radial-gradient(40vmax 34vmax at 80% 80%, rgb(150 70 255 / 0.3), transparent 66%),
+    radial-gradient(46vmax 36vmax at 10% 100%, rgb(20 120 255 / 0.3), transparent 66%),
+    #05070f;
+  will-change: transform;
+  animation: ambient-drift 38s ease-in-out infinite alternate;
+}
+
+html[data-theme="light"] body::before {
+  background:
+    radial-gradient(40vmax 32vmax at 10% 0%, rgb(83 109 254 / 0.35), transparent 66%),
+    radial-gradient(34vmax 28vmax at 100% 10%, rgb(0 190 220 / 0.3), transparent 64%),
+    radial-gradient(40vmax 34vmax at 80% 80%, rgb(170 110 255 / 0.28), transparent 66%),
+    #eaf0ff;
+}
+
+@keyframes ambient-drift {
+  from { transform: translate3d(-1.5%, -1%, 0) scale(1); }
+  to { transform: translate3d(1.5%, 1.2%, 0) scale(1.04); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; will-change: auto; }
+}
+
+.glass-panel,
+.glass-modal,
+.glass-bar,
+.dashboard-card,
+.app-mobile-nav {
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-edge);
+}
+
+.glass-modal { background: var(--glass-fill-solid); }
+.glass-bar { box-shadow: 0 8px 26px rgb(0 0 0 / 0.22), var(--glass-hi); }
+aside.glass-bar { box-shadow: 8px 0 26px rgb(0 0 0 / 0.22), var(--glass-hi); }
+
+.bg-surface,
+.bg-surface-raised {
+  background: rgb(255 255 255 / 0.05);
+  border-color: var(--glass-edge);
+}
+
+html[data-theme="light"] .bg-surface,
+html[data-theme="light"] .bg-surface-raised { background: rgb(255 255 255 / 0.55); }
+
+/* Lists and tables inside cards stay calmer and more legible. */
+.glass-panel .bg-surface,
+.glass-panel .bg-surface-raised,
+.dashboard-card .bg-surface { box-shadow: none; }
+
+.bg-surface-inset,
+.field,
+.collaborator-input,
+.dashboard-search,
+.dashboard-periods,
+.dashboard-metric-icon {
+  background: var(--well);
+  border: 1px solid var(--glass-edge);
+}
+
+.btn-secondary { background: var(--well); border: 1px solid var(--glass-edge); }
+.btn-ghost:hover:not(:disabled) { background: var(--well); }
+.nm-active { background: var(--well); border: 1px solid var(--glass-edge); }
+
+.btn-primary { box-shadow: 0 8px 22px rgb(59 82 224 / 0.38), inset 0 1px 0 rgb(255 255 255 / 0.25); }
+.btn-primary:hover:not(:disabled) { box-shadow: 0 10px 28px rgb(59 82 224 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.3); }
+.bg-\[\#536dfe\].text-white,
+.bg-\[\#586eff\].text-white { box-shadow: 0 8px 22px rgb(59 82 224 / 0.38), inset 0 1px 0 rgb(255 255 255 / 0.25); }
+
+@media (min-width: 768px) {
+  .glass-panel,
+  .glass-modal,
+  .glass-bar,
+  .dashboard-card,
+  .app-mobile-nav {
+    -webkit-backdrop-filter: blur(22px) saturate(160%);
+    backdrop-filter: blur(22px) saturate(160%);
+  }
+}
+
+@media (min-width: 768px) {
+  :root { --glass-fill: rgb(255 255 255 / 0.07); --glass-fill-solid: rgb(24 30 52 / 0.8); }
+  html[data-theme="light"] { --glass-fill: rgb(255 255 255 / 0.58); --glass-fill-solid: rgb(255 255 255 / 0.85); }
+}
+
+/* Compact metric cards on desktop (no wide side-to-side bars). */
+@media (min-width: 720px) {
+  .dashboard-metric-card { min-height: 118px; padding: 14px 16px; gap: 8px; }
+  .dashboard-metric-value { font-size: clamp(22px, 2vw, 30px); }
+}

@@ -45,3 +45,9 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - 1.310 cores hex soltas viraram tokens semânticos (`text-fg/fg-2/muted/accent`, `danger/warning/success(+soft)`, `brand`, `well`) definidos por tema em `index.css`; remap do tema claro removido. Ciano unificado no azul da marca.
 - Novos componentes: `ui/Button`, `ui/Card`, `ui/Badge`; `lib/confirm.tsx` (`confirmAction` + `ConfirmHost`) substitui os 22 `window.confirm` por pop-up do design (título/detalhe/verbo inferidos; perigo = botão vermelho).
 - Pendências do plano: 2 navegação mobile, 3 polling/Error Boundary, 4 dividir páginas, 5 testes Playwright, 6 worker de sync. Migrar botões artesanais para `<Button>` ao tocar cada tela.
+
+## 0.7.0 — Parte 1: glassmorphism
+- Design system trocado de neumorphism para glassmorphism (claro e escuro) via camada no fim de `index.css` e tokens `--glass-*`; mesmas classes (`glass-panel`, `dashboard-card`, `btn-*`, `.field`).
+- Fundo ambiente animado (`body::before`, só `transform`, 38s, desligado em `prefers-reduced-motion`). Blur forte só ≥768px em cards/barras/modais; no celular fundos mais opacos, sem blur pesado.
+- Grade de métricas no PC: 3 colunas (≥720px) e 4 (≥1100px), cards compactos (fim das barras compridas); celular mantém 2 por linha quadrados.
+- theme-color e cache do service worker (v10) atualizados.
