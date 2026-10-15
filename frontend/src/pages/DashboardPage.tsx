@@ -15,6 +15,8 @@ import {
 
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { apiRequest } from "@/services/api";
+import { GreetingClock } from "@/components/GreetingClock";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { AlertsBanner } from "@/components/AlertsBanner";
 import { useInstagramCallbackToast } from "@/hooks/useInstagramCallbackToast";
 
@@ -116,6 +118,7 @@ function MetricCard({
 }
 
 export function DashboardPage() {
+  const { user } = useAuth();
   useInstagramCallbackToast();
   const [period, setPeriod] = useState<AnalyticsPeriod>("today");
   const [startDate, setStartDate] = useState(localDateInputValue);
@@ -335,6 +338,7 @@ export function DashboardPage() {
 
   return (
     <div className="dashboard-ambient min-h-[calc(100vh-144px)] w-full space-y-4">
+      <GreetingClock nickname={user?.nickname} />
       <AlertsBanner />
       <header className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">

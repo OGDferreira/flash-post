@@ -31,6 +31,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
+import { BrandLogo } from "@/components/BrandLogo";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { applyTheme, getTheme, type Theme } from "@/lib/theme";
@@ -361,9 +362,7 @@ export function AppShell() {
           }
           onClick={() => setMobileOpen(false)}
         >
-          <span className="grid size-9 place-items-center rounded-xl border border-line bg-brand-soft text-sm font-bold text-accent">
-            F
-          </span>
+          <BrandLogo className="size-9 shrink-0" />
           <span className="max-w-[140px] overflow-hidden whitespace-nowrap text-base font-semibold tracking-[-0.03em] text-fg opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[140px] lg:group-data-[open=true]:opacity-100">
             FlashPost<span className="text-accent">.</span>
           </span>
@@ -508,18 +507,12 @@ export function AppShell() {
             >
               <Menu size={18} />
             </button>
-            <div className="min-w-0">
-              <p className="text-xs text-muted">
-                {isAdminRoute ? "FlashPost / Administração" : "FlashPost / Workspace"}
-              </p>
-              <h1 className="mt-0.5 truncate text-sm font-medium text-fg">
-                {isAdminRoute ? (
-                  "Painel da plataforma"
-                ) : (
-                  <GreetingClock nickname={user?.nickname} />
-                )}
-              </h1>
-            </div>
+            <Link className="flex min-w-0 items-center gap-2.5" to="/dashboard">
+              <BrandLogo className="size-8 shrink-0 lg:hidden" />
+              <span className="truncate text-base font-semibold tracking-[-0.03em] text-fg">
+                {isAdminRoute ? "FlashPost · Administração" : "FlashPost"}
+              </span>
+            </Link>
           </div>
           <div className="flex shrink-0 items-center gap-2 pl-2">
             <div className="relative">
@@ -738,40 +731,3 @@ export function AppShell() {
     </div>
   );
 }
-
-/**
- * Live greeting + clock. Kept in its own component so the 1 s tick re-renders
- * only this text instead of the whole shell (sidebar, menus, page outlet).
- */
-function GreetingClock({ nickname }: { nickname: string | undefined }) {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      hour: "numeric",
-      hourCycle: "h23",
-      timeZone: "America/Sao_Paulo",
-    }).format(now),
-  );
-  const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
-  return (
-    <>
-      {greeting}, {nickname ?? "bem-vindo"} ·{" "}
-      <time dateTime={now.toISOString()}>{clockFormat.format(now)}</time>
-    </>
-  );
-}
-
-const clockFormat = new Intl.DateTimeFormat("pt-BR", {
-  weekday: "long",
-  day: "2-digit",
-  month: "long",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  timeZone: "America/Sao_Paulo",
-});

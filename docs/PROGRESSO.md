@@ -51,3 +51,7 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Fundo ambiente animado (`body::before`, só `transform`, 38s, desligado em `prefers-reduced-motion`). Blur forte só ≥768px em cards/barras/modais; no celular fundos mais opacos, sem blur pesado.
 - Grade de métricas no PC: 3 colunas (≥720px) e 4 (≥1100px), cards compactos (fim das barras compridas); celular mantém 2 por linha quadrados.
 - theme-color e cache do service worker (v10) atualizados.
+
+## 0.7.1 — Parte 2: logo e topo
+- Logo C (F + post) aplicado: `components/BrandLogo`, `favicon.svg/.ico`, ícones 192/512 e `flashpost-logo.png` regenerados; cache do SW v11.
+- Topo mostra só o ícone + "FlashPost" (sem "Workspace"); saudação "Boa tarde, <nome>" + data com hora e minutos (sem segundos) agora fica no início do Painel (dono e colaborador), atualizando a cada 30 s.

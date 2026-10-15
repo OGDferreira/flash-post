@@ -1,3 +1,4 @@
+import { GreetingClock } from "@/components/GreetingClock";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -143,14 +144,7 @@ export function CollaboratorDashboardPage() {
             {(data.full_name || data.nickname || "C").slice(0, 1).toUpperCase()}
           </span>
         )}
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-            Seu painel de produção
-          </p>
-          <h1 className="mt-0.5 text-lg font-semibold text-fg">
-            Olá, {data.nickname || data.full_name || "colaborador"}
-          </h1>
-        </div>
+        <GreetingClock nickname={data.nickname || data.full_name || "colaborador"} />
         <Link className="btn-primary ml-auto shrink-0 whitespace-nowrap max-sm:!px-3" to="/feature/accounts?connect=1">
           <Link2 size={16} />
           Conectar conta
