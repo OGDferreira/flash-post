@@ -13,6 +13,7 @@ from app.auth.dependencies import (
 )
 from app.core.config import get_settings
 from app.core.time import local_day_bounds_utc, utc_now
+from app.instagram.account_state import classify_inactive_account
 from app.models import (
     InstagramAccount,
     InstagramLoop,
@@ -411,6 +412,22 @@ async def loop_alerts(
             InstagramAccount.status == "error",
         )
     )
+    inactive_rows = (
+        await db.execute(
+            select(InstagramAccount.username, InstagramAccount.status, InstagramAccount.status_reason).where(
+                InstagramAccount.workspace_id == access.workspace.id,
+                InstagramAccount.status == "error",
+            )
+        )
+    ).all()
+    restricted: list[str] = []
+    suspended: list[str] = []
+    for username, account_status, reason in inactive_rows:
+        kind = classify_inactive_account(account_status, reason)
+        if kind == "restricted":
+            restricted.append(username)
+        elif kind == "suspended":
+            suspended.append(username)
     day_start, day_end = local_day_bounds_utc(now)
     job = InstagramPublicationJob
     published, failed = (
@@ -431,6 +448,8 @@ async def loop_alerts(
         expiring_accounts=list(expiring),
         expiring_within_days=EXPIRY_WARNING_DAYS,
         disconnected_count=disconnected or 0,
+        restricted_accounts=restricted[:50],
+        suspended_accounts=suspended[:50],
         published_today=published,
         failed_today=failed,
         failure_rate=round(rate, 3),

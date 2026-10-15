@@ -15,6 +15,8 @@ from sqlalchemy import and_, func, or_, select
 from app.auth.dependencies import DbSession, OwnerAccess
 from app.core.crypto import decrypt_value
 from app.analytics.periods import period_bounds
+from app.auth.router import member_avatar_url
+from app.instagram.account_state import classify_inactive_account
 from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, local_date, local_day_bounds_utc, utc_now
 from app.instagram.oauth import (
     INSTAGRAM_INSIGHTS_PERMISSION,
@@ -37,6 +39,7 @@ from app.models import (
 from app.schemas.analytics import (
     AccountConnectionRank,
     DailyAccountConnectionMetric,
+    DisconnectedAccountToday,
     DailyPublicationMetric,
     DailyRevenueMetric,
     InstagramAccountAnalytics,
@@ -50,6 +53,47 @@ AnalyticsPeriod = Literal["today", "yesterday", "7d", "30d", "all", "custom"]
 
 def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+async def _connection_ranking(
+    db, workspace_id: UUID, start: datetime | None, end: datetime
+) -> list[AccountConnectionRank]:
+    conditions = [
+        InstagramAccount.workspace_id == workspace_id,
+        InstagramAccount.connected_by_user_id == User.id,
+        InstagramAccount.first_connected_at.is_not(None),
+        InstagramAccount.first_connected_at < end,
+    ]
+    if start is not None:
+        conditions.append(InstagramAccount.first_connected_at >= start)
+    count = (
+        select(func.count(InstagramAccount.id))
+        .where(*conditions)
+        .correlate(User)
+        .scalar_subquery()
+    )
+    rows = (
+        await db.execute(
+            select(User, WorkspaceMember.role, count.label("connected_accounts"))
+            .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
+            .where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.role.in_(("OWNER", "COLLABORATOR")),
+                WorkspaceMember.status == "ACTIVE",
+            )
+            .order_by(count.desc(), User.full_name, User.id)
+        )
+    ).all()
+    return [
+        AccountConnectionRank(
+            user_id=user.id,
+            full_name=user.full_name,
+            role=role,
+            connected_accounts=connected_accounts,
+            avatar_url=member_avatar_url(user),
+        )
+        for user, role, connected_accounts in rows
+    ]
 
 
 _META_ACCOUNT_CONCURRENCY = 6
@@ -309,47 +353,41 @@ async def get_analytics_summary(
     connection_chart_start = max(period_start, recent_chart_start) if period_start else recent_chart_start
     connection_chart_end = min(connection_period_end, now)
 
-    member_connection_conditions = [
-        InstagramAccount.workspace_id == access.workspace.id,
-        InstagramAccount.connected_by_user_id == User.id,
-        InstagramAccount.first_connected_at.is_not(None),
-        InstagramAccount.first_connected_at < connection_period_end,
-    ]
-    if period_start is not None:
-        member_connection_conditions.append(
-            InstagramAccount.first_connected_at >= period_start
-        )
-    member_connection_count = (
-        select(func.count(InstagramAccount.id))
-        .where(*member_connection_conditions)
-        .correlate(User)
-        .scalar_subquery()
+    account_connection_ranking = await _connection_ranking(
+        db, access.workspace.id, period_start, connection_period_end
     )
-    connection_ranking_rows = (
-        await db.execute(
-            select(
-                User.id,
-                User.full_name,
-                WorkspaceMember.role,
-                member_connection_count.label("connected_accounts"),
-            )
-            .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
+    month_start = datetime.combine(
+        today.replace(day=1), datetime.min.time(), tzinfo=BRAZIL_TIME_ZONE
+    ).astimezone(timezone.utc)
+    account_connection_ranking_today = await _connection_ranking(
+        db, access.workspace.id, today_start, min(today_end, now)
+    )
+    account_connection_ranking_month = await _connection_ranking(
+        db, access.workspace.id, month_start, now
+    )
+    # "Disconnected today" counts real drops only: accounts that went to error
+    # or disconnected today and are still in that state. Reconnecting clears
+    # error_at, and accounts that dropped on earlier days are not counted.
+    dropped_today = (
+        await db.scalars(
+            select(InstagramAccount)
             .where(
-                WorkspaceMember.workspace_id == access.workspace.id,
-                WorkspaceMember.role.in_(("OWNER", "COLLABORATOR")),
-                WorkspaceMember.status == "ACTIVE",
+                InstagramAccount.workspace_id == access.workspace.id,
+                InstagramAccount.status.in_(("error", "disconnected")),
+                InstagramAccount.error_at >= today_start,
+                InstagramAccount.error_at < today_end,
             )
-            .order_by(member_connection_count.desc(), User.full_name, User.id)
+            .order_by(InstagramAccount.error_at.desc())
         )
     ).all()
-    account_connection_ranking = [
-        AccountConnectionRank(
-            user_id=user_id,
-            full_name=full_name,
-            role=role,
-            connected_accounts=connected_accounts,
+    disconnected_today_accounts = [
+        DisconnectedAccountToday(
+            username=account.username,
+            kind=classify_inactive_account(account.status, account.status_reason),
+            reason=account.status_reason,
+            at=account.error_at,
         )
-        for user_id, full_name, role, connected_accounts in connection_ranking_rows
+        for account in dropped_today
     ]
 
     connection_dialect = db.get_bind().dialect.name
@@ -709,4 +747,9 @@ async def get_analytics_summary(
         daily_revenue=daily_revenue,
         daily_account_connections=daily_account_connections,
         account_connection_ranking=account_connection_ranking,
+        account_connection_ranking_today=account_connection_ranking_today,
+        account_connection_ranking_month=account_connection_ranking_month,
+        connected_today=(owner_connections_today or 0) + (team_connections_today or 0),
+        disconnected_today=len(disconnected_today_accounts),
+        disconnected_today_accounts=disconnected_today_accounts,
     )

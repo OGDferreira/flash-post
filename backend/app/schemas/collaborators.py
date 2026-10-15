@@ -111,6 +111,7 @@ class CollaboratorRankingItem(BaseModel):
     connections: int
     average_daily_connections: Decimal
     position: int
+    avatar_url: str | None = None
 
 
 class CollaboratorRankingResponse(BaseModel):

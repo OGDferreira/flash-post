@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { Avatar } from "@/components/Avatar";
 import { GreetingClock } from "@/components/GreetingClock";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -73,6 +75,12 @@ function accountDateLabel(value: string | null) {
   }).format(new Date(value));
 }
 
+function currentMonth() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" })
+    .format(new Date())
+    .slice(0, 7);
+}
+
 export function CollaboratorDashboardPage() {
   useInstagramCallbackToast();
   const dashboard = useQuery({
@@ -81,18 +89,24 @@ export function CollaboratorDashboardPage() {
     refetchInterval: 30_000,
     retry: false,
   });
+  const [rankTab, setRankTab] = useState<"day" | "month">("day");
   const ranking = useQuery({
-    queryKey: ["collaborators", "ranking"],
+    queryKey: ["collaborators", "ranking", rankTab],
     queryFn: () =>
       apiRequest<{
         collaborators: {
           user_id: string;
           nickname: string;
+          avatar_url: string | null;
           connections: number;
           position: number;
         }[];
         total_connections: number;
-      }>("/api/collaborators/ranking"),
+      }>(
+        rankTab === "day"
+          ? "/api/collaborators/ranking?period=today"
+          : `/api/collaborators/ranking?month=${currentMonth()}`,
+      ),
     refetchInterval: 60_000,
     retry: false,
   });
@@ -282,9 +296,23 @@ export function CollaboratorDashboardPage() {
         <section aria-label="Ranking mensal de produção" className="dashboard-card flex min-h-0 flex-col rounded-xl p-3">
           <header className="mb-2 flex items-center gap-2">
             <Medal className="shrink-0 text-warning" size={17} />
-            <h2 className="text-sm font-semibold text-fg">
+            <h2 className="flex-1 text-sm font-semibold text-fg">
               Ranking de produção
             </h2>
+            <div className="inline-flex gap-1 rounded-full bg-well p-0.5" role="tablist" aria-label="Período do ranking">
+              {([["day", "Dia"], ["month", "Mensal"]] as const).map(([value, label]) => (
+                <button
+                  aria-selected={rankTab === value}
+                  className={`min-h-7 rounded-full px-3 text-[11px] font-medium ${rankTab === value ? "bg-brand text-white" : "text-muted"}`}
+                  key={value}
+                  onClick={() => setRankTab(value)}
+                  role="tab"
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {ranking.isLoading ? (
@@ -304,8 +332,11 @@ export function CollaboratorDashboardPage() {
                   {rankedCollaborators.slice(0, 6).map((person) => (
                     <tr className="border-t border-line-soft" key={person.user_id}>
                       <td className="py-2 pr-2 font-semibold text-warning">{person.position}</td>
-                      <td className="max-w-0 truncate py-2 pr-2 text-fg">
-                        @{person.nickname}
+                      <td className="max-w-0 py-2 pr-2 text-fg">
+                        <span className="flex items-center gap-2">
+                          <Avatar className="size-6" name={person.nickname} src={person.avatar_url} />
+                          <span className="truncate">@{person.nickname}</span>
+                        </span>
                       </td>
                       <td className="py-2 text-right font-semibold text-fg">
                         {person.connections}
@@ -323,7 +354,7 @@ export function CollaboratorDashboardPage() {
                 </tfoot>
               </table>
             ) : (
-              <p className="text-sm text-muted">Ainda não há produção neste mês.</p>
+              <p className="text-sm text-muted">Ainda não há produção {rankTab === "day" ? "hoje" : "neste mês"}.</p>
             )}
 
           </div>

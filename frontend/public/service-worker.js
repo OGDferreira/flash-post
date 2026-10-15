@@ -1,4 +1,4 @@
-const CACHE_NAME = "flashpost-shell-v12";
+const CACHE_NAME = "flashpost-shell-v13";
 const SHELL_ASSETS = [
   "/",
   "/index.html",

@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, WorkspaceMemberAccess, require_csrf
 from app.core.nickname import nickname_key
 from app.core.security import WorkspaceRole, hash_password
+from app.auth.router import member_avatar_url
 from app.models import (
     CollaboratorPayment,
     CollaboratorWorkDay,
@@ -557,8 +558,7 @@ async def collaborator_ranking(
     )
     result = await db.execute(
         select(
-            User.id,
-            User.full_name,
+            User,
             display_nickname.label("nickname"),
             func.count(InstagramAccount.id).label("connections"),
         )
@@ -577,13 +577,14 @@ async def collaborator_ranking(
             ),
             WorkspaceMember.status == "ACTIVE",
         )
-        .group_by(User.id, User.full_name, display_nickname)
+        .group_by(User.id, display_nickname)
         .order_by(func.count(InstagramAccount.id).desc(), display_nickname, User.id)
     )
     ranking = [
         CollaboratorRankingItem(
-            user_id=user_id,
-            full_name=full_name,
+            user_id=user.id,
+            full_name=user.full_name,
+            avatar_url=member_avatar_url(user),
             nickname=nickname,
             connections=connections,
             average_daily_connections=(
@@ -591,7 +592,7 @@ async def collaborator_ranking(
             ).quantize(Decimal("0.01")),
             position=position,
         )
-        for position, (user_id, full_name, nickname, connections) in enumerate(
+        for position, (user, nickname, connections) in enumerate(
             result, start=1
         )
     ]

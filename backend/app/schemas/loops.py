@@ -152,6 +152,8 @@ class InstagramAlertsResponse(BaseModel):
     expiring_accounts: list[str]
     expiring_within_days: int
     disconnected_count: int
+    restricted_accounts: list[str] = []
+    suspended_accounts: list[str] = []
     published_today: int
     failed_today: int
     failure_rate: float

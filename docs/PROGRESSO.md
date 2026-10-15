@@ -61,3 +61,9 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - Menu lateral: atalhos no topo, grupos embaixo; grupo da página atual abre sozinho.
 - Celular: botão de 3 traços e gaveta removidos; barra inferior com os atalhos + botão "+" (Mais) que abre folha com todas as funções por grupo, Perfil e Sair.
 - Sidebar e folhas mais opacos para leitura. SW v12.
+
+## 0.8.0 — Partes 4 e 5: conexões do dia, ranking com foto, alertas
+- Resumo de analytics ganhou `connected_today`, `disconnected_today` (+ lista com tipo), `account_connection_ranking_today` e `_month`. "Desconectadas hoje" conta só quedas reais do dia: status erro/desconectada com `error_at` hoje; reconectadas (error_at limpo) e quedas de dias anteriores não entram.
+- Tipo da queda (`classify_inactive_account`): manual, suspensa, restrita ou expirada, a partir do motivo salvo. `/api/loops/alerts` devolve `suspended_accounts` e `restricted_accounts`; o banner do Painel e o sino de notificações mostram as contas que caíram hoje.
+- Painel: card "Conexões hoje" (conectadas/desconectadas); ranking com abas Dia (padrão) e Mensal; fotos no Painel, no Painel do colaborador e na página Ranking (iniciais como reserva). Novo `GET /api/members/{id}/avatar` (só membros ativos do mesmo workspace).
+- Limite conhecido: restrição só é detectada quando a conta é isolada por erro da Meta; conta restrita que ainda publica não é sinalizada. Não há push no celular para queda de conta (só sino/banner). Não validado com a Meta real.

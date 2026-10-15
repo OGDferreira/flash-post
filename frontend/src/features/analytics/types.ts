@@ -54,10 +54,23 @@ export type InstagramAnalyticsSummary = {
   daily_publications: { day: string; published_posts: number }[];
   daily_revenue: { day: string; amount: string }[];
   daily_account_connections: { day: string; connected_accounts: number }[];
-  account_connection_ranking: {
-    user_id: string;
-    full_name: string;
-    role: "OWNER" | "COLLABORATOR";
-    connected_accounts: number;
+  account_connection_ranking: ConnectionRankItem[];
+  account_connection_ranking_today: ConnectionRankItem[];
+  account_connection_ranking_month: ConnectionRankItem[];
+  connected_today: number;
+  disconnected_today: number;
+  disconnected_today_accounts: {
+    username: string;
+    kind: "expired" | "restricted" | "suspended" | "manual";
+    reason: string | null;
+    at: string | null;
   }[];
+};
+
+export type ConnectionRankItem = {
+  user_id: string;
+  full_name: string;
+  role: "OWNER" | "COLLABORATOR";
+  connected_accounts: number;
+  avatar_url: string | null;
 };

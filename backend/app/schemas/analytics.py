@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -50,6 +50,15 @@ class AccountConnectionRank(BaseModel):
     full_name: str
     role: str
     connected_accounts: int
+    avatar_url: str | None = None
+
+
+class DisconnectedAccountToday(BaseModel):
+    username: str
+    # expired | restricted | suspended | manual
+    kind: str
+    reason: str | None = None
+    at: datetime | None = None
 
 
 class InstagramAnalyticsSummary(BaseModel):
@@ -86,3 +95,8 @@ class InstagramAnalyticsSummary(BaseModel):
     daily_revenue: list[DailyRevenueMetric]
     daily_account_connections: list[DailyAccountConnectionMetric]
     account_connection_ranking: list[AccountConnectionRank]
+    account_connection_ranking_today: list[AccountConnectionRank] = []
+    account_connection_ranking_month: list[AccountConnectionRank] = []
+    connected_today: int = 0
+    disconnected_today: int = 0
+    disconnected_today_accounts: list[DisconnectedAccountToday] = []

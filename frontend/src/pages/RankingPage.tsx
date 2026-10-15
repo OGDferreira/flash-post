@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Medal, UsersRound } from "lucide-react";
 import { useState } from "react";
 
+import { Avatar } from "@/components/Avatar";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest } from "@/services/api";
 
@@ -15,6 +16,7 @@ type RankingResponse = {
     user_id: string;
     full_name: string;
     nickname: string;
+    avatar_url: string | null;
     connections: number;
     average_daily_connections: number;
     position: number;
@@ -147,9 +149,12 @@ export function RankingPage() {
                           #{member.position}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="font-medium">{member.full_name}</span>
-                          <span className="ml-2 text-xs text-muted">
-                            @{member.nickname}
+                          <span className="flex items-center gap-3">
+                            <Avatar className="size-9" name={member.full_name} src={member.avatar_url} />
+                            <span className="min-w-0">
+                              <span className="font-medium">{member.full_name}</span>
+                              <span className="ml-2 text-xs text-muted">@{member.nickname}</span>
+                            </span>
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right font-semibold">

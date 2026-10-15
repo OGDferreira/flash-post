@@ -110,7 +110,20 @@ export function AppShell() {
     staleTime: 60_000,
     refetchInterval: 300_000,
   });
+  const droppedKindTitle: Record<string, string> = {
+    suspended: "Conta suspensa pelo Instagram",
+    restricted: "Conta com restrição",
+    expired: "Conta desconectada",
+    manual: "Conta desconectada manualmente",
+  };
   const notificationItems = [
+    ...(analyticsNotifications.data?.disconnected_today_accounts ?? []).slice(0, 10).map((item) => ({
+      title: droppedKindTitle[item.kind] ?? "Conta desconectada",
+      message:
+        item.kind === "manual"
+          ? `@${item.username} foi desconectada hoje.`
+          : `@${item.username} caiu hoje. Reconecte a conta para voltar a publicar.`,
+    })),
     ...(analyticsNotifications.error
       ? [
           {

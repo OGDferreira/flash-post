@@ -428,8 +428,37 @@ async def upload_profile_avatar(
     return _user_response(user, membership)
 
 
+def member_avatar_url(user: User) -> str | None:
+    """Avatar URL another workspace member's browser can load (None if unset)."""
+    if not user.avatar_url:
+        return None
+    if user.avatar_url.startswith(_AVATAR_STORAGE_PREFIX) or user.avatar_url == _DB_AVATAR:
+        return f"/api/members/{user.id}/avatar?{urlencode({'v': int(user.updated_at.timestamp())})}"
+    return user.avatar_url
+
+
+@router.get("/members/{user_id}/avatar")
+async def get_member_avatar(user_id: uuid.UUID, access: WorkspaceMemberAccess, db: DbSession):
+    member = await db.scalar(
+        select(User)
+        .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
+        .where(
+            User.id == user_id,
+            WorkspaceMember.workspace_id == access.workspace.id,
+            WorkspaceMember.status == "ACTIVE",
+        )
+    )
+    if member is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile avatar not found.")
+    return await _avatar_response(member, db)
+
+
 @router.get("/profile/avatar")
 async def get_profile_avatar(user: AuthenticatedUser, db: DbSession):
+    return await _avatar_response(user, db)
+
+
+async def _avatar_response(user: User, db: DbSession):
     if user.avatar_url == _DB_AVATAR:
         data = await db.scalar(select(User.avatar_data).where(User.id == user.id))
         if not data:

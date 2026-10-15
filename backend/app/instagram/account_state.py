@@ -43,3 +43,19 @@ async def isolate_inactive_account(
         )
         .values(status="failed", last_error=reason[:500])
     )
+
+
+_SUSPENDED_MARKERS = ("suspend", "disabled", "checkpoint")
+_RESTRICTED_MARKERS = ("restrict",)
+
+
+def classify_inactive_account(status: str, reason: str | None) -> str:
+    """Why an account is not connected: manual | suspended | restricted | expired."""
+    if status == "disconnected":
+        return "manual"
+    text = (reason or "").casefold()
+    if any(marker in text for marker in _SUSPENDED_MARKERS):
+        return "suspended"
+    if any(marker in text for marker in _RESTRICTED_MARKERS):
+        return "restricted"
+    return "expired"

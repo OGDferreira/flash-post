@@ -8,6 +8,8 @@ type Alerts = {
   expiring_accounts: string[];
   expiring_within_days: number;
   disconnected_count: number;
+  restricted_accounts?: string[];
+  suspended_accounts?: string[];
   published_today: number;
   failed_today: number;
   failure_rate: number;
@@ -29,6 +31,19 @@ export function AlertsBanner() {
     messages.push({
       text: `Taxa de falha alta hoje: ${Math.round(data.failure_rate * 100)}% (${data.failed_today} falhas).`,
       to: "/feature/error-logs",
+    });
+  }
+  const names = (list: string[]) => list.slice(0, 3).map((name) => `@${name}`).join(", ") + (list.length > 3 ? "…" : "");
+  if (data.suspended_accounts?.length) {
+    messages.push({
+      text: `${data.suspended_accounts.length} conta(s) suspensa(s) pelo Instagram (${names(data.suspended_accounts)}).`,
+      to: "/feature/accounts",
+    });
+  }
+  if (data.restricted_accounts?.length) {
+    messages.push({
+      text: `${data.restricted_accounts.length} conta(s) com restrição (${names(data.restricted_accounts)}).`,
+      to: "/feature/accounts",
     });
   }
   if (data.expiring_accounts.length > 0) {

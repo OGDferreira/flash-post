@@ -450,3 +450,55 @@ async def test_analytics_summary_rejects_accounts_from_other_workspaces(
     )
 
     assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_analytics_counts_only_real_drops_today_with_kind_and_day_month_ranking(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    collaborator,
+) -> None:
+    owner_user, workspace = owner
+    now = datetime.now(timezone.utc)
+    fresh = _account(workspace.id, "fresh-today", 10, 1)
+    fresh.connected_by_user_id = collaborator.id
+    fresh.first_connected_at = now
+    dropped = _account(workspace.id, "dropped-today", 10, 1)
+    dropped.status = "error"
+    dropped.status_reason = "Account suspended by Instagram"
+    dropped.error_at = now
+    restricted = _account(workspace.id, "restricted-today", 10, 1)
+    restricted.status = "error"
+    restricted.status_reason = "Your account has been restricted"
+    restricted.error_at = now
+    manual = _account(workspace.id, "manual-today", 10, 1)
+    manual.status = "disconnected"
+    manual.status_reason = "Conta desconectada manualmente."
+    manual.error_at = now
+    old = _account(workspace.id, "dropped-last-week", 10, 1)
+    old.status = "error"
+    old.error_at = now - timedelta(days=5)
+    reconnected = _account(workspace.id, "reconnected", 10, 1)
+    reconnected.error_at = None
+    db_session.add_all([fresh, dropped, restricted, manual, old, reconnected])
+    await db_session.commit()
+    await _login(client)
+
+    result = (await client.get("/api/analytics/summary", params={"period": "7d"})).json()
+
+    assert result["connected_today"] == 1
+    assert result["disconnected_today"] == 3
+    kinds = {item["username"]: item["kind"] for item in result["disconnected_today_accounts"]}
+    assert kinds == {
+        "dropped-today": "suspended",
+        "restricted-today": "restricted",
+        "manual-today": "manual",
+    }
+    today_ranking = {e["user_id"]: e["connected_accounts"] for e in result["account_connection_ranking_today"]}
+    assert today_ranking[str(collaborator.id)] == 1
+    assert all("avatar_url" in e for e in result["account_connection_ranking_month"])
+
+    alerts = (await client.get("/api/loops/alerts")).json()
+    assert alerts["suspended_accounts"] == ["dropped-today"]
+    assert alerts["restricted_accounts"] == ["restricted-today"]

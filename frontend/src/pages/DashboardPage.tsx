@@ -15,6 +15,7 @@ import {
 
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { apiRequest } from "@/services/api";
+import { Avatar } from "@/components/Avatar";
 import { GreetingClock } from "@/components/GreetingClock";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { AlertsBanner } from "@/components/AlertsBanner";
@@ -119,6 +120,7 @@ function MetricCard({
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const [rankingTab, setRankingTab] = useState<"day" | "month">("day");
   useInstagramCallbackToast();
   const [period, setPeriod] = useState<AnalyticsPeriod>("today");
   const [startDate, setStartDate] = useState(localDateInputValue);
@@ -199,12 +201,26 @@ export function DashboardPage() {
   const dailyConnectionArea = dailyConnectionPoints.length
     ? `0,42 ${dailyConnectionPoints.join(" ")} 100,42`
     : "";
+  const rankingList =
+    (rankingTab === "day"
+      ? metrics?.account_connection_ranking_today
+      : metrics?.account_connection_ranking_month) ?? [];
   const topConnectionCount = Math.max(
-    ...((metrics?.account_connection_ranking ?? []).map(
-      ({ connected_accounts }) => connected_accounts,
-    )),
+    ...rankingList.map(({ connected_accounts }) => connected_accounts),
     1,
   );
+  const droppedKinds = (metrics?.disconnected_today_accounts ?? []).reduce<Record<string, number>>(
+    (acc, item) => ({ ...acc, [item.kind]: (acc[item.kind] ?? 0) + 1 }),
+    {},
+  );
+  const droppedDetail = [
+    droppedKinds.suspended ? `${droppedKinds.suspended} suspensa(s)` : null,
+    droppedKinds.restricted ? `${droppedKinds.restricted} restrita(s)` : null,
+    droppedKinds.expired ? `${droppedKinds.expired} com autorização expirada` : null,
+    droppedKinds.manual ? `${droppedKinds.manual} desconectada(s) manualmente` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const metricsCards = [
     {
       title: "Visualizações no período",
@@ -402,6 +418,27 @@ export function DashboardPage() {
           aria-label="Indicadores numéricos do workspace"
           className="dashboard-metrics"
         >
+          <article className="dashboard-card dashboard-metric-card">
+            <div className="dashboard-metric-heading">
+              <span className="dashboard-metric-icon text-accent">
+                <Link2 size={16} />
+              </span>
+              <h2 className="dashboard-metric-title">Conexões hoje</h2>
+            </div>
+            <div className="flex items-end gap-3 sm:gap-4">
+              <div>
+                <p className="dashboard-metric-value text-success">{formatCount(metrics?.connected_today)}</p>
+                <p className="text-[10px] text-muted sm:text-[11px]">conectadas</p>
+              </div>
+              <div>
+                <p className="dashboard-metric-value text-danger">{formatCount(metrics?.disconnected_today)}</p>
+                <p className="text-[10px] text-muted sm:text-[11px]">desconectadas</p>
+              </div>
+            </div>
+            <p className="dashboard-metric-detail">
+              {droppedDetail || "Nenhuma queda de conta hoje"}
+            </p>
+          </article>
           {metricsCards.map((metric) => (
             <MetricCard key={metric.title} {...metric} />
           ))}
@@ -420,16 +457,29 @@ export function DashboardPage() {
               Ranking de conexões
             </h2>
             <p className="mt-1 text-xs text-muted">
-              Contas conectadas no período selecionado
+              Contas novas conectadas {rankingTab === "day" ? "hoje" : "neste mês"}
             </p>
           </div>
-          {metrics?.account_connection_ranking.length ? (
+          <div className="mt-3 inline-flex gap-1 rounded-full bg-well p-1" role="tablist" aria-label="Período do ranking">
+            {([["day", "Dia"], ["month", "Mensal"]] as const).map(([value, label]) => (
+              <button
+                aria-selected={rankingTab === value}
+                className={`min-h-8 rounded-full px-4 text-xs font-medium ${rankingTab === value ? "bg-brand text-white" : "text-muted"}`}
+                key={value}
+                onClick={() => setRankingTab(value)}
+                role="tab"
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {rankingList.length ? (
             <ol className="mt-4 space-y-3">
-              {metrics.account_connection_ranking.slice(0, 5).map((member, index) => (
+              {rankingList.slice(0, 5).map((member, index) => (
                 <li className="flex items-center gap-3" key={member.user_id}>
-                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand-soft text-xs font-semibold text-accent">
-                    {index + 1}
-                  </span>
+                  <span className="w-4 shrink-0 text-center text-xs font-semibold text-muted">{index + 1}</span>
+                  <Avatar className="size-8" name={member.full_name} src={member.avatar_url} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="truncate text-sm text-fg">
@@ -458,7 +508,7 @@ export function DashboardPage() {
             </ol>
           ) : (
             <p className="mt-4 text-sm text-muted">
-              Nenhuma conexão registrada no período.
+              Nenhuma conexão registrada {rankingTab === "day" ? "hoje" : "neste mês"}.
             </p>
           )}
         </article>
