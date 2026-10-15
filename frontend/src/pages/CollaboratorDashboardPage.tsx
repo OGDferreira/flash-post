@@ -30,8 +30,9 @@ import { ErrorState, LoadingState } from "@/components/PageState";
 import { useInstagramCallbackToast } from "@/hooks/useInstagramCallbackToast";
 import { apiRequest, type CollaboratorDashboard } from "@/services/api";
 
-function money(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return "R$ —";
+function money(raw: number | string | null | undefined) {
+  const value = raw == null || raw === "" ? NaN : Number(raw);
+  if (!Number.isFinite(value)) return "R$ —";
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
@@ -165,8 +166,9 @@ export function CollaboratorDashboardPage() {
         </Link>
       </header>
 
-      <section aria-label="Resumo de produção e pagamentos" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Resumo de produção e pagamentos" className="dashboard-metrics">
         <Metric icon={UsersRound} label="Conexões hoje" value={String(data.connections_today ?? 0)} />
+        <Metric icon={CircleDollarSign} label="A receber hoje" value={money(data.earnings_today)} hint="pelas contas conectadas" />
         <Metric icon={CalendarCheck2} label="Conexões na semana" value={String(weeklyConnections)} />
         <Metric icon={BarChart3} label="Conexões no mês" value={String(data.connections_month ?? 0)} />
         <Metric icon={CircleDollarSign} label="A receber no mês" value={money(data.due_month)} />
@@ -398,18 +400,25 @@ function Metric({
   icon: Icon,
   label,
   value,
+  hint,
 }: {
   icon: LucideIcon;
   label: string;
   value: string;
+  hint?: string;
 }) {
   return (
-    <article className="dashboard-card rounded-lg px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <Icon className="shrink-0 text-accent" size={14} />
-        <p className="truncate text-[11px] text-muted">{label}</p>
+    <article className="dashboard-card dashboard-metric-card">
+      <div className="dashboard-metric-heading">
+        <span className="dashboard-metric-icon text-accent">
+          <Icon size={16} />
+        </span>
+        <h2 className="dashboard-metric-title">{label}</h2>
       </div>
-      <p className="mt-1 text-lg font-semibold leading-tight text-fg">{value}</p>
+      <div>
+        <p className="dashboard-metric-value">{value}</p>
+        {hint && <p className="text-[10px] text-muted sm:text-[11px]">{hint}</p>}
+      </div>
     </article>
   );
 }

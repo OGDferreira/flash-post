@@ -486,7 +486,7 @@ export function AppShell() {
             </Link>
           </div>
           <div className="flex shrink-0 items-center gap-2 pl-2">
-            <div className="relative">
+            <div className="relative max-sm:static">
               <button
                 aria-label={
                   notificationItems.length
@@ -509,7 +509,7 @@ export function AppShell() {
               {notificationsOpen && (
                 <section
                   aria-label="Notificações"
-                  className="glass-modal modal-enter absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-32px))] !rounded-2xl p-3"
+                  className="glass-modal modal-enter absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-32px))] !rounded-2xl !bg-[var(--nm-bg)] p-3 max-sm:left-4 max-sm:right-4 max-sm:top-full max-sm:mt-2 max-sm:w-auto"
                   role="dialog"
                 >
                   <div className="flex items-center justify-between border-b border-line-soft pb-2">

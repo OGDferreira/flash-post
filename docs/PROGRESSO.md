@@ -88,3 +88,9 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 ## 0.10.2 — Aba Contatos e animação centralizada
 - Nova aba **Contatos** (grupo Suporte; também para colaboradores): WhatsApp do FlashPost (+55 27 99938-4259, abre conversa com mensagem pronta), Suporte, Comunidade (grupo de WhatsApp — "Em breve" até existir o link), Instagram do FlashPost e Bot do Telegram ("Em breve"). Links e @ configuráveis em `frontend/src/lib/contacts.ts`.
 - Animação da logo agora ocupa o centro da tela (tela cheia) nos carregamentos de sessão/permissões/página; carregamentos dentro de painéis continuam inline.
+
+## 0.10.3 — Painel do colaborador no celular
+- Cards do painel do colaborador agora usam o mesmo grid quadrado (2 por linha no celular) do painel do chefe.
+- Novo card "A receber hoje" (conexões do dia × valor por conta conectada, vindo de `earnings_today`).
+- Corrigido: valores em R$ apareciam como "R$ —" porque a API devolve decimais como texto; agora são convertidos.
+- Pop-up de notificações no celular ocupa a largura da tela (antes cortava à esquerda) e tem fundo opaco.
