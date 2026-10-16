@@ -1,0 +1,1205 @@
+{
+  "fps": 30,
+  "durationSec": 66.564,
+  "durationFrames": 1997,
+  "dropSec": 13.296,
+  "scenes": [
+    {
+      "id": "hook",
+      "text": "Você ainda posta vídeo por vídeo, conta por conta, no Instagram?",
+      "voice": "voice/00-hook.mp3",
+      "startSec": 0.4,
+      "durSec": 4.356,
+      "from": 12,
+      "frames": 131,
+      "words": [
+        {
+          "w": "Você",
+          "s": 0.091,
+          "e": 0.398
+        },
+        {
+          "w": "ainda",
+          "s": 0.409,
+          "e": 0.685
+        },
+        {
+          "w": "posta",
+          "s": 0.696,
+          "e": 1.003
+        },
+        {
+          "w": "vídeo",
+          "s": 1.013,
+          "e": 1.249
+        },
+        {
+          "w": "por",
+          "s": 1.259,
+          "e": 1.392
+        },
+        {
+          "w": "vídeo,",
+          "s": 1.402,
+          "e": 1.689
+        },
+        {
+          "w": "conta",
+          "s": 1.935,
+          "e": 2.222
+        },
+        {
+          "w": "por",
+          "s": 2.232,
+          "e": 2.345
+        },
+        {
+          "w": "conta,",
+          "s": 2.355,
+          "e": 2.673
+        },
+        {
+          "w": "no",
+          "s": 2.878,
+          "e": 2.939
+        },
+        {
+          "w": "Instagram?",
+          "s": 2.95,
+          "e": 3.349
+        }
+      ]
+    },
+    {
+      "id": "pain",
+      "text": "São horas no celular, post fora do horário, conta esquecida... e no fim do dia, você nem sabe quanto vendeu. Isso acabou.",
+      "voice": "voice/01-pain.mp3",
+      "startSec": 4.756,
+      "durSec": 8.54,
+      "from": 143,
+      "frames": 256,
+      "words": [
+        {
+          "w": "São",
+          "s": 0.091,
+          "e": 0.388
+        },
+        {
+          "w": "horas",
+          "s": 0.398,
+          "e": 0.675
+        },
+        {
+          "w": "no",
+          "s": 0.685,
+          "e": 0.757
+        },
+        {
+          "w": "celular,",
+          "s": 0.767,
+          "e": 1.187
+        },
+        {
+          "w": "post",
+          "s": 1.423,
+          "e": 1.751
+        },
+        {
+          "w": "fora",
+          "s": 1.761,
+          "e": 1.976
+        },
+        {
+          "w": "do",
+          "s": 1.986,
+          "e": 2.038
+        },
+        {
+          "w": "horário,",
+          "s": 2.048,
+          "e": 2.386
+        },
+        {
+          "w": "conta",
+          "s": 2.601,
+          "e": 2.847
+        },
+        {
+          "w": "esquecida...",
+          "s": 2.857,
+          "e": 3.38
+        },
+        {
+          "w": "e",
+          "s": 3.605,
+          "e": 3.677
+        },
+        {
+          "w": "no",
+          "s": 3.687,
+          "e": 3.769
+        },
+        {
+          "w": "fim",
+          "s": 3.78,
+          "e": 3.964
+        },
+        {
+          "w": "do",
+          "s": 3.974,
+          "e": 4.087
+        },
+        {
+          "w": "dia,",
+          "s": 4.097,
+          "e": 4.343
+        },
+        {
+          "w": "você",
+          "s": 4.579,
+          "e": 4.814
+        },
+        {
+          "w": "nem",
+          "s": 4.825,
+          "e": 5.009
+        },
+        {
+          "w": "sabe",
+          "s": 5.019,
+          "e": 5.337
+        },
+        {
+          "w": "quanto",
+          "s": 5.347,
+          "e": 5.583
+        },
+        {
+          "w": "vendeu.",
+          "s": 5.593,
+          "e": 5.962
+        },
+        {
+          "w": "Isso",
+          "s": 6.66,
+          "e": 6.895
+        },
+        {
+          "w": "acabou.",
+          "s": 6.906,
+          "e": 7.305
+        }
+      ]
+    },
+    {
+      "id": "reveal",
+      "text": "Conheça o FlashPost.",
+      "voice": "voice/02-reveal.mp3",
+      "startSec": 13.296,
+      "durSec": 3.192,
+      "from": 399,
+      "frames": 96,
+      "words": [
+        {
+          "w": "Conheça",
+          "s": 0.091,
+          "e": 0.521
+        },
+        {
+          "w": "o",
+          "s": 0.532,
+          "e": 0.552
+        },
+        {
+          "w": "FlashPost.",
+          "s": 0.562,
+          "e": 1.279
+        }
+      ]
+    },
+    {
+      "id": "folders",
+      "text": "Conecte todas as suas contas e organize tudo em pastas, por tema ou por operação.",
+      "voice": "voice/03-folders.mp3",
+      "startSec": 16.488,
+      "durSec": 5.028,
+      "from": 495,
+      "frames": 151,
+      "words": [
+        {
+          "w": "Conecte",
+          "s": 0.091,
+          "e": 0.511
+        },
+        {
+          "w": "todas",
+          "s": 0.521,
+          "e": 0.767
+        },
+        {
+          "w": "as",
+          "s": 0.777,
+          "e": 0.911
+        },
+        {
+          "w": "suas",
+          "s": 0.921,
+          "e": 1.126
+        },
+        {
+          "w": "contas",
+          "s": 1.136,
+          "e": 1.413
+        },
+        {
+          "w": "e",
+          "s": 1.423,
+          "e": 1.505
+        },
+        {
+          "w": "organize",
+          "s": 1.515,
+          "e": 1.915
+        },
+        {
+          "w": "tudo",
+          "s": 1.925,
+          "e": 2.12
+        },
+        {
+          "w": "em",
+          "s": 2.13,
+          "e": 2.212
+        },
+        {
+          "w": "pastas,",
+          "s": 2.222,
+          "e": 2.663
+        },
+        {
+          "w": "por",
+          "s": 2.847,
+          "e": 3.001
+        },
+        {
+          "w": "tema",
+          "s": 3.011,
+          "e": 3.288
+        },
+        {
+          "w": "ou",
+          "s": 3.298,
+          "e": 3.37
+        },
+        {
+          "w": "por",
+          "s": 3.38,
+          "e": 3.503
+        },
+        {
+          "w": "operação.",
+          "s": 3.513,
+          "e": 4.015
+        }
+      ]
+    },
+    {
+      "id": "loop",
+      "text": "Suba dezenas de vídeos de uma vez, crie um loop, e o FlashPost publica sozinho, no intervalo que você escolher, em todas as contas.",
+      "voice": "voice/04-loop.mp3",
+      "startSec": 21.516,
+      "durSec": 7.932,
+      "from": 645,
+      "frames": 238,
+      "words": [
+        {
+          "w": "Suba",
+          "s": 0.091,
+          "e": 0.388
+        },
+        {
+          "w": "dezenas",
+          "s": 0.398,
+          "e": 0.757
+        },
+        {
+          "w": "de",
+          "s": 0.767,
+          "e": 0.849
+        },
+        {
+          "w": "vídeos",
+          "s": 0.859,
+          "e": 1.126
+        },
+        {
+          "w": "de",
+          "s": 1.136,
+          "e": 1.187
+        },
+        {
+          "w": "uma",
+          "s": 1.198,
+          "e": 1.341
+        },
+        {
+          "w": "vez,",
+          "s": 1.351,
+          "e": 1.679
+        },
+        {
+          "w": "crie",
+          "s": 1.792,
+          "e": 1.966
+        },
+        {
+          "w": "um",
+          "s": 1.976,
+          "e": 2.109
+        },
+        {
+          "w": "loop,",
+          "s": 2.12,
+          "e": 2.366
+        },
+        {
+          "w": "e",
+          "s": 2.622,
+          "e": 2.693
+        },
+        {
+          "w": "o",
+          "s": 2.704,
+          "e": 2.745
+        },
+        {
+          "w": "FlashPost",
+          "s": 2.755,
+          "e": 3.411
+        },
+        {
+          "w": "publica",
+          "s": 3.421,
+          "e": 3.718
+        },
+        {
+          "w": "sozinho,",
+          "s": 3.728,
+          "e": 4.189
+        },
+        {
+          "w": "no",
+          "s": 4.404,
+          "e": 4.446
+        },
+        {
+          "w": "intervalo",
+          "s": 4.456,
+          "e": 4.978
+        },
+        {
+          "w": "que",
+          "s": 4.989,
+          "e": 5.06
+        },
+        {
+          "w": "você",
+          "s": 5.071,
+          "e": 5.275
+        },
+        {
+          "w": "escolher,",
+          "s": 5.286,
+          "e": 5.695
+        },
+        {
+          "w": "em",
+          "s": 5.921,
+          "e": 6.044
+        },
+        {
+          "w": "todas",
+          "s": 6.054,
+          "e": 6.3
+        },
+        {
+          "w": "as",
+          "s": 6.31,
+          "e": 6.454
+        },
+        {
+          "w": "contas.",
+          "s": 6.464,
+          "e": 6.915
+        }
+      ]
+    },
+    {
+      "id": "schedule",
+      "text": "Prefere controle total? Agende a sua própria publicação, no dia e na hora exatos.",
+      "voice": "voice/05-schedule.mp3",
+      "startSec": 29.448,
+      "durSec": 5.82,
+      "from": 883,
+      "frames": 175,
+      "words": [
+        {
+          "w": "Prefere",
+          "s": 0.091,
+          "e": 0.511
+        },
+        {
+          "w": "controle",
+          "s": 0.521,
+          "e": 0.921
+        },
+        {
+          "w": "total?",
+          "s": 0.931,
+          "e": 1.3
+        },
+        {
+          "w": "Agende",
+          "s": 1.998,
+          "e": 2.387
+        },
+        {
+          "w": "a",
+          "s": 2.398,
+          "e": 2.428
+        },
+        {
+          "w": "sua",
+          "s": 2.439,
+          "e": 2.623
+        },
+        {
+          "w": "própria",
+          "s": 2.633,
+          "e": 2.92
+        },
+        {
+          "w": "publicação,",
+          "s": 2.93,
+          "e": 3.484
+        },
+        {
+          "w": "no",
+          "s": 3.678,
+          "e": 3.76
+        },
+        {
+          "w": "dia",
+          "s": 3.771,
+          "e": 3.996
+        },
+        {
+          "w": "e",
+          "s": 4.006,
+          "e": 4.047
+        },
+        {
+          "w": "na",
+          "s": 4.057,
+          "e": 4.16
+        },
+        {
+          "w": "hora",
+          "s": 4.17,
+          "e": 4.314
+        },
+        {
+          "w": "exatos.",
+          "s": 4.324,
+          "e": 4.795
+        }
+      ]
+    },
+    {
+      "id": "dashboard",
+      "text": "No painel, você acompanha visualizações, posts do dia, sua sequência e o seu recorde. Tudo num só lugar.",
+      "voice": "voice/06-dashboard.mp3",
+      "startSec": 35.268,
+      "durSec": 7.476,
+      "from": 1058,
+      "frames": 224,
+      "words": [
+        {
+          "w": "No",
+          "s": 0.091,
+          "e": 0.245
+        },
+        {
+          "w": "painel,",
+          "s": 0.255,
+          "e": 0.634
+        },
+        {
+          "w": "você",
+          "s": 0.859,
+          "e": 1.064
+        },
+        {
+          "w": "acompanha",
+          "s": 1.075,
+          "e": 1.536
+        },
+        {
+          "w": "visualizações,",
+          "s": 1.546,
+          "e": 2.273
+        },
+        {
+          "w": "posts",
+          "s": 2.499,
+          "e": 2.868
+        },
+        {
+          "w": "do",
+          "s": 2.878,
+          "e": 2.98
+        },
+        {
+          "w": "dia,",
+          "s": 2.991,
+          "e": 3.216
+        },
+        {
+          "w": "sua",
+          "s": 3.441,
+          "e": 3.616
+        },
+        {
+          "w": "sequência",
+          "s": 3.626,
+          "e": 4.138
+        },
+        {
+          "w": "e",
+          "s": 4.148,
+          "e": 4.2
+        },
+        {
+          "w": "o",
+          "s": 4.21,
+          "e": 4.251
+        },
+        {
+          "w": "seu",
+          "s": 4.261,
+          "e": 4.415
+        },
+        {
+          "w": "recorde.",
+          "s": 4.425,
+          "e": 4.896
+        },
+        {
+          "w": "Tudo",
+          "s": 5.594,
+          "e": 5.84
+        },
+        {
+          "w": "num",
+          "s": 5.85,
+          "e": 5.973
+        },
+        {
+          "w": "só",
+          "s": 5.984,
+          "e": 6.148
+        },
+        {
+          "w": "lugar.",
+          "s": 6.158,
+          "e": 6.465
+        }
+      ]
+    },
+    {
+      "id": "team",
+      "text": "Tem equipe? Cadastre colaboradores, defina metas e valor por conexão, e acompanhe a produção de cada um no ranking.",
+      "voice": "voice/07-team.mp3",
+      "startSec": 42.744,
+      "durSec": 7.548,
+      "from": 1282,
+      "frames": 226,
+      "words": [
+        {
+          "w": "Tem",
+          "s": 0.091,
+          "e": 0.255
+        },
+        {
+          "w": "equipe?",
+          "s": 0.265,
+          "e": 0.614
+        },
+        {
+          "w": "Cadastre",
+          "s": 1.311,
+          "e": 1.762
+        },
+        {
+          "w": "colaboradores,",
+          "s": 1.773,
+          "e": 2.449
+        },
+        {
+          "w": "defina",
+          "s": 2.613,
+          "e": 2.961
+        },
+        {
+          "w": "metas",
+          "s": 2.971,
+          "e": 3.238
+        },
+        {
+          "w": "e",
+          "s": 3.248,
+          "e": 3.33
+        },
+        {
+          "w": "valor",
+          "s": 3.34,
+          "e": 3.617
+        },
+        {
+          "w": "por",
+          "s": 3.627,
+          "e": 3.75
+        },
+        {
+          "w": "conexão,",
+          "s": 3.76,
+          "e": 4.283
+        },
+        {
+          "w": "e",
+          "s": 4.559,
+          "e": 4.631
+        },
+        {
+          "w": "acompanhe",
+          "s": 4.641,
+          "e": 5.092
+        },
+        {
+          "w": "a",
+          "s": 5.102,
+          "e": 5.143
+        },
+        {
+          "w": "produção",
+          "s": 5.154,
+          "e": 5.543
+        },
+        {
+          "w": "de",
+          "s": 5.553,
+          "e": 5.656
+        },
+        {
+          "w": "cada",
+          "s": 5.666,
+          "e": 5.881
+        },
+        {
+          "w": "um",
+          "s": 5.891,
+          "e": 6.055
+        },
+        {
+          "w": "no",
+          "s": 6.066,
+          "e": 6.137
+        },
+        {
+          "w": "ranking.",
+          "s": 6.148,
+          "e": 6.516
+        }
+      ]
+    },
+    {
+      "id": "notify",
+      "text": "E o melhor: receba direto no celular cada venda, cada meta batida e cada marco de visualizações.",
+      "voice": "voice/08-notify.mp3",
+      "startSec": 50.292,
+      "durSec": 6.012,
+      "from": 1509,
+      "frames": 180,
+      "words": [
+        {
+          "w": "E",
+          "s": 0.091,
+          "e": 0.193
+        },
+        {
+          "w": "o",
+          "s": 0.204,
+          "e": 0.234
+        },
+        {
+          "w": "melhor:",
+          "s": 0.245,
+          "e": 0.562
+        },
+        {
+          "w": "receba",
+          "s": 0.777,
+          "e": 1.136
+        },
+        {
+          "w": "direto",
+          "s": 1.146,
+          "e": 1.495
+        },
+        {
+          "w": "no",
+          "s": 1.505,
+          "e": 1.587
+        },
+        {
+          "w": "celular",
+          "s": 1.597,
+          "e": 1.976
+        },
+        {
+          "w": "cada",
+          "s": 1.986,
+          "e": 2.212
+        },
+        {
+          "w": "venda,",
+          "s": 2.222,
+          "e": 2.54
+        },
+        {
+          "w": "cada",
+          "s": 2.714,
+          "e": 2.939
+        },
+        {
+          "w": "meta",
+          "s": 2.95,
+          "e": 3.185
+        },
+        {
+          "w": "batida",
+          "s": 3.196,
+          "e": 3.544
+        },
+        {
+          "w": "e",
+          "s": 3.554,
+          "e": 3.605
+        },
+        {
+          "w": "cada",
+          "s": 3.616,
+          "e": 3.82
+        },
+        {
+          "w": "marco",
+          "s": 3.831,
+          "e": 4.138
+        },
+        {
+          "w": "de",
+          "s": 4.148,
+          "e": 4.22
+        },
+        {
+          "w": "visualizações.",
+          "s": 4.23,
+          "e": 4.989
+        }
+      ]
+    },
+    {
+      "id": "cta",
+      "text": "Pare de postar no braço. Coloque o seu Instagram no piloto automático com o FlashPost. Toque no link e comece agora.",
+      "voice": "voice/09-cta.mp3",
+      "startSec": 56.304,
+      "durSec": 9.06,
+      "from": 1689,
+      "frames": 272,
+      "words": [
+        {
+          "w": "Pare",
+          "s": 0.091,
+          "e": 0.296
+        },
+        {
+          "w": "de",
+          "s": 0.306,
+          "e": 0.388
+        },
+        {
+          "w": "postar",
+          "s": 0.398,
+          "e": 0.747
+        },
+        {
+          "w": "no",
+          "s": 0.757,
+          "e": 0.87
+        },
+        {
+          "w": "braço.",
+          "s": 0.88,
+          "e": 1.279
+        },
+        {
+          "w": "Coloque",
+          "s": 1.977,
+          "e": 2.377
+        },
+        {
+          "w": "o",
+          "s": 2.387,
+          "e": 2.418
+        },
+        {
+          "w": "seu",
+          "s": 2.428,
+          "e": 2.572
+        },
+        {
+          "w": "Instagram",
+          "s": 2.582,
+          "e": 2.961
+        },
+        {
+          "w": "no",
+          "s": 2.971,
+          "e": 3.043
+        },
+        {
+          "w": "piloto",
+          "s": 3.053,
+          "e": 3.35
+        },
+        {
+          "w": "automático",
+          "s": 3.361,
+          "e": 3.893
+        },
+        {
+          "w": "com",
+          "s": 3.904,
+          "e": 4.047
+        },
+        {
+          "w": "o",
+          "s": 4.057,
+          "e": 4.078
+        },
+        {
+          "w": "FlashPost.",
+          "s": 4.088,
+          "e": 4.805
+        },
+        {
+          "w": "Toque",
+          "s": 5.512,
+          "e": 5.779
+        },
+        {
+          "w": "no",
+          "s": 5.789,
+          "e": 5.85
+        },
+        {
+          "w": "link",
+          "s": 5.861,
+          "e": 6.117
+        },
+        {
+          "w": "e",
+          "s": 6.127,
+          "e": 6.148
+        },
+        {
+          "w": "comece",
+          "s": 6.158,
+          "e": 6.516
+        },
+        {
+          "w": "agora.",
+          "s": 6.527,
+          "e": 6.844
+        }
+      ]
+    }
+  ],
+  "sfx": [
+    {
+      "type": "whoosh",
+      "gain": 0.7,
+      "at": 0.4
+    },
+    {
+      "type": "click",
+      "gain": 1.0,
+      "at": 1.6
+    },
+    {
+      "type": "click",
+      "gain": 1.0,
+      "at": 2.0
+    },
+    {
+      "type": "click",
+      "gain": 1.0,
+      "at": 2.4
+    },
+    {
+      "type": "click",
+      "gain": 1.0,
+      "at": 2.8
+    },
+    {
+      "type": "click",
+      "gain": 1.0,
+      "at": 3.2
+    },
+    {
+      "type": "click",
+      "gain": 1.0,
+      "at": 3.6
+    },
+    {
+      "type": "click",
+      "gain": 1.0,
+      "at": 4.0
+    },
+    {
+      "type": "error",
+      "gain": 0.6,
+      "at": 5.154
+    },
+    {
+      "type": "error",
+      "gain": 0.6,
+      "at": 6.179
+    },
+    {
+      "type": "error",
+      "gain": 0.6,
+      "at": 7.363
+    },
+    {
+      "type": "error",
+      "gain": 0.6,
+      "at": 9.775
+    },
+    {
+      "type": "riser",
+      "gain": 0.9,
+      "at": 9.903
+    },
+    {
+      "type": "impact",
+      "gain": 0.55,
+      "at": 11.416
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.8,
+      "at": 13.296
+    },
+    {
+      "type": "impact",
+      "gain": 1.0,
+      "at": 13.858
+    },
+    {
+      "type": "pop",
+      "gain": 0.8,
+      "at": 14.358
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.6,
+      "at": 16.488
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 18.003
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 18.303
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 18.603
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 18.903
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 19.203
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 19.503
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.6,
+      "at": 21.516
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.5,
+      "at": 23.158
+    },
+    {
+      "type": "click",
+      "gain": 0.9,
+      "at": 24.271
+    },
+    {
+      "type": "ding",
+      "gain": 0.6,
+      "at": 24.937
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 27.57
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.6,
+      "at": 29.448
+    },
+    {
+      "type": "click",
+      "gain": 1.0,
+      "at": 33.219
+    },
+    {
+      "type": "click",
+      "gain": 1.0,
+      "at": 33.618
+    },
+    {
+      "type": "ding",
+      "gain": 0.6,
+      "at": 34.172
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.6,
+      "at": 35.268
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 36.814
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 37.767
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 38.894
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 39.693
+    },
+    {
+      "type": "ding",
+      "gain": 0.5,
+      "at": 40.862
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.6,
+      "at": 42.744
+    },
+    {
+      "type": "pop",
+      "gain": 0.5,
+      "at": 44.055
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.4,
+      "at": 45.257
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.5,
+      "at": 48.492
+    },
+    {
+      "type": "ding",
+      "gain": 0.6,
+      "at": 49.192
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.6,
+      "at": 50.292
+    },
+    {
+      "type": "ding",
+      "gain": 0.7,
+      "at": 51.069
+    },
+    {
+      "type": "cash",
+      "gain": 0.8,
+      "at": 52.514
+    },
+    {
+      "type": "ding",
+      "gain": 0.7,
+      "at": 53.242
+    },
+    {
+      "type": "cash",
+      "gain": 0.8,
+      "at": 54.123
+    },
+    {
+      "type": "whoosh",
+      "gain": 0.6,
+      "at": 56.304
+    },
+    {
+      "type": "impact",
+      "gain": 0.7,
+      "at": 58.281
+    },
+    {
+      "type": "pop",
+      "gain": 0.8,
+      "at": 61.816
+    },
+    {
+      "type": "click",
+      "gain": 0.9,
+      "at": 62.831
+    }
+  ]
+}

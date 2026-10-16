@@ -1,0 +1,29 @@
+{
+  "name": "flashpost-video",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "narrate": "python3 audio/narrate.py",
+    "music": "python3 audio/synth.py src/timeline.json out/audio",
+    "render": "remotion render src/index.ts FlashPost out/video-silent.mp4 --muted --codec=h264 --crf=18",
+    "mix": "python3 audio/mix.py out/video-silent.mp4 out/flashpost-reels.mp4",
+    "build": "npm run narrate && npm run music && npm run render && npm run mix"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@remotion/cli": "^4.0.300",
+    "@remotion/renderer": "^4.0.300",
+    "@types/react": "^18.3.31",
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.300"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "private": true
+}

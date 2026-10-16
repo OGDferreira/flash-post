@@ -1,0 +1,338 @@
+{
+  "dropScene": "reveal",
+  "scenes": [
+    {
+      "id": "hook",
+      "text": "Você ainda posta vídeo por vídeo, conta por conta, no Instagram?",
+      "sfx": [
+        {
+          "type": "whoosh",
+          "at": 0.0,
+          "gain": 0.7
+        },
+        {
+          "type": "click",
+          "at": 1.2
+        },
+        {
+          "type": "click",
+          "at": 1.6
+        },
+        {
+          "type": "click",
+          "at": 2.0
+        },
+        {
+          "type": "click",
+          "at": 2.4
+        },
+        {
+          "type": "click",
+          "at": 2.8
+        },
+        {
+          "type": "click",
+          "at": 3.2
+        },
+        {
+          "type": "click",
+          "at": 3.6
+        }
+      ]
+    },
+    {
+      "id": "pain",
+      "text": "São horas no celular, post fora do horário, conta esquecida... e no fim do dia, você nem sabe quanto vendeu. Isso acabou.",
+      "extra": 0.2,
+      "sfx": [
+        {
+          "type": "error",
+          "word": "horas",
+          "gain": 0.6
+        },
+        {
+          "type": "error",
+          "word": "post",
+          "gain": 0.6
+        },
+        {
+          "type": "error",
+          "word": "esquecida",
+          "at": -0.25,
+          "gain": 0.6
+        },
+        {
+          "type": "error",
+          "word": "sabe",
+          "gain": 0.6
+        },
+        {
+          "type": "riser",
+          "word": "quanto",
+          "at": -0.2,
+          "gain": 0.9
+        },
+        {
+          "type": "impact",
+          "word": "Isso",
+          "gain": 0.55
+        }
+      ]
+    },
+    {
+      "id": "reveal",
+      "text": "Conheça o FlashPost.",
+      "extra": 0.9,
+      "sfx": [
+        {
+          "type": "whoosh",
+          "at": 0.0,
+          "gain": 0.8
+        },
+        {
+          "type": "impact",
+          "word": "FlashPost",
+          "gain": 1.0
+        },
+        {
+          "type": "pop",
+          "word": "FlashPost",
+          "at": 0.5,
+          "gain": 0.8
+        }
+      ]
+    },
+    {
+      "id": "folders",
+      "text": "Conecte todas as suas contas e organize tudo em pastas, por tema ou por operação.",
+      "sfx": [
+        {
+          "type": "whoosh",
+          "at": 0,
+          "gain": 0.6
+        },
+        {
+          "type": "pop",
+          "word": "organize",
+          "at": 0.0,
+          "gain": 0.5
+        },
+        {
+          "type": "pop",
+          "word": "organize",
+          "at": 0.3,
+          "gain": 0.5
+        },
+        {
+          "type": "pop",
+          "word": "organize",
+          "at": 0.6,
+          "gain": 0.5
+        },
+        {
+          "type": "pop",
+          "word": "organize",
+          "at": 0.8999999999999999,
+          "gain": 0.5
+        },
+        {
+          "type": "pop",
+          "word": "organize",
+          "at": 1.2,
+          "gain": 0.5
+        },
+        {
+          "type": "pop",
+          "word": "organize",
+          "at": 1.5,
+          "gain": 0.5
+        }
+      ]
+    },
+    {
+      "id": "loop",
+      "text": "Suba dezenas de vídeos de uma vez, crie um loop, e o FlashPost publica sozinho, no intervalo que você escolher, em todas as contas.",
+      "sfx": [
+        {
+          "type": "whoosh",
+          "at": 0,
+          "gain": 0.6
+        },
+        {
+          "type": "whoosh",
+          "word": "crie",
+          "at": -0.15,
+          "gain": 0.5
+        },
+        {
+          "type": "click",
+          "word": "FlashPost",
+          "gain": 0.9
+        },
+        {
+          "type": "ding",
+          "word": "publica",
+          "gain": 0.6
+        },
+        {
+          "type": "pop",
+          "word": "todas",
+          "gain": 0.5
+        }
+      ]
+    },
+    {
+      "id": "schedule",
+      "text": "Prefere controle total? Agende a sua própria publicação, no dia e na hora exatos.",
+      "sfx": [
+        {
+          "type": "whoosh",
+          "at": 0,
+          "gain": 0.6
+        },
+        {
+          "type": "click",
+          "word": "dia"
+        },
+        {
+          "type": "click",
+          "word": "hora"
+        },
+        {
+          "type": "ding",
+          "word": "exatos",
+          "at": 0.4,
+          "gain": 0.6
+        }
+      ]
+    },
+    {
+      "id": "dashboard",
+      "text": "No painel, você acompanha visualizações, posts do dia, sua sequência e o seu recorde. Tudo num só lugar.",
+      "sfx": [
+        {
+          "type": "whoosh",
+          "at": 0,
+          "gain": 0.6
+        },
+        {
+          "type": "pop",
+          "word": "visualizações",
+          "gain": 0.5
+        },
+        {
+          "type": "pop",
+          "word": "posts",
+          "gain": 0.5
+        },
+        {
+          "type": "pop",
+          "word": "sequência",
+          "gain": 0.5
+        },
+        {
+          "type": "pop",
+          "word": "recorde",
+          "gain": 0.5
+        },
+        {
+          "type": "ding",
+          "word": "Tudo",
+          "gain": 0.5
+        }
+      ]
+    },
+    {
+      "id": "team",
+      "text": "Tem equipe? Cadastre colaboradores, defina metas e valor por conexão, e acompanhe a produção de cada um no ranking.",
+      "sfx": [
+        {
+          "type": "whoosh",
+          "at": 0,
+          "gain": 0.6
+        },
+        {
+          "type": "pop",
+          "word": "Cadastre",
+          "gain": 0.5
+        },
+        {
+          "type": "whoosh",
+          "word": "defina",
+          "at": -0.1,
+          "gain": 0.4
+        },
+        {
+          "type": "whoosh",
+          "word": "ranking",
+          "at": -0.4,
+          "gain": 0.5
+        },
+        {
+          "type": "ding",
+          "word": "ranking",
+          "at": 0.3,
+          "gain": 0.6
+        }
+      ]
+    },
+    {
+      "id": "notify",
+      "text": "E o melhor: receba direto no celular cada venda, cada meta batida e cada marco de visualizações.",
+      "sfx": [
+        {
+          "type": "whoosh",
+          "at": 0,
+          "gain": 0.6
+        },
+        {
+          "type": "ding",
+          "word": "receba",
+          "gain": 0.7
+        },
+        {
+          "type": "cash",
+          "word": "venda",
+          "gain": 0.8
+        },
+        {
+          "type": "ding",
+          "word": "meta",
+          "gain": 0.7
+        },
+        {
+          "type": "cash",
+          "word": "marco",
+          "gain": 0.8
+        }
+      ]
+    },
+    {
+      "id": "cta",
+      "text": "Pare de postar no braço. Coloque o seu Instagram no piloto automático com o FlashPost. Toque no link e comece agora.",
+      "extra": 1.2,
+      "sfx": [
+        {
+          "type": "whoosh",
+          "at": 0,
+          "gain": 0.6
+        },
+        {
+          "type": "impact",
+          "word": "Coloque",
+          "gain": 0.7
+        },
+        {
+          "type": "pop",
+          "word": "Toque",
+          "gain": 0.8
+        },
+        {
+          "type": "click",
+          "word": "agora",
+          "gain": 0.9
+        }
+      ]
+    }
+  ]
+}
