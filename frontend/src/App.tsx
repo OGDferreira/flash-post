@@ -17,11 +17,12 @@ import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
 import { AppShell } from "@/layouts/AppShell";
 import { FeaturePlaceholderPage } from "@/pages/FeaturePlaceholderPage";
+import { importWithReload } from "@/lib/chunkReload";
 
 const lazyPage = <K extends string>(
   load: () => Promise<Record<K, ComponentType>>,
   name: K,
-) => lazy(() => load().then((module) => ({ default: module[name] })));
+) => lazy(importWithReload(() => load().then((module) => ({ default: module[name] }))));
 
 const NotificationsPage = lazyPage(() => import("@/pages/NotificationsPage"), "NotificationsPage");
 const RankingPage = lazyPage(() => import("@/pages/RankingPage"), "RankingPage");
@@ -45,26 +46,10 @@ const AdminSystemPage = lazyPage(() => import("@/pages/admin/AdminSystemPage"), 
 const AdminUsersPage = lazyPage(() => import("@/pages/admin/AdminUsersPage"), "AdminUsersPage");
 const AdminWorkspacesPage = lazyPage(() => import("@/pages/admin/AdminWorkspacesPage"), "AdminWorkspacesPage");
 
-const DashboardPage = lazy(() =>
-  import("@/pages/DashboardPage").then((module) => ({
-    default: module.DashboardPage,
-  })),
-);
-const AnalyticsPage = lazy(() =>
-  import("@/pages/AnalyticsPage").then((module) => ({
-    default: module.AnalyticsPage,
-  })),
-);
-const FinancePage = lazy(() =>
-  import("@/pages/FinancePage").then((module) => ({
-    default: module.FinancePage,
-  })),
-);
-const CollaboratorDashboardPage = lazy(() =>
-  import("@/pages/CollaboratorDashboardPage").then((module) => ({
-    default: module.CollaboratorDashboardPage,
-  })),
-);
+const DashboardPage = lazyPage(() => import("@/pages/DashboardPage"), "DashboardPage");
+const AnalyticsPage = lazyPage(() => import("@/pages/AnalyticsPage"), "AnalyticsPage");
+const FinancePage = lazyPage(() => import("@/pages/FinancePage"), "FinancePage");
+const CollaboratorDashboardPage = lazyPage(() => import("@/pages/CollaboratorDashboardPage"), "CollaboratorDashboardPage");
 
 export default function App() {
   return (

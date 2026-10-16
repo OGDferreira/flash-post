@@ -6,6 +6,7 @@ import App from "./App";
 import "./index.css";
 import { initAppearance } from "@/lib/appearance";
 import { applyTheme, getStoredTheme, getTheme } from "@/lib/theme";
+import { reloadOnce } from "@/lib/chunkReload";
 
 initAppearance();
 {
@@ -13,6 +14,12 @@ initAppearance();
   const saved = getStoredTheme();
   if (saved && saved !== getTheme()) applyTheme(saved);
 }
+
+// Vite reports a failed chunk/CSS preload here (typically right after a deploy):
+// reload once to pick up the new build instead of breaking the page.
+window.addEventListener("vite:preloadError", (event) => {
+  if (reloadOnce()) event.preventDefault();
+});
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
