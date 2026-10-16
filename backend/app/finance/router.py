@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -9,8 +10,10 @@ from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, req
 from app.core.time import local_day_bounds_utc
 from app.models import (
     CollaboratorPayment,
+    FinancialExpense,
     FinancialWithdrawal,
     SharkEvent,
+    SharkTransaction,
     TgOrder,
     User,
     Workspace,
@@ -20,6 +23,8 @@ from app.schemas.finance import (
     DailyWithdrawalGoalUpdate,
     FinanceOperationRevenue,
     FinanceMonthResponse,
+    FinancialExpenseCreate,
+    FinancialExpenseResponse,
     FinanceSummaryResponse,
     FinancialCollaboratorPaymentResponse,
     FinancialTransactionResponse,
@@ -42,7 +47,7 @@ def _timestamp(value: datetime) -> float:
 
 @router.get("/month", response_model=FinanceMonthResponse)
 async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthResponse:
-    """Revenue, collaborator cost and profit for the current month (Brazil time)."""
+    """Revenue, collaborator cost, expenses and profit for the current month (Brazil time)."""
     from app.collaborators.router import _member_report, _month_bounds
     from app.core.security import WorkspaceRole
 
@@ -50,23 +55,18 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
     now = datetime.now(timezone.utc)
     start, end, month = _month_bounds(now)
 
-    # A FlashBot sale can also reach a SmokePay operation webhook; count it once.
-    flashbot_tx = select(TgOrder.gateway_transaction_id).where(
-        TgOrder.workspace_id == workspace_id, TgOrder.gateway_transaction_id.is_not(None)
-    )
-    smoke = (
+    # Sharkbot sends the sale amount in its payloads; a sale without one is counted apart.
+    shark = (
         await db.execute(
             select(
-                func.coalesce(func.sum(SharkEvent.amount), 0),
-                func.coalesce(func.sum(func.coalesce(SharkEvent.net_amount, SharkEvent.amount)), 0),
-                func.count(SharkEvent.id),
+                func.coalesce(func.sum(SharkTransaction.amount), 0),
+                func.count(SharkTransaction.id),
+                func.count(SharkTransaction.id).filter(SharkTransaction.amount.is_(None)),
             ).where(
-                SharkEvent.workspace_id == workspace_id,
-                SharkEvent.event_type == "pix_paid",
-                SharkEvent.operation_name.is_not(None),
-                SharkEvent.occurred_at >= start,
-                SharkEvent.occurred_at < end,
-                (SharkEvent.transaction_id.is_(None)) | (SharkEvent.transaction_id.not_in(flashbot_tx)),
+                SharkTransaction.workspace_id == workspace_id,
+                SharkTransaction.status == "paid",
+                SharkTransaction.paid_at >= start,
+                SharkTransaction.paid_at < end,
             )
         )
     ).one()
@@ -101,19 +101,86 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
         paid += report.paid_month
         due += report.due_month
 
-    net_revenue = _money(smoke[1]) + _money(bot[1])
+    expenses = list(
+        await db.scalars(
+            select(FinancialExpense)
+            .where(
+                FinancialExpense.workspace_id == workspace_id,
+                FinancialExpense.spent_at >= start,
+                FinancialExpense.spent_at < end,
+            )
+            .order_by(FinancialExpense.spent_at.desc())
+        )
+    )
+    expenses_total = sum((_money(item.amount) for item in expenses), Decimal("0.00"))
+
+    # Sharkbot reports no gateway fee, so its gross is also what came in.
+    net_revenue = _money(shark[0]) + _money(bot[1])
     return FinanceMonthResponse(
         month=month,
-        gross_revenue=_money(smoke[0]) + _money(bot[0]),
+        gross_revenue=_money(shark[0]) + _money(bot[0]),
         net_revenue=net_revenue,
-        sale_count=int(smoke[2]) + int(bot[2]),
-        smokepay_gross=_money(smoke[0]),
+        sale_count=int(shark[1]) + int(bot[2]),
+        sharkbot_gross=_money(shark[0]),
+        sharkbot_sales_without_amount=int(shark[2]),
         flashbot_gross=_money(bot[0]),
         collaborator_earnings=_money(earnings),
         collaborator_paid=_money(paid),
         collaborator_due=_money(due),
-        profit=_money(net_revenue - earnings),
+        expenses_total=_money(expenses_total),
+        expenses=[
+            FinancialExpenseResponse(id=item.id, amount=item.amount, description=item.description, spent_at=item.spent_at)
+            for item in expenses
+        ],
+        profit=_money(net_revenue - earnings - expenses_total),
     )
+
+
+@router.post(
+    "/expenses",
+    response_model=FinancialExpenseResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_csrf)],
+)
+async def register_expense(
+    payload: FinancialExpenseCreate,
+    user: AuthenticatedUser,
+    access: OwnerAccess,
+    db: DbSession,
+) -> FinancialExpenseResponse:
+    expense = FinancialExpense(
+        workspace_id=access.workspace.id,
+        created_by_user_id=user.id,
+        amount=payload.amount.quantize(CENT, rounding=ROUND_HALF_UP),
+        description=payload.description,
+    )
+    db.add(expense)
+    try:
+        await db.commit()
+        await db.refresh(expense)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Não foi possível registrar o gasto.") from None
+    return FinancialExpenseResponse(
+        id=expense.id, amount=expense.amount, description=expense.description, spent_at=expense.spent_at
+    )
+
+
+@router.delete(
+    "/expenses/{expense_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_csrf)],
+)
+async def delete_expense(expense_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> None:
+    expense = await db.scalar(
+        select(FinancialExpense).where(
+            FinancialExpense.id == expense_id, FinancialExpense.workspace_id == access.workspace.id
+        )
+    )
+    if expense is None:
+        raise HTTPException(status_code=404, detail="Gasto não encontrado.")
+    await db.delete(expense)
+    await db.commit()
 
 
 @router.get("", response_model=FinanceSummaryResponse)

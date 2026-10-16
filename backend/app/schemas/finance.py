@@ -68,16 +68,39 @@ class FinanceSummaryResponse(BaseModel):
     collaborator_payment_history: list[FinancialCollaboratorPaymentResponse]
 
 
+class FinancialExpenseCreate(BaseModel):
+    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    description: str = Field(min_length=1, max_length=160)
+
+    @field_validator("description")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Informe no que foi gasto.")
+        return value
+
+
+class FinancialExpenseResponse(BaseModel):
+    id: UUID
+    amount: Decimal
+    description: str
+    spent_at: datetime
+
+
 class FinanceMonthResponse(BaseModel):
-    """Current month (Brazil time): what came in, what the team earned, what is left."""
+    """Current month (Brazil time): what came in, what went out, what is left."""
 
     month: date
     gross_revenue: Decimal
     net_revenue: Decimal
     sale_count: int
-    smokepay_gross: Decimal
+    sharkbot_gross: Decimal
+    sharkbot_sales_without_amount: int
     flashbot_gross: Decimal
     collaborator_earnings: Decimal
     collaborator_paid: Decimal
     collaborator_due: Decimal
+    expenses_total: Decimal
+    expenses: list[FinancialExpenseResponse]
     profit: Decimal

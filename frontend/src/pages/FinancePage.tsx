@@ -11,6 +11,7 @@ import {
   Volume2,
 } from "lucide-react";
 
+import { ExpensesPanel } from "@/components/ExpensesPanel";
 import { MonthResultCards } from "@/components/MonthResultCards";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest } from "@/services/api";
@@ -225,6 +226,7 @@ export function FinancePage() {
         <div className="dashboard-metrics !grid-cols-1 sm:!grid-cols-3">
           <MonthResultCards />
         </div>
+        <ExpensesPanel />
       </section>
 
       <section aria-label="Resumo do fluxo de caixa" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">

@@ -8,11 +8,14 @@ export type FinanceMonth = {
   gross_revenue: string;
   net_revenue: string;
   sale_count: number;
-  smokepay_gross: string;
+  sharkbot_gross: string;
+  sharkbot_sales_without_amount: number;
   flashbot_gross: string;
   collaborator_earnings: string;
   collaborator_paid: string;
   collaborator_due: string;
+  expenses_total: string;
+  expenses: { id: string; amount: string; description: string; spent_at: string }[];
   profit: string;
 };
 
@@ -50,8 +53,9 @@ export function MonthResultCards() {
       value: money(data?.gross_revenue),
       valueColor: "text-fg",
       detail: data
-        ? `${data.sale_count} venda(s) · líquido ${money(data.net_revenue)}`
-        : "Somando SmokePay e FlashBot",
+        ? `Sharkbot ${money(data.sharkbot_gross)} · FlashBot ${money(data.flashbot_gross)}` +
+          (data.sharkbot_sales_without_amount ? ` · ${data.sharkbot_sales_without_amount} venda(s) sem valor` : "")
+        : "Somando Sharkbot e FlashBot",
     },
     {
       title: "A pagar aos colaboradores",
@@ -69,7 +73,9 @@ export function MonthResultCards() {
       color: profit < 0 ? "text-danger" : "text-success",
       value: money(data?.profit),
       valueColor: profit < 0 ? "text-danger" : "text-success",
-      detail: "Faturamento líquido menos os ganhos dos colaboradores",
+      detail: data
+        ? `Líquido ${money(data.net_revenue)} − colaboradores ${money(data.collaborator_earnings)} − gastos ${money(data.expenses_total)}`
+        : "Faturamento menos colaboradores e gastos",
     },
   ];
   return (

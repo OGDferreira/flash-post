@@ -69,6 +69,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             Affiliation,
             SharkAccount,
             EmailAccount,
+            FinancialExpense,
             FinancialWithdrawal,
             InstagramAccount,
             InstagramAppCredential,
@@ -115,6 +116,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await connection.execute(delete(PushSubscription))
         await connection.execute(delete(CollaboratorPayment))
         await connection.execute(delete(EmailAccount))
+        await connection.execute(delete(FinancialExpense))
         await connection.execute(delete(FinancialWithdrawal))
         await connection.execute(delete(InstagramPublicationJob))
         await connection.execute(delete(SharkEvent))
