@@ -14,6 +14,7 @@ from app.models.collaborator_invite import CollaboratorInvite
 from app.models.collaborator_payment import CollaboratorPayment
 from app.models.collaborator_work_day import CollaboratorWorkDay
 from app.models.email_account import EmailAccount
+from app.models.financial_expense import FinancialExpense
 from app.models.financial_withdrawal import FinancialWithdrawal
 from app.models.instagram_account import InstagramAccount
 from app.models.instagram_app_credential import InstagramAppCredential
@@ -43,8 +44,28 @@ from app.models.push import (
     PushSubscription,
 )
 from app.models.workspace import Workspace, WorkspaceMember
+from app.models.telegram_bot import (
+    TgBot,
+    TgFlow,
+    TgGroup,
+    TgJob,
+    TgLead,
+    TgMedia,
+    TgOrder,
+    TgSubscription,
+    TgUpdateSeen,
+)
 
 __all__ = [
+    "TgBot",
+    "TgFlow",
+    "TgGroup",
+    "TgJob",
+    "TgLead",
+    "TgMedia",
+    "TgOrder",
+    "TgSubscription",
+    "TgUpdateSeen",
     "Affiliation",
     "Base",
     "Extension",
@@ -58,6 +79,7 @@ __all__ = [
     "DailyViewsGoalNotification",
     "DiagnosticsEvent",
     "EmailAccount",
+    "FinancialExpense",
     "FinancialWithdrawal",
     "InstagramAccount",
     "InstagramAppCredential",

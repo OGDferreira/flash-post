@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 _POSTGRES_ADVISORY_LOCK_KEY = 731904281
 _GOALS_ADVISORY_LOCK_KEY = 731904282
 _INSIGHTS_ADVISORY_LOCK_KEY = 731904283
+_BOTS_ADVISORY_LOCK_KEY = 731904284
+_BOT_JOBS_INTERVAL_SECONDS = 5
+_BOT_RECONCILE_EVERY_TICKS = 12  # about once a minute
+_bot_ticks = 0
 INSIGHTS_SYNC_HOURS = 3
 
 
@@ -106,6 +110,43 @@ async def _run_goals_tick_with_database_lock() -> None:
         logger.error("Daily views goal tick failed (%s); it will retry.", type(exc).__name__)
 
 
+async def _run_bots_once() -> None:
+    global _bot_ticks
+    from app.bots.engine import reconcile_pending_orders, run_due_jobs
+
+    async with get_session_factory()() as db:
+        await run_due_jobs(db)
+    _bot_ticks += 1
+    if _bot_ticks % _BOT_RECONCILE_EVERY_TICKS == 0:
+        async with get_session_factory()() as db:
+            await reconcile_pending_orders(db)
+
+
+async def _run_bots_tick_with_database_lock() -> None:
+    """Delayed bot messages, PIX expiry, subscription ends and PIX reconciliation."""
+    engine = get_engine()
+    try:
+        if engine.dialect.name != "postgresql":
+            await _run_bots_once()
+            return
+        async with engine.connect() as connection:
+            acquired = await connection.scalar(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                {"lock_key": _BOTS_ADVISORY_LOCK_KEY},
+            )
+            if not acquired:
+                return
+            try:
+                await _run_bots_once()
+            finally:
+                await connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": _BOTS_ADVISORY_LOCK_KEY},
+                )
+    except Exception as exc:
+        logger.error("Bot tick failed (%s); it will retry.", type(exc).__name__)
+
+
 async def _run_tick_with_database_lock() -> None:
     engine = get_engine()
     if engine.dialect.name != "postgresql":
@@ -179,5 +220,15 @@ def create_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         max_instances=1,
         misfire_grace_time=120,
+    )
+    scheduler.add_job(
+        _run_bots_tick_with_database_lock,
+        trigger="interval",
+        seconds=_BOT_JOBS_INTERVAL_SECONDS,
+        id="flashpost-telegram-bots",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=30,
     )
     return scheduler

@@ -128,3 +128,79 @@ async def test_finance_is_only_available_to_workspace_owners(
     await _login(client, "collaborator@example.com", "collaborator password")
     response = await client.get("/api/finance")
     assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_finance_month_uses_sharkbot_and_flashbot_and_subtracts_costs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    collaborator,
+) -> None:
+    from datetime import datetime, timezone
+
+    from app.core.crypto import encrypt_value
+    from app.models import InstagramAccount, SharkTransaction, TgBot, TgLead, TgOrder
+
+    owner_user, workspace = owner
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    now = datetime.now(timezone.utc)
+    for key, amount, status in (("s1", Decimal("100.00"), "paid"), ("s2", None, "paid"), ("s3", Decimal("70.00"), "pending")):
+        db_session.add(SharkTransaction(
+            workspace_id=workspace.id, transaction_key=key, status=status, amount=amount,
+            created_at_source=now, paid_at=now if status == "paid" else None,
+        ))
+    bot = TgBot(
+        workspace_id=workspace.id, tg_bot_id=42, username="vip_bot", name="VIP",
+        encrypted_token=encrypt_value("1:x"), webhook_secret="s" * 32,
+    )
+    db_session.add(bot)
+    await db_session.flush()
+    lead = TgLead(workspace_id=workspace.id, bot_id=bot.id, tg_user_id=7, chat_id=7, first_name="Lucas")
+    db_session.add(lead)
+    await db_session.flush()
+    db_session.add(TgOrder(
+        workspace_id=workspace.id, bot_id=bot.id, lead_id=lead.id, offer_id="vip", offer_name="VIP",
+        amount=Decimal("50.00"), net_amount=Decimal("48.00"), gateway_transaction_id="flashbot-tx-1",
+        status="paid", paid_at=now,
+    ))
+    membership = await db_session.scalar(
+        select(WorkspaceMember).where(WorkspaceMember.user_id == collaborator.id)
+    )
+    membership.rate_per_connection = Decimal("10.00")
+    db_session.add(InstagramAccount(
+        workspace_id=workspace.id, connected_by_user_id=collaborator.id, first_connected_at=now,
+        instagram_user_id="month-collab-account", username="month_collab",
+        encrypted_access_token=encrypt_value("t"), token_expires_at=now, status="connected",
+    ))
+    db_session.add(CollaboratorPayment(
+        workspace_id=workspace.id, workspace_member_id=membership.id, paid_by_user_id=owner_user.id,
+        amount=Decimal("4.00"), period_start=date.today().replace(day=1),
+    ))
+    await db_session.commit()
+
+    headers = {"X-CSRF-Token": await _csrf(client)}
+    expense = await client.post("/api/finance/expenses", headers=headers, json={"amount": "25.50", "description": " Anúncios "})
+    assert expense.status_code == 201, expense.text
+    assert expense.json()["description"] == "Anúncios"
+    other = await client.post("/api/finance/expenses", headers=headers, json={"amount": "5.00", "description": "Chip"})
+    assert (await client.post("/api/finance/expenses", headers=headers, json={"amount": "0", "description": "x"})).status_code == 422
+    assert (await client.post("/api/finance/expenses", headers=headers, json={"amount": "3", "description": "  "})).status_code == 422
+
+    data = (await client.get("/api/finance/month")).json()
+    assert data["sharkbot_gross"] == "100.00"
+    assert data["sharkbot_sales_without_amount"] == 1
+    assert data["flashbot_gross"] == "50.00"
+    assert data["gross_revenue"] == "150.00"
+    assert data["net_revenue"] == "148.00"  # Sharkbot 100 + FlashBot net 48
+    assert data["sale_count"] == 3
+    assert data["collaborator_earnings"] == "10.00"
+    assert data["collaborator_paid"] == "4.00"
+    assert data["collaborator_due"] == "6.00"
+    assert data["expenses_total"] == "30.50"
+    assert {item["description"] for item in data["expenses"]} == {"Anúncios", "Chip"}
+    assert data["profit"] == "107.50"  # 148 - 10 - 30.50
+
+    deleted = await client.delete(f"/api/finance/expenses/{other.json()['id']}", headers=headers)
+    assert deleted.status_code == 204
+    assert (await client.get("/api/finance/month")).json()["profit"] == "112.50"
