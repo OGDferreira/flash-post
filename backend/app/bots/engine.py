@@ -1,4 +1,5 @@
-"""Runs a lead through the flow: /start -> (+18) -> welcome -> offer -> PIX -> delivery.
+"""Runs a lead through the flow: /start -> (+18) -> welcome -> offer -> (order bump) -> PIX
+-> delivery -> upsells; leads that do not pay get the downsell sequence.
 
 Telegram updates and payment webhooks only *record* intent and schedule
 ``TgJob`` rows; messages that must wait (welcome delays, PIX expiry, the end of
@@ -19,10 +20,12 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots import smokepay
-from app.bots.flow_schema import Block, Delivery, FlowDefinition, Plan
+from app.bots.flow_schema import Block, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, UpsellStep
+from app.bots.richtext import sanitize
 from app.bots.telegram import InputFile, TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value
+from app.core.time import BRAZIL_TIME_ZONE
 from app.models import (
     TgBot,
     TgFlow,
@@ -62,19 +65,40 @@ def brl(value: Decimal) -> str:
     return f"R$ {int(whole):,}".replace(",", ".") + f",{cents}"
 
 
-def render(text: str | None, lead: TgLead, plan: str | None = None, amount: Decimal | None = None) -> str:
-    """Fill variables; lead data is escaped because messages use HTML parse mode."""
+def greeting(now: datetime | None = None) -> str:
+    hour = (now or utcnow()).astimezone(BRAZIL_TIME_ZONE).hour
+    return "Bom dia" if 5 <= hour < 12 else "Boa tarde" if 12 <= hour < 18 else "Boa noite"
+
+
+def render(
+    text: str | None, lead: TgLead, plan: str | None = None, amount: Decimal | None = None,
+    bot: TgBot | None = None, extra: dict[str, str] | None = None,
+) -> str:
+    """Owner copy -> valid Telegram HTML with the variables filled (lead data escaped)."""
     if not text:
         return ""
+    text = sanitize(text)
     values = {
         "{nome}": html.escape(lead.first_name or "você"),
         "{username}": html.escape(f"@{lead.username}" if lead.username else (lead.first_name or "")),
         "{plano}": html.escape(plan or ""),
         "{valor}": brl(amount) if amount is not None else "",
+        "{saudacao}": greeting(),
+        "{bot.nome}": html.escape(bot.name if bot else ""),
+        "{bot.username}": html.escape(f"@{bot.username}" if bot else ""),
+        **{key: html.escape(value) for key, value in (extra or {}).items()},
     }
     for key, value in values.items():
         text = text.replace(key, value)
     return text
+
+
+def button(text: str, style: str = "default", **action: object) -> dict:
+    """Inline button; ``style`` colors it in Telegram apps from Feb 2026 on (ignored before)."""
+    data: dict = {"text": text, **action}
+    if style and style != "default":
+        data["style"] = style
+    return data
 
 
 def telegram(bot: TgBot) -> TelegramClient:
@@ -177,12 +201,48 @@ async def send_album(
             item.update({"caption": caption, "parse_mode": "HTML"})
         items.append(item)
     messages = await tg.send_media_group(chat_id, items, files, protect=protect)
-    for media, message in zip(medias, messages or []):
+    for media, message in zip(medias, messages if isinstance(messages, list) else []):
         _remember_file_id(bot, media, message, "video" if media.kind == "video" else "photo")
 
 
+async def send_medias(
+    db: AsyncSession, tg: TelegramClient, bot: TgBot, chat_id: int, media_ids: list[uuid.UUID],
+    spoiler: bool = False, caption: str | None = None, reply_markup: dict | None = None,
+) -> bool:
+    """Send up to 3 media before a message. Returns True when ``caption`` and
+    ``reply_markup`` rode on the media (a single photo/video with a short caption)."""
+    medias = await _media_rows(db, bot, media_ids)
+    if not medias:
+        return False
+    if len(medias) == 1:
+        media = medias[0]
+        fits = caption is not None and len(caption) <= 1024
+        kind = "voice" if media.kind == "audio" else media.kind
+        await send_media_message(
+            db, tg, bot, chat_id, kind, media, caption if fits else None, reply_markup if fits else None, spoiler=spoiler,
+        )
+        return fits
+    if all(m.kind != "audio" for m in medias):
+        await send_album(db, tg, bot, chat_id, medias, None, spoiler=spoiler)
+    else:
+        for media in medias:
+            await send_media_message(db, tg, bot, chat_id, "voice" if media.kind == "audio" else media.kind, media, spoiler=spoiler)
+    return False
+
+
+async def send_media_then_text(
+    db: AsyncSession, tg: TelegramClient, bot: TgBot, chat_id: int, media_ids: list[uuid.UUID],
+    spoiler: bool, text: str, reply_markup: dict | None,
+) -> None:
+    """The SharkBot pattern: media first, then the message carrying the buttons."""
+    if await send_medias(db, tg, bot, chat_id, media_ids, spoiler, text, reply_markup):
+        return
+    if text or reply_markup:
+        await tg.send_message(chat_id, text or "👇", reply_markup)
+
+
 async def send_block(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, block: Block) -> None:
-    caption = render(block.text, lead)
+    caption = render(block.text, lead, bot=bot)
     if block.type == "text":
         await tg.send_chat_action(lead.chat_id, "typing")
         await tg.send_message(lead.chat_id, caption)
@@ -243,27 +303,129 @@ async def start_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDe
     run += timedelta(microseconds=len(flow.welcome) + 1)
     await schedule(db, bot, "send_offer", run, f"offer:{lead.id}:{nonce}", lead)
     lead.stage = "welcome"
+    if flow.downsell_trigger == "start":
+        await schedule_downsells(db, bot, lead, flow)
+
+
+def _extra_rows(flow: FlowDefinition) -> list[list[dict]]:
+    rows = [[button(item.label, url=str(item.url))] for item in flow.offer.redirect_buttons]
+    if flow.support_username:
+        rows.append([button("💬 Suporte", url=f"https://t.me/{flow.support_username}")])
+    return rows
 
 
 def plans_keyboard(flow: FlowDefinition) -> dict:
     rows = []
     for plan in flow.plans:
         label = plan.button_text or f"{plan.name} · {brl(plan.price)}"
-        rows.append([{"text": label, "callback_data": f"plan:{plan.id}"}])
+        rows.append([button(label, plan.button_style, callback_data=f"plan:{plan.id}")])
     return {"inline_keyboard": rows}
 
 
-async def send_offer(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
-    if not flow.plans:
-        return
-    text = render(flow.offer.text, lead)
-    keyboard = plans_keyboard(flow)
-    media = (await _media_rows(db, bot, [flow.offer.media_id]))[:1] if flow.offer.media_id else []
-    if media:
-        await send_media_message(db, tg, bot, lead.chat_id, media[0].kind, media[0], text, keyboard)
+def offer_keyboard(flow: FlowDefinition) -> dict | None:
+    if flow.offer.cta_enabled and flow.plans:
+        rows = [[button(flow.offer.cta_label, flow.offer.cta_style, callback_data="plans")]]
     else:
-        await tg.send_message(lead.chat_id, text, keyboard)
+        rows = plans_keyboard(flow)["inline_keyboard"]
+    rows += _extra_rows(flow)
+    return {"inline_keyboard": rows} if rows else None
+
+
+async def send_offer(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
+    """Welcome screen: up to 3 media, the message, then the buttons (or a secondary message with them)."""
+    offer = flow.offer
+    keyboard = offer_keyboard(flow)
+    text = render(offer.text, lead, bot=bot)
+    if offer.secondary_enabled:
+        await send_media_then_text(db, tg, bot, lead.chat_id, offer.media_ids, offer.spoiler, text, None)
+        if keyboard:
+            await tg.send_message(lead.chat_id, render(offer.secondary_text, lead, bot=bot) or "👇", keyboard)
+    else:
+        if not text and keyboard:
+            text = render(offer.plans_text, lead, bot=bot)
+        await send_media_then_text(db, tg, bot, lead.chat_id, offer.media_ids, offer.spoiler, text, keyboard)
     lead.stage = "offered"
+
+
+async def send_plans(tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
+    """Answer to the CTA button."""
+    if flow.plans:
+        await tg.send_message(lead.chat_id, render(flow.offer.plans_text, lead, bot=bot) or "👇", plans_keyboard(flow))
+
+
+# ---------------------------------------------------------------- order bump, downsell, upsell
+
+
+async def send_bump_question(
+    db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, plan: Plan, bump: OrderBump,
+) -> None:
+    text = render(bump.text, lead, plan.name, plan.price, bot, {"{bump}": bump.name, "{bump_valor}": brl(bump.price)})
+    keyboard = {"inline_keyboard": [
+        [button(f"{bump.accept_label} (+{brl(bump.price)})", "success", callback_data=f"bump:y:{plan.id}")],
+        [button(bump.decline_label, callback_data=f"bump:n:{plan.id}")],
+    ]}
+    await send_media_then_text(db, tg, bot, lead.chat_id, bump.media_ids, False, text, keyboard)
+
+
+def discounted(price: Decimal, step: DownsellStep) -> Decimal:
+    if step.discount_type == "percent":
+        value = price * (Decimal("100") - step.discount_value) / Decimal("100")
+    else:
+        value = price - step.discount_value
+    return max(value.quantize(Decimal("0.01")), Decimal("1.00"))  # SmokePay minimum
+
+
+async def schedule_downsells(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
+    """Queue the whole sequence once per lead; each step re-checks that the lead still has not paid."""
+    run = utcnow()
+    for index, step in enumerate(flow.downsells):
+        run += timedelta(minutes=step.delay_minutes)
+        await schedule(db, bot, "send_downsell", run, f"downsell:{lead.id}:{index}", lead, {"index": index})
+
+
+async def _has_paid(db: AsyncSession, lead: TgLead) -> bool:
+    return bool(await db.scalar(select(TgOrder.id).where(TgOrder.lead_id == lead.id, TgOrder.status == "paid").limit(1)))
+
+
+async def send_downsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int) -> None:
+    if not 0 <= index < len(flow.downsells) or await _has_paid(db, lead):
+        return
+    step = flow.downsells[index]
+    plans = [p for p in flow.plans if not step.plan_ids or p.id in step.plan_ids]
+    if not plans:
+        return
+    rows = [
+        [button(f"🔥 {p.name} por {brl(discounted(p.price, step))} (antes {brl(p.price)})", step.button_style,
+                callback_data=f"dplan:{index}:{p.id}")]
+        for p in plans
+    ]
+    off = f"{step.discount_value.normalize():f}%" if step.discount_type == "percent" else brl(step.discount_value)
+    text = render(step.text, lead, bot=bot, extra={"{desconto}": off})
+    await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, {"inline_keyboard": rows})
+    lead.stage = "downsell"
+
+
+def upsell_plan(index: int, step: UpsellStep) -> Plan:
+    return Plan(id=f"up{index}", name=step.name, price=step.price, duration_days=step.duration_days, delivery=step.delivery)
+
+
+async def schedule_upsell(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, chain: str) -> None:
+    """``chain`` (the first order of the series) keys the jobs so double taps never repeat a step."""
+    if 0 <= index < len(flow.upsells):
+        run = utcnow() + timedelta(minutes=flow.upsells[index].delay_minutes)
+        await schedule(db, bot, "send_upsell", run, f"upsell:{chain}:{index}", lead, {"index": index, "chain": chain})
+
+
+async def send_upsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, chain: str) -> None:
+    if not 0 <= index < len(flow.upsells):
+        return
+    step = flow.upsells[index]
+    text = render(step.text, lead, step.name, step.price, bot)
+    keyboard = {"inline_keyboard": [
+        [button(f"{step.accept_label} · {brl(step.price)}", step.accept_style, callback_data=f"up:{index}:{chain}")],
+        [button(step.decline_label, callback_data=f"upn:{index}:{chain}")],
+    ]}
+    await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, keyboard)
 
 
 async def _claim(db: AsyncSession, job: TgJob) -> bool:
@@ -282,16 +444,20 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
     if lead is not None and lead.blocked_bot:
         return
     tg = telegram(bot)
-    if job.kind in ("send_block", "send_offer"):
+    if job.kind in ("send_block", "send_offer", "send_downsell", "send_upsell"):
         flow = await load_flow(db, bot)
         if flow is None or lead is None:
             return
+        index = int(job.payload.get("index", -1))
         if job.kind == "send_block":
-            index = int(job.payload.get("index", -1))
             if 0 <= index < len(flow.welcome):
                 await send_block(db, tg, bot, lead, flow.welcome[index])
-        else:
+        elif job.kind == "send_offer":
             await send_offer(db, tg, bot, lead, flow)
+        elif job.kind == "send_downsell":
+            await send_downsell(db, tg, bot, lead, flow, index)
+        else:
+            await send_upsell(db, tg, bot, lead, flow, index, str(job.payload.get("chain", "")))
     elif job.kind == "expire_order":
         await expire_order(db, tg, bot, uuid.UUID(job.payload["order_id"]))
     elif job.kind == "end_subscription":
@@ -379,7 +545,7 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
         if flow.age_gate.enabled and lead.age_confirmed_at is None:
             await telegram(bot).send_message(
                 lead.chat_id,
-                render(flow.age_gate.text, lead),
+                render(flow.age_gate.text, lead, bot=bot),
                 {"inline_keyboard": [[{"text": flow.age_gate.button, "callback_data": "age:ok"}]]},
             )
             lead.stage = "age_gate"
@@ -407,13 +573,63 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict, flow: Flow
             await start_welcome(db, bot, lead, flow)
             return lead.id
         return None
+    if data == "plans":
+        await tg.answer_callback(query["id"])
+        await send_plans(tg, bot, lead, flow)
+        return None
     if data.startswith("plan:"):
         plan = flow.plan(data[5:])
         if plan is None:
             await tg.answer_callback(query["id"], "Este plano não está mais disponível.")
             return None
+        bump = flow.bump_for(plan)
+        if bump is not None:
+            await tg.answer_callback(query["id"])
+            await send_bump_question(db, tg, bot, lead, plan, bump)
+            return None
         await tg.answer_callback(query["id"], "Gerando seu Pix…")
         await create_order(db, tg, bot, lead, flow, plan)
+        return None
+    if data.startswith("bump:"):
+        _, answer, plan_id = (data.split(":", 2) + ["", ""])[:3]
+        plan = flow.plan(plan_id)
+        if plan is None:
+            await tg.answer_callback(query["id"], "Este plano não está mais disponível.")
+            return None
+        await tg.answer_callback(query["id"], "Gerando seu Pix…")
+        bump = flow.bump_for(plan) if answer == "y" else None
+        await create_order(db, tg, bot, lead, flow, plan, bump=bump)
+        return None
+    if data.startswith("dplan:"):
+        parts = data.split(":", 2)
+        index = int(parts[1]) if len(parts) == 3 and parts[1].isdigit() else -1
+        plan = flow.plan(parts[2]) if len(parts) == 3 else None
+        if plan is None or not 0 <= index < len(flow.downsells):
+            await tg.answer_callback(query["id"], "Esta oferta não está mais disponível.")
+            return None
+        await tg.answer_callback(query["id"], "Gerando seu Pix…")
+        price = discounted(plan.price, flow.downsells[index])
+        await create_order(
+            db, tg, bot, lead, flow, plan.model_copy(update={"price": price}),
+            kind="downsell", offer_id=f"{plan.id}-d{index}", retry=data,
+        )
+        return None
+    if data.startswith(("up:", "upn:")):
+        parts = data.split(":", 2)
+        index = int(parts[1]) if len(parts) == 3 and parts[1].isdigit() else -1
+        chain = parts[2] if len(parts) == 3 else ""
+        if not 0 <= index < len(flow.upsells):
+            await tg.answer_callback(query["id"], "Esta oferta não está mais disponível.")
+            return None
+        if parts[0] == "upn":
+            await tg.answer_callback(query["id"])
+            await schedule_upsell(db, bot, lead, flow, index + 1, chain)
+            return lead.id
+        await tg.answer_callback(query["id"], "Gerando seu Pix…")
+        await create_order(
+            db, tg, bot, lead, flow, upsell_plan(index, flow.upsells[index]),
+            kind="upsell", offer_id=f"up{index}", step=index, chain=chain, retry=data,
+        )
         return None
     if data.startswith("chk:"):
         try:
@@ -462,27 +678,48 @@ def payment_webhook_url() -> str:
     return f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/smokepay"
 
 
-async def create_order(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, plan: Plan) -> TgOrder | None:
+def order_parts(order: TgOrder) -> tuple[Plan, OrderBump | None, dict]:
+    """Phase 1 stored the bare plan; newer orders wrap it with the bump and series data."""
+    snapshot = order.offer_snapshot or {}
+    if "plan" in snapshot:
+        bump = OrderBump.model_validate(snapshot["bump"]) if snapshot.get("bump") else None
+        return Plan.model_validate(snapshot["plan"]), bump, snapshot
+    return Plan.model_validate(snapshot), None, {"kind": order.kind}
+
+
+async def create_order(
+    db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, plan: Plan,
+    *, bump: OrderBump | None = None, kind: str = "plan", offer_id: str | None = None,
+    step: int | None = None, chain: str | None = None, retry: str | None = None,
+) -> TgOrder | None:
     now = utcnow()
+    amount = plan.price + (bump.price if bump else Decimal("0"))
+    offer_id = offer_id or (f"{plan.id}+bump" if bump else plan.id)
+    name = f"{plan.name} + {bump.name}" if bump else plan.name
     order = await db.scalar(
         select(TgOrder).where(
-            TgOrder.lead_id == lead.id, TgOrder.offer_id == plan.id, TgOrder.status == "pending",
-            TgOrder.expires_at > now,
+            TgOrder.lead_id == lead.id, TgOrder.offer_id == offer_id, TgOrder.amount == amount,
+            TgOrder.status == "pending", TgOrder.expires_at > now,
         ).order_by(TgOrder.created_at.desc())
     )
+    first_pix = order is None and not await db.scalar(select(TgOrder.id).where(TgOrder.lead_id == lead.id).limit(1))
     if order is None:
+        snapshot = {
+            "plan": plan.model_dump(mode="json"), "bump": bump.model_dump(mode="json") if bump else None,
+            "kind": kind, "step": step, "chain": chain, "retry": retry or f"plan:{plan.id}",
+        }
         order = TgOrder(
-            workspace_id=bot.workspace_id, bot_id=bot.id, lead_id=lead.id, flow_id=bot.flow_id,
-            offer_id=plan.id, offer_name=plan.name, offer_snapshot=plan.model_dump(mode="json"),
-            amount=plan.price, expires_at=now + timedelta(minutes=flow.payment.expiration_minutes),
+            workspace_id=bot.workspace_id, bot_id=bot.id, lead_id=lead.id, flow_id=bot.flow_id, kind=kind,
+            offer_id=offer_id[:64], offer_name=name[:120], offer_snapshot=snapshot,
+            amount=amount, expires_at=now + timedelta(minutes=flow.payment.expiration_minutes),
         )
         db.add(order)
         await db.flush()
         try:
             charge = await smokepay.create_pix(
-                amount=plan.price,
+                amount=amount,
                 external_id=f"{ORDER_PREFIX}{order.id}",
-                description=f"{bot.name} · {plan.name}",
+                description=f"{bot.name} · {name}",
                 webhook_url=payment_webhook_url(),
                 expiration_seconds=flow.payment.expiration_minutes * 60,
             )
@@ -498,12 +735,14 @@ async def create_order(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: T
         order.net_amount = charge.net_amount
         order.pix_copy_paste = charge.copy_paste
         await schedule(db, bot, "expire_order", order.expires_at, f"expire:{order.id}", lead, {"order_id": str(order.id)})
+        if first_pix and kind == "plan" and flow.downsell_trigger == "pix":
+            await schedule_downsells(db, bot, lead, flow)
         await db.commit()
         qr = charge.qr_code_base64
     else:
         qr = None
     lead.stage = "pix"
-    caption = render(flow.payment.pix_text, lead, plan.name, order.amount)
+    caption = render(flow.payment.pix_text, lead, order.offer_name, order.amount, bot)
     if qr and "," in qr:
         try:
             png = base64.b64decode(qr.split(",", 1)[1])
@@ -520,6 +759,8 @@ async def create_order(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: T
     }
     if len(code) > 256:  # copy_text is limited to 256 chars; fall back to tap-to-copy text
         keyboard["inline_keyboard"].pop(0)
+    if flow.support_username:
+        keyboard["inline_keyboard"].append([button("💬 Suporte", url=f"https://t.me/{flow.support_username}")])
     body = (caption + "\n\n" if caption else "") + f"<code>{html.escape(code)}</code>"
     await tg.send_message(lead.chat_id, body, keyboard)
     return order
@@ -568,28 +809,36 @@ async def approve_order(
         return True
     lead.stage = "paid"
     await db.execute(update(TgJob).where(TgJob.idempotency_key == f"expire:{order.id}").values(status="cancelled"))
+    await cancel_lead_jobs(db, lead, ("send_downsell",))
     tg = telegram(bot)
     flow = await load_flow(db, bot)
-    plan = Plan.model_validate(order.offer_snapshot)
+    plan, bump, info = order_parts(order)
     try:
         if flow:
-            await tg.send_message(lead.chat_id, render(flow.payment.approved_text, lead, plan.name, order.amount))
+            await tg.send_message(lead.chat_id, render(flow.payment.approved_text, lead, order.offer_name, order.amount, bot))
         delivery = plan.delivery or (flow.default_delivery if flow else None)
         if delivery:
             await deliver(db, tg, bot, lead, order, plan, delivery)
+        if bump:
+            await deliver(db, tg, bot, lead, order, plan.model_copy(update={"name": bump.name}), bump.delivery)
         order.delivered_at = utcnow()
     except TelegramError as exc:
         bot.last_error = str(exc)[:500]
         logger.warning("Delivery for order %s failed: %s", order.id, exc)
+    if flow and flow.upsells:
+        if info.get("kind") == "upsell":
+            await schedule_upsell(db, bot, lead, flow, int(info.get("step") or 0) + 1, str(info.get("chain") or order.id.hex))
+        else:
+            await schedule_upsell(db, bot, lead, flow, 0, order.id.hex)
     await db.commit()
     await notify_owners(
-        db, bot, f"💸 Venda aprovada · {brl(order.amount)}", f"{plan.name} · @{bot.username}", f"sale-{order.id}"
+        db, bot, f"💸 Venda aprovada · {brl(order.amount)}", f"{order.offer_name} · @{bot.username}", f"sale-{order.id}"
     )
     return True
 
 
 async def deliver(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, order: TgOrder, plan: Plan, delivery: Delivery) -> None:
-    text = render(delivery.text, lead, plan.name, order.amount)
+    text = render(delivery.text, lead, plan.name, order.amount, bot)
     if delivery.type == "group":
         await _deliver_group(db, tg, bot, lead, order, plan, delivery, text)
         return
@@ -656,9 +905,10 @@ async def expire_order(db: AsyncSession, tg: TelegramClient, bot: TgBot, order_i
     lead = await db.get(TgLead, order.lead_id)
     flow = await load_flow(db, bot)
     if lead and flow:
+        retry = (order.offer_snapshot or {}).get("retry") or f"plan:{order.offer_id}"
         await tg.send_message(
-            lead.chat_id, render(flow.payment.expired_text, lead, order.offer_name, order.amount),
-            {"inline_keyboard": [[{"text": f"🔁 Gerar novo Pix · {order.offer_name}", "callback_data": f"plan:{order.offer_id}"}]]},
+            lead.chat_id, render(flow.payment.expired_text, lead, order.offer_name, order.amount, bot),
+            {"inline_keyboard": [[button(f"🔁 Gerar novo Pix · {order.offer_name}"[:64], callback_data=retry[:64])]]},
         )
 
 

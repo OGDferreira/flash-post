@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, GitBranch, Pencil, Plus, Trash2 } from "lucide-react";
 
@@ -11,9 +11,10 @@ import { ApiError, apiRequest } from "@/services/api";
 import { FlowEditor } from "./FlowEditor";
 import { brl, type Flow } from "./types";
 
-export function FlowsPanel() {
+export function FlowsPanel({ onEditingChange }: { onEditingChange?: (editing: boolean) => void }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
+  useEffect(() => onEditingChange?.(editing !== null), [editing, onEditingChange]);
   const flows = useQuery({
     queryKey: ["bots", "flows"],
     queryFn: () => apiRequest<{ flows: Flow[] }>("/api/bots/flows/list"),
@@ -63,10 +64,12 @@ export function FlowsPanel() {
                 <Badge tone={flow.bots ? "brand" : "neutral"}>{flow.bots ? `${flow.bots} robô(s)` : "Sem robô"}</Badge>
               </div>
               <p className="text-xs text-muted">
-                {flow.definition.welcome.length} bloco(s) de boas-vindas ·{" "}
+                {flow.definition.offer.media_ids.length} mídia(s) na boas-vindas ·{" "}
                 {flow.definition.plans.length
                   ? flow.definition.plans.map((plan) => `${plan.name} ${brl(plan.price)}`).join(" · ")
                   : "nenhum plano"}
+                {flow.definition.upsells.length > 0 && ` · ${flow.definition.upsells.length} upsell(s)`}
+                {flow.definition.downsells.length > 0 && ` · ${flow.definition.downsells.length} downsell(s)`}
                 {flow.definition.age_gate.enabled && " · +18"}
               </p>
               <div className="flex flex-wrap gap-2">

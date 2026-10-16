@@ -19,20 +19,74 @@ export type Delivery = {
   join_button_label: string;
 };
 
+export type ButtonStyle = "default" | "primary" | "success" | "danger";
+export type LinkButton = { label: string; url: string };
+
+export type OrderBump = {
+  name: string;
+  price: string;
+  text: string;
+  media_ids: string[];
+  accept_label: string;
+  decline_label: string;
+  delivery: Delivery;
+};
+
 export type Plan = {
   id: string;
   name: string;
   price: string;
   duration_days: number | null;
   button_text?: string | null;
+  button_style: ButtonStyle;
   delivery?: Delivery | null;
+  bump_mode: "default" | "custom" | "off";
+  order_bump?: OrderBump | null;
+};
+
+export type Offer = {
+  text: string;
+  media_ids: string[];
+  spoiler: boolean;
+  secondary_enabled: boolean;
+  secondary_text: string;
+  cta_enabled: boolean;
+  cta_label: string;
+  cta_style: ButtonStyle;
+  plans_text: string;
+  redirect_buttons: LinkButton[];
+};
+
+export type UpsellStep = {
+  name: string;
+  price: string;
+  duration_days: number | null;
+  delay_minutes: number;
+  media_ids: string[];
+  spoiler: boolean;
+  text: string;
+  accept_label: string;
+  accept_style: ButtonStyle;
+  decline_label: string;
+  delivery: Delivery;
+};
+
+export type DownsellStep = {
+  delay_minutes: number;
+  media_ids: string[];
+  spoiler: boolean;
+  text: string;
+  discount_type: "percent" | "fixed";
+  discount_value: string;
+  plan_ids: string[];
+  button_style: ButtonStyle;
 };
 
 export type FlowDefinition = {
   version: 1;
   age_gate: { enabled: boolean; text: string; button: string };
   welcome: Block[];
-  offer: { text: string; media_id?: string | null };
+  offer: Offer;
   plans: Plan[];
   payment: {
     expiration_minutes: number;
@@ -44,6 +98,11 @@ export type FlowDefinition = {
     expired_text: string;
   };
   default_delivery?: Delivery | null;
+  order_bump?: OrderBump | null;
+  upsells: UpsellStep[];
+  downsell_trigger: "pix" | "start";
+  downsells: DownsellStep[];
+  support_username?: string | null;
 };
 
 export type Flow = {
@@ -120,4 +179,18 @@ export function brl(value: string | number) {
 
 export function emptyDelivery(type: Delivery["type"] = "default"): Delivery {
   return { type, group_chat_id: null, text: "", media_ids: [], link: null, join_button_label: "🔓 Entrar no VIP" };
+}
+
+export type FlowSummary = { leads: number; vips: number; revenue: string };
+
+export function emptyBump(): OrderBump {
+  return {
+    name: "Pack extra",
+    price: "9.90",
+    text: "Quer adicionar <b>{bump}</b> por apenas <b>+{bump_valor}</b>?",
+    media_ids: [],
+    accept_label: "✅ Sim, quero!",
+    decline_label: "Não, obrigado",
+    delivery: emptyDelivery("pack"),
+  };
 }

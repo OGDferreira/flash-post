@@ -64,7 +64,7 @@ class FakeApis:
             self.calls.append(("pix.create", body))
             assert request.headers["x-api-key"] == "smoke_test_key"
             return httpx.Response(201, json={"success": True, "transaction": {
-                "id": "tx-1", "txid": "g1", "external_id": body["external_id"], "amount": body["amount"],
+                "id": f"tx-{body['external_id']}", "txid": "g1", "external_id": body["external_id"], "amount": body["amount"],
                 "fee": 1.0, "net_amount": body["amount"] - 1, "status": "pending",
                 "pix_copia_cola": "00020126PIXCODE", "qr_code_base64": f"data:image/png;base64,{PNG}",
                 "expires_at": "2030-01-01T00:00:00Z",
