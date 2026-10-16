@@ -13,6 +13,7 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { InstagramAvatar } from "@/components/InstagramAvatar";
+import { ProfileLink } from "@/components/ProfileLink";
 import {
   ConnectAppsPanel,
   metaAppsQueryKey,
@@ -470,7 +471,10 @@ export function InstagramAccountsPage() {
                     username={account.username}
                   />
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-fg">@{account.username}</p>
+                    <p className="flex min-w-0 items-center gap-2 font-medium text-fg">
+                      <span className="truncate">@{account.username}</span>
+                      <ProfileLink username={account.username} />
+                    </p>
                     <p
                       className={`mt-1 flex items-center gap-1.5 text-xs ${
                         active ? "text-success"                         : "text-danger"

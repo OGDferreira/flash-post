@@ -341,8 +341,9 @@ export function AppShell() {
       )}
 
       <nav className="app-sidebar-nav flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        <div className="space-y-1">
-          {navigation.direct.map(({ label, to, icon: Icon }) => (
+        {[navigation.direct, navigation.flat].filter((links) => links.length > 0).map((links, index) => (
+        <div className={index ? "mt-4 space-y-1 border-t border-line-soft pt-3" : "space-y-1"} key={index}>
+          {links.map(({ label, to, icon: Icon }) => (
             <NavLink
               end={to === "/admin" || to === "/dashboard"}
               key={to}
@@ -361,6 +362,7 @@ export function AppShell() {
             </NavLink>
           ))}
         </div>
+        ))}
         {navigation.groups.length > 0 && (
           <div className="mt-4 space-y-1 border-t border-line-soft pt-3">
             {navigation.groups.map((group) => {
@@ -632,7 +634,21 @@ export function AppShell() {
             role="dialog"
           >
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line" />
-            <div className="space-y-1">
+            <div className="grid grid-cols-2 gap-1">
+              {navigation.flat.map(({ label, to, icon: Icon }) => (
+                <NavLink
+                  className={({ isActive }) =>
+                    `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm ${isActive ? "nm-active font-medium" : "text-fg-2"}`
+                  }
+                  key={to}
+                  to={to}
+                >
+                  <Icon className="shrink-0 text-accent" size={16} />
+                  <span className="truncate">{label}</span>
+                </NavLink>
+              ))}
+            </div>
+            <div className="mt-1 space-y-1">
               {navigation.groups.map((group) => {
                 const open = Boolean(openGroups[group.id]);
                 const GroupIcon = group.icon;

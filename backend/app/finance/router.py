@@ -11,6 +11,7 @@ from app.models import (
     CollaboratorPayment,
     FinancialWithdrawal,
     SharkEvent,
+    TgOrder,
     User,
     Workspace,
     WorkspaceMember,
@@ -18,6 +19,7 @@ from app.models import (
 from app.schemas.finance import (
     DailyWithdrawalGoalUpdate,
     FinanceOperationRevenue,
+    FinanceMonthResponse,
     FinanceSummaryResponse,
     FinancialCollaboratorPaymentResponse,
     FinancialTransactionResponse,
@@ -36,6 +38,82 @@ def _money(value: object) -> Decimal:
 def _timestamp(value: datetime) -> float:
     aware = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
     return aware.timestamp()
+
+
+@router.get("/month", response_model=FinanceMonthResponse)
+async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthResponse:
+    """Revenue, collaborator cost and profit for the current month (Brazil time)."""
+    from app.collaborators.router import _member_report, _month_bounds
+    from app.core.security import WorkspaceRole
+
+    workspace_id = access.workspace.id
+    now = datetime.now(timezone.utc)
+    start, end, month = _month_bounds(now)
+
+    # A FlashBot sale can also reach a SmokePay operation webhook; count it once.
+    flashbot_tx = select(TgOrder.gateway_transaction_id).where(
+        TgOrder.workspace_id == workspace_id, TgOrder.gateway_transaction_id.is_not(None)
+    )
+    smoke = (
+        await db.execute(
+            select(
+                func.coalesce(func.sum(SharkEvent.amount), 0),
+                func.coalesce(func.sum(func.coalesce(SharkEvent.net_amount, SharkEvent.amount)), 0),
+                func.count(SharkEvent.id),
+            ).where(
+                SharkEvent.workspace_id == workspace_id,
+                SharkEvent.event_type == "pix_paid",
+                SharkEvent.operation_name.is_not(None),
+                SharkEvent.occurred_at >= start,
+                SharkEvent.occurred_at < end,
+                (SharkEvent.transaction_id.is_(None)) | (SharkEvent.transaction_id.not_in(flashbot_tx)),
+            )
+        )
+    ).one()
+    bot = (
+        await db.execute(
+            select(
+                func.coalesce(func.sum(TgOrder.amount), 0),
+                func.coalesce(func.sum(func.coalesce(TgOrder.net_amount, TgOrder.amount)), 0),
+                func.count(TgOrder.id),
+            ).where(
+                TgOrder.workspace_id == workspace_id,
+                TgOrder.status == "paid",
+                TgOrder.paid_at >= start,
+                TgOrder.paid_at < end,
+            )
+        )
+    ).one()
+
+    members = await db.execute(
+        select(WorkspaceMember, User)
+        .join(User, User.id == WorkspaceMember.user_id)
+        .where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.role == WorkspaceRole.COLLABORATOR.value,
+            WorkspaceMember.status.in_(("ACTIVE", "SUSPENDED")),
+        )
+    )
+    earnings = paid = due = Decimal("0")
+    for member, user in members.all():
+        report = await _member_report(db, workspace_id, member, user, now)
+        earnings += report.earnings_month
+        paid += report.paid_month
+        due += report.due_month
+
+    net_revenue = _money(smoke[1]) + _money(bot[1])
+    return FinanceMonthResponse(
+        month=month,
+        gross_revenue=_money(smoke[0]) + _money(bot[0]),
+        net_revenue=net_revenue,
+        sale_count=int(smoke[2]) + int(bot[2]),
+        smokepay_gross=_money(smoke[0]),
+        flashbot_gross=_money(bot[0]),
+        collaborator_earnings=_money(earnings),
+        collaborator_paid=_money(paid),
+        collaborator_due=_money(due),
+        profit=_money(net_revenue - earnings),
+    )
 
 
 @router.get("", response_model=FinanceSummaryResponse)

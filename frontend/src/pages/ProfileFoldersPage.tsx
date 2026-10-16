@@ -4,6 +4,7 @@ import { Folder, Pencil, Plus, Save, Trash2, Users, X } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { InstagramAvatar } from "@/components/InstagramAvatar";
+import { ProfileLink } from "@/components/ProfileLink";
 import { Modal } from "@/components/ui/Modal";
 import {
   formatAccountConnectedAt,
@@ -431,7 +432,10 @@ export function ProfileFoldersPage() {
                       username={account.username}
                     />
                     <div className="min-w-0">
-                      <p className="truncate">@{account.username}</p>
+                      <p className="flex min-w-0 items-center gap-2">
+                        <span className="truncate">@{account.username}</span>
+                        <ProfileLink username={account.username} />
+                      </p>
                       <p className="mt-0.5 text-[10px] text-muted">
                         Conectada em {formatAccountConnectedAt(account.connected_at)}
                       {account.connected_by_name ? ` · por ${account.connected_by_name}` : ""}

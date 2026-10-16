@@ -1,4 +1,5 @@
 import { EngagementCards } from "@/components/EngagementCards";
+import { MonthResultCards } from "@/components/MonthResultCards";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -440,6 +441,7 @@ export function DashboardPage() {
               {droppedDetail || "Nenhuma queda de conta no período"}
             </p>
           </article>
+          <MonthResultCards />
           {metricsCards.map((metric) => (
             <MetricCard key={metric.title} {...metric} />
           ))}

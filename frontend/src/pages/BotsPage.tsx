@@ -18,9 +18,9 @@ export function BotsPage() {
     <div className="mx-auto max-w-[1320px] space-y-4">
       <header>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Vendas</p>
-        <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">Robôs do Telegram</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">FlashBot</h1>
         <p className="mt-2 text-sm text-muted">
-          Conecte seus robôs, monte o funil de cada um e acompanhe as vendas no Pix em tempo real.
+          Seus robôs de venda no Telegram: conecte, monte o funil de cada um e acompanhe as vendas no Pix em tempo real.
         </p>
       </header>
       <div className="inline-flex gap-1 rounded-full bg-well p-1" role="tablist" aria-label="Seções dos robôs">

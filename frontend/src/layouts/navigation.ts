@@ -66,7 +66,7 @@ const ownerGroups: NavGroup[] = [
       { label: "Loops", to: "/feature/loops", icon: InfinityIcon },
       { label: "Feed", to: "/feature/feed", icon: Clapperboard },
       { label: "Automações", to: "/feature/automations", icon: MessageSquareText },
-      { label: "Robôs Telegram", to: "/feature/bots", icon: Bot },
+      { label: "FlashBot", to: "/feature/bots", icon: Bot },
     ],
   },
   {
@@ -125,24 +125,26 @@ const collaboratorRoutes = new Set([
 
 const adminGroup: NavGroup = { id: "admin", title: "Administração", icon: Shield, items: adminLinks };
 
-export type NavModel = { direct: NavItem[]; groups: NavGroup[] };
+/** direct = shortcuts on top; flat = every other page as a plain link; groups = collapsible (admin only). */
+export type NavModel = { direct: NavItem[]; flat: NavItem[]; groups: NavGroup[] };
+
+function flatten(groups: NavGroup[], direct: NavItem[]): NavItem[] {
+  const seen = new Set(direct.map(({ to }) => to));
+  return groups.flatMap((group) => group.items).filter(({ to }) => !seen.has(to) && seen.add(to));
+}
 
 export function buildNavigation(opts: {
   isAdminRoute: boolean;
   isSuperAdmin: boolean;
   workspaceRole: string | null | undefined;
 }): NavModel {
-  if (opts.isAdminRoute) return { direct: adminLinks, groups: [] };
+  if (opts.isAdminRoute) return { direct: adminLinks, flat: [], groups: [] };
   const extra = opts.isSuperAdmin ? [adminGroup] : [];
-  if (opts.workspaceRole === "OWNER") return { direct: directLinks, groups: [...ownerGroups, ...extra] };
+  if (opts.workspaceRole === "OWNER") return { direct: directLinks, flat: flatten(ownerGroups, directLinks), groups: extra };
   if (opts.workspaceRole === "COLLABORATOR") {
-    return {
-      direct: directLinks.filter(({ to }) => collaboratorRoutes.has(to)),
-      groups: ownerGroups
-        .map((group) => ({ ...group, items: group.items.filter(({ to }) => collaboratorRoutes.has(to)) }))
-        .filter((group) => group.items.length > 0)
-        .concat(extra),
-    };
+    const direct = directLinks.filter(({ to }) => collaboratorRoutes.has(to));
+    const allowed = ownerGroups.map((group) => ({ ...group, items: group.items.filter(({ to }) => collaboratorRoutes.has(to)) }));
+    return { direct, flat: flatten(allowed, direct), groups: extra };
   }
-  return { direct: [], groups: extra };
+  return { direct: [], flat: [], groups: extra };
 }

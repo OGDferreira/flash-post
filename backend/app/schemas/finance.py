@@ -66,3 +66,18 @@ class FinanceSummaryResponse(BaseModel):
     transactions: list[FinancialTransactionResponse]
     withdrawal_history: list[FinancialWithdrawalResponse]
     collaborator_payment_history: list[FinancialCollaboratorPaymentResponse]
+
+
+class FinanceMonthResponse(BaseModel):
+    """Current month (Brazil time): what came in, what the team earned, what is left."""
+
+    month: date
+    gross_revenue: Decimal
+    net_revenue: Decimal
+    sale_count: int
+    smokepay_gross: Decimal
+    flashbot_gross: Decimal
+    collaborator_earnings: Decimal
+    collaborator_paid: Decimal
+    collaborator_due: Decimal
+    profit: Decimal
