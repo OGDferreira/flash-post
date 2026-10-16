@@ -20,7 +20,7 @@ html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; backgro
 }
 /* ---------- the room the phone is filmed in ---------- */
 #room { position: absolute; inset: -80px; }
-#room .glow { position: absolute; border-radius: 50%; filter: blur(90px); }
+#room .glow { position: absolute; border-radius: 50%; }
 #desk { position: absolute; left: -80px; right: -80px; bottom: -80px; height: 520px;
   background: linear-gradient(180deg, transparent, rgba(12,14,26,.92) 30%, #05060c);
 }
@@ -36,7 +36,7 @@ html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; backgro
 #screen { position: relative; width: 856px; height: 1696px; border-radius: 86px; overflow: hidden;
   background: color-mix(in srgb, #0b1020 calc((1 - var(--lt)) * 100%), #eef2fb); }
 #blobs { position: absolute; inset: -200px; opacity: calc(1 - var(--lt) * .7); }
-#blobs i { position: absolute; border-radius: 50%; filter: blur(110px); }
+#blobs i { position: absolute; border-radius: 50%; }
 #glare { position: absolute; inset: 0; border-radius: 86px; pointer-events: none;
   background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.07) 42%, transparent 52%); }
 #grain { position: absolute; inset: 0; pointer-events: none; opacity: .13; mix-blend-mode: overlay;
@@ -63,17 +63,17 @@ html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; backgro
 <body>
 <div id="main">
   <div id="room">
-    <i class="glow" style="left:-120px;top:120px;width:620px;height:620px;background:color-mix(in srgb,var(--a) 34%,transparent)"></i>
-    <i class="glow" style="right:-160px;top:760px;width:700px;height:700px;background:color-mix(in srgb,var(--a3) 26%,transparent)"></i>
+    <i class="glow" style="left:-220px;top:20px;width:820px;height:820px;background:radial-gradient(closest-side,color-mix(in srgb,var(--a) 34%,transparent),transparent)"></i>
+    <i class="glow" style="right:-260px;top:660px;width:900px;height:900px;background:radial-gradient(closest-side,color-mix(in srgb,var(--a3) 26%,transparent),transparent)"></i>
     <div id="bokeh"></div>
     <div id="desk"><div class="refl"></div></div>
   </div>
 
   <div id="rig"><div id="shake"><div id="device"><div id="screen">
     <div id="blobs">
-      <i id="b1" style="left:60px;top:120px;width:720px;height:720px;background:color-mix(in srgb,var(--a) 70%,transparent)"></i>
-      <i id="b2" style="left:520px;top:760px;width:640px;height:640px;background:color-mix(in srgb,var(--a2) 55%,transparent)"></i>
-      <i id="b3" style="left:80px;top:1320px;width:760px;height:620px;background:color-mix(in srgb,var(--a3) 55%,transparent)"></i>
+      <i id="b1" style="left:-40px;top:20px;width:920px;height:920px;background:radial-gradient(closest-side,color-mix(in srgb,var(--a) 62%,transparent),color-mix(in srgb,var(--a) 22%,transparent) 55%,transparent)"></i>
+      <i id="b2" style="left:420px;top:660px;width:840px;height:840px;background:radial-gradient(closest-side,color-mix(in srgb,var(--a2) 50%,transparent),color-mix(in srgb,var(--a2) 18%,transparent) 55%,transparent)"></i>
+      <i id="b3" style="left:-20px;top:1200px;width:960px;height:860px;background:radial-gradient(closest-side,color-mix(in srgb,var(--a3) 50%,transparent),color-mix(in srgb,var(--a3) 18%,transparent) 55%,transparent)"></i>
     </div>
 
     <!-- S1 HOOK: accounts uploaded one at a time -->
@@ -88,8 +88,8 @@ html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; backgro
     <section id="s2" class="scene"><div id="cam2" class="cam">
       <div id="mark2" style="position:absolute;left:338px;top:150px;width:180px;height:180px"></div>
       <div id="h2" class="line" style="top:360px;font-size:62px;line-height:76px;font-weight:600">você conecta todas</div>
-      <div id="avs"></div>
       <div id="folders"></div>
+      <div id="avs"></div>
     </div></section>
 
     <!-- S3 PROOF: the loop publishing alone -->
@@ -190,7 +190,8 @@ for (let f = 0; f <= DUR; f += 6) {
 }
 M.kf('#shake', 'x', hx, { ease: 'softInOut' }); M.kf('#shake', 'y', hy, { ease: 'softInOut' }); M.kf('#shake', 'rotation', hr, { ease: 'softInOut' });
 // whips get a directional smear on the screen content
-[B2, B3, B4].forEach((f, i) => M.kf('#screen', 'filter', [[f - 1, 'blur(0px)'], [f, `blur(${10 - i * 2}px)`], [f + 5, 'blur(0px)', 'softLand']]));
+// one track; 'none' outside the whips, because any filter on an ancestor breaks the glass (backdrop-filter)
+M.kf('#screen', 'filter', [[0, 'none'], ...[B2, B3, B4].flatMap((f, i) => [[f - 1, 'none'], [f - 1, 'blur(0px)'], [f, `blur(${10 - i * 2}px)`], [f + 5, 'blur(0px)', 'softLand'], [f + 5, 'none']])]);
 // room parallax and the screen glare travelling against the camera
 M.kf('#room', 'x', [[0, 50], [DUR, -50, 'cruise']]);
 M.kf('#glare', 'x', [[0, -260], [DUR, 260, 'cruise']]);
@@ -217,7 +218,7 @@ handles.forEach((h, i) => {
     <div style="position:absolute;left:40px;top:104px;font-size:36px" class="muted">${h}</div>
     <div style="position:absolute;left:40px;right:40px;bottom:36px;height:84px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:700;background:rgba(255,255,255,.1)">Conectar…</div>`;
   const w = document.createElement('div'); w.style.position = 'absolute'; w.style.inset = '0'; w.appendChild(c); stack.appendChild(w);
-  M.enter(w, { at: landAt[i] - 4, frames: 11, ease: 'softLand', from: { y: 900 }, smear: { axis: 'y', px: 30, frames: 3 } });
+  M.enter(w, { at: landAt[i] - 4, frames: 11, ease: 'softLand', from: { y: 900 } });
 });
 MW('#h1a', { at: on(0), mech: 'rise', gaps: gapsOf([0, 1, 2]), dist: 70, frames: 12, ease: 'softLand' });
 M.enter('#p1', { at: on(3) - 2, frames: 10, ease: 'snapSettle', from: { scale: 2.6, blur: 10 } });
@@ -327,8 +328,8 @@ const notif = (title, body) => `<div style="display:flex;gap:26px;padding:28px 3
   <div style="font-size:34px;line-height:44px;color:#e7ebf5;margin-top:4px">${body}</div></div></div>`;
 $('#n1').innerHTML = notif('💸 Parabéns, Lucas! 50 vendas', 'Pagas hoje.');
 $('#n2').innerHTML = notif('Meta diária atingida', 'Você alcançou 190.587 visualizações hoje (meta: 100.000).');
-M.enter('#n1', { at: B5 + 2, frames: 12, ease: 'softLand', from: { y: -420, scale: 1.08 }, smear: { axis: 'y', px: 14, frames: 2 } });
-M.enter('#n2', { at: on(41) - 4, frames: 12, ease: 'softLand', from: { y: -420, scale: 1.08 }, smear: { axis: 'y', px: 14, frames: 2 } });
+M.enter('#n1', { at: B5 + 2, frames: 12, ease: 'softLand', from: { y: -420, scale: 1.08 } });
+M.enter('#n2', { at: on(41) - 4, frames: 12, ease: 'softLand', from: { y: -420, scale: 1.08 } });
 MW('#h5', { at: on(38) - 6, mech: 'rise', gaps: gapsOf([38, 39, 40, 41]), dist: 60, frames: 12, accent: { color: ACC, word: 1, frames: 40 } });
 M.kf('#cam5', 'scale', [[B5, 1], [B6, 1.12, 'glide']]);
 
