@@ -19,6 +19,7 @@ from app.analytics.bots import router as bot_performance_router
 from app.analytics.media import router as publication_insights_router
 from app.analytics.router import router as analytics_router
 from app.auth.router import router as auth_router
+from app.bots.router import router as bots_router
 from app.core.database import dispose_engine, get_session_factory
 from app.diagnostics.router import router as diagnostics_router
 from app.api.health import router as health_router
@@ -142,6 +143,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     )
     application.include_router(health_router)
     application.include_router(auth_router)
+    application.include_router(bots_router)
     application.include_router(admin_notifications_router)
     application.include_router(admin_router)
     application.include_router(analytics_router)

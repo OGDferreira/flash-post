@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # Web Push (optional): when unset, keys are generated once and stored
     # encrypted in system_settings. Subject must be a mailto: or https: URL.
     vapid_private_key: SecretStr | None = None
+    smokepay_api_key: SecretStr | None = None
+    smokepay_webhook_secret: SecretStr | None = None
+    smokepay_base_url: str = "https://smokepay.com.br"
     vapid_subject: str | None = None
     daily_views_goal_check_minutes: Annotated[int, Field(ge=5, le=240)] = 15
     session_max_age_seconds: Annotated[int, Field(ge=900, le=2592000)] = 2592000

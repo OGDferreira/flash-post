@@ -83,11 +83,22 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             SharkEvent,
             SmokepayOperation,
             SystemSetting,
+            TgBot,
+            TgFlow,
+            TgGroup,
+            TgJob,
+            TgLead,
+            TgMedia,
+            TgOrder,
+            TgSubscription,
+            TgUpdateSeen,
             User,
             Workspace,
             WorkspaceMember,
         )
 
+        for model in (TgUpdateSeen, TgJob, TgSubscription, TgOrder, TgLead, TgGroup, TgBot, TgMedia, TgFlow):
+            await connection.execute(delete(model))
         await connection.execute(delete(InstagramMediaInsight))
         await connection.execute(delete(InstagramAccountDailyViews))
         await connection.execute(delete(SupportTicket))

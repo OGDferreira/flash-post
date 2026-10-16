@@ -43,8 +43,28 @@ from app.models.push import (
     PushSubscription,
 )
 from app.models.workspace import Workspace, WorkspaceMember
+from app.models.telegram_bot import (
+    TgBot,
+    TgFlow,
+    TgGroup,
+    TgJob,
+    TgLead,
+    TgMedia,
+    TgOrder,
+    TgSubscription,
+    TgUpdateSeen,
+)
 
 __all__ = [
+    "TgBot",
+    "TgFlow",
+    "TgGroup",
+    "TgJob",
+    "TgLead",
+    "TgMedia",
+    "TgOrder",
+    "TgSubscription",
+    "TgUpdateSeen",
     "Affiliation",
     "Base",
     "Extension",

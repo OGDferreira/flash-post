@@ -11,7 +11,11 @@ def test_create_scheduler_registers_one_minute_worker() -> None:
         "flashpost-loop-and-token-worker",
         "flashpost-daily-views-goals",
         "flashpost-insights-sync",
+        "flashpost-telegram-bots",
     }
+    bots = jobs["flashpost-telegram-bots"]
+    assert bots.trigger.interval.total_seconds() == 5
+    assert bots.max_instances == 1
     worker = jobs["flashpost-loop-and-token-worker"]
     assert worker.trigger.interval.total_seconds() == 60
     assert worker.max_instances == 1
