@@ -62,12 +62,14 @@ class LinkButton(_Model):
 class Delivery(_Model):
     """What the buyer receives after paying."""
 
-    type: Literal["group", "pack", "default"]
+    # "upsell": nothing to hand over, the purchase just starts the upsell sequence.
+    type: Literal["group", "pack", "default", "upsell"]
     group_chat_id: int | None = None  # group/channel where the bot is admin
     text: Caption | None = None
     media_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
     link: LinkButton | None = None
     join_button_label: Label = "🔓 Entrar no VIP"
+    start_upsell: bool = True  # after delivering, send the flow's upsell sequence
 
     @model_validator(mode="after")
     def _check(self) -> "Delivery":
@@ -144,7 +146,8 @@ class Offer(_Model):
 
 
 class UpsellStep(_Model):
-    """Offer sent after a purchase; declining (or buying) moves on to the next step."""
+    """Offer sent after a purchase; declining (or buying) moves on to the next step.
+    With ``hide_decline`` there is no "no" button: the next step follows on its own delay."""
 
     name: Annotated[str, Field(min_length=1, max_length=60)]
     price: Money
@@ -156,7 +159,17 @@ class UpsellStep(_Model):
     accept_label: Label = "✅ Quero aproveitar"
     accept_style: ButtonStyle = "success"
     decline_label: Label = "Não, obrigado"
-    delivery: Delivery
+    hide_decline: bool = False
+    delivery: Delivery | None = None  # None = flow's default_delivery
+
+
+class CustomOffer(_Model):
+    """A plan that exists only inside one downsell step."""
+
+    name: Annotated[str, Field(min_length=1, max_length=60)]
+    price: Money
+    duration_days: Annotated[int, Field(ge=1, le=3650)] | None = 30
+    delivery: Delivery | None = None  # None = flow's default_delivery
 
 
 class DownsellStep(_Model):
@@ -169,6 +182,7 @@ class DownsellStep(_Model):
     discount_type: Literal["percent", "fixed"] = "percent"
     discount_value: Annotated[Decimal, Field(gt=0, le=Decimal("100000"), decimal_places=2)] = Decimal("10")
     plan_ids: list[str] = Field(default_factory=list, max_length=10)  # empty = every plan
+    custom_offer: CustomOffer | None = None  # replaces the discounted plans when set
     button_style: ButtonStyle = "success"
 
     @model_validator(mode="after")
@@ -201,7 +215,9 @@ class FlowDefinition(_Model):
     default_delivery: Delivery | None = None
     order_bump: OrderBump | None = None  # flow default, used by plans in "default" bump mode
     upsells: list[UpsellStep] = Field(default_factory=list, max_length=20)
-    downsell_trigger: Literal["pix", "start"] = "pix"
+    downsell_trigger: Literal["pix", "start"] = "pix"  # phase 2; folded into downsell_audience
+    # "no_pix": started and never generated a PIX; "pix": generated a PIX and did not pay.
+    downsell_audience: list[Literal["no_pix", "pix"]] | None = None
     downsells: list[DownsellStep] = Field(default_factory=list, max_length=20)
     support_username: Annotated[str, Field(max_length=33, pattern=r"^@?[A-Za-z0-9_]{0,32}$")] | None = None
 
@@ -219,6 +235,14 @@ class FlowDefinition(_Model):
                 raise ValueError(f"O downsell {index} usa um plano que não existe mais.")
         if self.support_username:
             self.support_username = self.support_username.lstrip("@") or None
+        if self.downsell_audience is None:
+            self.downsell_audience = ["pix"] if self.downsell_trigger == "pix" else ["no_pix", "pix"]
+        self.downsell_audience = sorted(set(self.downsell_audience))
+        needs_default = [step.delivery is None for step in self.upsells] + [
+            bool(step.custom_offer and step.custom_offer.delivery is None) for step in self.downsells
+        ]
+        if any(needs_default) and self.default_delivery is None:
+            raise ValueError("Uma oferta usa a entrega padrão, mas o fluxo não tem entrega padrão.")
         return self
 
     def media_ids(self) -> set[uuid.UUID]:
@@ -237,6 +261,8 @@ class FlowDefinition(_Model):
             deliveries.append(step.delivery)
         for down in self.downsells:
             found.update(down.media_ids)
+            if down.custom_offer:
+                deliveries.append(down.custom_offer.delivery)
         for delivery in deliveries:
             if delivery:
                 found.update(delivery.media_ids)

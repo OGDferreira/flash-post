@@ -85,7 +85,13 @@ function toPayload(definition: FlowDefinition): FlowDefinition {
     default_delivery: cleanDelivery(definition.default_delivery),
     order_bump: cleanBump(definition.order_bump),
     upsells: definition.upsells.map((step) => ({ ...step, price: money(step.price), delivery: cleanDelivery(step.delivery) })),
-    downsells: definition.downsells.map((step) => ({ ...step, discount_value: money(step.discount_value) })),
+    downsells: definition.downsells.map((step) => ({
+      ...step,
+      discount_value: money(step.discount_value),
+      custom_offer: step.custom_offer
+        ? { ...step.custom_offer, price: money(step.custom_offer.price), delivery: cleanDelivery(step.custom_offer.delivery) }
+        : null,
+    })),
     support_username: blank(definition.support_username),
   };
 }
@@ -98,6 +104,7 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   const [savedJson, setSavedJson] = useState("");
   const [current, setCurrent] = useState(0);
   const [picker, setPicker] = useState(false);
+  const [bottomPicker, setBottomPicker] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const top = useRef<HTMLDivElement>(null);
 
@@ -147,6 +154,7 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   const go = (index: number) => {
     setCurrent(index);
     setPicker(false);
+    setBottomPicker(false);
     top.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   const back = async () => {
@@ -239,12 +247,40 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
           <ChevronLeft size={18} />
           <span className="truncate">{current > 0 ? sections[current - 1].label : "Início"}</span>
         </button>
-        <span className="text-center">
+        <button
+          aria-expanded={bottomPicker}
+          aria-label="Ver todas as seções"
+          className="rounded-xl px-2 py-1 text-center hover:bg-well"
+          onClick={() => setBottomPicker(!bottomPicker)}
+          type="button"
+        >
           <span className="block text-[11px] text-muted">
-            {current + 1}/{sections.length}
+            {current + 1}/{sections.length} · todas as seções
           </span>
           <span className="block text-sm font-medium text-fg">{section.label}</span>
-        </span>
+        </button>
+        {bottomPicker && (
+          <ul className="absolute inset-x-0 bottom-full z-30 mb-2 grid max-h-[60vh] gap-0.5 overflow-y-auto rounded-2xl border border-line bg-[var(--nm-bg)] p-1.5 shadow-2xl" role="listbox">
+            {sections.map((item, index) => {
+              const Icon = item.icon;
+              return (
+                <li key={item.id}>
+                  <button
+                    aria-selected={index === current}
+                    className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm ${index === current ? "nm-active font-medium" : "text-fg-2 hover:bg-well"}`}
+                    onClick={() => go(index)}
+                    role="option"
+                    type="button"
+                  >
+                    <Icon size={16} />
+                    <span className="flex-1">{item.label}</span>
+                    <span className="text-xs text-muted">{index + 1}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
         <button
           className="flex min-h-11 items-center justify-end gap-1 rounded-xl px-2 text-sm text-fg-2 disabled:opacity-30"
           disabled={current === sections.length - 1}

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Copy, CreditCard, Gift, Plus, ShieldCheck, ShoppingCart, Trash2, TrendingDown, TrendingUp, Truck } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
-import { brl, emptyBump, emptyDelivery, type DownsellStep, type Plan, type UpsellStep } from "../types";
+import { brl, emptyBump, emptyDelivery, type CustomOffer, type Delivery, type DownsellStep, type Plan, type UpsellStep } from "../types";
 import { BumpEditor, DeliveryEditor } from "./DeliveryEditor";
 import { MediaGrid } from "./MediaGrid";
 import { BASE_VARIABLES, RichTextEditor } from "./RichTextEditor";
@@ -174,8 +174,22 @@ function newUpsell(): UpsellStep {
     accept_label: "✅ Quero aproveitar",
     accept_style: "success",
     decline_label: "Não, obrigado",
+    hide_decline: false,
     delivery: emptyDelivery("default"),
   };
+}
+
+/** "Entrega padrão do fluxo" or an own delivery (null = flow default). */
+function OfferDelivery({ value, onChange, allowUpsell = false }: { value: Delivery | null; onChange: (next: Delivery | null) => void; allowUpsell?: boolean }) {
+  return (
+    <>
+      <select className="field" value={value ? "own" : "default"} onChange={(event) => onChange(event.target.value === "own" ? emptyDelivery("default") : null)}>
+        <option value="default">Usar entrega padrão do fluxo</option>
+        <option value="own">Entrega própria desta oferta</option>
+      </select>
+      {value && <DeliveryEditor allowUpsell={allowUpsell} value={value} onChange={onChange} />}
+    </>
+  );
 }
 
 export function UpsellSection({ draft, set }: SectionProps) {
@@ -228,18 +242,31 @@ export function UpsellSection({ draft, set }: SectionProps) {
                 <input className="field" maxLength={64} value={step.accept_label} onChange={(event) => setStep(index, { accept_label: event.target.value })} />
               </Field>
               <Field label="Botão de recusar">
-                <input className="field" maxLength={64} value={step.decline_label} onChange={(event) => setStep(index, { decline_label: event.target.value })} />
+                <input
+                  className="field disabled:opacity-40"
+                  disabled={step.hide_decline}
+                  maxLength={64}
+                  value={step.decline_label}
+                  onChange={(event) => setStep(index, { decline_label: event.target.value })}
+                />
               </Field>
             </div>
             <StylePicker label="Cor do botão de aceitar" value={step.accept_style} onChange={(accept_style) => setStep(index, { accept_style })} />
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
+              <span>
+                Ocultar o botão de recusar
+                <span className="block text-xs text-muted">Sem o “não”, a próxima oferta vai sozinha depois do tempo dela.</span>
+              </span>
+              <Switch checked={step.hide_decline} label="Ocultar o botão de recusar" onChange={(hide_decline) => setStep(index, { hide_decline })} />
+            </label>
             <div className="space-y-2 border-t border-line-soft pt-4">
               <p className="flex items-center gap-2 text-sm font-medium text-fg">
                 <Gift size={15} className="text-success" /> Entrega desta oferta
               </p>
-              {step.delivery.type === "group" && (
+              {(step.delivery?.type ?? draft.default_delivery?.type) === "group" && (
                 <DurationSelect value={step.duration_days} onChange={(duration_days) => setStep(index, { duration_days })} />
               )}
-              <DeliveryEditor value={step.delivery} onChange={(delivery) => setStep(index, { delivery })} />
+              <OfferDelivery value={step.delivery} onChange={(delivery) => setStep(index, { delivery })} />
             </div>
           </Collapsible>
         ))}
@@ -269,8 +296,15 @@ function newDownsell(index: number): DownsellStep {
     discount_type: "percent",
     discount_value: String(10 + index * 10),
     plan_ids: [],
+    custom_offer: null,
     button_style: "success",
   };
+}
+
+const PERCENTS = Array.from({ length: 19 }, (_, i) => String((i + 1) * 5));
+
+function newCustomOffer(): CustomOffer {
+  return { name: "Oferta especial", price: "9.90", duration_days: 30, delivery: null };
 }
 
 export function DownsellSection({ draft, set }: SectionProps) {
@@ -284,12 +318,34 @@ export function DownsellSection({ draft, set }: SectionProps) {
       description="Planos com desconto para quem não pagou. Para sozinho assim que o lead paga."
       aside={<span className="text-xs text-muted">{draft.downsells.length}/20</span>}
     >
-      <Field label="Começar a contar quando o lead…">
-        <select className="field" value={draft.downsell_trigger} onChange={(event) => set({ downsell_trigger: event.target.value as "pix" | "start" })}>
-          <option value="pix">gerar o primeiro Pix e não pagar</option>
-          <option value="start">der /start e não comprar</option>
-        </select>
-      </Field>
+      <div className="grid gap-1.5 text-sm text-fg-2">
+        <span>Enviar para</span>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              ["no_pix", "Pix não gerado", "deu /start e não gerou Pix"],
+              ["pix", "Pix gerado", "gerou o Pix e não pagou"],
+            ] as const
+          ).map(([value, label, hint]) => {
+            const on = draft.downsell_audience.includes(value);
+            return (
+              <button
+                aria-pressed={on}
+                className={`rounded-xl border p-3 text-left transition ${on ? "border-brand bg-brand-soft" : "border-line bg-surface-inset opacity-70"}`}
+                key={value}
+                onClick={() =>
+                  set({ downsell_audience: on ? draft.downsell_audience.filter((item) => item !== value) : [...draft.downsell_audience, value] })
+                }
+                type="button"
+              >
+                <span className={`block text-sm font-medium ${on ? "text-accent" : "text-fg"}`}>{on ? "✓ " : ""}{label}</span>
+                <span className="block text-xs text-muted">{hint}</span>
+              </button>
+            );
+          })}
+        </div>
+        {draft.downsell_audience.length === 0 && <span className="text-xs text-warning">Nenhum público marcado: o downsell não será enviado.</span>}
+      </div>
       <div className="space-y-2">
         {draft.downsells.map((step, index) => (
           <Collapsible
@@ -297,7 +353,11 @@ export function DownsellSection({ draft, set }: SectionProps) {
             open={open === index}
             onToggle={() => toggle(index)}
             title={`Sequência ${index + 1}`}
-            subtitle={`${step.discount_type === "percent" ? `${step.discount_value}%` : brl(step.discount_value || 0)} off · ${delayLabel(step.delay_minutes)}`}
+            subtitle={`${
+              step.custom_offer
+                ? `${step.custom_offer.name} · ${brl(step.custom_offer.price || 0)}`
+                : `${step.discount_type === "percent" ? `${Number(step.discount_value)}%` : brl(step.discount_value || 0)} off`
+            } · ${delayLabel(step.delay_minutes)}`}
             actions={
               <StepActions
                 canCopy={draft.downsells.length < 20}
@@ -310,22 +370,75 @@ export function DownsellSection({ draft, set }: SectionProps) {
             <Field label={index === 0 ? "Enviar depois de" : "Enviar depois da sequência anterior"}>
               <DelayInput allowZero={false} value={step.delay_minutes} onChange={(delay_minutes) => setStep(index, { delay_minutes })} />
             </Field>
-            <div className="grid grid-cols-[120px_1fr] gap-3">
-              <Field label="Desconto">
-                <select className="field" value={step.discount_type} onChange={(event) => setStep(index, { discount_type: event.target.value as "percent" | "fixed" })}>
-                  <option value="percent">%</option>
-                  <option value="fixed">R$</option>
-                </select>
-              </Field>
-              <Field label={step.discount_type === "percent" ? "Porcentagem" : "Valor (R$)"}>
-                <input
-                  className="field"
-                  inputMode="decimal"
-                  value={step.discount_value}
-                  onChange={(event) => setStep(index, { discount_value: event.target.value.replace(/[^\d.,]/g, "") })}
-                />
-              </Field>
-            </div>
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
+              <span>
+                Plano personalizado só desta oferta
+                <span className="block text-xs text-muted">Em vez de desconto nos planos, oferece um plano com nome e preço próprios.</span>
+              </span>
+              <Switch
+                checked={Boolean(step.custom_offer)}
+                label="Plano personalizado"
+                onChange={(on) => setStep(index, { custom_offer: on ? step.custom_offer ?? newCustomOffer() : null })}
+              />
+            </label>
+            {step.custom_offer ? (
+              <div className="grid gap-3 rounded-xl border border-line-soft p-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Nome do plano">
+                    <input
+                      className="field"
+                      maxLength={60}
+                      value={step.custom_offer.name}
+                      onChange={(event) => setStep(index, { custom_offer: { ...step.custom_offer!, name: event.target.value } })}
+                    />
+                  </Field>
+                  <MoneyInput value={step.custom_offer.price} onChange={(price) => setStep(index, { custom_offer: { ...step.custom_offer!, price } })} />
+                </div>
+                <DurationSelect value={step.custom_offer.duration_days} onChange={(duration_days) => setStep(index, { custom_offer: { ...step.custom_offer!, duration_days } })} />
+                <OfferDelivery allowUpsell value={step.custom_offer.delivery} onChange={(delivery) => setStep(index, { custom_offer: { ...step.custom_offer!, delivery } })} />
+              </div>
+            ) : (
+              <div className="grid grid-cols-[120px_1fr] gap-3">
+                <Field label="Desconto">
+                  <select
+                    className="field"
+                    value={step.discount_type}
+                    onChange={(event) => {
+                      const discount_type = event.target.value as "percent" | "fixed";
+                      setStep(index, { discount_type, discount_value: discount_type === "percent" ? "10" : "5.00" });
+                    }}
+                  >
+                    <option value="percent">%</option>
+                    <option value="fixed">R$</option>
+                  </select>
+                </Field>
+                {step.discount_type === "percent" ? (
+                  <Field label="Porcentagem">
+                    <select
+                      className="field"
+                      value={PERCENTS.includes(String(Number(step.discount_value))) ? String(Number(step.discount_value)) : step.discount_value}
+                      onChange={(event) => setStep(index, { discount_value: event.target.value })}
+                    >
+                      {!PERCENTS.includes(String(Number(step.discount_value))) && <option value={step.discount_value}>{step.discount_value}%</option>}
+                      {PERCENTS.map((value) => (
+                        <option key={value} value={value}>
+                          {value}% de desconto
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : (
+                  <Field label="Valor (R$)">
+                    <input
+                      className="field"
+                      inputMode="decimal"
+                      value={step.discount_value}
+                      onChange={(event) => setStep(index, { discount_value: event.target.value.replace(/[^\d.,]/g, "") })}
+                    />
+                  </Field>
+                )}
+              </div>
+            )}
             <RichTextEditor
               label="Mensagem"
               required
@@ -334,6 +447,7 @@ export function DownsellSection({ draft, set }: SectionProps) {
               variables={[...BASE_VARIABLES, "{desconto}"]}
               onChange={(text) => setStep(index, { text })}
             />
+            {!step.custom_offer && (
             <div className="grid gap-1.5 text-sm text-fg-2">
               <span>Planos oferecidos</span>
               <div className="flex flex-wrap gap-2">
@@ -358,6 +472,7 @@ export function DownsellSection({ draft, set }: SectionProps) {
                 {draft.plans.length === 0 && <span className="text-xs text-muted">Crie planos na seção Planos.</span>}
               </div>
             </div>
+            )}
             <StylePicker value={step.button_style} onChange={(button_style) => setStep(index, { button_style })} />
           </Collapsible>
         ))}

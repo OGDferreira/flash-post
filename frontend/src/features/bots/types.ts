@@ -11,12 +11,13 @@ export type Block = {
 };
 
 export type Delivery = {
-  type: "group" | "pack" | "default";
+  type: "group" | "pack" | "default" | "upsell";
   group_chat_id?: number | null;
   text?: string | null;
   media_ids: string[];
   link?: { label: string; url: string } | null;
   join_button_label: string;
+  start_upsell: boolean;
 };
 
 export type ButtonStyle = "default" | "primary" | "success" | "danger";
@@ -68,7 +69,15 @@ export type UpsellStep = {
   accept_label: string;
   accept_style: ButtonStyle;
   decline_label: string;
-  delivery: Delivery;
+  hide_decline: boolean;
+  delivery: Delivery | null;
+};
+
+export type CustomOffer = {
+  name: string;
+  price: string;
+  duration_days: number | null;
+  delivery: Delivery | null;
 };
 
 export type DownsellStep = {
@@ -79,6 +88,7 @@ export type DownsellStep = {
   discount_type: "percent" | "fixed";
   discount_value: string;
   plan_ids: string[];
+  custom_offer: CustomOffer | null;
   button_style: ButtonStyle;
 };
 
@@ -101,6 +111,7 @@ export type FlowDefinition = {
   order_bump?: OrderBump | null;
   upsells: UpsellStep[];
   downsell_trigger: "pix" | "start";
+  downsell_audience: ("no_pix" | "pix")[];
   downsells: DownsellStep[];
   support_username?: string | null;
 };
@@ -178,7 +189,7 @@ export function brl(value: string | number) {
 }
 
 export function emptyDelivery(type: Delivery["type"] = "default"): Delivery {
-  return { type, group_chat_id: null, text: "", media_ids: [], link: null, join_button_label: "🔓 Entrar no VIP" };
+  return { type, group_chat_id: null, text: "", media_ids: [], link: null, join_button_label: "🔓 Entrar no VIP", start_upsell: true };
 }
 
 export type FlowSummary = { leads: number; vips: number; revenue: string };
