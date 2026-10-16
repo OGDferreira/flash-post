@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>FlashPost 20s</title>
+<meta name="viewport" content="width=1080, height=1920">
+<link rel="stylesheet" href="./runtime/fonts.css">
+<style>
+/* ACCENT = the app's own "Cor do site": one hue (--h) drives every light, pill and bar, so recolouring it is the hero. */
+:root { --font: "Inter", system-ui, sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+#main {
+  --h: 231; --lt: 0;
+  --a: hsl(var(--h) 96% 66%);
+  --a2: hsl(calc(var(--h) - 40) 95% 52%);
+  --a3: hsl(calc(var(--h) + 42) 85% 62%);
+  position: absolute; inset: 0; width: 1080px; height: 1920px; overflow: hidden;
+  background: #03040a; color: #f5f7fb; font-family: var(--font); font-weight: 500;
+}
+/* ---------- the room the phone is filmed in ---------- */
+#room { position: absolute; inset: -80px; }
+#room .glow { position: absolute; border-radius: 50%; filter: blur(90px); }
+#desk { position: absolute; left: -80px; right: -80px; bottom: -80px; height: 520px;
+  background: linear-gradient(180deg, transparent, rgba(12,14,26,.92) 30%, #05060c);
+}
+#desk .refl { position: absolute; left: 50%; top: 40px; width: 760px; height: 300px; margin-left: -380px; border-radius: 50%;
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--a) 40%, transparent), transparent 70%); filter: blur(40px); opacity: .55; }
+#bokeh i { position: absolute; border-radius: 50%; filter: blur(14px); opacity: .5; }
+/* ---------- camera rig ---------- */
+#rig { position: absolute; inset: 0; perspective: 2600px; }
+#shake { position: absolute; inset: 0; transform-style: preserve-3d; }
+#device { position: absolute; left: 100px; top: 96px; width: 880px; height: 1720px; border-radius: 96px;
+  background: #0d1020; padding: 12px; transform-style: preserve-3d;
+  box-shadow: 0 0 0 3px #2a3150, 0 60px 160px rgba(0,0,0,.75), 0 0 140px color-mix(in srgb, var(--a) 30%, transparent); }
+#screen { position: relative; width: 856px; height: 1696px; border-radius: 86px; overflow: hidden;
+  background: color-mix(in srgb, #0b1020 calc((1 - var(--lt)) * 100%), #eef2fb); }
+#blobs { position: absolute; inset: -200px; opacity: calc(1 - var(--lt) * .7); }
+#blobs i { position: absolute; border-radius: 50%; filter: blur(110px); }
+#glare { position: absolute; inset: 0; border-radius: 86px; pointer-events: none;
+  background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.07) 42%, transparent 52%); }
+#grain { position: absolute; inset: 0; pointer-events: none; opacity: .13; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.scene { position: absolute; inset: 0; }
+.cam { position: absolute; inset: 0; }
+/* ---------- glass, as in the app (index.css glass layer) ---------- */
+.glass { position: absolute; background: rgba(22,28,48,.62); border: 2px solid rgba(255,255,255,.14); border-radius: 40px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.45), inset 0 2px 0 rgba(255,255,255,.12); backdrop-filter: blur(24px) saturate(160%); }
+.line { position: absolute; left: 0; width: 856px; text-align: center; white-space: pre; letter-spacing: -0.03em; }
+.pill { position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 999px; white-space: pre;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--a) 92%, white), color-mix(in srgb, var(--a) 80%, black));
+  box-shadow: 0 0 0 2px rgba(255,255,255,.22) inset, 0 18px 60px color-mix(in srgb, var(--a) 55%, transparent); color: #fff; font-weight: 700; letter-spacing: -0.02em; }
+.muted { color: #a3aec2; }
+.av { position: absolute; width: 84px; height: 84px; }
+.av i { position: absolute; inset: 0; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center;
+  font-style: normal; font-weight: 800; font-size: 34px; color: #fff; }
+.row { position: absolute; left: 40px; right: 40px; height: 112px; display: flex; align-items: center; gap: 22px; font-size: 38px; }
+.bar { height: 14px; border-radius: 9px; background: rgba(255,255,255,.1); overflow: hidden; }
+.bar b { display: block; height: 100%; border-radius: 9px; background: linear-gradient(90deg, var(--a), var(--a2)); }
+.sw { position: absolute; width: 88px; height: 88px; border-radius: 50%; border: 4px solid rgba(255,255,255,.18); }
+</style>
+</head>
+<body>
+<div id="main">
+  <div id="room">
+    <i class="glow" style="left:-120px;top:120px;width:620px;height:620px;background:color-mix(in srgb,var(--a) 34%,transparent)"></i>
+    <i class="glow" style="right:-160px;top:760px;width:700px;height:700px;background:color-mix(in srgb,var(--a3) 26%,transparent)"></i>
+    <div id="bokeh"></div>
+    <div id="desk"><div class="refl"></div></div>
+  </div>
+
+  <div id="rig"><div id="shake"><div id="device"><div id="screen">
+    <div id="blobs">
+      <i id="b1" style="left:60px;top:120px;width:720px;height:720px;background:color-mix(in srgb,var(--a) 70%,transparent)"></i>
+      <i id="b2" style="left:520px;top:760px;width:640px;height:640px;background:color-mix(in srgb,var(--a2) 55%,transparent)"></i>
+      <i id="b3" style="left:80px;top:1320px;width:760px;height:620px;background:color-mix(in srgb,var(--a3) 55%,transparent)"></i>
+    </div>
+
+    <!-- S1 HOOK: accounts uploaded one at a time -->
+    <section id="s1" class="scene"><div id="cam1" class="cam">
+      <div id="stack"></div>
+      <div id="h1a" class="line" style="top:250px;font-size:76px;line-height:90px;font-weight:600">Cansado de subir</div>
+      <div id="p1" class="pill" style="left:118px;top:362px;width:620px;height:124px;font-size:72px"><span id="h1b" style="position:absolute;left:0;right:0;top:0;line-height:124px;text-align:center;white-space:pre">uma conta por vez</span></div>
+      <div id="h1c" class="line" style="top:512px;font-size:76px;line-height:90px;font-weight:600">da sua modelo?</div>
+    </div></section>
+
+    <!-- S2 TURN: connect all, folders per model -->
+    <section id="s2" class="scene"><div id="cam2" class="cam">
+      <div id="mark2" style="position:absolute;left:338px;top:150px;width:180px;height:180px"></div>
+      <div id="h2" class="line" style="top:360px;font-size:62px;line-height:76px;font-weight:600">você conecta todas</div>
+      <div id="avs"></div>
+      <div id="folders"></div>
+    </div></section>
+
+    <!-- S3 PROOF: the loop publishing alone -->
+    <section id="s3" class="scene"><div id="cam3" class="cam">
+      <div id="loopCard" class="glass" style="left:44px;top:250px;width:768px;height:1180px">
+        <div style="position:absolute;left:44px;top:40px;display:flex;align-items:center;gap:22px">
+          <svg id="inf" width="88" height="88" viewBox="0 0 24 24" fill="none" stroke="var(--a)" stroke-width="2.4" stroke-linecap="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></svg>
+          <div style="font-size:58px;font-weight:750;letter-spacing:-0.03em">Reels diários</div>
+          <div style="padding:8px 20px;border-radius:999px;background:rgba(126,226,189,.16);color:#7ee2bd;font-size:30px;font-weight:700">● ativo</div>
+        </div>
+        <div id="interval" style="position:absolute;left:44px;top:160px;right:44px;padding:16px 22px;border-radius:22px;font-size:36px;color:#d3dae8;background:color-mix(in srgb,var(--a) 14%,transparent);box-shadow:0 0 0 2px color-mix(in srgb,var(--a) 70%,transparent)">⏱ 20–40 min entre posts · até 24/dia</div>
+        <div id="media" style="position:absolute;left:44px;top:270px;right:44px;height:180px"></div>
+        <div id="rows3"></div>
+      </div>
+      <div id="p3" class="pill" style="left:228px;top:1470px;width:400px;height:112px;font-size:64px">sozinho</div>
+    </div></section>
+
+    <!-- S4 PROOF: ranking -->
+    <section id="s4" class="scene"><div id="cam4" class="cam">
+      <div id="h4" class="line" style="top:230px;font-size:66px;line-height:80px;font-weight:600">o ranking da equipe</div>
+      <div id="rank" class="glass" style="left:44px;top:390px;width:768px;height:620px"><div id="rows4"></div></div>
+    </div></section>
+
+    <!-- S5 PROOF: the sale arrives on the phone -->
+    <section id="s5" class="scene"><div id="cam5" class="cam">
+      <div id="n1" class="glass" style="left:30px;top:300px;width:796px;height:auto;border-radius:52px;background:rgba(40,44,60,.82)"></div>
+      <div id="n2" class="glass" style="left:30px;top:560px;width:796px;height:auto;border-radius:52px;background:rgba(40,44,60,.82)"></div>
+      <div id="h5" class="line" style="top:1000px;font-size:62px;line-height:76px;font-weight:600">cada venda no celular</div>
+    </div></section>
+
+    <!-- S6 HERO: the app takes your colour -->
+    <section id="s6" class="scene"><div id="cam6" class="cam">
+      <div id="look" class="glass" style="left:44px;top:420px;width:768px;height:560px">
+        <div style="position:absolute;left:48px;top:44px;font-size:52px;font-weight:750;letter-spacing:-0.03em">Aparência</div>
+        <div style="position:absolute;left:48px;top:118px;font-size:32px" class="muted">Cor do site</div>
+        <div id="sws"></div>
+        <div style="position:absolute;left:48px;top:392px;font-size:38px;font-weight:600">Modo claro</div>
+        <div id="tog" style="position:absolute;right:48px;top:380px;width:132px;height:72px;border-radius:999px;background:rgba(255,255,255,.14)"><i id="knob" style="position:absolute;left:8px;top:8px;width:56px;height:56px;border-radius:50%;background:#fff"></i></div>
+      </div>
+      <div id="h6" class="line" style="top:1100px;font-size:72px;line-height:86px;font-weight:600">com a sua cara</div>
+      <div id="h6b" class="line" style="top:620px;font-size:118px;line-height:130px;font-weight:800;color:#0b1020;letter-spacing:-0.05em">Escale</div>
+      <div id="h6c" class="line" style="top:760px;font-size:76px;line-height:90px;font-weight:600;color:#0b1020">sua oferta.</div>
+      <svg id="cursor" width="64" height="76" viewBox="0 0 16 19" style="position:absolute;left:0;top:0"><path d="M1 1v15l4-4 3 6 3-1-3-6h6z" fill="#fff" stroke="#0b1020" stroke-width="1.2"/></svg>
+    </div></section>
+
+    <!-- S7 CTA -->
+    <section id="s7" class="scene"><div id="cam7" class="cam">
+      <div id="h7" class="line" style="top:330px;font-size:70px;line-height:84px;font-weight:600">Tudo em um só app.</div>
+      <div id="mark7" style="position:absolute;left:298px;top:560px;width:260px;height:260px"></div>
+      <div id="word7" class="line" style="top:860px;font-size:110px;line-height:124px;font-weight:800;letter-spacing:-0.045em">FlashPost<span style="color:var(--a)">.</span></div>
+      <div id="ctaw" style="position:absolute;inset:0"><div id="cta" class="pill" style="left:168px;top:1080px;width:520px;height:124px;font-size:52px">Comece agora →</div></div>
+      <svg id="cursor7" width="64" height="76" viewBox="0 0 16 19" style="position:absolute;left:0;top:0"><path d="M1 1v15l4-4 3 6 3-1-3-6h6z" fill="#fff" stroke="#0b1020" stroke-width="1.2"/></svg>
+    </div></section>
+
+    <div id="glare"></div>
+    <div id="grain"></div>
+  </div></div></div></div>
+</div>
+
+<script src="./beats.js"></script>
+<script src="./runtime/vendor/gsap.min.js"></script>
+<script src="./runtime/motion.js"></script>
+<script>
+const DUR = 630;
+const M = Motion.film({ fps: 30, duration: DUR / 30, width: 1080, height: 1920, clock: 'smooth' });
+const $ = (s) => document.querySelector(s);
+const W = window.BEATS.words;
+const ACC = '#8fa2ff';
+/** onset frame of the i-th spoken word (2 f before it is heard, from sync.mjs) */
+const on = (i) => W[i].onsetFrame;
+const MW = (sel, o) => M.words(sel, { fixedSlots: false, ...o });
+const gapsOf = (idx) => idx.slice(1).map((v, k) => on(v) - on(idx[k]));
+const LOGO = `<svg viewBox="0 0 64 64" width="100%" height="100%"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5169f4"/><stop offset="1" stop-color="#22c1ee"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#lg)"/><path d="M14 44V20h24v7H22v4h13v7H22v6z" fill="#fff"/><circle cx="46" cy="22" r="5" fill="#fff" opacity=".9"/><path d="M42 44l8-14v10h-5z" fill="#fff" opacity=".9"/></svg>`;
+$('#mark2').innerHTML = LOGO; $('#mark7').innerHTML = LOGO;
+
+// beat boundaries, all on spoken words (cut on motion, a few frames before the word lands)
+const B2 = on(10) - 4, B3 = on(20) - 6, B4 = on(30) - 6, B5 = on(37) - 8, B6 = on(42) - 6, B7 = on(52) - 6;
+// scenes switch by hard opacity steps (a child with its own visibility could show through a visibility-hidden parent)
+const span = (sel, a, b) => M.kf(sel, 'opacity', a === 0 ? [[0, 1], [b, 1], [b, 0]] : b >= DUR ? [[0, 0], [a, 0], [a, 1]] : [[0, 0], [a, 0], [a, 1], [b, 1], [b, 0]]);
+const CUTS = [0, B2, B3, B4, B5, B6, B7, DUR];
+['#s1', '#s2', '#s3', '#s4', '#s5', '#s6', '#s7'].forEach((sel, i) => { span(sel, CUTS[i], CUTS[i + 1]); M.mark(CUTS[i], 'cut', sel); });
+
+/* ================= CAMERA: a phone filmed by a moving hand-held camera ================= */
+// push-in from an oblique wide (like the reference's first 6 s), then a slow orbit per act, then the pull-back.
+M.kf('#device', 'rotationY', [[0, -30], [B2 - 6, -7, 'glide'], [B2 + 8, 4, 'whip'], [B3, 9, 'softInOut'], [B3 + 8, -6, 'whip'], [B4, -12, 'softInOut'],
+  [B4 + 8, 2, 'whip'], [B5, 6, 'softInOut'], [B6, -4, 'softInOut'], [B7, 3, 'softInOut'], [DUR, -14, 'glide']]);
+M.kf('#device', 'rotationX', [[0, 14], [B2 - 6, 4, 'glide'], [B4, 8, 'softInOut'], [B4 + 10, -3, 'whip'], [B6, 2, 'softInOut'], [DUR, 9, 'glide']]);
+M.kf('#device', 'scale', [[0, .74], [B2 - 6, .97, 'glide'], [B2 + 10, .9, 'softLand'], [B3, .93, 'softInOut'], [B5, 1.0, 'softInOut'],
+  [B5 + 40, 1.05, 'glide'], [B6, 1.0, 'softLand'], [on(49), 1.04, 'softInOut'], [B7, 1.0, 'softLand'], [DUR, .78, 'glide']]);
+M.kf('#device', 'x', [[0, -70], [B2 - 6, 0, 'glide'], [B4, 0], [B4 + 10, 20, 'whip'], [DUR, 30, 'glide']]);
+M.kf('#device', 'y', [[0, 120], [B2 - 6, 0, 'glide'], [B5, 0], [B5 + 40, 30, 'glide'], [B6, 0, 'softLand'], [DUR, -30, 'glide']]);
+// hand-held: small deterministic wobble on a separate wrapper (sum of slow sines, keyed every 6 f)
+const hx = [], hy = [], hr = [];
+for (let f = 0; f <= DUR; f += 6) {
+  hx.push([f, 6 * Math.sin(f / 23) + 3 * Math.sin(f / 9.3)]);
+  hy.push([f, 5 * Math.sin(f / 19 + 1) + 2.5 * Math.sin(f / 7.1)]);
+  hr.push([f, .35 * Math.sin(f / 31 + 2)]);
+}
+M.kf('#shake', 'x', hx, { ease: 'softInOut' }); M.kf('#shake', 'y', hy, { ease: 'softInOut' }); M.kf('#shake', 'rotation', hr, { ease: 'softInOut' });
+// whips get a directional smear on the screen content
+[B2, B3, B4].forEach((f, i) => M.kf('#screen', 'filter', [[f - 1, 'blur(0px)'], [f, `blur(${10 - i * 2}px)`], [f + 5, 'blur(0px)', 'softLand']]));
+// room parallax and the screen glare travelling against the camera
+M.kf('#room', 'x', [[0, 50], [DUR, -50, 'cruise']]);
+M.kf('#glare', 'x', [[0, -260], [DUR, 260, 'cruise']]);
+// living light inside the screen
+M.kf('#b1', 'x', [[0, -40], [DUR, 120, 'cruise']]); M.kf('#b1', 'y', [[0, 0], [DUR, 160, 'cruise']]);
+M.kf('#b2', 'x', [[0, 60], [DUR, -140, 'cruise']]); M.kf('#b3', 'y', [[0, 40], [DUR, -180, 'cruise']]);
+// bokeh in the room
+const bk = $('#bokeh');
+[[90, 300, 26], [980, 420, 18], [160, 1500, 22], [940, 1650, 30], [60, 980, 14], [1000, 1180, 20]].forEach(([x, y, r], i) => {
+  const b = document.createElement('i');
+  Object.assign(b.style, { left: x + 'px', top: y + 'px', width: r * 2 + 'px', height: r * 2 + 'px', background: i % 2 ? 'var(--a2)' : 'var(--a3)' });
+  bk.appendChild(b);
+});
+
+/* ================= S1 HOOK ================= */
+const stack = $('#stack');
+const handles = ['@ana.oficial', '@ana.fit', '@ana.dicas', '@ana.vip', '@ana.reels', '@ana.backup'];
+const landAt = [on(3), on(4), on(5), on(6), on(7), on(9)];
+handles.forEach((h, i) => {
+  const c = document.createElement('div');
+  c.className = 'glass';
+  Object.assign(c.style, { left: '88px', top: (720 + i * 26) + 'px', width: '680px', height: '300px', transform: `rotate(${(i % 2 ? 1 : -1) * (1 + i * .6)}deg)` });
+  c.innerHTML = `<div style="position:absolute;left:40px;top:36px;font-size:40px;font-weight:750">Conectar conta</div>
+    <div style="position:absolute;left:40px;top:104px;font-size:36px" class="muted">${h}</div>
+    <div style="position:absolute;left:40px;right:40px;bottom:36px;height:84px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:700;background:rgba(255,255,255,.1)">Conectar…</div>`;
+  const w = document.createElement('div'); w.style.position = 'absolute'; w.style.inset = '0'; w.appendChild(c); stack.appendChild(w);
+  M.enter(w, { at: landAt[i] - 4, frames: 11, ease: 'softLand', from: { y: 900 }, smear: { axis: 'y', px: 30, frames: 3 } });
+});
+MW('#h1a', { at: on(0), mech: 'rise', gaps: gapsOf([0, 1, 2]), dist: 70, frames: 12, ease: 'softLand' });
+M.enter('#p1', { at: on(3) - 2, frames: 10, ease: 'snapSettle', from: { scale: 2.6, blur: 10 } });
+MW('#h1b', { at: on(3), mech: 'pop', gaps: gapsOf([3, 4, 5, 6]), frames: 8 });
+MW('#h1c', { at: on(7), mech: 'rise', gaps: gapsOf([7, 8, 9]), dist: 70, frames: 12, ease: 'softLand' });
+M.drift('#cam1', { prop: 'scale', from: 1, to: 1.06, start: 0, end: B2 });
+
+/* ================= S2 TURN ================= */
+M.snap('#mark2', { at: B2, from: { scale: 3.5, rotation: -12 }, to: { scale: 1, rotation: 0 }, firstFrameShare: .55, tail: 14 });
+M.show('#mark2', B2);
+MW('#h2', { at: on(13), mech: 'rise', gaps: gapsOf([13, 14, 15]), dist: 60, frames: 12, accent: { color: ACC, word: -1, frames: 40 } });
+const FOLD = [{ n: 'Ana', c: 'var(--a2)', x: 44 }, { n: 'Bia', c: 'var(--a)', x: 312 }, { n: 'Carol', c: 'var(--a3)', x: 580 }];
+const folders = $('#folders');
+FOLD.forEach((f, i) => {
+  const d = document.createElement('div'); d.className = 'glass';
+  Object.assign(d.style, { left: f.x + 'px', top: '1180px', width: '232px', height: '300px', borderColor: `color-mix(in srgb, ${f.c} 60%, transparent)` });
+  d.innerHTML = `<svg width="58" height="58" viewBox="0 0 24 24" style="position:absolute;left:28px;top:28px" fill="color-mix(in srgb, ${f.c} 30%, transparent)" stroke="${f.c}" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+    <div style="position:absolute;left:28px;top:108px;font-size:44px;font-weight:750">${f.n}</div>
+    <div class="cnt muted" style="position:absolute;left:28px;top:166px;font-size:30px"><span id="fc${i}">0</span> contas</div>`;
+  folders.appendChild(d);
+  M.enter(d, { at: on(17) - 6 + i * 3, frames: 12, ease: 'softLand', from: { y: 260, scale: 1.2 } });
+});
+const avs = $('#avs');
+const hues = [228, 320, 160, 30, 270, 195];
+for (let k = 0; k < 18; k++) {
+  const col = k % 6, rowi = Math.floor(k / 6);
+  const a = document.createElement('div'); a.className = 'av';
+  a.style.left = (70 + col * 124) + 'px'; a.style.top = (520 + rowi * 124) + 'px';
+  a.innerHTML = `<i style="background:linear-gradient(140deg,hsl(${hues[k % 6]} 75% 62%),hsl(${hues[k % 6] + 50} 70% 40%))">${'ABCDEFGHIJKLMNOPQR'[k]}</i>`;
+  avs.appendChild(a);
+  M.enter(a.firstChild, { at: on(14) + Math.round(k * 0.9), frames: 10, ease: 'softLand', from: { y: -240, scale: 1.8 } });
+  const tgt = FOLD[k % 3];
+  const tx = tgt.x + 40 + (Math.floor(k / 3) % 3) * 52 - (70 + col * 124), ty = 1180 + 220 + Math.floor(k / 9) * 20 - (520 + rowi * 124);
+  const go = on(17) + 4 + k;
+  M.kf(a, 'x', [[go, 0], [go + 12, tx, 'whip']]); M.kf(a, 'y', [[go, 0], [go + 12, ty, 'whip']]);
+  M.kf(a, 'scale', [[go, 1], [go + 12, .55, 'whip']]);
+}
+FOLD.forEach((f, i) => M.count('#fc' + i, { at: on(17) + 8, from: 0, to: [6, 6, 6][i] + [6, 3, 5][i], frames: 30, round: true }));
+M.kf('#cam2', 'scale', [[B2, 1.12], [B3, .98, 'glide']]);
+
+/* ================= S3 LOOP ================= */
+M.snap('#loopCard', { at: B3, from: { scale: 1.5, rotation: 3 }, to: { scale: 1, rotation: 0 }, firstFrameShare: .55, tail: 14 });
+M.kf('#inf', 'rotation', [[on(25), 0], [B4, 540, 'cruise']]);
+const media = $('#media');
+for (let k = 0; k < 6; k++) {
+  const t = document.createElement('div');
+  Object.assign(t.style, { position: 'absolute', left: (k * 116) + 'px', top: '0px', width: '100px', height: '170px', borderRadius: '18px',
+    background: `linear-gradient(160deg,hsl(${hues[k]} 80% 62%),hsl(${hues[k] + 40} 70% 32%))` });
+  media.appendChild(t);
+  M.enter(t, { at: on(22) + k * 2, frames: 9, ease: 'softLand', from: { y: 120, scale: 1.4 } });
+}
+const ROW3 = ['@ana.oficial', '@bia.fit', '@carol.vip', '@ana.dicas', '@bia.reels'];
+const rows3 = $('#rows3');
+const pubAt = [on(25), on(26), on(28), on(29), on(29) + 10];
+ROW3.forEach((h, i) => {
+  const r = document.createElement('div');
+  Object.assign(r.style, { position: 'absolute', left: '44px', right: '44px', top: (500 + i * 128) + 'px', height: '108px', borderRadius: '24px',
+    background: 'rgba(255,255,255,.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', fontSize: '38px', fontWeight: '650' });
+  r.innerHTML = `<span>${h}</span><span style="position:relative;width:330px;height:48px;font-size:32px">
+    <b class="w" style="position:absolute;right:0;top:4px;font-weight:600;color:#a3aec2">Na fila</b>
+    <b class="p" style="position:absolute;right:0;top:4px;font-weight:700;color:var(--a)">● Publicando agora</b>
+    <b class="d" style="position:absolute;right:0;top:4px;font-weight:700;color:#7ee2bd">✓ Publicado</b></span>`;
+  rows3.appendChild(r);
+  M.enter(r, { at: B3 + 6 + i * 3, frames: 11, ease: 'softLand', from: { x: 220 } });
+  M.show(r.querySelector('.w'), 0, pubAt[i]);
+  M.show(r.querySelector('.p'), pubAt[i], pubAt[i] + 18);
+  M.show(r.querySelector('.d'), pubAt[i] + 18);
+  // a thumbnail flies from the media strip into the row as it publishes
+  const fly = document.createElement('div');
+  Object.assign(fly.style, { position: 'absolute', left: (44 + i * 116) + 'px', top: '270px', width: '100px', height: '170px', borderRadius: '18px', zIndex: 3,
+    background: `linear-gradient(160deg,hsl(${hues[i]} 80% 62%),hsl(${hues[i] + 40} 70% 32%))`, boxShadow: '0 20px 40px rgba(0,0,0,.5)' });
+  $('#loopCard').appendChild(fly);
+  M.show(fly, pubAt[i] - 10, pubAt[i] + 2);
+  M.kf(fly, 'x', [[pubAt[i] - 10, 0], [pubAt[i], 500 - i * 116, 'whip']]);
+  M.kf(fly, 'y', [[pubAt[i] - 10, 0], [pubAt[i], 230 + i * 128, 'whip']]);
+  M.kf(fly, 'scale', [[pubAt[i] - 10, 1], [pubAt[i], .4, 'whip']]);
+});
+M.enter('#p3', { at: on(26) - 2, frames: 10, ease: 'snapSettle', from: { scale: 2.4, blur: 8 } });
+M.kf('#cam3', 'y', [[B3, 0], [B4, -120, 'softInOut']]);
+
+/* ================= S4 RANKING ================= */
+MW('#h4', { at: B4 + 2, mech: 'rise', gaps: gapsOf([31, 32, 33, 35]), dist: 60, frames: 12, accent: { color: ACC, word: 1, frames: 40 } });
+const TEAM = [{ n: 'Lucas', h: 228, a: 22, b: 24 }, { n: 'Ana', h: 320, a: 18, b: 27 }, { n: 'Marcos', h: 160, a: 15, b: 17 }, { n: 'Rafa', h: 30, a: 11, b: 14 }];
+const swapAt = on(35) - 2;
+const rank0 = [0, 1, 2, 3], rank1 = [1, 0, 2, 3];
+TEAM.forEach((m, i) => {
+  const r = document.createElement('div'); r.className = 'row';
+  r.style.top = (40 + rank0[i] * 140) + 'px';
+  r.innerHTML = `<b style="position:relative;width:70px;color:#f2d48a;font-size:40px"><span class="p0">#${rank0[i] + 1}</span><span class="p1" style="position:absolute;left:0">#${rank1[i] + 1}</span></b>
+    <div class="av" style="position:relative;width:88px;height:88px"><i style="background:linear-gradient(140deg,hsl(${m.h} 75% 62%),hsl(${m.h + 50} 70% 40%))">${m.n[0]}</i></div>
+    <div style="flex:1"><div style="display:flex;justify-content:space-between;font-weight:700"><span>${m.n}</span><span><span id="rc${i}">${m.a}</span> contas</span></div>
+    <div class="bar" style="margin-top:12px"><b id="rb${i}" style="width:${m.a / 30 * 100}%"></b></div></div>`;
+  $('#rows4').appendChild(r);
+  M.enter(r, { at: B4 + 4 + i * 3, frames: 11, ease: 'softLand', from: { x: -200 } });
+  M.kf(r, 'y', [[swapAt, 0], [swapAt + 10, (rank1[i] - rank0[i]) * 140, 'whip']]);
+  M.kf('#rb' + i, 'width', [[swapAt, m.a / 30 * 100], [swapAt + 12, m.b / 30 * 100, 'softLand']], { fmt: (v) => v + '%' });
+  M.count('#rc' + i, { at: swapAt, from: m.a, to: m.b, frames: 12, round: true });
+  M.show(r.querySelector('.p0'), 0, swapAt + 5); M.show(r.querySelector('.p1'), swapAt + 5);
+});
+M.kf('#rank', 'scale', [[B4, 1.25], [B4 + 14, 1, 'softLand']]);
+M.kf('#cam4', 'y', [[B4, 60], [B5, -40, 'softInOut']]);
+
+/* ================= S5 SALE ================= */
+const notif = (title, body) => `<div style="display:flex;gap:26px;padding:28px 30px">
+  <div style="flex:0 0 100px;height:100px">${LOGO}</div>
+  <div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;gap:16px;font-size:35px;font-weight:700;line-height:44px"><span>${title}</span><span class="muted" style="font-size:28px;font-weight:500">agora</span></div>
+  <div style="font-size:34px;line-height:44px;color:#e7ebf5;margin-top:4px">${body}</div></div></div>`;
+$('#n1').innerHTML = notif('💸 Parabéns, Lucas! 50 vendas', 'Pagas hoje.');
+$('#n2').innerHTML = notif('Meta diária atingida', 'Você alcançou 190.587 visualizações hoje (meta: 100.000).');
+M.enter('#n1', { at: B5 + 2, frames: 12, ease: 'softLand', from: { y: -420, scale: 1.08 }, smear: { axis: 'y', px: 14, frames: 2 } });
+M.enter('#n2', { at: on(41) - 4, frames: 12, ease: 'softLand', from: { y: -420, scale: 1.08 }, smear: { axis: 'y', px: 14, frames: 2 } });
+MW('#h5', { at: on(38) - 6, mech: 'rise', gaps: gapsOf([38, 39, 40, 41]), dist: 60, frames: 12, accent: { color: ACC, word: 1, frames: 40 } });
+M.kf('#cam5', 'scale', [[B5, 1], [B6, 1.12, 'glide']]);
+
+/* ================= S6 HERO: recolour ================= */
+const PRE = [['Azul', '#536dfe'], ['Roxo', '#8b5cf6'], ['Rosa', '#ec4899'], ['Vermelho', '#ef4444'], ['Laranja', '#f97316'], ['Verde', '#16a34a'], ['Ciano', '#06b6d4']];
+PRE.forEach(([n, c], i) => {
+  const w = document.createElement('div'); w.style.position = 'absolute'; w.style.inset = '0';
+  const s = document.createElement('div'); s.className = 'sw'; s.id = 'sw' + i;
+  Object.assign(s.style, { left: (48 + i * 96) + 'px', top: '190px', background: c });
+  w.appendChild(s); $('#sws').appendChild(w);
+  M.enter(w, { at: B6 + 4 + i * 2, frames: 10, ease: 'softLand', from: { y: 80, scale: 1.6 } });
+});
+M.enter('#look', { at: B6, frames: 12, ease: 'snapSettle', from: { scale: 1.35, y: 120 } });
+const tapRosa = on(44), tapVerde = on(46) + 1, tapClaro = on(48) + 12;
+// cursor (tip at its origin): enters oversize, parks, presses
+const SW = (i) => [44 + 48 + i * 96 + 44, 420 + 190 + 44];
+M.cursor('#cursor', { keys: [[B6 + 2, 760, 1500, 3.2, -24], [tapRosa - 6, ...SW(2), 1, 0], [tapVerde - 8, ...SW(5), 1, 0], [tapClaro - 8, 44 + 768 - 48 - 66, 420 + 380 + 36, 1, 0], [on(50), 900, 1300, 1, 0]], ease: 'glide' });
+M.press('#cursor', '#sw2', { at: tapRosa, frames: 3, release: true });
+M.press('#cursor', '#sw5', { at: tapVerde, frames: 3, release: true });
+M.kf('#sw2', 'borderColor', [[0, 'rgba(255,255,255,.18)'], [tapRosa, 'rgba(255,255,255,.18)'], [tapRosa + 1, '#ffffff'], [tapVerde, '#ffffff'], [tapVerde + 1, 'rgba(255,255,255,.18)']]);
+M.kf('#sw5', 'borderColor', [[0, 'rgba(255,255,255,.18)'], [tapVerde, 'rgba(255,255,255,.18)'], [tapVerde + 1, '#ffffff']]);
+// the whole world takes the colour: hue sweeps blue -> pink -> green, then back to brand blue under the light flash
+M.kf('#main', '--h', [[tapRosa, 231], [tapRosa + 12, 330, 'softLand'], [tapVerde, 330], [tapVerde + 14, 502, 'softLand'], [tapClaro + 6, 502], [tapClaro + 7, 591]], { fmt: (v) => String(v) });
+// light mode: the knob slides and the screen turns paper-white (the reference's white-page break), then back to dark for the ending
+M.kf('#knob', 'x', [[tapClaro, 0], [tapClaro + 6, 60, 'softLand']]);
+M.kf('#main', '--lt', [[tapClaro, 0], [tapClaro + 6, 1, 'softLand'], [B7 - 2, 1], [B7 + 2, 0, 'accelExit']], { fmt: (v) => String(v) });
+M.exit('#look', { at: tapClaro + 3, frames: 8, ease: 'accelExit', to: { y: -260, scale: .9 }, hide: true });
+MW('#h6', { at: on(45), mech: 'rise', gaps: gapsOf([45, 46, 47, 48]), dist: 50, frames: 12, accent: { color: '#ffffff', word: -1 } });
+M.exit('#h6', { at: tapClaro, frames: 8, ease: 'accelExit', to: { y: 80 }, hide: true });
+M.show('#h6b', on(49)); M.show('#h6c', on(50));
+M.snap('#h6b', { at: on(49), from: { scale: 2.8 }, to: { scale: 1 }, firstFrameShare: .55, tail: 14 });
+MW('#h6c', { at: on(50), mech: 'rise', gaps: gapsOf([50, 51]), dist: 50, frames: 12 });
+M.kf('#cam6', 'scale', [[on(49), 1], [B7, 1.08, 'glide']]);
+
+/* ================= S7 CTA ================= */
+MW('#h7', { at: B7 + 1, mech: 'rise', gaps: gapsOf([52, 53, 54, 55, 56]), dist: 60, frames: 12 });
+M.show('#mark7', on(57) - 2);
+M.snap('#mark7', { at: on(57) - 2, from: { scale: 3.5, rotation: 14 }, to: { scale: 1, rotation: 0 }, firstFrameShare: .6, tail: 16 });
+M.enter('#word7', { at: on(57) + 2, frames: 12, ease: 'softLand', from: { y: 70, blur: 8 } });
+M.enter('#ctaw', { at: on(58) + 8, frames: 11, ease: 'snapSettle', from: { scale: 1.8, blur: 6 } });
+const ctaTap = on(58) + 26;
+M.cursor('#cursor7', { keys: [[on(58) + 6, 820, 1560, 3, -20], [ctaTap - 4, 440, 1150, 1, 0]], ease: 'glide' });
+M.press('#cursor7', '#cta', { at: ctaTap, frames: 3, release: true });
+M.drift('#cam7', { prop: 'scale', from: 1.04, to: .98, start: B7, end: DUR });
+
+window.__ready = Motion.loaded().then(() => (location.search.includes('selftest') ? Motion.selfTest(M, { samples: 24 }) : null));
+</script>
+</body>
+</html>

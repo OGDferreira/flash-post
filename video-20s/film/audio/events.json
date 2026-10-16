@@ -1,0 +1,172 @@
+[
+ {
+  "t": 0.0,
+  "sfx": "sfx/whoosh.wav",
+  "gain": -16
+ },
+ {
+  "t": 1.167,
+  "sfx": "sfx/pop.wav",
+  "gain": -17
+ },
+ {
+  "t": 1.4,
+  "sfx": "sfx/pop.wav",
+  "gain": -17
+ },
+ {
+  "t": 1.7,
+  "sfx": "sfx/pop.wav",
+  "gain": -17
+ },
+ {
+  "t": 1.933,
+  "sfx": "sfx/pop.wav",
+  "gain": -17
+ },
+ {
+  "t": 2.2,
+  "sfx": "sfx/pop.wav",
+  "gain": -17
+ },
+ {
+  "t": 2.533,
+  "sfx": "sfx/pop.wav",
+  "gain": -17
+ },
+ {
+  "t": 3.067,
+  "sfx": "sfx/whoosh.wav",
+  "gain": -10
+ },
+ {
+  "t": 3.267,
+  "sfx": "sfx/impact.wav",
+  "gain": -9
+ },
+ {
+  "t": 4.6,
+  "sfx": "sfx/pop.wav",
+  "gain": -18
+ },
+ {
+  "t": 4.8,
+  "sfx": "sfx/pop.wav",
+  "gain": -18
+ },
+ {
+  "t": 5.0,
+  "sfx": "sfx/pop.wav",
+  "gain": -18
+ },
+ {
+  "t": 5.833,
+  "sfx": "sfx/whoosh.wav",
+  "gain": -13
+ },
+ {
+  "t": 6.633,
+  "sfx": "sfx/whoosh.wav",
+  "gain": -11
+ },
+ {
+  "t": 7.433,
+  "sfx": "sfx/pop.wav",
+  "gain": -16
+ },
+ {
+  "t": 8.3,
+  "sfx": "sfx/click.wav",
+  "gain": -14
+ },
+ {
+  "t": 8.733,
+  "sfx": "sfx/click.wav",
+  "gain": -14
+ },
+ {
+  "t": 9.4,
+  "sfx": "sfx/click.wav",
+  "gain": -14
+ },
+ {
+  "t": 9.7,
+  "sfx": "sfx/click.wav",
+  "gain": -14
+ },
+ {
+  "t": 8.733,
+  "sfx": "sfx/ding.wav",
+  "gain": -15
+ },
+ {
+  "t": 10.233,
+  "sfx": "sfx/whoosh.wav",
+  "gain": -11
+ },
+ {
+  "t": 11.733,
+  "sfx": "sfx/ding.wav",
+  "gain": -14
+ },
+ {
+  "t": 12.067,
+  "sfx": "sfx/whoosh.wav",
+  "gain": -11
+ },
+ {
+  "t": 12.533,
+  "sfx": "sfx/cash.wav",
+  "gain": -10
+ },
+ {
+  "t": 13.933,
+  "sfx": "sfx/ding.wav",
+  "gain": -12
+ },
+ {
+  "t": 14.2,
+  "sfx": "sfx/whoosh.wav",
+  "gain": -12
+ },
+ {
+  "t": 14.967,
+  "sfx": "sfx/click.wav",
+  "gain": -9
+ },
+ {
+  "t": 15.367,
+  "sfx": "sfx/click.wav",
+  "gain": -9
+ },
+ {
+  "t": 15.1,
+  "sfx": "sfx/riser.wav",
+  "gain": -12
+ },
+ {
+  "t": 15.967,
+  "sfx": "sfx/click.wav",
+  "gain": -9
+ },
+ {
+  "t": 16.167,
+  "sfx": "sfx/impact.wav",
+  "gain": -11
+ },
+ {
+  "t": 17.4,
+  "sfx": "sfx/whoosh.wav",
+  "gain": -12
+ },
+ {
+  "t": 18.9,
+  "sfx": "sfx/impact.wav",
+  "gain": -8
+ },
+ {
+  "t": 20.2,
+  "sfx": "sfx/click.wav",
+  "gain": -9
+ }
+]

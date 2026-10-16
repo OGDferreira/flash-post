@@ -1,0 +1,1 @@
+{"detail":"TTS engine 'voxcpm2' is not available: voxcpm package not installed. Install with `pip install \"voxcpm>=2.0.3\"` (requires Python ≥3.10, PyTorch ≥2.5). CUDA ≥12 recommended for full speed; MPS (Apple Silicon) and CPU also supported."}

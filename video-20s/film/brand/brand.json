@@ -1,0 +1,469 @@
+{
+ "url": "https://flashpost.onrender.com",
+ "finalUrl": "https://flashpost.onrender.com/login",
+ "capturedAt": "2026-10-16T03:28:54.274Z",
+ "viewport": {
+  "w": 1920,
+  "h": 1080
+ },
+ "docHeight": 1080,
+ "name": "FlashPost",
+ "title": "FlashPost",
+ "description": "FlashPost — plataforma de operações para publicação e analytics.",
+ "tagline": "Seu Instagram no piloto automático.",
+ "lang": "pt-BR",
+ "themeColorMeta": "#05070f",
+ "colorSchemeMeta": "dark light",
+ "manifest": {
+  "name": "FlashPost",
+  "short_name": "FlashPost",
+  "theme_color": "#070809",
+  "background_color": "#070809"
+ },
+ "copy": {
+  "h1": [
+   "Seu Instagram no piloto automático."
+  ],
+  "h2": [
+   "Entrar"
+  ],
+  "h3": [],
+  "heroLine": "Seu Instagram no piloto automático.",
+  "ctas": [
+   {
+    "text": "Entrar",
+    "bg": "#536dfe",
+    "color": "#ffffff",
+    "border": null,
+    "radius": 8,
+    "filled": true,
+    "inHeader": false,
+    "inHero": true,
+    "top": 616,
+    "w": 386,
+    "h": 44
+   }
+  ],
+  "nav": [],
+  "sentences": [
+   "Conecte suas contas, agende publicações e crie automações — para você ou para sua empresa.",
+   "Conecte suas contas Vários perfis do Instagram no mesmo lugar.",
+   "Agenda de publicações Programe posts e deixe publicar sozinho.",
+   "Automações Rotinas automáticas para pessoas e empresas.",
+   "Métricas e equipe Visualizações, metas e produção do time."
+  ]
+ },
+ "colors": {
+  "theme": "dark",
+  "monochrome": false,
+  "ground": [
+   {
+    "hex": "#0b1020",
+    "share": 0.658,
+    "sources": [
+     "dom",
+     "pixels"
+    ]
+   },
+   {
+    "hex": "#050811",
+    "share": 0.255,
+    "sources": [
+     "pixels"
+    ]
+   }
+  ],
+  "ink": {
+   "hex": "#93a3ff",
+   "contrastOnGround": 8.04,
+   "source": "computed colour of the largest heading (h1 \"Seu Instagram no piloto automático.\", 48px)"
+  },
+  "inkSoft": {
+   "hex": "#a3aec2",
+   "contrastOnGround": 8.47,
+   "note": "body copy"
+  },
+  "accentCandidates": {
+   "note": "saturated colours sampled from imagery (a CSS/DOM accent exists, these are extra)",
+   "items": [
+    {
+     "hex": "#536dfd",
+     "file": "screens/01.jpg",
+     "share": 0.0078,
+     "sharePct": 0.78
+    },
+    {
+     "hex": "#3c4676",
+     "file": "screens/01.jpg",
+     "share": 0.00084,
+     "sharePct": 0.08
+    },
+    {
+     "hex": "#4558c1",
+     "file": "screens/01.jpg",
+     "share": 0.00079,
+     "sharePct": 0.08
+    },
+    {
+     "hex": "#3698f2",
+     "file": "screens/01.jpg",
+     "share": 0.00032,
+     "sharePct": 0.03
+    }
+   ]
+  },
+  "inkMuted": null,
+  "accents": [
+   {
+    "hex": "#536dfe",
+    "role": "accent (primary)",
+    "score": 194,
+    "sources": [
+     "CTA background",
+     "css var --brand-c",
+     "button",
+     "background",
+     "screenshot pixels"
+    ]
+   },
+   {
+    "hex": "#241c42",
+    "role": "accent 2",
+    "score": 29,
+    "sources": [
+     "screenshot pixels"
+    ]
+   }
+  ],
+  "ctaBg": "#536dfe",
+  "link": "#93a3ff",
+  "palette": [
+   {
+    "hex": "#0b1020",
+    "role": "ground (dark theme)",
+    "share": 0.658
+   },
+   {
+    "hex": "#050811",
+    "role": "surface/ground 2",
+    "share": 0.255
+   },
+   {
+    "hex": "#93a3ff",
+    "role": "ink (headline / logo ink)",
+    "contrast": 8
+   },
+   {
+    "hex": "#a3aec2",
+    "role": "ink-soft (body copy)",
+    "contrast": 8.5
+   },
+   {
+    "hex": "#536dfe",
+    "role": "accent (primary)",
+    "sources": [
+     "CTA background",
+     "css var --brand-c",
+     "button",
+     "background",
+     "screenshot pixels"
+    ]
+   },
+   {
+    "hex": "#241c42",
+    "role": "accent 2",
+    "sources": [
+     "screenshot pixels"
+    ]
+   }
+  ],
+  "pixelPalette": [
+   {
+    "hex": "#050811",
+    "share": 0.51
+   },
+   {
+    "hex": "#161629",
+    "share": 0.355
+   },
+   {
+    "hex": "#241c42",
+    "share": 0.096
+   },
+   {
+    "hex": "#393d4e",
+    "share": 0.012
+   },
+   {
+    "hex": "#536dfd",
+    "share": 0.007
+   },
+   {
+    "hex": "#484d67",
+    "share": 0.005
+   },
+   {
+    "hex": "#686b75",
+    "share": 0.002
+   },
+   {
+    "hex": "#1f295d",
+    "share": 0.002
+   },
+   {
+    "hex": "#374393",
+    "share": 0.002
+   },
+   {
+    "hex": "#515a8f",
+    "share": 0.001
+   }
+  ],
+  "domBackgrounds": [
+   {
+    "hex": "#0b1020",
+    "share": 0.96
+   },
+   {
+    "hex": "#ffffff",
+    "share": 0.022
+   },
+   {
+    "hex": "#536dfe",
+    "share": 0.018
+   }
+  ],
+  "textColors": [
+   {
+    "hex": "#a3aec2",
+    "share": 0.525
+   },
+   {
+    "hex": "#f5f7fb",
+    "share": 0.227
+   },
+   {
+    "hex": "#93a3ff",
+    "share": 0.22
+   },
+   {
+    "hex": "#d3dae8",
+    "share": 0.018
+   },
+   {
+    "hex": "#ffffff",
+    "share": 0.01
+   }
+  ],
+  "cssVars": [
+   {
+    "name": "--brand-c",
+    "value": "#536dfe",
+    "hex": "#536dfe"
+   },
+   {
+    "name": "--brand-strong-c",
+    "value": "#6b81ff",
+    "hex": "#6b81ff"
+   },
+   {
+    "name": "--grad-a",
+    "value": "#5169f4",
+    "hex": "#5169f4"
+   },
+   {
+    "name": "--grad-b",
+    "value": "#3b52e0",
+    "hex": "#3b52e0"
+   },
+   {
+    "name": "--nm-bg",
+    "value": "#0b1020",
+    "hex": "#0b1020"
+   },
+   {
+    "name": "--tx",
+    "value": "#f5f7fb",
+    "hex": "#f5f7fb"
+   },
+   {
+    "name": "--tx-2",
+    "value": "#d3dae8",
+    "hex": "#d3dae8"
+   },
+   {
+    "name": "--tx-mute",
+    "value": "#a3aec2",
+    "hex": "#a3aec2"
+   },
+   {
+    "name": "--tx-accent",
+    "value": "#93a3ff",
+    "hex": "#93a3ff"
+   },
+   {
+    "name": "--nm-overlay",
+    "value": "#03050ca8",
+    "hex": "#03050c"
+   },
+   {
+    "name": "--fg",
+    "value": "#f5f7fb",
+    "hex": "#f5f7fb"
+   },
+   {
+    "name": "--fg-2",
+    "value": "#d3dae8",
+    "hex": "#d3dae8"
+   },
+   {
+    "name": "--muted",
+    "value": "#a3aec2",
+    "hex": "#a3aec2"
+   },
+   {
+    "name": "--accent",
+    "value": "#93a3ff",
+    "hex": "#93a3ff"
+   },
+   {
+    "name": "--danger",
+    "value": "#f1a3ad",
+    "hex": "#f1a3ad"
+   },
+   {
+    "name": "--warning",
+    "value": "#f2d48a",
+    "hex": "#f2d48a"
+   },
+   {
+    "name": "--success",
+    "value": "#7ee2bd",
+    "hex": "#7ee2bd"
+   },
+   {
+    "name": "--glass-fill-solid",
+    "value": "#181e34cc",
+    "hex": "#181e34"
+   },
+   {
+    "name": "--glass-fill-strong",
+    "value": "#0e1324f0",
+    "hex": "#0e1324"
+   }
+  ]
+ },
+ "fonts": {
+  "roles": {
+   "heading": {
+    "family": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "weight": "600",
+    "size": "48px",
+    "style": "normal",
+    "letterSpacing": "-2.16px",
+    "lineHeight": "51.84px",
+    "textTransform": "none",
+    "color": "#f5f7fb",
+    "primaryFamily": "Inter",
+    "file": null,
+    "fileWeight": null
+   },
+   "body": {
+    "family": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "weight": "400",
+    "size": "16px",
+    "style": "normal",
+    "letterSpacing": "normal",
+    "lineHeight": "28px",
+    "textTransform": "none",
+    "color": "#a3aec2",
+    "primaryFamily": "Inter",
+    "file": null,
+    "fileWeight": null
+   },
+   "button": {
+    "family": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "weight": "600",
+    "size": "14px",
+    "style": "normal",
+    "letterSpacing": "normal",
+    "lineHeight": "20px",
+    "textTransform": "none",
+    "color": "#ffffff",
+    "primaryFamily": "Inter",
+    "file": null,
+    "fileWeight": null
+   }
+  },
+  "faces": [],
+  "loadedByPage": [],
+  "mostUsed": [
+   {
+    "key": "Inter|400",
+    "weight": 4556
+   },
+   {
+    "key": "Inter|600",
+    "weight": 2918
+   },
+   {
+    "key": "Inter|500",
+    "weight": 1202
+   }
+  ],
+  "platformFonts": {
+   "h1": [
+    {
+     "family": "Inter SemiBold",
+     "custom": false,
+     "glyphs": 34
+    }
+   ],
+   "body": [
+    {
+     "family": "Inter Medium",
+     "custom": false,
+     "glyphs": 18
+    }
+   ]
+  }
+ },
+ "logo": {
+  "file": "logo/logo.svg",
+  "kind": "svg",
+  "source": "inline svg (home-link)",
+  "fills": [
+   "#ffffff"
+  ],
+  "onDark": true,
+  "favicon": "logo/favicon.svg",
+  "appIcon": "logo/app-icon.png",
+  "text": null,
+  "candidates": [
+   {
+    "score": 6,
+    "why": [
+     "home-link"
+    ],
+    "members": [
+     "svg 40x40"
+    ],
+    "lockup": false
+   }
+  ]
+ },
+ "ogImage": null,
+ "screens": [
+  {
+   "file": "screens/01.jpg",
+   "scrollY": 0
+  }
+ ],
+ "media": [],
+ "mediaDropped": [],
+ "warnings": [
+  "page is short (1080px): only 1 screenshots",
+  "heading font \"Inter\" has no downloadable file (system font or blocked)",
+  "body font \"Inter\" has no downloadable file (system font or blocked)"
+ ]
+}
