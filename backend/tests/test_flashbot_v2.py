@@ -236,3 +236,97 @@ async def test_flow_summary_and_validation_of_new_sections(client, db_session, o
     assert len(FlowDefinition.model_validate(old).offer.media_ids) == 1
     assert GROUP_ID  # shared fixture constant stays importable
     assert (await db_session.scalar(select(TgLead))).stage == "offered"
+
+
+@pytest.mark.anyio
+async def test_upsell_only_delivery_hidden_decline_and_default_delivery(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(
+        welcome=[],
+        plans=[{"id": "vip", "name": "VIP", "price": "19.90", "delivery": {"type": "upsell"}}],
+        default_delivery={"type": "default", "text": "Entrega padrão"},
+        upsells=[
+            {"name": "Extra 1", "price": "9.90", "text": "Oferta 1", "hide_decline": True},  # default delivery
+            {"name": "Extra 2", "price": "5.00", "delay_minutes": 5, "text": "Oferta 2",
+             "delivery": {"type": "default", "text": "Extra 2 ok"}},
+        ],
+    ))
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    await _pay(client, db_session, order)
+    # the "upsell" delivery hands over nothing, it only starts the sequence
+    assert "Entrega padrão" not in [m["text"] for m in apis.methods("sendMessage")]
+    await _run_jobs_now(db_session)
+    first = apis.methods("sendMessage")[-1]
+    assert first["text"] == "Oferta 1" and len(first["reply_markup"]["inline_keyboard"]) == 1  # no "no" button
+    # hidden decline: the next step is queued on its own
+    await _run_jobs_now(db_session)
+    assert apis.methods("sendMessage")[-1]["text"] == "Oferta 2"
+
+    # buying step 1 uses the flow's default delivery
+    await _send(client, db_session, bot["id"], _tap(f"up:0:{order.id.hex}"))
+    await db_session.commit()
+    up = await db_session.scalar(select(TgOrder).where(TgOrder.kind == "upsell"))
+    apis.pix_amount = 9.90
+    await _pay(client, db_session, up)
+    assert "Entrega padrão" in [m["text"] for m in apis.methods("sendMessage")]
+
+
+@pytest.mark.anyio
+async def test_delivery_can_skip_the_upsell_sequence(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(
+        welcome=[],
+        plans=[{"id": "vip", "name": "VIP", "price": "19.90", "delivery": {"type": "default", "text": "ok", "start_upsell": False}}],
+        upsells=[{"name": "Extra", "price": "9.90", "text": "Oferta", "delivery": PACK}],
+    ))
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    await _pay(client, db_session, await db_session.scalar(select(TgOrder)))
+    await db_session.commit()
+    assert not list(await db_session.scalars(select(TgJob).where(TgJob.kind == "send_upsell")))
+
+
+@pytest.mark.anyio
+async def test_downsell_audience_and_custom_offer(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(
+        welcome=[],
+        default_delivery={"type": "default", "text": "Entrega padrão"},
+        downsell_audience=["no_pix"],
+        downsells=[{"delay_minutes": 10, "text": "Só pra você",
+                    "custom_offer": {"name": "Semana VIP", "price": "7.00", "duration_days": 7}}],
+    ))
+    # started, never generated a PIX: gets the custom offer
+    await _send(client, db_session, bot["id"], _start())
+    await _run_jobs_now(db_session)
+    offer = apis.methods("sendMessage")[-1]
+    assert offer["text"] == "Só pra você"
+    assert offer["reply_markup"]["inline_keyboard"] == [[{"text": "🔥 Semana VIP · R$ 7,00", "callback_data": "dplan:0:@", "style": "success"}]]
+    await _send(client, db_session, bot["id"], _tap("dplan:0:@"))
+    assert apis.methods("pix.create")[-1]["amount"] == 7.0
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.kind == "downsell" and order.offer_name == "Semana VIP"
+    apis.pix_amount = 7.00
+    await _pay(client, db_session, order)
+    assert "Entrega padrão" in [m["text"] for m in apis.methods("sendMessage")]
+
+
+@pytest.mark.anyio
+async def test_no_pix_audience_skips_leads_who_generated_a_pix(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(welcome=[], downsell_audience=["no_pix"], downsells=[{"text": "Volta!"}]))
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))  # generated a PIX
+    before = len(apis.methods("sendMessage"))
+    await _run_jobs_now(db_session)
+    assert "Volta!" not in [m["text"] for m in apis.methods("sendMessage")[before:]]
+
+
+def test_old_downsell_trigger_maps_to_audience() -> None:
+    from app.bots.flow_schema import FlowDefinition
+
+    assert FlowDefinition.model_validate(_flow(downsell_trigger="start")).downsell_audience == ["no_pix", "pix"]
+    assert FlowDefinition.model_validate(_flow()).downsell_audience == ["pix"]

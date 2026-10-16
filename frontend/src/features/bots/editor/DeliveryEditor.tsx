@@ -4,7 +4,7 @@ import { apiRequest } from "@/services/api";
 import type { BotGroup, Delivery, OrderBump } from "../types";
 import { MediaGrid } from "./MediaGrid";
 import { BASE_VARIABLES, RichTextEditor } from "./RichTextEditor";
-import { Field, MoneyInput } from "./ui";
+import { Field, MoneyInput, Switch } from "./ui";
 
 export function useBotGroups() {
   return useQuery({
@@ -18,27 +18,41 @@ const types = [
   ["group", "Grupo/canal VIP"],
   ["pack", "Pack de mídias"],
   ["default", "Mensagem + link"],
+  ["upsell", "Sequência de upsell"],
 ] as const;
 
-export function DeliveryEditor({ value, onChange }: { value: Delivery; onChange: (next: Delivery) => void }) {
+export function DeliveryEditor({
+  value,
+  onChange,
+  allowUpsell = true,
+}: {
+  value: Delivery;
+  onChange: (next: Delivery) => void;
+  /** Offers inside the upsell sequence cannot "deliver" the sequence again. */
+  allowUpsell?: boolean;
+}) {
   const groups = useBotGroups().data?.groups ?? [];
   const set = (patch: Partial<Delivery>) => onChange({ ...value, ...patch });
+  const shownTypes = allowUpsell ? types : types.filter(([type]) => type !== "upsell");
+  if (value.type === "upsell") {
+    return (
+      <div className="grid gap-3">
+        <TypeTabs types={shownTypes} value={value.type} onPick={(type) => set({ type })} />
+        <p className="rounded-xl border border-line-soft bg-surface-inset p-3 text-sm leading-6 text-muted">
+          Depois do pagamento o robô não entrega conteúdo: ele começa direto a <b className="text-fg">sequência de upsell</b> configurada na seção Upsell.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="grid gap-3">
-      <div className="inline-flex flex-wrap gap-1 rounded-full bg-well p-1" role="tablist" aria-label="Tipo de entrega">
-        {types.map(([type, label]) => (
-          <button
-            aria-selected={value.type === type}
-            className={`min-h-9 rounded-full px-3 text-xs font-medium ${value.type === type ? "bg-brand text-white" : "text-muted"}`}
-            key={type}
-            onClick={() => set({ type })}
-            role="tab"
-            type="button"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <TypeTabs types={shownTypes} value={value.type} onPick={(type) => set({ type })} />
+      {allowUpsell && (
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
+          <span>Iniciar a sequência de upsell depois desta entrega</span>
+          <Switch checked={value.start_upsell} label="Iniciar upsell depois da entrega" onChange={(start_upsell) => set({ start_upsell })} />
+        </label>
+      )}
       {value.type === "group" && (
         <>
           <Field
@@ -104,6 +118,33 @@ export function DeliveryEditor({ value, onChange }: { value: Delivery; onChange:
   );
 }
 
+function TypeTabs({
+  types: shown,
+  value,
+  onPick,
+}: {
+  types: readonly (readonly [Delivery["type"], string])[];
+  value: Delivery["type"];
+  onPick: (type: Delivery["type"]) => void;
+}) {
+  return (
+    <div className="inline-flex flex-wrap gap-1 rounded-2xl bg-well p-1" role="tablist" aria-label="Tipo de entrega">
+      {shown.map(([type, label]) => (
+        <button
+          aria-selected={value === type}
+          className={`min-h-9 rounded-full px-3 text-xs font-medium ${value === type ? "bg-brand text-white" : "text-muted"}`}
+          key={type}
+          onClick={() => onPick(type)}
+          role="tab"
+          type="button"
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function BumpEditor({ value, onChange }: { value: OrderBump; onChange: (next: OrderBump) => void }) {
   const set = (patch: Partial<OrderBump>) => onChange({ ...value, ...patch });
   return (
@@ -133,7 +174,7 @@ export function BumpEditor({ value, onChange }: { value: OrderBump; onChange: (n
       </div>
       <div className="space-y-2">
         <p className="text-sm font-medium text-fg">Entrega do adicional</p>
-        <DeliveryEditor value={value.delivery} onChange={(delivery) => set({ delivery })} />
+        <DeliveryEditor allowUpsell={false} value={value.delivery} onChange={(delivery) => set({ delivery })} />
       </div>
     </div>
   );

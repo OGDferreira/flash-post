@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { Bold, Code, EyeOff, Italic, Quote, Strikethrough, Underline } from "lucide-react";
 
 const tools = [
@@ -37,6 +37,13 @@ export function RichTextEditor({
   hint?: string;
 }) {
   const area = useRef<HTMLTextAreaElement>(null);
+  // Grow with the copy so long texts never hide behind a scrollbar.
+  useLayoutEffect(() => {
+    const element = area.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight + 2}px`;
+  }, [value]);
 
   const apply = (before: string, after = "") => {
     const element = area.current;
@@ -74,7 +81,7 @@ export function RichTextEditor({
         </div>
         <textarea
           aria-label={label}
-          className="block w-full resize-y bg-transparent p-3 text-sm leading-6 text-fg outline-none"
+          className="block w-full resize-none overflow-hidden bg-transparent p-3 text-sm leading-6 text-fg outline-none"
           maxLength={max}
           ref={area}
           rows={rows}

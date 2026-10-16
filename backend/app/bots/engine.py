@@ -20,7 +20,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots import smokepay
-from app.bots.flow_schema import Block, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, UpsellStep
+from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, UpsellStep
 from app.bots.richtext import sanitize
 from app.bots.telegram import InputFile, TelegramClient, TelegramError
 from app.core.config import get_settings
@@ -303,7 +303,7 @@ async def start_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDe
     run += timedelta(microseconds=len(flow.welcome) + 1)
     await schedule(db, bot, "send_offer", run, f"offer:{lead.id}:{nonce}", lead)
     lead.stage = "welcome"
-    if flow.downsell_trigger == "start":
+    if "no_pix" in (flow.downsell_audience or []):
         await schedule_downsells(db, bot, lead, flow)
 
 
@@ -387,18 +387,29 @@ async def _has_paid(db: AsyncSession, lead: TgLead) -> bool:
     return bool(await db.scalar(select(TgOrder.id).where(TgOrder.lead_id == lead.id, TgOrder.status == "paid").limit(1)))
 
 
+def custom_offer_plan(index: int, offer: CustomOffer) -> Plan:
+    return Plan(id=f"ds{index}", name=offer.name, price=offer.price, duration_days=offer.duration_days, delivery=offer.delivery)
+
+
 async def send_downsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int) -> None:
     if not 0 <= index < len(flow.downsells) or await _has_paid(db, lead):
         return
+    audience = flow.downsell_audience or []
+    if "pix" not in audience and await db.scalar(select(TgOrder.id).where(TgOrder.lead_id == lead.id).limit(1)):
+        return  # aimed only at leads who never generated a PIX
     step = flow.downsells[index]
-    plans = [p for p in flow.plans if not step.plan_ids or p.id in step.plan_ids]
-    if not plans:
-        return
-    rows = [
-        [button(f"🔥 {p.name} por {brl(discounted(p.price, step))} (antes {brl(p.price)})", step.button_style,
-                callback_data=f"dplan:{index}:{p.id}")]
-        for p in plans
-    ]
+    if step.custom_offer:
+        offer = step.custom_offer
+        rows = [[button(f"🔥 {offer.name} · {brl(offer.price)}", step.button_style, callback_data=f"dplan:{index}:@")]]
+    else:
+        plans = [p for p in flow.plans if not step.plan_ids or p.id in step.plan_ids]
+        if not plans:
+            return
+        rows = [
+            [button(f"🔥 {p.name} por {brl(discounted(p.price, step))} (antes {brl(p.price)})", step.button_style,
+                    callback_data=f"dplan:{index}:{p.id}")]
+            for p in plans
+        ]
     off = f"{step.discount_value.normalize():f}%" if step.discount_type == "percent" else brl(step.discount_value)
     text = render(step.text, lead, bot=bot, extra={"{desconto}": off})
     await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, {"inline_keyboard": rows})
@@ -421,11 +432,12 @@ async def send_upsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: Tg
         return
     step = flow.upsells[index]
     text = render(step.text, lead, step.name, step.price, bot)
-    keyboard = {"inline_keyboard": [
-        [button(f"{step.accept_label} · {brl(step.price)}", step.accept_style, callback_data=f"up:{index}:{chain}")],
-        [button(step.decline_label, callback_data=f"upn:{index}:{chain}")],
-    ]}
-    await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, keyboard)
+    rows = [[button(f"{step.accept_label} · {brl(step.price)}", step.accept_style, callback_data=f"up:{index}:{chain}")]]
+    if step.hide_decline:
+        await schedule_upsell(db, bot, lead, flow, index + 1, chain)  # no "no" button: move on by time
+    else:
+        rows.append([button(step.decline_label, callback_data=f"upn:{index}:{chain}")])
+    await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, {"inline_keyboard": rows})
 
 
 async def _claim(db: AsyncSession, job: TgJob) -> bool:
@@ -603,12 +615,20 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict, flow: Flow
     if data.startswith("dplan:"):
         parts = data.split(":", 2)
         index = int(parts[1]) if len(parts) == 3 and parts[1].isdigit() else -1
+        step = flow.downsells[index] if 0 <= index < len(flow.downsells) else None
+        if step is not None and len(parts) == 3 and parts[2] == "@" and step.custom_offer:
+            await tg.answer_callback(query["id"], "Gerando seu Pix…")
+            await create_order(
+                db, tg, bot, lead, flow, custom_offer_plan(index, step.custom_offer),
+                kind="downsell", offer_id=f"ds{index}", retry=data,
+            )
+            return None
         plan = flow.plan(parts[2]) if len(parts) == 3 else None
-        if plan is None or not 0 <= index < len(flow.downsells):
+        if plan is None or step is None:
             await tg.answer_callback(query["id"], "Esta oferta não está mais disponível.")
             return None
         await tg.answer_callback(query["id"], "Gerando seu Pix…")
-        price = discounted(plan.price, flow.downsells[index])
+        price = discounted(plan.price, step)
         await create_order(
             db, tg, bot, lead, flow, plan.model_copy(update={"price": price}),
             kind="downsell", offer_id=f"{plan.id}-d{index}", retry=data,
@@ -735,7 +755,7 @@ async def create_order(
         order.net_amount = charge.net_amount
         order.pix_copy_paste = charge.copy_paste
         await schedule(db, bot, "expire_order", order.expires_at, f"expire:{order.id}", lead, {"order_id": str(order.id)})
-        if first_pix and kind == "plan" and flow.downsell_trigger == "pix":
+        if first_pix and kind == "plan" and "pix" in (flow.downsell_audience or []):
             await schedule_downsells(db, bot, lead, flow)
         await db.commit()
         qr = charge.qr_code_base64
@@ -813,11 +833,11 @@ async def approve_order(
     tg = telegram(bot)
     flow = await load_flow(db, bot)
     plan, bump, info = order_parts(order)
+    delivery = plan.delivery or (flow.default_delivery if flow else None)
     try:
         if flow:
             await tg.send_message(lead.chat_id, render(flow.payment.approved_text, lead, order.offer_name, order.amount, bot))
-        delivery = plan.delivery or (flow.default_delivery if flow else None)
-        if delivery:
+        if delivery and delivery.type != "upsell":
             await deliver(db, tg, bot, lead, order, plan, delivery)
         if bump:
             await deliver(db, tg, bot, lead, order, plan.model_copy(update={"name": bump.name}), bump.delivery)
@@ -828,7 +848,7 @@ async def approve_order(
     if flow and flow.upsells:
         if info.get("kind") == "upsell":
             await schedule_upsell(db, bot, lead, flow, int(info.get("step") or 0) + 1, str(info.get("chain") or order.id.hex))
-        else:
+        elif delivery is None or delivery.type == "upsell" or delivery.start_upsell:
             await schedule_upsell(db, bot, lead, flow, 0, order.id.hex)
     await db.commit()
     await notify_owners(

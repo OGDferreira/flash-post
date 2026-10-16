@@ -1267,3 +1267,10 @@ html[data-motion="off"] .glass-panel:hover { transform: none; }
 .app-header-btn:active { transform: scale(0.94); }
 .app-header-btn:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .app-header-btn { transition: none; } }
+
+/* Native dropdown lists follow the app theme (Windows/Chrome otherwise showed light text on a light list). */
+select option,
+select optgroup {
+  background-color: var(--nm-bg);
+  color: var(--fg, #e9edf5);
+}
