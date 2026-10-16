@@ -45,6 +45,11 @@ class TgFlow(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     definition: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    template_flow_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="SET NULL")
+    )
+    customized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -167,6 +172,7 @@ class TgOrder(Base):
     __table_args__ = (
         Index("ix_tg_orders_workspace_created", "workspace_id", "created_at"),
         Index("ix_tg_orders_status_expires", "status", "expires_at"),
+        Index("ix_tg_orders_split_chief", "split_chief_user_id", "paid_at"),
         UniqueConstraint("gateway", "gateway_transaction_id", name="uq_tg_orders_gateway_tx"),
     )
 
@@ -191,6 +197,14 @@ class TgOrder(Base):
     gateway_transaction_id: Mapped[str | None] = mapped_column(String(64))
     gateway_fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     net_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    # Partner split, fixed when the PIX is created (server-side percentage).
+    shop_ref: Mapped[str | None] = mapped_column(String(64))
+    split_chief_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    split_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    split_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    partner_net: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     pix_copy_paste: Mapped[str | None] = mapped_column(Text)
     # pending -> paid | expired | review (amount mismatch) | failed (gateway error)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")

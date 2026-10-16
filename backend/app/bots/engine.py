@@ -24,6 +24,7 @@ from app.bots import smokepay
 from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, UpsellStep
 from app.bots.richtext import sanitize
 from app.bots.telegram import InputFile, TelegramClient, TelegramError
+from app.partners.service import billing_route
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value
 from app.core.time import BRAZIL_TIME_ZONE
@@ -766,6 +767,10 @@ async def create_order(
         )
         db.add(order)
         await db.flush()
+        route = await billing_route(db, bot.workspace_id)
+        order.shop_ref = route.shop_ref
+        order.split_chief_user_id = route.chief_user_id
+        order.split_percent = route.percent
         try:
             charge = await smokepay.create_pix(
                 amount=amount,
@@ -773,6 +778,8 @@ async def create_order(
                 description=f"{bot.name} · {name}",
                 webhook_url=payment_webhook_url(),
                 expiration_seconds=flow.payment.expiration_minutes * 60,
+                shop_id=route.shop_ref,
+                splits=route.splits,
             )
         except smokepay.SmokepayError as exc:
             order.status = "failed"
@@ -784,6 +791,10 @@ async def create_order(
         order.gateway_transaction_id = charge.transaction_id or None
         order.gateway_fee = charge.fee
         order.net_amount = charge.net_amount
+        if route.percent is not None:
+            commission, partner = route.preview(charge.net_amount)
+            order.split_amount = charge.split_total if charge.split_total is not None else commission
+            order.partner_net = charge.owner_net if charge.owner_net is not None else partner
         order.pix_copy_paste = charge.copy_paste
         await schedule(db, bot, "expire_order", order.expires_at, f"expire:{order.id}", lead, {"order_id": str(order.id)})
         if first_pix and kind == "plan" and "pix" in (flow.downsell_audience or []):
@@ -879,6 +890,9 @@ async def approve_order(
     if result.rowcount != 1:
         return False
     await db.refresh(order)
+    if order.split_percent is not None and order.net_amount is not None and order.partner_net is None:
+        commission = (order.net_amount * order.split_percent / Decimal(100)).quantize(Decimal("0.01"))
+        order.split_amount, order.partner_net = commission, order.net_amount - commission
     bot = await db.get(TgBot, order.bot_id)
     lead = await db.get(TgLead, order.lead_id)
     if bot is None or lead is None:

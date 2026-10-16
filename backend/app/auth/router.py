@@ -23,6 +23,7 @@ from app.core.nickname import nickname_key, normalize_nickname
 from app.core.rate_limit import LoginRateLimiter
 from app.core.security import PlatformRole, WorkspaceRole, hash_password, verify_password
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
+from app.partners.service import partner_link
 from app.affiliates.router import find_chief
 from app.models import Affiliation, User, Workspace, WorkspaceMember
 from app.schemas.auth import (
@@ -186,6 +187,7 @@ async def register(
         is_active=True,
         is_verified=False,
         is_approved=False,
+        invited_by_user_id=chief.id if chief is not None else None,
     )
     db.add(user)
     try:
@@ -205,8 +207,10 @@ async def register(
             status="ACTIVE",
         )
         db.add(membership)
-        if chief is not None:
-            # New user: no self-link or loop is possible.
+        if chief is not None and not await partner_link(db, chief.id):
+            # New user: no self-link or loop is possible. A partner's invite only
+            # records who invited (``invited_by_user_id``); it never creates a
+            # partnership, and the sign-up still waits for Super Admin approval.
             db.add(Affiliation(chief_user_id=chief.id, affiliate_user_id=user.id))
         await db.commit()
     except IntegrityError:

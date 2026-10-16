@@ -30,6 +30,7 @@ from app.models.instagram_loop import (
 )
 from app.models.user import User
 from app.models.affiliation import Affiliation
+from app.models.app_notification import AppNotification
 from app.models.shark_account import SharkAccount
 from app.models.extension import Extension
 from app.models.support import SupportTicket
@@ -57,6 +58,7 @@ from app.models.telegram_bot import (
 )
 
 __all__ = [
+    "AppNotification",
     "TgBot",
     "TgFlow",
     "TgGroup",

@@ -121,6 +121,23 @@ class SupabaseStorage:
             raise SupabaseStorageError("Supabase Storage returned an unsafe signed URL.")
         return signed_url
 
+    async def copy(self, source: str, destination: str) -> None:
+        """Server-side copy inside the bucket (partner template copies)."""
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            response = await client.post(
+                f"{self.base_url}/storage/v1/object/copy",
+                headers={**self.headers, "Content-Type": "application/json"},
+                json={
+                    "bucketId": MEDIA_BUCKET,
+                    "sourceKey": self.normalize_path(source),
+                    "destinationKey": self.normalize_path(destination),
+                },
+            )
+        if response.is_error:
+            raise SupabaseStorageError(
+                f"Supabase Storage could not copy the media (HTTP {response.status_code})."
+            )
+
     async def delete(self, path: str) -> None:
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
             response = await client.delete(

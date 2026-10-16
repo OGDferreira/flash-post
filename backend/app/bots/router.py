@@ -23,7 +23,8 @@ from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import encrypt_value
 from app.core.database import get_session_factory
-from app.models import TgBot, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen
+from app.models import TgBot, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
+from app.partners.service import notify_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/bots", tags=["Bots"])
@@ -94,6 +95,8 @@ def _flow_out(flow: TgFlow, bots: int = 0) -> dict:
         "version": flow.version,
         "bots": bots,
         "updated_at": flow.updated_at.isoformat() if flow.updated_at else None,
+        "shared": bool(flow.shared),
+        "from_template": flow.template_flow_id is not None,
     }
 
 
@@ -301,9 +304,36 @@ async def save_flow(flow_id: uuid.UUID, payload: FlowUpdate, access: OwnerAccess
     flow.name = payload.name.strip()
     flow.definition = definition.model_dump(mode="json")
     flow.version += 1
+    await _notify_template_change(db, flow, access.workspace.id)
     await db.commit()
     await db.refresh(flow)  # updated_at is set by the database (onupdate)
     return _flow_out(flow)
+
+
+async def _notify_template_change(db, flow: TgFlow, workspace_id: uuid.UUID) -> None:
+    """A partner changed their copy of a shared funnel: tell the chief (at most hourly).
+    The chief's original is never touched."""
+    if flow.template_flow_id is None:
+        return
+    now = engine.utcnow()
+    last = flow.customized_at
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    flow.customized_at = now
+    if last is not None and now - last < timedelta(hours=1):
+        return
+    template = await db.get(TgFlow, flow.template_flow_id)
+    if template is None or template.workspace_id == workspace_id:
+        return
+    chief_workspace = await db.get(Workspace, template.workspace_id)
+    partner_workspace = await db.get(Workspace, workspace_id)
+    partner = await db.get(User, partner_workspace.owner_id) if partner_workspace else None
+    if chief_workspace is None or partner is None:
+        return
+    await notify_user(
+        db, chief_workspace.owner_id, "partner-flow-changed", "Sócio alterou um funil",
+        f"{partner.full_name} personalizou a cópia do funil “{template.name}”. O seu original não mudou.", "/afiliados",
+    )
 
 
 @router.post("/flows/{flow_id}/duplicate", status_code=201, dependencies=csrf)

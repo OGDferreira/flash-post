@@ -15,6 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin.notifications import router as admin_notifications_router
 from app.admin.router import router as admin_router
+from app.admin.operations import router as admin_operations_router
 from app.analytics.bots import router as bot_performance_router
 from app.analytics.media import router as publication_insights_router
 from app.analytics.router import router as analytics_router
@@ -41,6 +42,7 @@ from app.notifications.router import router as notifications_router
 from app.shark.router import router as shark_router
 from app.smokepay.router import router as smokepay_router
 from app.affiliates.router import router as affiliates_router
+from app.partners.router import router as partners_router
 from app.extensions.router import router as extensions_router
 from app.support.router import router as support_router
 from app.workers.scheduler_service import create_scheduler
@@ -146,6 +148,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(bots_router)
     application.include_router(admin_notifications_router)
     application.include_router(admin_router)
+    application.include_router(admin_operations_router)
     application.include_router(analytics_router)
     application.include_router(bot_performance_router)
     application.include_router(publication_insights_router)
@@ -164,6 +167,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(legal_router)
     application.include_router(notifications_router)
     application.include_router(affiliates_router)
+    application.include_router(partners_router)
     application.include_router(extensions_router)
     application.include_router(support_router)
 

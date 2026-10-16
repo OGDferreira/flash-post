@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import DbSession, SuperAdminUser, require_csrf
 from app.models import (
+    Affiliation,
     CollaboratorPayment,
     CollaboratorWorkDay,
     InstagramAccount,
@@ -111,6 +112,15 @@ async def list_users(
             .limit(page_size)
         )
     ).all()
+    ids = [user.id for user, _role, _ws in rows]
+    links = {
+        link.affiliate_user_id: link
+        for link in await db.scalars(select(Affiliation).where(Affiliation.status == "ACTIVE"))
+    }
+    chief_ids = {link.chief_user_id for link in links.values()}
+    related = {link.chief_user_id for uid, link in links.items() if uid in ids}
+    related |= {user.invited_by_user_id for user, _r, _w in rows if user.invited_by_user_id}
+    names = dict((await db.execute(select(User.id, User.full_name).where(User.id.in_(related or {uuid.uuid4()})))).all())
     items = [
         AdminUser(
             id=user.id,
@@ -126,6 +136,9 @@ async def list_users(
             workspace_name=workspace,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
+            hierarchy="partner" if user.id in links else "chief" if user.id in chief_ids else "independent",
+            chief_name=names.get(links[user.id].chief_user_id) if user.id in links else None,
+            invited_by_name=names.get(user.invited_by_user_id),
         )
         for user, resolved_role, workspace in rows
     ]

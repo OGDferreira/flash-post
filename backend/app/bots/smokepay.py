@@ -38,6 +38,8 @@ class PixCharge:
     qr_code_base64: str | None
     expires_at: str | None
     payer_name: str | None = None
+    split_total: Decimal | None = None  # sum of splits_preview amounts
+    owner_net: Decimal | None = None  # what stays in the charging subaccount
 
 
 def _api_key() -> str:
@@ -54,6 +56,9 @@ def _money(value: object) -> Decimal | None:
 
 
 def _charge(data: dict) -> PixCharge:
+    preview = data.get("splits_preview") or data.get("splits") or {}
+    parts = preview.get("splits") or preview.get("details") or [] if isinstance(preview, dict) else []
+    amounts = [_money(p.get("amount")) for p in parts if isinstance(p, dict) and p.get("amount") is not None]
     return PixCharge(
         transaction_id=str(data.get("id") or data.get("transaction_id") or ""),
         external_id=str(data.get("external_id") or ""),
@@ -65,6 +70,8 @@ def _charge(data: dict) -> PixCharge:
         qr_code_base64=data.get("qr_code_base64"),
         expires_at=data.get("expires_at"),
         payer_name=data.get("payer_name"),
+        split_total=sum(amounts, Decimal("0.00")) if amounts else None,
+        owner_net=_money(preview.get("owner_net_amount")) if isinstance(preview, dict) else None,
     )
 
 
@@ -97,20 +104,26 @@ async def _request(method: str, path: str, json_body: dict | None = None) -> dic
 
 
 async def create_pix(
-    *, amount: Decimal, external_id: str, description: str, webhook_url: str, expiration_seconds: int
+    *, amount: Decimal, external_id: str, description: str, webhook_url: str, expiration_seconds: int,
+    shop_id: str | None = None, splits: list[dict] | None = None,
 ) -> PixCharge:
-    """Idempotent on ``external_id``: retries with the same id never create a second charge."""
-    body = await _request(
-        "POST",
-        "/api/pix/create",
-        {
-            "amount": float(amount.quantize(Decimal("0.01"))),
-            "external_id": external_id,
-            "description": description[:120],
-            "webhook_url": webhook_url,
-            "expiration": int(expiration_seconds),
-        },
-    )
+    """Idempotent on ``external_id``: retries with the same id never create a second charge.
+
+    ``shop_id`` charges into that subaccount (SmokePay creates it on first use);
+    ``splits`` divides the net between subaccounts/parent, applied by SmokePay itself.
+    """
+    payload: dict = {
+        "amount": float(amount.quantize(Decimal("0.01"))),
+        "external_id": external_id,
+        "description": description[:120],
+        "webhook_url": webhook_url,
+        "expiration": int(expiration_seconds),
+    }
+    if shop_id:
+        payload["shop_id"] = shop_id
+        if splits:
+            payload["splits"] = splits
+    body = await _request("POST", "/api/pix/create", payload)
     return _charge(body.get("transaction") or {})
 
 
