@@ -139,9 +139,21 @@ export function BotsListPanel() {
   );
 }
 
-function ConnectBotModal({ open, flows, onClose, onDone }: { open: boolean; flows: Flow[]; onClose: () => void; onDone: () => void }) {
+export function ConnectBotModal({
+  open,
+  flows,
+  onClose,
+  onDone,
+  defaultFlowId = "",
+}: {
+  open: boolean;
+  flows: Flow[];
+  onClose: () => void;
+  onDone: () => void;
+  defaultFlowId?: string;
+}) {
   const [token, setToken] = useState("");
-  const [flowId, setFlowId] = useState("");
+  const [flowId, setFlowId] = useState(defaultFlowId);
   const connect = useMutation({
     mutationFn: () => apiRequest<Bot>("/api/bots", { method: "POST", body: { token: token.trim(), flow_id: flowId || null } }),
     onSuccess: () => {

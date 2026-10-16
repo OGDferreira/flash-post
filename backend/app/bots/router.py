@@ -23,7 +23,7 @@ from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import encrypt_value
 from app.core.database import get_session_factory
-from app.models import TgBot, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgUpdateSeen
+from app.models import TgBot, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/bots", tags=["Bots"])
@@ -78,11 +78,19 @@ def _bot_out(bot: TgBot, stats: dict | None = None) -> dict:
     }
 
 
+def _definition_out(raw: dict) -> dict:
+    """Older flows lack the newer keys; hand the editor the full shape with defaults."""
+    try:
+        return FlowDefinition.model_validate(raw).model_dump(mode="json")
+    except ValidationError:
+        return raw
+
+
 def _flow_out(flow: TgFlow, bots: int = 0) -> dict:
     return {
         "id": str(flow.id),
         "name": flow.name,
-        "definition": flow.definition,
+        "definition": _definition_out(flow.definition),
         "version": flow.version,
         "bots": bots,
         "updated_at": flow.updated_at.isoformat() if flow.updated_at else None,
@@ -261,6 +269,22 @@ async def create_flow(payload: FlowCreate, access: OwnerAccess, db: DbSession) -
 @router.get("/flows/{flow_id}")
 async def get_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
     return _flow_out(await _owned(db, TgFlow, flow_id, access))
+
+
+@router.get("/flows/{flow_id}/summary")
+async def flow_summary(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
+    """Leads, active VIPs and revenue of one flow (all time), like the editor's header card."""
+    flow = await _owned(db, TgFlow, flow_id, access)
+    leads = await db.scalar(select(func.count(TgLead.id)).where(TgLead.flow_id == flow.id))
+    vips = await db.scalar(
+        select(func.count(func.distinct(TgSubscription.lead_id)))
+        .join(TgLead, TgLead.id == TgSubscription.lead_id)
+        .where(TgLead.flow_id == flow.id, TgSubscription.status == "active")
+    )
+    revenue = await db.scalar(
+        select(func.coalesce(func.sum(TgOrder.amount), 0)).where(TgOrder.flow_id == flow.id, TgOrder.status == "paid")
+    )
+    return {"leads": int(leads or 0), "vips": int(vips or 0), "revenue": f"{Decimal(revenue or 0):.2f}"}
 
 
 @router.put("/flows/{flow_id}", dependencies=csrf)
