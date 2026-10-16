@@ -26,6 +26,7 @@ import {
   formatConnectedDuration,
 } from "@/features/instagram/accountDates";
 import { confirmAction } from "@/lib/confirm";
+import { ShareLoopButton, SharedLoopsSection } from "@/features/partners/SharedTemplates";
 import { type InstagramMedia, type InstagramMediaResponse, type InstagramFoldersResponse, type InstagramLoop, type InstagramLoopsResponse, type PublicationFailuresResponse, groupFailuresByAccount, type LoopForm, emptyForm, MAX_UPLOAD_BYTES, formatDate, apiErrorMessage, mediaFitsLoop, fileFitsLoop } from "@/pages/loops/loopShared";
 
 export function LoopsPage() {
@@ -253,6 +254,7 @@ export function LoopsPage() {
           </button>
         )}
       </header>
+      {loops.data.can_configure && <SharedLoopsSection />}
 
       {!loops.data.publishing_enabled ? (
         <div className="rounded-lg border border-warning/30 bg-warning-soft p-4 text-sm text-warning">
@@ -964,6 +966,7 @@ export function LoopsPage() {
                 </div>
                 {loops.data.can_manage && (
                   <div className="flex shrink-0 items-start gap-1">
+                    {loops.data.can_configure && <ShareLoopButton loop={loop} />}
                     {loops.data.can_configure && (
                       <button
                         className="grid size-9 place-items-center rounded-lg border border-line text-fg-2 hover:bg-surface-raised disabled:opacity-50"

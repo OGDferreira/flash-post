@@ -16,6 +16,8 @@ import {
   type MetricsPeriod,
 } from "@/features/analytics/period";
 import { ApiError, apiRequest } from "@/services/api";
+import { brl, type Operations } from "@/features/partners/api";
+import { NoticesCard, SalesTable, TotalsGrid } from "@/features/partners/PartnerPanel";
 import { confirmAction } from "@/lib/confirm";
 
 type Row = {
@@ -36,6 +38,11 @@ type Row = {
   lead_to_purchase_rate: number | null;
   average_ticket: string | null;
   participation_amount: string;
+  accepted_percent: string | null;
+  pending_acceptance: boolean;
+  bot_revenue: string;
+  bot_sales: number;
+  commission_received: string;
 };
 
 type Listing = {
@@ -83,8 +90,8 @@ function InviteCard() {
         <div>
           <h3 className="text-base font-semibold text-fg">Seu código de convite</h3>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-muted">
-            Quem se cadastrar (ou informar o código no perfil) com este código vira seu filiado. Você define a porcentagem
-            de participação de cada um e acompanha as métricas deles aqui. Filiados não veem seus dados.
+            Quem se cadastrar (ou informar o código no perfil) com este código vira seu sócio. Você define a comissão de cada
+            um; ela só passa a valer depois que o sócio aceitar. Sócios não veem seus dados, contas nem robôs.
           </p>
         </div>
         <button
@@ -123,7 +130,7 @@ function PercentEditor({ row, period }: { row: Row; period: MetricsPeriod }) {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["affiliates"] }),
   });
   const numeric = Number(value.replace(",", "."));
-  const valid = value.trim() !== "" && Number.isFinite(numeric) && numeric >= 0 && numeric <= 100;
+  const valid = value.trim() !== "" && Number.isFinite(numeric) && numeric >= 0 && numeric <= 99;
   const dirty = valid && numeric !== Number(row.participation_percent);
   return (
     <div className="flex items-center justify-end gap-1.5">
@@ -201,10 +208,60 @@ function DetailModal({ id, period, onClose }: { id: string | null; period: Metri
               </ul>
             )}
           </div>
+          {id && <PartnerOperations id={id} period={period} />}
           <p className="rounded-xl border border-line-soft bg-surface-inset p-3 text-[11px] leading-5 text-muted">{data.criteria.participation}</p>
         </div>
       )}
     </Modal>
+  );
+}
+
+function PartnerOperations({ id, period }: { id: string; period: MetricsPeriod }) {
+  const ops = useQuery({
+    queryKey: ["partners", "operations", id, periodParams(period)],
+    queryFn: () => apiRequest<Operations>(`/api/partners/${id}/operations?${new URLSearchParams(periodParams(period))}`),
+  });
+  if (ops.isLoading) return <div aria-busy="true" className="skeleton h-24" />;
+  if (!ops.data) return null;
+  const data = ops.data;
+  const list = (title: string, rows: { key: string; left: string; right: string }[]) => (
+    <div>
+      <h4 className="text-sm font-medium text-fg">{title} ({rows.length})</h4>
+      {rows.length === 0 ? (
+        <p className="mt-1 text-xs text-muted">Nenhum.</p>
+      ) : (
+        <ul className="mt-2 divide-y divide-[color:var(--color-line-soft)] rounded-xl border border-line-soft">
+          {rows.map((row) => (
+            <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs" key={row.key}>
+              <span className="text-fg">{row.left}</span>
+              <span className="text-muted">{row.right}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+  return (
+    <div className="space-y-4">
+      <h4 className="text-sm font-semibold text-fg">Operação do sócio (FlashBot)</h4>
+      {data.totals && <TotalsGrid commissionLabel="Sua comissão" netLabel="Líquido do sócio" totals={data.totals} />}
+      {list("Robôs", data.bots.map((b) => ({
+        key: b.id, left: `${b.name} · @${b.username}`,
+        right: `${b.is_active ? b.status : "pausado"} · ${b.flow_name ?? "sem funil"} · ${b.leads} leads · ${b.sales} vendas · ${brl(b.revenue)}`,
+      })))}
+      {list("Funis", data.flows.map((f) => ({
+        key: f.id, left: f.name,
+        right: f.from_template ? (f.customized_at ? `cópia do seu modelo, alterada em ${new Date(f.customized_at).toLocaleDateString("pt-BR")}` : "cópia do seu modelo") : "próprio",
+      })))}
+      {list("Loops", data.loops.map((l) => ({
+        key: l.id, left: l.name,
+        right: `${l.status === "active" ? "ativo" : "pausado"} · ${l.accounts} conta(s) · ${l.posts} posts${l.from_template ? " · do seu modelo" : ""}`,
+      })))}
+      <div>
+        <h4 className="mb-2 text-sm font-medium text-fg">Últimas vendas</h4>
+        <SalesTable sales={data.sales} />
+      </div>
+    </div>
   );
 }
 
@@ -231,27 +288,30 @@ export function AffiliatesPage() {
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Rede</p>
           <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
-            <Handshake className="text-accent" size={26} /> Filiados
+            <Handshake className="text-accent" size={26} /> Sócios
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Acompanhe as contas e as vendas do SharkBot de quem entrou pelo seu convite e veja sua participação.
+            Acompanhe contas, robôs, funis, vendas e a comissão recebida de cada sócio. Clique no nome para ver a operação dele.
           </p>
         </div>
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>
 
       <InviteCard />
+      <NoticesCard />
 
       {list.isLoading && <LoadingState label="Carregando filiados" />}
       {list.error && <ErrorState message={errorText(list.error)} onRetry={() => void list.refetch()} />}
       {data && (
         <>
           <section className="glass-panel p-4 sm:p-4">
-            <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <dl className="grid grid-cols-2 gap-2 sm:grid-cols-5">
               {[
-                ["Filiados", formatNumber(data.rows.length)],
-                ["Receita dos filiados", money(data.totals_revenue)],
-                ["Sua participação (referência)", money(data.totals_participation)],
+                ["Sócios", formatNumber(data.rows.length)],
+                ["Vendas FlashBot dos sócios", money(data.rows.reduce((sum, row) => sum + Number(row.bot_revenue), 0).toFixed(2))],
+                ["Comissão recebida", money(data.rows.reduce((sum, row) => sum + Number(row.commission_received), 0).toFixed(2))],
+                ["Receita SharkBot", money(data.totals_revenue)],
+                ["Participação SharkBot (referência)", money(data.totals_participation)],
               ].map(([title, value]) => (
                 <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={title}>
                   <dt className="text-[11px] text-muted">{title}</dt>
@@ -265,20 +325,21 @@ export function AffiliatesPage() {
             </p>
           </section>
           {data.rows.length === 0 ? (
-            <EmptyState message="Você ainda não tem filiados. Compartilhe seu código ou link de cadastro." />
+            <EmptyState message="Você ainda não tem sócios. Compartilhe seu código ou link de cadastro." />
           ) : (
             <div className="glass-panel overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-xs">
+              <table className="w-full min-w-[1000px] text-left text-xs">
                 <thead className="text-muted">
                   <tr className="border-b border-line-soft">
-                    <th className="px-4 py-3 font-medium">Filiado</th>
+                    <th className="px-4 py-3 font-medium">Sócio</th>
                     <th className="px-2 py-3 text-right font-medium">Contas</th>
                     <th className="px-2 py-3 text-right font-medium">Publicações</th>
                     <th className="px-2 py-3 text-right font-medium">Leads</th>
                     <th className="px-2 py-3 text-right font-medium">Compras</th>
                     <th className="px-2 py-3 text-right font-medium">Receita</th>
-                    <th className="px-2 py-3 text-right font-medium">Participação</th>
-                    <th className="px-2 py-3 text-right font-medium">% definida</th>
+                    <th className="px-2 py-3 text-right font-medium">FlashBot</th>
+                    <th className="px-2 py-3 text-right font-medium">Comissão recebida</th>
+                    <th className="px-2 py-3 text-right font-medium">Comissão (%)</th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
@@ -296,8 +357,16 @@ export function AffiliatesPage() {
                       <td className="px-2 py-3 text-right text-fg">{formatNumber(row.leads)}</td>
                       <td className="px-2 py-3 text-right text-fg">{formatNumber(row.purchases)}</td>
                       <td className="px-2 py-3 text-right font-semibold text-success">{money(row.revenue)}</td>
-                      <td className="px-2 py-3 text-right font-semibold text-fg">{money(row.participation_amount)}</td>
-                      <td className="px-2 py-3"><PercentEditor key={`${row.id}-${row.participation_percent}`} period={period} row={row} /></td>
+                      <td className="px-2 py-3 text-right text-fg">{money(row.bot_revenue)}<span className="block text-[10px] text-muted">{row.bot_sales} venda(s)</span></td>
+                      <td className="px-2 py-3 text-right font-semibold text-fg">{money(row.commission_received)}</td>
+                      <td className="px-2 py-3">
+                        <PercentEditor key={`${row.id}-${row.participation_percent}`} period={period} row={row} />
+                        <p className={`mt-1 text-right text-[10px] ${row.pending_acceptance ? "text-warning" : "text-muted"}`}>
+                          {row.pending_acceptance
+                            ? row.accepted_percent === null ? "aguardando aceite" : `aguardando aceite · vale ${percent(row.accepted_percent)}%`
+                            : "aceita pelo sócio"}
+                        </p>
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <button
                           aria-label={`Remover ${row.full_name}`}

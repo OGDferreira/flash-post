@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Blocks,
   Bot,
   Bug,
@@ -32,6 +33,7 @@ export const adminLinks: NavItem[] = [
   { label: "Visão geral", to: "/admin", icon: Home },
   { label: "Usuários", to: "/admin/users", icon: Users },
   { label: "Workspaces", to: "/admin/workspaces", icon: Blocks },
+  { label: "Operações", to: "/admin/operations", icon: BarChart3 },
   { label: "Notificações", to: "/admin/notifications", icon: BellRing },
   { label: "Sistema", to: "/admin/system", icon: Settings2 },
 ];
@@ -85,7 +87,7 @@ const ownerGroups: NavGroup[] = [
     icon: UsersRound,
     items: [
       { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
-      { label: "Filiados", to: "/feature/affiliates", icon: Handshake },
+      { label: "Sócios", to: "/feature/affiliates", icon: Handshake },
     ],
   },
   {

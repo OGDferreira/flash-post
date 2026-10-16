@@ -3,10 +3,12 @@ import { useState } from "react";
 import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
 import { BotsListPanel } from "@/features/bots/BotsListPanel";
 import { FlowsPanel } from "@/features/bots/FlowsPanel";
+import { SharedFlowsPanel } from "@/features/partners/SharedTemplates";
 
 const tabs = [
-  { id: "bots", label: "Meus robôs" },
-  { id: "flows", label: "Fluxos" },
+  { id: "bots", label: "Meus bots" },
+  { id: "flows", label: "Meus funis" },
+  { id: "shared", label: "Funis compartilhados" },
   { id: "sales", label: "Vendas" },
 ] as const;
 
@@ -27,11 +29,11 @@ export function BotsPage() {
               Seus robôs de venda no Telegram: conecte, monte o funil de cada um e acompanhe as vendas no Pix em tempo real.
             </p>
           </header>
-          <div className="inline-flex gap-1 rounded-full bg-well p-1" role="tablist" aria-label="Seções dos robôs">
+          <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-full bg-well p-1" role="tablist" aria-label="Seções dos robôs">
             {tabs.map((item) => (
               <button
                 aria-selected={tab === item.id}
-                className={`min-h-10 rounded-full px-4 text-sm font-medium ${tab === item.id ? "bg-brand text-white" : "text-muted"}`}
+                className={`min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-sm font-medium ${tab === item.id ? "bg-brand text-white" : "text-muted"}`}
                 key={item.id}
                 onClick={() => setTab(item.id)}
                 role="tab"
@@ -45,6 +47,7 @@ export function BotsPage() {
       )}
       {tab === "bots" && <BotsListPanel />}
       {tab === "flows" && <FlowsPanel onEditingChange={setEditing} />}
+      {tab === "shared" && <SharedFlowsPanel />}
       {tab === "sales" && <BotSalesPanel />}
     </div>
   );

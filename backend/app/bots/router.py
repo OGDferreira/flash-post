@@ -332,7 +332,7 @@ async def _notify_template_change(db, flow: TgFlow, workspace_id: uuid.UUID) -> 
         return
     await notify_user(
         db, chief_workspace.owner_id, "partner-flow-changed", "Sócio alterou um funil",
-        f"{partner.full_name} personalizou a cópia do funil “{template.name}”. O seu original não mudou.", "/afiliados",
+        f"{partner.full_name} personalizou a cópia do funil “{template.name}”. O seu original não mudou.", "/feature/affiliates",
     )
 
 

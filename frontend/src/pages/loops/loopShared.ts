@@ -39,6 +39,8 @@ export type InstagramLoop = {
   post_type: "reels" | "images" | "both";
   repeat_media: boolean;
   status: "active" | "paused";
+  shared?: boolean;
+  from_template?: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
   auto_folder_ids?: string[];

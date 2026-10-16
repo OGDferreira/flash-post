@@ -123,6 +123,8 @@ export type Flow = {
   version: number;
   bots: number;
   updated_at: string | null;
+  shared?: boolean;
+  from_template?: boolean;
 };
 
 export type Bot = {

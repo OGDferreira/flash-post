@@ -122,7 +122,13 @@ export function AdminUsersPage() {
                         <p className="font-medium text-fg">{user.full_name}</p>
                         <p className="mt-1 text-xs text-muted">{user.email}</p>
                       </td>
-                      <td className="px-4 py-4 text-fg-2">{user.role}</td>
+                      <td className="px-4 py-4 text-fg-2">
+                        {user.role}
+                        <span className="mt-1 block text-xs text-muted">
+                          {user.hierarchy === "chief" ? "Chefe" : user.hierarchy === "partner" ? `Sócio de ${user.chief_name ?? "—"}` : "Independente"}
+                          {user.invited_by_name && ` · convidado por ${user.invited_by_name}`}
+                        </span>
+                      </td>
                       <td className="px-4 py-4">
                         <span
                           className={`rounded-md border px-2 py-1 text-xs ${

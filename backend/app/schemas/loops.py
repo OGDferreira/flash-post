@@ -75,6 +75,8 @@ class InstagramLoopResponse(BaseModel):
     post_type: Literal["reels", "images", "both"]
     repeat_media: bool
     status: Literal["active", "paused"]
+    shared: bool = False
+    from_template: bool = False
     next_run_at: datetime | None
     last_run_at: datetime | None
     auto_folder_ids: list[UUID] = []

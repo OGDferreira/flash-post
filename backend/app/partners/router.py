@@ -137,7 +137,7 @@ async def accept_commission(payload: AcceptRequest, user: AuthenticatedUser, db:
     link.accepted_at = utc_now()
     await service.notify_user(
         db, link.chief_user_id, "partner-accepted", "Sócio aceitou a comissão",
-        f"{user.full_name} aceitou {link.participation_percent}% de comissão. Vale para as próximas vendas.", "/afiliados",
+        f"{user.full_name} aceitou {float(link.participation_percent):g}% de comissão. Vale para as próximas vendas.", "/feature/affiliates",
     )
     await db.commit()
     return {"accepted_percent": _f(link.accepted_percent), "accepted_at": link.accepted_at.isoformat()}

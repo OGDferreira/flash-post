@@ -506,7 +506,7 @@ async def set_participation(
         # The accepted percentage keeps applying until the partner accepts the new one.
         await notify_user(
             db, affiliate.id, "partner-commission", "Nova comissão para aceitar",
-            f"{user.full_name} propôs {payload.participation_percent}% de comissão. "
+            f"{user.full_name} propôs {float(payload.participation_percent):g}% de comissão. "
             "Ela só vale para as próximas vendas depois do seu aceite.", "/",
         )
     await db.commit()

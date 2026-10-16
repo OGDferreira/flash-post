@@ -192,6 +192,9 @@ export type AdminUser = {
   workspace_name: string | null;
   created_at: string;
   last_login_at: string | null;
+  hierarchy?: "chief" | "partner" | "independent";
+  chief_name?: string | null;
+  invited_by_name?: string | null;
 };
 
 export type AdminWorkspace = {

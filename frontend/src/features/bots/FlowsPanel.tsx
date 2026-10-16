@@ -61,7 +61,11 @@ export function FlowsPanel({ onEditingChange }: { onEditingChange?: (editing: bo
             <Card key={flow.id} className="space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
-                <Badge tone={flow.bots ? "brand" : "neutral"}>{flow.bots ? `${flow.bots} robô(s)` : "Sem robô"}</Badge>
+                <span className="flex shrink-0 gap-1">
+                  {flow.from_template && <Badge tone="warning">Modelo do chefe</Badge>}
+                  {flow.shared && <Badge tone="success">Compartilhado</Badge>}
+                  <Badge tone={flow.bots ? "brand" : "neutral"}>{flow.bots ? `${flow.bots} robô(s)` : "Sem robô"}</Badge>
+                </span>
               </div>
               <p className="text-xs text-muted">
                 {flow.definition.offer.media_ids.length} mídia(s) na boas-vindas ·{" "}
