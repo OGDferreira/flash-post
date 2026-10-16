@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Receipt, Trash2 } from "lucide-react";
 
-import { useFinanceMonth } from "@/components/MonthResultCards";
+import { MonthTrend, useFinanceMonth } from "@/components/MonthResultCards";
 import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 
@@ -55,6 +55,7 @@ export function ExpensesPanel() {
           <p className="shrink-0 text-right text-xs text-muted">
             Total do mês
             <span className="block text-lg font-semibold text-danger">{money(month.data.expenses_total)}</span>
+            <MonthTrend data={month.data} field="expenses_total" inverse />
           </p>
         )}
       </div>

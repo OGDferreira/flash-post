@@ -104,3 +104,33 @@ class FinanceMonthResponse(BaseModel):
     expenses_total: Decimal
     expenses: list[FinancialExpenseResponse]
     profit: Decimal
+    month_days_elapsed: int
+    today: "FinanceDay"
+    # Daily averages over the whole history (first sale/lead up to today), to
+    # tell whether the current numbers are above or below normal.
+    history_days: int | None
+    history_per_day: "FinanceHistoryPerDay | None"
+
+
+class FinanceDay(BaseModel):
+    gross_revenue: Decimal
+    net_revenue: Decimal
+    sale_count: int
+    collaborator_earnings: Decimal
+    expenses_total: Decimal
+    profit: Decimal
+
+
+class FinanceHistoryPerDay(BaseModel):
+    gross_revenue: Decimal
+    net_revenue: Decimal
+    collaborator_earnings: Decimal
+    expenses_total: Decimal
+    profit: Decimal
+    # Sharkbot only, matching the Dashboard cards they are compared with.
+    leads: float
+    pix_generated: float
+    pix_paid: float
+
+
+FinanceMonthResponse.model_rebuild()

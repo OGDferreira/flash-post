@@ -200,6 +200,22 @@ async def test_finance_month_uses_sharkbot_and_flashbot_and_subtracts_costs(
     assert data["expenses_total"] == "30.50"
     assert {item["description"] for item in data["expenses"]} == {"Anúncios", "Chip"}
     assert data["profit"] == "107.50"  # 148 - 10 - 30.50
+    # everything happened today, so today's result equals the month's
+    assert data["today"] == {
+        "gross_revenue": "150.00", "net_revenue": "148.00", "sale_count": 3,
+        "collaborator_earnings": "10.00", "expenses_total": "30.50", "profit": "107.50",
+    }
+    from app.core.time import BRAZIL_TIME_ZONE
+
+    assert data["month_days_elapsed"] == datetime.now(BRAZIL_TIME_ZONE).day
+    # history starts today: the daily average is today's total
+    assert data["history_days"] == 1
+    history = data["history_per_day"]
+    assert history["gross_revenue"] == "150.00" and history["profit"] == "107.50"
+    assert history["collaborator_earnings"] == "10.00" and history["expenses_total"] == "30.50"
+    # Sharkbot only (like the Dashboard cards): 3 Pix generated, 2 paid, no Sharkbot lead
+    assert history["leads"] == 0.0
+    assert history["pix_generated"] == 3.0 and history["pix_paid"] == 2.0
 
     deleted = await client.delete(f"/api/finance/expenses/{other.json()['id']}", headers=headers)
     assert deleted.status_code == 204
