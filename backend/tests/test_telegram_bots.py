@@ -200,6 +200,24 @@ async def test_flow_validation_requires_a_delivery(client, owner, apis) -> None:
 
 
 @pytest.mark.anyio
+async def test_save_flow_bumps_version_and_lists_usage(client, owner, apis) -> None:
+    headers = await _login(client)
+    bot, flow = await _setup(client, headers)
+    definition = _flow(age_gate={"enabled": True})
+    saved = await client.put(f"/api/bots/flows/{flow['id']}", headers=headers, json={"name": "Funil novo", "definition": definition})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["version"] == flow["version"] + 1
+    assert saved.json()["definition"]["age_gate"]["enabled"] is True
+    listed = (await client.get("/api/bots/flows/list")).json()["flows"]
+    assert [(f["name"], f["bots"]) for f in listed] == [("Funil novo", 1)]
+    copy = await client.post(f"/api/bots/flows/{flow['id']}/duplicate", headers=headers)
+    assert copy.status_code == 201 and copy.json()["name"] == "Funil novo (cópia)"
+    assert (await client.delete(f"/api/bots/flows/{flow['id']}", headers=headers)).status_code == 204
+    bots = (await client.get("/api/bots")).json()["bots"]
+    assert bots[0]["id"] == bot["id"] and bots[0]["flow_id"] is None
+
+
+@pytest.mark.anyio
 async def test_full_journey_start_pix_webhook_and_vip_invite(client, db_session: AsyncSession, owner, apis) -> None:
     headers = await _login(client)
     bot, _ = await _setup(client, headers)

@@ -13,7 +13,7 @@ from typing import Annotated, Any
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
@@ -278,6 +278,7 @@ async def save_flow(flow_id: uuid.UUID, payload: FlowUpdate, access: OwnerAccess
     flow.definition = definition.model_dump(mode="json")
     flow.version += 1
     await db.commit()
+    await db.refresh(flow)  # updated_at is set by the database (onupdate)
     return _flow_out(flow)
 
 
@@ -293,6 +294,9 @@ async def duplicate_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession)
 @router.delete("/flows/{flow_id}", status_code=204, dependencies=csrf)
 async def delete_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> None:
     flow = await _owned(db, TgFlow, flow_id, access)
+    # Explicit unlink: the FK's SET NULL is not enforced on every backend (e.g. SQLite).
+    for model in (TgBot, TgLead, TgOrder):
+        await db.execute(update(model).where(model.flow_id == flow.id).values(flow_id=None))
     await db.delete(flow)
     await db.commit()
 

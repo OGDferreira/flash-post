@@ -1,5 +1,6 @@
 import {
   Blocks,
+  Bot,
   Bug,
   ChartNoAxesCombined,
   CircleDollarSign,
@@ -65,6 +66,7 @@ const ownerGroups: NavGroup[] = [
       { label: "Loops", to: "/feature/loops", icon: InfinityIcon },
       { label: "Feed", to: "/feature/feed", icon: Clapperboard },
       { label: "Automações", to: "/feature/automations", icon: MessageSquareText },
+      { label: "Robôs Telegram", to: "/feature/bots", icon: Bot },
     ],
   },
   {
