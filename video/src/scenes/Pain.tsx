@@ -2,7 +2,7 @@ import React from "react";
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import { AlertTriangle, Clock3, HelpCircle, XCircle } from "lucide-react";
 import { C, FONT } from "../theme";
-import { clamp, Glass, ramp, Tap, Thumb, useIn } from "../ui";
+import { clamp, Glass, ramp, Tap, Thumb, useIn, sp } from "../ui";
 import type { SceneProps } from "../types";
 import { wordAt } from "../types";
 
@@ -144,7 +144,7 @@ export const Pain: React.FC<SceneProps> = ({ words }) => {
       <div style={{ position: "absolute", top: 520, left: 80, right: 80, display: "flex", flexDirection: "column", gap: 26 }}>
         {PROBLEMS.map((p, i) => {
           const at = wordAt(words, ["horas", "post", "esquecida", "sabe"][i], fps) - (i === 2 ? 8 : 0);
-          const s = useIn(at, 12, 170);
+          const s = sp(frame, fps, at, 12, 170);
           const Icon = p.icon;
           return (
             <Glass

@@ -2,7 +2,7 @@ import React from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
 import { CheckCircle2, Infinity as InfinityIcon, Timer, UploadCloud } from "lucide-react";
 import { C, FONT } from "../theme";
-import { Eyebrow, Glass, Pill, PrimaryButton, ramp, Tap, Thumb, Title, useIn, fmt } from "../ui";
+import { Eyebrow, Glass, Pill, PrimaryButton, ramp, Tap, Thumb, Title, useIn, sp, fmt } from "../ui";
 import type { SceneProps } from "../types";
 import { wordAt } from "../types";
 
@@ -72,7 +72,7 @@ export const Loop: React.FC<SceneProps> = ({ words }) => {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginTop: 24 }}>
             {Array.from({ length: 20 }).map((_, i) => {
-              const s = useIn(4 + i * 1.6, 12, 180);
+              const s = sp(frame, fps, 4 + i * 1.6, 12, 180);
               return (
                 <div key={i} style={{ transform: `scale(${s})`, opacity: s }}>
                   <Thumb i={i} w={160} h={250} />
@@ -138,7 +138,7 @@ export const Loop: React.FC<SceneProps> = ({ words }) => {
             <div style={{ marginTop: 26, display: "flex", flexDirection: "column", gap: 14 }}>
               {ACCOUNTS.map((a, i) => {
                 const st = STATUSES[(Math.floor(Math.max(0, frame - run) / 22) + i) % STATUSES.length];
-                const rs = useIn(run + 4 + i * 4, 14);
+                const rs = sp(frame, fps, run + 4 + i * 4, 14);
                 return (
                   <div
                     key={a}

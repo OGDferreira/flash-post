@@ -2,7 +2,7 @@ import React from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
 import { ArrowDown, ChevronRight } from "lucide-react";
 import { C, FONT } from "../theme";
-import { Logo, Notification, PrimaryButton, ramp, Tap, useIn, Wordmark } from "../ui";
+import { Logo, Notification, PrimaryButton, ramp, Tap, useIn, sp, Wordmark } from "../ui";
 import type { SceneProps } from "../types";
 import { wordAt } from "../types";
 
@@ -46,7 +46,7 @@ export const Notify: React.FC<SceneProps> = ({ words }) => {
         </div>
         <div style={{ position: "absolute", top: 400, left: 30, right: 30, display: "flex", flexDirection: "column-reverse", gap: 18 }}>
           {PUSHES.map((p, i) => {
-            const s = useIn(ats[i], 12, 170);
+            const s = sp(frame, fps, ats[i], 12, 170);
             if (frame < ats[i]) return null;
             return (
               <div

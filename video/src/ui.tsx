@@ -11,6 +11,10 @@ export const useIn = (delay = 0, damping = 14, stiffness = 120) => {
   return spring({ frame: frame - delay, fps, config: { damping, stiffness } });
 };
 
+/** Same as useIn but hook-free, safe inside loops and conditional blocks. */
+export const sp = (frame: number, fps: number, delay = 0, damping = 14, stiffness = 120) =>
+  spring({ frame: frame - delay, fps, config: { damping, stiffness } });
+
 export const ramp = (frame: number, a: number, b: number, from = 0, to = 1) =>
   interpolate(frame, [a, b], [from, to], { ...clamp, easing: Easing.bezier(0.22, 1, 0.36, 1) });
 

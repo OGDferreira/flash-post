@@ -2,7 +2,7 @@ import React from "react";
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import { Medal, UserPlus } from "lucide-react";
 import { C, FONT } from "../theme";
-import { Avatar, Bar, Eyebrow, Glass, Notification, Pill, ramp, Title, useIn, clamp } from "../ui";
+import { Avatar, Bar, Eyebrow, Glass, Notification, Pill, ramp, Title, useIn, sp, clamp } from "../ui";
 import type { SceneProps } from "../types";
 import { wordAt } from "../types";
 
@@ -75,7 +75,7 @@ export const Team: React.FC<SceneProps> = ({ words }) => {
             ["Meta mensal de conexões", "30"],
             ["Bônus ao cumprir meta mensal", "R$ 150,00"],
           ].map(([l, v], i) => {
-            const s = useIn(defina - 4 + i * 5, 14);
+            const s = sp(frame, fps, defina - 4 + i * 5, 14);
             return (
               <div
                 key={l}
@@ -125,7 +125,7 @@ export const Team: React.FC<SceneProps> = ({ words }) => {
             {TEAM.map((m, i) => {
               const pos = swap > 0.5 ? r1[i] : r0[i];
               const y = interpolate(swap, [0, 1], [r0[i], r1[i]]) * ROW;
-              const rs = useIn(ranking + i * 4, 14);
+              const rs = sp(frame, fps, ranking + i * 4, 14);
               return (
                 <div
                   key={m.name}

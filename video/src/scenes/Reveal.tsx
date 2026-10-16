@@ -2,7 +2,7 @@ import React from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
 import { Folder, Sparkles } from "lucide-react";
 import { C, FONT } from "../theme";
-import { Avatar, Glass, Logo, ramp, useIn, Wordmark, Eyebrow, Title, Pill } from "../ui";
+import { Avatar, Glass, Logo, ramp, useIn, sp, Wordmark, Eyebrow, Title, Pill } from "../ui";
 import type { SceneProps } from "../types";
 import { wordAt } from "../types";
 
@@ -126,7 +126,7 @@ export const Folders: React.FC<SceneProps> = ({ words }) => {
         </div>
         <div style={{ display: "flex" }}>
           {["L", "A", "M", "R", "J"].map((n, i) => {
-            const s = useIn(4 + i * 5, 12);
+            const s = sp(frame, fps, 4 + i * 5, 12);
             return (
               <div key={n} style={{ marginLeft: i ? -26 : 0, transform: `scale(${s})` }}>
                 <Avatar name={n} size={84} hue={200 + i * 30} />
@@ -137,7 +137,7 @@ export const Folders: React.FC<SceneProps> = ({ words }) => {
       </Glass>
       <div style={{ marginTop: 30, display: "flex", flexDirection: "column", gap: 26 }}>
         {FOLDERS.map((f, fi) => {
-          const s = useIn(org - 14 + fi * 6, 14);
+          const s = sp(frame, fps, org - 14 + fi * 6, 14);
           return (
             <Glass
               key={f.name}
@@ -162,7 +162,7 @@ export const Folders: React.FC<SceneProps> = ({ words }) => {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 20 }}>
                 {f.accounts.map((a) => {
                   const at = org + 4 + k++ * 7;
-                  const c = useIn(at, 12, 160);
+                  const c = sp(frame, fps, at, 12, 160);
                   return (
                     <div
                       key={a}
