@@ -9,6 +9,7 @@ webhook racing the "Já paguei" button never pays or delivers twice.
 """
 
 import base64
+import io
 import html
 import logging
 import secrets
@@ -470,6 +471,13 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
             await send_downsell(db, tg, bot, lead, flow, index)
         else:
             await send_upsell(db, tg, bot, lead, flow, index, str(job.payload.get("chain", "")))
+    elif job.kind == "create_pix":
+        flow = await load_flow(db, bot)
+        resolved = resolve_offer(flow, str(job.payload.get("data", ""))) if flow and lead else "gone"
+        if isinstance(resolved, str):
+            return
+        plan, options = resolved
+        await create_order(db, tg, bot, lead, flow, plan, **options)
     elif job.kind == "expire_order":
         await expire_order(db, tg, bot, uuid.UUID(job.payload["order_id"]))
     elif job.kind == "end_subscription":
@@ -501,6 +509,30 @@ async def run_due_jobs(db: AsyncSession, limit: int = 50, lead_id: uuid.UUID | N
             await _job_failed(db, job, exc)
         await db.commit()
     return done
+
+
+async def follow_lead_jobs(db: AsyncSession, lead_id: uuid.UUID, horizon_seconds: int = 120) -> None:
+    """Run a lead's jobs as each comes due (welcome delays, PIX) instead of waiting
+    for the worker tick; jobs further out than ``horizon_seconds`` stay with the worker."""
+    import asyncio
+
+    deadline = utcnow() + timedelta(seconds=horizon_seconds)
+    while True:
+        await run_due_jobs(db, lead_id=lead_id)
+        next_at = await db.scalar(
+            select(TgJob.run_at)
+            .where(TgJob.lead_id == lead_id, TgJob.status == "pending")
+            .order_by(TgJob.run_at)
+            .limit(1)
+        )
+        if next_at is None:
+            return
+        if next_at.tzinfo is None:
+            next_at = next_at.replace(tzinfo=timezone.utc)
+        if next_at > deadline:
+            return
+        await db.commit()  # release the connection while waiting
+        await asyncio.sleep(max(0.0, (next_at - utcnow()).total_seconds()) + 0.05)
 
 
 async def _job_failed(db: AsyncSession, job: TgJob, exc: Exception) -> None:
@@ -591,66 +623,29 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict, flow: Flow
         return None
     if data.startswith("plan:"):
         plan = flow.plan(data[5:])
-        if plan is None:
-            await tg.answer_callback(query["id"], "Este plano não está mais disponível.")
-            return None
-        bump = flow.bump_for(plan)
-        if bump is not None:
+        bump = flow.bump_for(plan) if plan is not None else None
+        if plan is not None and bump is not None:
             await tg.answer_callback(query["id"])
             await send_bump_question(db, tg, bot, lead, plan, bump)
             return None
-        await tg.answer_callback(query["id"], "Gerando seu Pix…")
-        await create_order(db, tg, bot, lead, flow, plan)
-        return None
-    if data.startswith("bump:"):
-        _, answer, plan_id = (data.split(":", 2) + ["", ""])[:3]
-        plan = flow.plan(plan_id)
-        if plan is None:
-            await tg.answer_callback(query["id"], "Este plano não está mais disponível.")
-            return None
-        await tg.answer_callback(query["id"], "Gerando seu Pix…")
-        bump = flow.bump_for(plan) if answer == "y" else None
-        await create_order(db, tg, bot, lead, flow, plan, bump=bump)
-        return None
-    if data.startswith("dplan:"):
+    if data.startswith("upn:"):
         parts = data.split(":", 2)
         index = int(parts[1]) if len(parts) == 3 and parts[1].isdigit() else -1
-        step = flow.downsells[index] if 0 <= index < len(flow.downsells) else None
-        if step is not None and len(parts) == 3 and parts[2] == "@" and step.custom_offer:
-            await tg.answer_callback(query["id"], "Gerando seu Pix…")
-            await create_order(
-                db, tg, bot, lead, flow, custom_offer_plan(index, step.custom_offer),
-                kind="downsell", offer_id=f"ds{index}", retry=data,
-            )
-            return None
-        plan = flow.plan(parts[2]) if len(parts) == 3 else None
-        if plan is None or step is None:
-            await tg.answer_callback(query["id"], "Esta oferta não está mais disponível.")
-            return None
-        await tg.answer_callback(query["id"], "Gerando seu Pix…")
-        price = discounted(plan.price, step)
-        await create_order(
-            db, tg, bot, lead, flow, plan.model_copy(update={"price": price}),
-            kind="downsell", offer_id=f"{plan.id}-d{index}", retry=data,
-        )
-        return None
-    if data.startswith(("up:", "upn:")):
-        parts = data.split(":", 2)
-        index = int(parts[1]) if len(parts) == 3 and parts[1].isdigit() else -1
-        chain = parts[2] if len(parts) == 3 else ""
         if not 0 <= index < len(flow.upsells):
             await tg.answer_callback(query["id"], "Esta oferta não está mais disponível.")
             return None
-        if parts[0] == "upn":
-            await tg.answer_callback(query["id"])
-            await schedule_upsell(db, bot, lead, flow, index + 1, chain)
-            return lead.id
+        await tg.answer_callback(query["id"])
+        await schedule_upsell(db, bot, lead, flow, index + 1, parts[2])
+        return lead.id
+    if data.startswith(("plan:", "bump:", "dplan:", "up:")):
+        resolved = resolve_offer(flow, data)
+        if isinstance(resolved, str):
+            await tg.answer_callback(query["id"], resolved)
+            return None
+        # Answer right away; the charge is created by a job right after the response.
         await tg.answer_callback(query["id"], "Gerando seu Pix…")
-        await create_order(
-            db, tg, bot, lead, flow, upsell_plan(index, flow.upsells[index]),
-            kind="upsell", offer_id=f"up{index}", step=index, chain=chain, retry=data,
-        )
-        return None
+        await schedule(db, bot, "create_pix", utcnow(), f"pix:{query['id']}:{data}", lead, {"data": data})
+        return lead.id
     if data.startswith("chk:"):
         try:
             order_id = uuid.UUID(data[4:])
@@ -670,6 +665,42 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict, flow: Flow
         return None
     await tg.answer_callback(query["id"])
     return None
+
+
+def resolve_offer(flow: FlowDefinition, data: str) -> tuple[Plan, dict] | str:
+    """Map an offer button to the plan and ``create_order`` options, or an error text."""
+    gone = "Esta oferta não está mais disponível."
+    if data.startswith("plan:"):
+        plan = flow.plan(data[5:])
+        return (plan, {}) if plan else "Este plano não está mais disponível."
+    if data.startswith("bump:"):
+        _, answer, plan_id = (data.split(":", 2) + ["", ""])[:3]
+        plan = flow.plan(plan_id)
+        if plan is None:
+            return "Este plano não está mais disponível."
+        return plan, {"bump": flow.bump_for(plan) if answer == "y" else None}
+    parts = data.split(":", 2)
+    index = int(parts[1]) if len(parts) == 3 and parts[1].isdigit() else -1
+    if data.startswith("dplan:"):
+        step = flow.downsells[index] if 0 <= index < len(flow.downsells) else None
+        if step is None:
+            return gone
+        if parts[2] == "@":
+            if not step.custom_offer:
+                return gone
+            return custom_offer_plan(index, step.custom_offer), {"kind": "downsell", "offer_id": f"ds{index}", "retry": data}
+        plan = flow.plan(parts[2])
+        if plan is None:
+            return gone
+        return (
+            plan.model_copy(update={"price": discounted(plan.price, step)}),
+            {"kind": "downsell", "offer_id": f"{plan.id}-d{index}", "retry": data},
+        )
+    if data.startswith("up:") and 0 <= index < len(flow.upsells):
+        return upsell_plan(index, flow.upsells[index]), {
+            "kind": "upsell", "offer_id": f"up{index}", "step": index, "chain": parts[2], "retry": data,
+        }
+    return gone
 
 
 async def _handle_membership(db: AsyncSession, bot: TgBot, event: dict) -> None:
@@ -763,13 +794,6 @@ async def create_order(
         qr = None
     lead.stage = "pix"
     caption = render(flow.payment.pix_text, lead, order.offer_name, order.amount, bot)
-    if qr and "," in qr:
-        try:
-            png = base64.b64decode(qr.split(",", 1)[1])
-            await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), caption)
-            caption = ""
-        except (ValueError, TelegramError):
-            pass
     code = order.pix_copy_paste or ""
     keyboard = {
         "inline_keyboard": [
@@ -782,8 +806,40 @@ async def create_order(
     if flow.support_username:
         keyboard["inline_keyboard"].append([button("💬 Suporte", url=f"https://t.me/{flow.support_username}")])
     body = (caption + "\n\n" if caption else "") + f"<code>{html.escape(code)}</code>"
+    png = pix_qr_png(code, qr)
+    if png:
+        try:
+            if len(body) <= 1024:  # QR, text, code and buttons in one message
+                await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), body, keyboard)
+                return order
+            await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), caption)
+            body = f"<code>{html.escape(code)}</code>"
+        except TelegramError:
+            pass
     await tg.send_message(lead.chat_id, body, keyboard)
     return order
+
+
+def pix_qr_png(code: str, fallback_b64: str | None = None) -> bytes | None:
+    """Large, sharp QR (crisp square modules, ~1000px) from the copy-paste code;
+    falls back to the gateway image when the code is missing."""
+    if code:
+        try:
+            import segno
+
+            qr = segno.make(code, error="m", micro=False)
+            width = qr.symbol_size(border=4)[0]
+            out = io.BytesIO()
+            qr.save(out, kind="png", scale=max(8, 1000 // width), border=4)
+            return out.getvalue()
+        except Exception:  # pragma: no cover - library missing or odd payload
+            logger.warning("QR generation failed; using the gateway image")
+    if fallback_b64:
+        try:
+            return base64.b64decode(fallback_b64.split(",", 1)[-1])
+        except ValueError:
+            return None
+    return None
 
 
 async def check_order(db: AsyncSession, order: TgOrder) -> None:

@@ -461,7 +461,7 @@ async def summary(access: OwnerAccess, db: DbSession, days: int = Query(1, ge=1,
 
 async def _run_lead_jobs(lead_id: uuid.UUID) -> None:
     async with get_session_factory()() as db:
-        await engine.run_due_jobs(db, lead_id=lead_id)
+        await engine.follow_lead_jobs(db, lead_id)
 
 
 @router.post("/telegram/{bot_id}", include_in_schema=False)
