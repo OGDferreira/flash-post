@@ -223,7 +223,7 @@ export function FinancePage() {
 
       <section aria-label="Resultado do mês" className="space-y-2">
         <h2 className="text-sm font-medium text-fg-2">Resultado do mês</h2>
-        <div className="dashboard-metrics !grid-cols-1 sm:!grid-cols-3">
+        <div className="dashboard-metrics !grid-cols-1 sm:!grid-cols-2 xl:!grid-cols-4">
           <MonthResultCards />
         </div>
         <ExpensesPanel />

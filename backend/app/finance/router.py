@@ -22,6 +22,8 @@ from app.models import (
 from app.schemas.finance import (
     DailyWithdrawalGoalUpdate,
     FinanceOperationRevenue,
+    FinanceDay,
+    FinanceHistoryPerDay,
     FinanceMonthResponse,
     FinancialExpenseCreate,
     FinancialExpenseResponse,
@@ -45,15 +47,13 @@ def _timestamp(value: datetime) -> float:
     return aware.timestamp()
 
 
-@router.get("/month", response_model=FinanceMonthResponse)
-async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthResponse:
-    """Revenue, collaborator cost, expenses and profit for the current month (Brazil time)."""
-    from app.collaborators.router import _member_report, _month_bounds
-    from app.core.security import WorkspaceRole
+async def _revenue_between(
+    db: DbSession, workspace_id, start: datetime | None, end: datetime | None
+) -> tuple[Decimal, Decimal, int, int, Decimal]:
+    """(gross, net, sales, sharkbot sales without amount, flashbot gross) in [start, end)."""
 
-    workspace_id = access.workspace.id
-    now = datetime.now(timezone.utc)
-    start, end, month = _month_bounds(now)
+    def window(column):
+        return [c for c in (column >= start if start else None, column < end if end else None) if c is not None]
 
     # Sharkbot sends the sale amount in its payloads; a sale without one is counted apart.
     shark = (
@@ -65,8 +65,8 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
             ).where(
                 SharkTransaction.workspace_id == workspace_id,
                 SharkTransaction.status == "paid",
-                SharkTransaction.paid_at >= start,
-                SharkTransaction.paid_at < end,
+                SharkTransaction.paid_at.is_not(None),
+                *window(SharkTransaction.paid_at),
             )
         )
     ).one()
@@ -79,27 +79,73 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
             ).where(
                 TgOrder.workspace_id == workspace_id,
                 TgOrder.status == "paid",
-                TgOrder.paid_at >= start,
-                TgOrder.paid_at < end,
+                TgOrder.paid_at.is_not(None),
+                *window(TgOrder.paid_at),
             )
         )
     ).one()
+    # Sharkbot reports no gateway fee, so its gross is also what came in.
+    gross = _money(shark[0]) + _money(bot[0])
+    net = _money(shark[0]) + _money(bot[1])
+    return gross, net, int(shark[1]) + int(bot[2]), int(shark[2]), _money(bot[0])
 
-    members = await db.execute(
-        select(WorkspaceMember, User)
-        .join(User, User.id == WorkspaceMember.user_id)
-        .where(
-            WorkspaceMember.workspace_id == workspace_id,
-            WorkspaceMember.role == WorkspaceRole.COLLABORATOR.value,
-            WorkspaceMember.status.in_(("ACTIVE", "SUSPENDED")),
+
+async def _expenses_between(db: DbSession, workspace_id, start: datetime | None, end: datetime) -> Decimal:
+    conditions = [FinancialExpense.workspace_id == workspace_id, FinancialExpense.spent_at < end]
+    if start is not None:
+        conditions.append(FinancialExpense.spent_at >= start)
+    return _money(await db.scalar(select(func.coalesce(func.sum(FinancialExpense.amount), 0)).where(*conditions)))
+
+
+async def _history_start(db: DbSession, workspace_id) -> datetime | None:
+    """First day with any sale, lead or expense: the start of "todo o período"."""
+    from app.models import SharkLead
+
+    firsts = [
+        await db.scalar(select(func.min(SharkTransaction.paid_at)).where(SharkTransaction.workspace_id == workspace_id)),
+        await db.scalar(select(func.min(SharkLead.joined_at)).where(SharkLead.workspace_id == workspace_id)),
+        await db.scalar(select(func.min(TgOrder.paid_at)).where(TgOrder.workspace_id == workspace_id)),
+        await db.scalar(select(func.min(FinancialExpense.spent_at)).where(FinancialExpense.workspace_id == workspace_id)),
+    ]
+    values = [value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value for value in firsts if value]
+    return min(values) if values else None
+
+
+@router.get("/month", response_model=FinanceMonthResponse)
+async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthResponse:
+    """Month and today: revenue, collaborator cost, expenses, profit, plus all-time daily averages."""
+    from app.collaborators.router import _day_bounds, _earnings_between, _member_report, _month_bounds
+    from app.core.security import WorkspaceRole
+    from app.core.time import BRAZIL_TIME_ZONE
+    from app.shark.metrics import compute_shark_metrics
+
+    workspace_id = access.workspace.id
+    now = datetime.now(timezone.utc)
+    start, end, month = _month_bounds(now)
+    today = now.astimezone(BRAZIL_TIME_ZONE).date()
+    day_start, day_end = _day_bounds(today)
+
+    gross, net, sales, without_amount, flashbot_gross = await _revenue_between(db, workspace_id, start, end)
+    day_gross, day_net, day_sales, _, _ = await _revenue_between(db, workspace_id, day_start, day_end)
+
+    members = (
+        await db.execute(
+            select(WorkspaceMember, User)
+            .join(User, User.id == WorkspaceMember.user_id)
+            .where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.role == WorkspaceRole.COLLABORATOR.value,
+                WorkspaceMember.status.in_(("ACTIVE", "SUSPENDED")),
+            )
         )
-    )
-    earnings = paid = due = Decimal("0")
-    for member, user in members.all():
+    ).all()
+    earnings = paid = due = earnings_today = Decimal("0")
+    for member, user in members:
         report = await _member_report(db, workspace_id, member, user, now)
         earnings += report.earnings_month
         paid += report.paid_month
         due += report.due_month
+        earnings_today += report.earnings_today
 
     expenses = list(
         await db.scalars(
@@ -113,17 +159,42 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
         )
     )
     expenses_total = sum((_money(item.amount) for item in expenses), Decimal("0.00"))
+    expenses_today = await _expenses_between(db, workspace_id, day_start, day_end)
 
-    # Sharkbot reports no gateway fee, so its gross is also what came in.
-    net_revenue = _money(shark[0]) + _money(bot[1])
+    history_start = await _history_start(db, workspace_id)
+    history_days = None
+    history = None
+    if history_start is not None:
+        history_days = (today - history_start.astimezone(BRAZIL_TIME_ZONE).date()).days + 1
+        all_gross, all_net, _, _, _ = await _revenue_between(db, workspace_id, None, day_end)
+        all_expenses = await _expenses_between(db, workspace_id, None, day_end)
+        # Connection pay over the whole history (monthly bonuses are not included here).
+        all_earnings = Decimal("0")
+        for member, user in members:
+            rate = Decimal(str(member.rate_per_connection)).quantize(CENT)
+            all_earnings += await _earnings_between(db, workspace_id, user.id, history_start, day_end, rate)
+        # Same source as the Dashboard's "Leads Sharkbot" / Pix cards, so the comparison is like for like.
+        shark = await compute_shark_metrics(db, workspace_id, None, day_end)
+        per_day = lambda value: _money(Decimal(value) / history_days)  # noqa: E731
+        history = FinanceHistoryPerDay(
+            gross_revenue=per_day(all_gross),
+            net_revenue=per_day(all_net),
+            collaborator_earnings=per_day(all_earnings),
+            expenses_total=per_day(all_expenses),
+            profit=per_day(all_net - all_earnings - all_expenses),
+            leads=round(shark.leads / history_days, 2),
+            pix_generated=round(shark.pix_generated / history_days, 2),
+            pix_paid=round(shark.pix_paid_from_period / history_days, 2),
+        )
+
     return FinanceMonthResponse(
         month=month,
-        gross_revenue=_money(shark[0]) + _money(bot[0]),
-        net_revenue=net_revenue,
-        sale_count=int(shark[1]) + int(bot[2]),
-        sharkbot_gross=_money(shark[0]),
-        sharkbot_sales_without_amount=int(shark[2]),
-        flashbot_gross=_money(bot[0]),
+        gross_revenue=gross,
+        net_revenue=net,
+        sale_count=sales,
+        sharkbot_gross=gross - flashbot_gross,
+        sharkbot_sales_without_amount=without_amount,
+        flashbot_gross=flashbot_gross,
         collaborator_earnings=_money(earnings),
         collaborator_paid=_money(paid),
         collaborator_due=_money(due),
@@ -132,7 +203,18 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
             FinancialExpenseResponse(id=item.id, amount=item.amount, description=item.description, spent_at=item.spent_at)
             for item in expenses
         ],
-        profit=_money(net_revenue - earnings - expenses_total),
+        profit=_money(net - earnings - expenses_total),
+        month_days_elapsed=(today - month).days + 1,
+        today=FinanceDay(
+            gross_revenue=day_gross,
+            net_revenue=day_net,
+            sale_count=day_sales,
+            collaborator_earnings=_money(earnings_today),
+            expenses_total=expenses_today,
+            profit=_money(day_net - earnings_today - expenses_today),
+        ),
+        history_days=history_days,
+        history_per_day=history,
     )
 
 

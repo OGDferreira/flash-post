@@ -1,6 +1,7 @@
 import { EngagementCards } from "@/components/EngagementCards";
-import { MonthResultCards } from "@/components/MonthResultCards";
-import { useState } from "react";
+import { TrendBadge } from "@/components/TrendBadge";
+import { MonthResultCards, useFinanceMonth } from "@/components/MonthResultCards";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -91,6 +92,7 @@ function MetricCard({
   detail,
   icon: Icon,
   color,
+  trend,
 }: {
   title: string;
   target: number | null;
@@ -99,6 +101,7 @@ function MetricCard({
   detail: string;
   icon: LucideIcon;
   color: string;
+  trend?: ReactNode;
 }) {
   return (
     <article className="dashboard-card dashboard-metric-card">
@@ -115,9 +118,22 @@ function MetricCard({
           target={target}
         />
       </p>
+      {trend}
       <p className="dashboard-metric-detail">{detail}</p>
     </article>
   );
+}
+
+/** Days covered by the selected period (null for "Total", which is the average itself). */
+function periodDays(period: AnalyticsPeriod, startDate: string, endDate: string): number | null {
+  if (period === "today" || period === "yesterday") return 1;
+  if (period === "7d") return 7;
+  if (period === "30d") return 30;
+  if (period === "custom") {
+    const days = Math.round((Date.parse(endDate) - Date.parse(startDate)) / 86_400_000) + 1;
+    return days > 0 ? days : null;
+  }
+  return null;
 }
 
 export function DashboardPage() {
@@ -223,6 +239,20 @@ export function DashboardPage() {
   ]
     .filter(Boolean)
     .join(" · ");
+  const finance = useFinanceMonth();
+  const days = periodDays(period, startDate, endDate);
+  // Period per-day value vs the all-time daily average (Sharkbot, same source as the cards).
+  const leadTrend = (value: number | undefined, field: "leads" | "pix_generated" | "pix_paid") => {
+    const history = finance.data?.history_per_day;
+    if (value === undefined || !days || !history || (finance.data?.history_days ?? 0) < 2) return undefined;
+    return (
+      <TrendBadge
+        average={history[field]}
+        averageLabel={`${history[field].toLocaleString("pt-BR")}/dia`}
+        current={value / days}
+      />
+    );
+  };
   const metricsCards = [
     {
       title: "Visualizações no período",
@@ -322,6 +352,7 @@ export function DashboardPage() {
     {
       title: "Leads Sharkbot",
       target: metrics?.leads ?? null,
+      trend: leadTrend(metrics?.leads, "leads"),
       loading: summary.isFetching && !summary.data,
       detail: "Recebidos no período",
       icon: UsersRound,
@@ -330,6 +361,7 @@ export function DashboardPage() {
     {
       title: "Pix gerados",
       target: metrics?.pix_generated ?? null,
+      trend: leadTrend(metrics?.pix_generated, "pix_generated"),
       loading: summary.isFetching && !summary.data,
       detail: "Pagamentos iniciados no período",
       icon: Wallet,
@@ -338,6 +370,7 @@ export function DashboardPage() {
     {
       title: "Pix pagos",
       target: metrics?.pix_paid ?? null,
+      trend: leadTrend(metrics?.pix_paid, "pix_paid"),
       loading: summary.isFetching && !summary.data,
       detail: "Pagamentos aprovados no período",
       icon: CircleCheck,
