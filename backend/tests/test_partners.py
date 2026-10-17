@@ -98,8 +98,10 @@ async def test_commission_needs_acceptance_and_split_goes_into_the_charge(client
         (row.user_id, row.kind): row.title
         for row in await db_session.scalars(select(AppNotification).where(AppNotification.kind.in_(("sale", "commission"))))
     }
-    assert "Nova venda" in notices[(partner.id, "sale")]
-    assert "R$ 5,67" in notices[(chief.id, "commission")]  # sent once: the resent webhook added nothing
+    assert notices[(partner.id, "sale")] == "⚡ Nova venda!"
+    assert notices[(chief.id, "commission")] == "💰 Comissão recebida!"
+    bodies = {row.kind: row.body for row in await db_session.scalars(select(AppNotification))}
+    assert bodies["sale"] == "Você recebeu R$ 13,23" and bodies["commission"].startswith("Você recebeu R$ 5,67")  # sent once: the resent webhook added nothing
 
     # chief: sees the partner's numbers and operation, never the bot token
     chief_headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)

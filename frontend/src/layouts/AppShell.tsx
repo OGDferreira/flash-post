@@ -493,7 +493,7 @@ export function AppShell() {
             <Link aria-label="FlashPost" className="shrink-0 lg:hidden" to="/dashboard">
               <BrandLogo className="size-8" />
             </Link>
-            <span className="truncate text-base font-semibold tracking-[-0.03em] text-fg sm:text-lg">
+            <span className="truncate text-base font-semibold tracking-[-0.03em] text-fg max-sm:hidden sm:text-lg">
               {isAdminRoute ? "FlashPost · Administração" : "FlashPost"}
             </span>
           </div>
