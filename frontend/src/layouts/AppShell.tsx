@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNotices } from "@/features/partners/api";
+import { playCashSound, unlockCashSound } from "@/lib/cashSound";
 import { RevenueBadge } from "@/features/wallet/RevenueBadge";
 import { PushPrompt } from "@/components/PushPrompt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -122,6 +123,19 @@ export function AppShell() {
     manual: "Conta desconectada manualmente",
   };
   const notices = useNotices(Boolean(user) && !isAdminRoute);
+  // Cash sound when a new sale/commission notice arrives while the panel is open.
+  const lastNotice = useRef<string | null | undefined>(undefined);
+  useEffect(() => unlockCashSound(), []);
+  useEffect(() => {
+    const items = notices.data?.items;
+    if (!items) return;
+    const newest = items[0]?.id ?? null;
+    const seen = lastNotice.current;
+    lastNotice.current = newest;
+    if (seen === undefined || newest === seen) return; // first load or nothing new
+    const fresh = items.slice(0, Math.max(0, items.findIndex((item) => item.id === seen)) || items.length);
+    if (fresh.some((item) => !item.read && (item.kind === "sale" || item.kind === "commission"))) playCashSound();
+  }, [notices.data]);
   const notificationItems = [
     ...(notices.data?.items ?? []).filter((item) => !item.read).slice(0, 10).map((item) => ({
       title: item.title,
