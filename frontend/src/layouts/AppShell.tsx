@@ -362,8 +362,13 @@ export function AppShell() {
       )}
 
       <nav className="app-sidebar-nav flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        {[navigation.direct, navigation.flat].filter((links) => links.length > 0).map((links, index) => (
+        {[navigation.direct, navigation.flat, navigation.admin].filter((links) => links.length > 0).map((links, index) => (
         <div className={index ? "mt-4 space-y-1 border-t border-line-soft pt-3" : "space-y-1"} key={index}>
+          {links === navigation.admin && (
+            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted lg:opacity-0 lg:group-data-[open=true]:opacity-100">
+              Administração
+            </p>
+          )}
           {links.map(({ label, to, icon: Icon }) => (
             <NavLink
               end={to === "/admin" || to === "/dashboard"}
@@ -657,7 +662,7 @@ export function AppShell() {
           >
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line" />
             <div className="grid grid-cols-2 gap-1">
-              {navigation.flat.map(({ label, to, icon: Icon }) => (
+              {[...navigation.flat, ...navigation.admin].map(({ label, to, icon: Icon }) => (
                 <NavLink
                   className={({ isActive }) =>
                     `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm ${isActive ? "nm-active font-medium" : "text-fg-2"}`

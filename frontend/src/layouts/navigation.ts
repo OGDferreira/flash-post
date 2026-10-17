@@ -17,7 +17,6 @@ import {
   Puzzle,
   Send,
   Settings2,
-  Shield,
   Trophy,
   Users,
   UsersRound,
@@ -127,10 +126,9 @@ const collaboratorRoutes = new Set([
   "/feature/contacts",
 ]);
 
-const adminGroup: NavGroup = { id: "admin", title: "Administração", icon: Shield, items: adminLinks };
 
 /** direct = shortcuts on top; flat = every other page as a plain link; groups = collapsible (admin only). */
-export type NavModel = { direct: NavItem[]; flat: NavItem[]; groups: NavGroup[] };
+export type NavModel = { direct: NavItem[]; flat: NavItem[]; groups: NavGroup[]; admin: NavItem[] };
 
 function flatten(groups: NavGroup[], direct: NavItem[]): NavItem[] {
   const seen = new Set(direct.map(({ to }) => to));
@@ -142,13 +140,19 @@ export function buildNavigation(opts: {
   isSuperAdmin: boolean;
   workspaceRole: string | null | undefined;
 }): NavModel {
-  if (opts.isAdminRoute) return { direct: adminLinks, flat: [], groups: [] };
-  const extra = opts.isSuperAdmin ? [adminGroup] : [];
-  if (opts.workspaceRole === "OWNER") return { direct: directLinks, flat: flatten(ownerGroups, directLinks), groups: extra };
+  if (opts.isAdminRoute) return { direct: adminLinks, flat: [], groups: [], admin: [] };
+  // Super Admin pages are a plain, always-open section (no collapsible group).
+  const admin = opts.isSuperAdmin ? adminLinks : [];
+  if (opts.workspaceRole === "OWNER") {
+    const flat = flatten(ownerGroups, directLinks);
+    // "Sócios" sits right under "Colaboradores" (the last shortcut).
+    const partners = flat.filter(({ to }) => to === "/feature/affiliates");
+    return { direct: directLinks, flat: [...partners, ...flat.filter(({ to }) => to !== "/feature/affiliates")], groups: [], admin };
+  }
   if (opts.workspaceRole === "COLLABORATOR") {
     const direct = directLinks.filter(({ to }) => collaboratorRoutes.has(to));
     const allowed = ownerGroups.map((group) => ({ ...group, items: group.items.filter(({ to }) => collaboratorRoutes.has(to)) }));
-    return { direct, flat: flatten(allowed, direct), groups: extra };
+    return { direct, flat: flatten(allowed, direct), groups: [], admin };
   }
-  return { direct: [], flat: [], groups: extra };
+  return { direct: [], flat: [], groups: [], admin };
 }
