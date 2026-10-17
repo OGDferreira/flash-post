@@ -111,6 +111,13 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   const top = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // The section bar takes the bottom of the screen; the global refresh button steps aside.
+    document.body.dataset.flowEditor = "1";
+    return () => {
+      delete document.body.dataset.flowEditor;
+    };
+  }, []);
+  useEffect(() => {
     if (flow.data && !draft) {
       setName(flow.data.name);
       setDraft(flow.data.definition);
@@ -236,9 +243,10 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
 
       <Section draft={draft} flowId={flowId} set={set} />
 
+      {createPortal(
       <nav
         aria-label="Navegar entre seções"
-        className="sticky bottom-[calc(env(safe-area-inset-bottom)+92px)] z-30 mr-14 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 rounded-2xl border border-line bg-[var(--nm-bg)] p-1.5 shadow-2xl lg:bottom-3 lg:mr-16"
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 z-40 grid w-[calc(100vw-1.5rem)] max-w-xl -translate-x-1/2 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 rounded-2xl border border-line bg-[var(--nm-bg)] p-1.5 shadow-2xl lg:bottom-6 lg:ml-[34px]"
       >
         <button
           aria-label={current > 0 ? `Voltar para ${sections[current - 1].label}` : "Primeira seção"}
@@ -272,7 +280,9 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
           <span className="truncate">{current < sections.length - 1 ? sections[current + 1].label : "Fim"}</span>
           <ChevronRight className="shrink-0" size={18} />
         </button>
-      </nav>
+      </nav>,
+        document.body,
+      )}
         {bottomPicker &&
           createPortal(
             <div className="fixed inset-0 z-[70]" role="presentation">
