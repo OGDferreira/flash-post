@@ -70,7 +70,13 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
               MAX
             </button>
           </span>
-          {!main && <span className="mt-1 block text-[11px] text-muted">Mínimo {brl(wallet.min_withdrawal)}</span>}
+          {!main && (
+            <span className={`mt-1 block text-[11px] ${wallet.available < wallet.min_withdrawal ? "text-warning" : "text-muted"}`}>
+              Mínimo {brl(wallet.min_withdrawal)} (regra da SmokePay)
+              {wallet.available < wallet.min_withdrawal &&
+                ` · faltam ${brl(wallet.min_withdrawal - wallet.available)} de vendas para liberar o saque`}
+            </span>
+          )}
         </label>
         {(
           <div className="space-y-2">
