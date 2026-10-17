@@ -13,8 +13,10 @@ import { useBotStats } from "./ConversionOverview";
 import { FlowEditor } from "./FlowEditor";
 import { ImportFlowModal, downloadFlow } from "./FlowPortability";
 import { brl, type Flow } from "./types";
+import { useChiefLabel } from "@/features/partners/api";
 
 export function FlowsPanel({ onEditingChange, period }: { onEditingChange?: (editing: boolean) => void; period: MetricsPeriod }) {
+  const chief = useChiefLabel();
   const stats = useBotStats(period);
   const [importOpen, setImportOpen] = useState(false);
   const [code, setCode] = useState<{ name: string; code: string } | null>(null);
@@ -86,7 +88,7 @@ export function FlowsPanel({ onEditingChange, period }: { onEditingChange?: (edi
               <div className="flex items-start justify-between gap-3">
                 <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
                 <span className="flex shrink-0 gap-1">
-                  {flow.protected ? <Badge tone="warning">Protegido</Badge> : flow.from_template && <Badge tone="warning">Modelo do chefe</Badge>}
+                  {flow.protected ? <Badge tone="warning">Protegido</Badge> : flow.from_template && <Badge tone="warning">Modelo de {chief}</Badge>}
                   {flow.shared && <Badge tone="success">Compartilhado</Badge>}
                   <Badge tone="success">{(stats.data?.flows[flow.id]?.conversion ?? 0).toLocaleString("pt-BR")}% conv.</Badge>
                   <Badge tone={flow.bots ? "brand" : "neutral"}>{flow.bots ? `${flow.bots} robô(s)` : "Sem robô"}</Badge>
@@ -94,7 +96,7 @@ export function FlowsPanel({ onEditingChange, period }: { onEditingChange?: (edi
               </div>
               {flow.protected || !flow.definition ? (
                 <p className="flex items-center gap-1.5 text-xs text-warning">
-                  <Lock size={13} /> Funil do chefe protegido: roda no seu robô, mas não pode ser aberto, copiado ou exportado.
+                  <Lock size={13} /> Funil de {chief} protegido: roda no seu robô, mas não pode ser aberto, copiado ou exportado.
                 </p>
               ) : (
                 <p className="text-xs text-muted">

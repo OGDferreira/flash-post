@@ -7,14 +7,15 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import type { Flow } from "@/features/bots/types";
 import { ApiError, apiRequest } from "@/services/api";
-import { useShareToggle, useSharedTemplates, useUseTemplate } from "./api";
+import { useChiefLabel, useShareToggle, useSharedTemplates, useUseTemplate } from "./api";
 
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : "Não foi possível concluir a ação.");
 
 function AcceptFirst() {
+  const chief = useChiefLabel();
   return (
     <p className="rounded-xl border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning">
-      Aceite a comissão da sociedade no Painel para poder usar os modelos do seu chefe.
+      Aceite a comissão da sociedade no Painel para poder usar os modelos de {chief}.
     </p>
   );
 }
@@ -42,6 +43,7 @@ export function ShareLoopButton({ loop }: { loop: { id: string; name: string; sh
 
 /** Partner: the chief's shared loops, copied into the partner's own operation. */
 export function SharedLoopsSection() {
+  const chief = useChiefLabel();
   const shared = useSharedTemplates();
   const use = useUseTemplate("loops");
   const data = shared.data;
@@ -49,10 +51,10 @@ export function SharedLoopsSection() {
   return (
     <section className="glass-panel space-y-3 p-4">
       <div>
-        <h3 className="text-base font-semibold text-fg">Loops compartilhados pelo seu chefe</h3>
+        <h3 className="text-base font-semibold text-fg">Loops compartilhados por {chief}</h3>
         <p className="mt-1 text-xs text-muted">
           Ao usar, o loop é copiado para a sua operação com as mesmas configurações e mídias, sem contas. Sua fila, posts e
-          métricas são só seus, e o original do chefe não muda.
+          métricas são só seus, e o original de {chief} não muda.
         </p>
       </div>
       {!data.accepted && <AcceptFirst />}
@@ -80,6 +82,7 @@ export function SharedLoopsSection() {
 
 /** FlashBot tab: partners pick the chief's shared funnels; owners choose what to share. */
 export function SharedFlowsPanel() {
+  const chief = useChiefLabel();
   const shared = useSharedTemplates();
   const use = useUseTemplate("flows");
   const toggle = useShareToggle("flows");
@@ -101,9 +104,9 @@ export function SharedFlowsPanel() {
     return (
       <div className="space-y-3">
         <p className="text-sm text-muted">
-          Funis do seu chefe prontos para rodar no seu robô. Cada funil vem com um loop: ao usar, o loop é copiado para a sua
+          Funis de {chief} prontos para rodar no seu robô. Cada funil vem com um loop: ao usar, o loop é copiado para a sua
           operação (sem contas, você adiciona as suas). Depois, escolha o funil no seu robô em “Meus bots”. O conteúdo do funil
-          é do chefe e fica protegido; leads, vendas e métricas são seus.
+          é de {chief} e fica protegido; leads, vendas e métricas são seus.
         </p>
         {!data.accepted && <AcceptFirst />}
         {use.error && <ErrorState message={errorText(use.error)} />}
@@ -114,7 +117,7 @@ export function SharedFlowsPanel() {
           </p>
         )}
         {data.flows.length === 0 ? (
-          <EmptyState message="Seu chefe ainda não compartilhou nenhum funil." />
+          <EmptyState message={`${chief} ainda não compartilhou nenhum funil.`} />
         ) : (
           <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
             {data.flows.map((flow) => (

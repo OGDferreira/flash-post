@@ -13,11 +13,13 @@ import type { MetricsPeriod } from "@/features/analytics/period";
 import { BotAvatar } from "./BotAvatar";
 import { useBotStats } from "./ConversionOverview";
 import { brl, type Bot, type BotGroup, type Flow, type SharedFlowOption } from "./types";
+import { useChiefLabel } from "@/features/partners/api";
 
 const errorText = (error: unknown, fallback: string) => (error instanceof ApiError ? error.message : fallback);
 
 /** Connected bots: token from @BotFather, linked flow, on/off and stats. */
 export function BotsListPanel({ period }: { period: MetricsPeriod }) {
+  const chief = useChiefLabel();
   const queryClient = useQueryClient();
   const [connectOpen, setConnectOpen] = useState(false);
   const bots = useQuery({ queryKey: ["bots"], queryFn: () => apiRequest<{ bots: Bot[] }>("/api/bots"), retry: false });
@@ -126,7 +128,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                     </option>
                   ))}
                   {(flows.data?.shared_flows ?? []).length > 0 && (
-                    <optgroup label="Compartilhados pelo chefe">
+                    <optgroup label={`Compartilhados por ${chief}`}>
                       {flows.data!.shared_flows!.map((flow) => (
                         <option key={flow.id} value={flow.id}>{flow.name}</option>
                       ))}
@@ -155,7 +157,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                       </option>
                     ))}
                   </select>
-                  <span className="text-[11px] text-muted">O funil é do seu chefe; quem compra entra no seu grupo. Adicione o robô como admin dele.</span>
+                  <span className="text-[11px] text-muted">O funil é de {chief}; quem compra entra no seu grupo. Adicione o robô como admin dele.</span>
                 </label>
               )}
               <div className="flex flex-wrap gap-2">

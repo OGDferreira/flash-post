@@ -3,6 +3,7 @@ import { ArrowDownToLine, CheckCircle2, Clock, Trophy, Wallet as WalletIcon, XCi
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Modal } from "@/components/ui/Modal";
+import { useChiefLabel } from "@/features/partners/api";
 import { AwardsCarousel } from "@/features/wallet/AwardsCarousel";
 import { brl, compact, useWallet, useWalletMutations, type Wallet, type Withdrawal } from "@/features/wallet/api";
 import { ApiError } from "@/services/api";
@@ -137,6 +138,7 @@ function History({ items }: { items: Withdrawal[] }) {
 }
 
 export function WalletPage() {
+  const chief = useChiefLabel();
   const wallet = useWallet();
   const [open, setOpen] = useState(false);
   if (wallet.isLoading) return <LoadingState label="Carregando carteira" />;
@@ -149,7 +151,7 @@ export function WalletPage() {
     ["Processando", brl(data.pending), "text-warning"],
     ["Já sacado", brl(data.withdrawn)],
   ];
-  if ((data.commission_paid ?? 0) > 0) cards.push(["Comissão paga ao chefe", brl(data.commission_paid ?? 0), "text-danger", "Já descontada do seu saldo"]);
+  if ((data.commission_paid ?? 0) > 0) cards.push([`Comissão paga a ${chief}`, brl(data.commission_paid ?? 0), "text-danger", "Já descontada do seu saldo"]);
   if (data.commissions_received > 0) cards.push(["Comissões recebidas dos sócios", brl(data.commissions_received), "text-success"]);
   return (
     <div className="mx-auto max-w-[1100px] space-y-4">

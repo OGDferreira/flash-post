@@ -38,7 +38,7 @@ router = APIRouter(prefix="/api/partners", tags=["Partners"])
 
 SPLIT_BASIS = (
     "O split é feito pela própria SmokePay na cobrança: do valor líquido (bruto menos a taxa "
-    "da SmokePay), o percentual aceito vai para o chefe e o restante fica na subconta do sócio."
+    "da SmokePay), o percentual aceito vai para o sócio dono da operação e o restante fica na subconta do sócio."
 )
 
 

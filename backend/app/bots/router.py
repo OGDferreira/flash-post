@@ -121,7 +121,7 @@ async def _readable(db, flow_id: uuid.UUID, access) -> TgFlow:
     """A funnel of this operation whose content the owner may read, copy or edit."""
     flow = await _owned(db, TgFlow, flow_id, access)
     if await _is_received_copy(db, flow):
-        raise HTTPException(status_code=403, detail="Funil recebido do chefe: pode ser usado no bot, mas não pode ser aberto, copiado ou exportado.")
+        raise HTTPException(status_code=403, detail="Funil recebido do seu sócio: pode ser usado no bot, mas não pode ser aberto, copiado ou exportado.")
     return flow
 
 
@@ -537,7 +537,7 @@ async def preview_media(media_id: uuid.UUID, access: OwnerAccess, db: DbSession)
 
     media = await _owned(db, TgMedia, media_id, access)
     if media.locked:
-        raise HTTPException(status_code=403, detail="Mídia protegida do chefe: não pode ser vista nem baixada.")
+        raise HTTPException(status_code=403, detail="Mídia protegida do seu sócio: não pode ser vista nem baixada.")
     try:
         url = await SupabaseStorage.from_settings().create_signed_url(media.storage_path)
     except Exception:

@@ -9,6 +9,8 @@ balance shown is SmokePay's own when reachable. Amounts are checked on the
 server, never trusted from the browser.
 """
 
+import logging
+import re
 import uuid
 from datetime import timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -25,6 +27,7 @@ from app.core.config import get_settings
 from app.models import FinancialWithdrawal, TgOrder, User, Workspace
 from app.partners.service import owner_workspace, shop_ref
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/wallet", tags=["Wallet"])
 
 CENT = Decimal("0.01")
@@ -52,6 +55,45 @@ class WithdrawalRequest(BaseModel):
     def _strip(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
+
+
+def _check_digits(digits: str, weights_from: int) -> int:
+    total = sum(int(d) * w for d, w in zip(digits, range(weights_from, 1, -1)))
+    return (total * 10 % 11) % 10
+
+
+def _cnpj_digit(digits: str) -> int:
+    weights = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2][-len(digits):]
+    rest = sum(int(d) * w for d, w in zip(digits, weights)) % 11
+    return 0 if rest < 2 else 11 - rest
+
+
+def normalize_pix_key(kind: str, key: str) -> str:
+    """The key SmokePay should receive, or 422 with what is wrong (a bad key makes the
+    Pix fail at the bank and the amount comes back, wasting the 5-minute cooldown)."""
+    digits = "".join(c for c in key if c.isdigit())
+    if kind == "cpf":
+        if len(digits) != 11 or len(set(digits)) == 1 or [_check_digits(digits[:9], 10), _check_digits(digits[:10], 11)] != [int(digits[9]), int(digits[10])]:
+            raise HTTPException(status_code=422, detail="CPF inválido: confira os números da chave Pix.")
+        return digits
+    if kind == "cnpj":
+        if len(digits) != 14 or len(set(digits)) == 1 or [_cnpj_digit(digits[:12]), _cnpj_digit(digits[:13])] != [int(digits[12]), int(digits[13])]:
+            raise HTTPException(status_code=422, detail="CNPJ inválido: confira os números da chave Pix.")
+        return digits
+    if kind == "email":
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", key):
+            raise HTTPException(status_code=422, detail="E-mail inválido para chave Pix.")
+        return key.lower()
+    if kind == "phone":
+        if digits.startswith("55") and len(digits) in (12, 13):
+            digits = digits[2:]
+        if len(digits) not in (10, 11):
+            raise HTTPException(status_code=422, detail="Telefone inválido: use DDD + número, ex.: 11 91234-5678.")
+        return f"+55{digits}"
+    try:
+        return str(uuid.UUID(key))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Chave aleatória inválida: cole a chave completa (32 letras e números com traços).") from None
 
 
 async def _workspace_for(db, user: User) -> Workspace:
@@ -292,6 +334,8 @@ def _gateway_message(exc: smokepay.SmokepayError) -> tuple[int, str]:
         return 422, "Saldo insuficiente: a SmokePay desconta a taxa de saque do saldo. Use o botão MAX, que já desconta a taxa."
     if exc.status == 400:
         return 422, f"A SmokePay recusou o saque: {exc.detail or 'dados inválidos'}."
+    if exc.detail:  # say exactly what SmokePay answered (e.g. "Falha no gateway PIX")
+        return 502, f"A SmokePay recusou o saque: {exc.detail}. Confira a chave Pix e tente de novo em 5 minutos."
     return 502, "A SmokePay não conseguiu processar o saque agora. Tente de novo em alguns minutos."
 
 
@@ -304,6 +348,7 @@ async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser
         raise HTTPException(status_code=422, detail=f"O saque mínimo é R$ {MIN_WITHDRAWAL:.2f}".replace(".", ",") + ".")
     if not payload.pix_key or not payload.pix_key_type:
         raise HTTPException(status_code=422, detail="Informe a chave Pix que vai receber.")
+    pix_key = normalize_pix_key(payload.pix_key_type, payload.pix_key)
     if await db.scalar(
         select(FinancialWithdrawal.id).where(
             FinancialWithdrawal.workspace_id == workspace.id, FinancialWithdrawal.status == "PROCESSING",
@@ -330,13 +375,13 @@ async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser
     # Saved first: its id is the idempotency key SmokePay uses for subaccounts.
     item = FinancialWithdrawal(
         workspace_id=workspace.id, created_by_user_id=user.id, amount=amount, note=payload.note,
-        status="PROCESSING", pix_key_type=payload.pix_key_type, pix_key=payload.pix_key,
+        status="PROCESSING", pix_key_type=payload.pix_key_type, pix_key=pix_key,
     )
     db.add(item)
     await db.commit()
     try:
         payout = await smokepay.withdraw(
-            amount=amount, pix_key=payload.pix_key, pix_key_type=payload.pix_key_type,
+            amount=amount, pix_key=pix_key, pix_key_type=payload.pix_key_type,
             correlation_id=str(item.id), shop_ref=shop, sub_shop_id=str(user.id),
         )
     except smokepay.SmokepayError as exc:
@@ -345,6 +390,7 @@ async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser
             await db.commit()
             raise HTTPException(status_code=502, detail=item.note) from None
         status, message = _gateway_message(exc)
+        logger.warning("SmokePay withdrawal refused: HTTP %s %s", exc.status, exc.detail or "")
         item.status, item.processed_at, item.note = "FAILED", utc_now(), message[:240]
         await db.commit()
         raise HTTPException(status_code=status, detail=message) from None

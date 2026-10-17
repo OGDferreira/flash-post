@@ -3,12 +3,12 @@ import { Bell, Handshake, Info } from "lucide-react";
 import { ErrorState } from "@/components/PageState";
 import { Button } from "@/components/ui/Button";
 import { ApiError } from "@/services/api";
-import { brl, useAcceptCommission, useMarkNoticesRead, useNotices, usePartnerMe, type Sale, type SaleTotals } from "./api";
+import { brl, useAcceptCommission, useChiefLabel, useMarkNoticesRead, useNotices, usePartnerMe, type Sale, type SaleTotals } from "./api";
 
 const percent = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
 
-export function TotalsGrid({ totals, commissionLabel = "Comissão do chefe", netLabel = "Você recebe (após taxa e comissão)" }: {
+export function TotalsGrid({ totals, commissionLabel = "Comissão do sócio", netLabel = "Você recebe (após taxa e comissão)" }: {
   totals: SaleTotals;
   commissionLabel?: string;
   netLabel?: string;
@@ -73,6 +73,7 @@ export function SalesTable({ sales }: { sales: Sale[] }) {
 export function PartnerPanel() {
   const me = usePartnerMe();
   const accept = useAcceptCommission();
+  const chief = useChiefLabel();
   const data = me.data;
   if (!data?.partnership) return null;
   const p = data.partnership;
@@ -102,7 +103,7 @@ export function PartnerPanel() {
         </div>
       )}
       {accept.error && <ErrorState message={accept.error instanceof ApiError ? accept.error.message : "Não foi possível aceitar."} />}
-      {data.totals && <TotalsGrid totals={data.totals} />}
+      {data.totals && <TotalsGrid commissionLabel={`Comissão de ${chief}`} totals={data.totals} />}
       <SalesTable sales={data.sales.slice(0, 8)} />
       <p className="flex gap-2 text-[11px] leading-5 text-muted">
         <Info className="mt-0.5 shrink-0" size={13} />

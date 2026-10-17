@@ -139,3 +139,11 @@ export function useMarkNoticesRead() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["partners", "notifications"] }),
   });
 }
+
+/** How a partner sees the operation owner: "Guilherme Sócio" (falls back to "seu sócio"). */
+export function useChiefLabel() {
+  const me = usePartnerMe();
+  const link = me.data?.partnership;
+  const first = (link?.chief_name || link?.chief_nickname || "").trim().split(/\s+/)[0];
+  return first ? `${first} Sócio` : "seu sócio";
+}

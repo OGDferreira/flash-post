@@ -90,7 +90,7 @@ async def _as(client, email, password=PASSWORD) -> dict:
     return {"X-CSRF-Token": await _csrf(client)}
 
 
-PIX = {"pix_key_type": "cpf", "pix_key": "12345678900"}
+PIX = {"pix_key_type": "cpf", "pix_key": "529.982.247-25"}
 
 
 @pytest.mark.anyio
@@ -114,11 +114,15 @@ async def test_partner_withdraws_from_own_subaccount(client, db_session, owner, 
     assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "5", **PIX})).status_code == 422
     assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "50", **PIX})).status_code == 422
     assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "20"})).status_code == 422
+    # a CPF with wrong check digits never reaches SmokePay (the bank would bounce it)
+    calls = len(smoke.calls)
+    bad = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "20", "pix_key_type": "cpf", "pix_key": "16051416796"})
+    assert bad.status_code == 422 and "CPF inválido" in bad.json()["detail"] and len(smoke.calls) == calls
     done = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "30", **PIX})
     assert done.status_code == 201, done.text
     assert done.json()["status"] == "PAID" and done.json()["fee"] == 2.0
     method, path, body = smoke.calls[-1]
-    assert path == f"/api/shops/{ref}/withdraw" and body["pix_key"] == "12345678900"
+    assert path == f"/api/shops/{ref}/withdraw" and body["pix_key"] == "52998224725"
     assert body["correlation_id"] == done.json()["id"]  # idempotent on our row id
     wallet = (await client.get("/api/wallet")).json()
     assert wallet["withdrawn"] == 30.0 and wallet["available"] == 9.69 and wallet["withdrawable"] == 6.69
