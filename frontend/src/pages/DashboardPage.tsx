@@ -449,178 +449,185 @@ export function DashboardPage() {
         </p>
       )}
 
-      <main className="dashboard-layout">
-        <section
-          aria-label="Indicadores numéricos do workspace"
-          className="dashboard-metrics"
-        >
-          <article className="dashboard-card dashboard-metric-card">
-            <div className="dashboard-metric-heading">
-              <span className="dashboard-metric-icon text-accent">
-                <Link2 size={16} />
-              </span>
-              <h2 className="dashboard-metric-title">Conexões do período</h2>
-            </div>
-            <div className="flex items-end gap-3 sm:gap-4">
-              <div>
-                <p className="dashboard-metric-value text-success">{formatCount(metrics?.connected_period)}</p>
-                <p className="text-[10px] text-muted sm:text-[11px]">conectadas</p>
-              </div>
-              <div>
-                <p className="dashboard-metric-value text-danger">{formatCount(metrics?.disconnected_period)}</p>
-                <p className="text-[10px] text-muted sm:text-[11px]">desconectadas</p>
-              </div>
-            </div>
-            <p className="dashboard-metric-detail">
-              {droppedDetail || "Nenhuma queda de conta no período"}
-            </p>
-          </article>
-          <MonthResultCards />
-          {metricsCards.map((metric) => (
-            <MetricCard key={metric.title} {...metric} />
-          ))}
-          <EngagementCards />
-        </section>
-        <div className="mt-4 space-y-4">
-          <PartnerPanel />
-          <NoticesCard />
-        </div>
-      </main>
-      <section
-        aria-label="Resumo da equipe e novas contas"
-        className="grid gap-4 xl:grid-cols-3"
-      >
-        <article className="dashboard-card rounded-xl p-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-accent">
-              Equipe
-            </p>
-            <h2 className="mt-1 text-base font-semibold text-fg">
-              Ranking de conexões
-            </h2>
-            <p className="mt-1 text-xs text-muted">
-              Contas novas conectadas {rankingTab === "day" ? "hoje" : "neste mês"}
-            </p>
-          </div>
-          <div className="mt-3 inline-flex gap-1 rounded-full bg-well p-1" role="tablist" aria-label="Período do ranking">
-            {([["day", "Dia"], ["month", "Mensal"]] as const).map(([value, label]) => (
-              <button
-                aria-selected={rankingTab === value}
-                className={`min-h-8 rounded-full px-4 text-xs font-medium ${rankingTab === value ? "bg-brand text-white" : "text-muted"}`}
-                key={value}
-                onClick={() => setRankingTab(value)}
-                role="tab"
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {rankingList.length ? (
-            <ol className="mt-4 space-y-3">
-              {rankingList.slice(0, 5).map((member, index) => (
-                <li className="flex items-center gap-3" key={member.user_id}>
-                  <span className="w-4 shrink-0 text-center text-xs font-semibold text-muted">{index + 1}</span>
-                  <Avatar className="size-8" name={member.full_name} src={member.avatar_url} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-sm text-fg">
-                        {member.full_name}
-                      </span>
-                      <span className="shrink-0 text-xs text-muted">
-                        {formatCount(member.connected_accounts)}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-center gap-2">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-well">
-                        <div
-                          className="h-full rounded-full bg-brand-strong"
-                          style={{
-                            width: `${(member.connected_accounts / topConnectionCount) * 100}%`,
-                          }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-muted">
-                        {member.role === "OWNER" ? "Chefe" : "Colaborador"}
-                      </span>
-                    </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+        <div className="min-w-0 space-y-4">
+          <main className="dashboard-layout">
+            <section
+              aria-label="Indicadores numéricos do workspace"
+              className="dashboard-metrics"
+            >
+              <article className="dashboard-card dashboard-metric-card">
+                <div className="dashboard-metric-heading">
+                  <span className="dashboard-metric-icon text-accent">
+                    <Link2 size={16} />
+                  </span>
+                  <h2 className="dashboard-metric-title">Conexões do período</h2>
+                </div>
+                <div className="flex items-end gap-3 sm:gap-4">
+                  <div>
+                    <p className="dashboard-metric-value text-success">{formatCount(metrics?.connected_period)}</p>
+                    <p className="text-[10px] text-muted sm:text-[11px]">conectadas</p>
                   </div>
-                </li>
+                  <div>
+                    <p className="dashboard-metric-value text-danger">{formatCount(metrics?.disconnected_period)}</p>
+                    <p className="text-[10px] text-muted sm:text-[11px]">desconectadas</p>
+                  </div>
+                </div>
+                <p className="dashboard-metric-detail">
+                  {droppedDetail || "Nenhuma queda de conta no período"}
+                </p>
+              </article>
+              <MonthResultCards />
+              {metricsCards.map((metric) => (
+                <MetricCard key={metric.title} {...metric} />
               ))}
-            </ol>
-          ) : (
-            <p className="mt-4 text-sm text-muted">
-              Nenhuma conexão registrada {rankingTab === "day" ? "hoje" : "neste mês"}.
-            </p>
-          )}
-        </article>
+              <EngagementCards />
+            </section>
+            <div className="mt-4">
+              <PartnerPanel />
+            </div>
+          </main>
+          <section
+            aria-label="Resumo da equipe e novas contas"
+            className="grid gap-4"
+          >
 
-        <article className="dashboard-card rounded-xl p-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-accent">
-              Crescimento
-            </p>
-            <h2 className="mt-1 text-base font-semibold text-fg">
-              Novas contas por dia
-            </h2>
-            <p className="mt-1 text-xs text-muted">
-              No máximo 30 dias do período selecionado
-            </p>
-          </div>
-          {dailyConnections.length ? (
-            <>
-              <svg
-                aria-label="Gráfico diário de contas conectadas"
-                className="mt-4 h-28 w-full overflow-visible"
-                preserveAspectRatio="none"
-                role="img"
-                viewBox="0 0 100 44"
-              >
-                <defs>
-                  <linearGradient id="accountConnectionsFill" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="#7187ff" stopOpacity="0.34" />
-                    <stop offset="100%" stopColor="#7187ff" stopOpacity="0.01" />
-                  </linearGradient>
-                </defs>
-                <polygon fill="url(#accountConnectionsFill)" points={dailyConnectionArea} />
-                <polyline
-                  fill="none"
-                  points={dailyConnectionPoints.join(" ")}
-                  stroke="#8295ff"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-                  vectorEffect="non-scaling-stroke"
-                />
-              </svg>
-              <div className="flex justify-between text-[10px] text-muted">
-                <span>
-                  {new Intl.DateTimeFormat("pt-BR", {
-                    day: "2-digit",
-                    month: "short",
-                    timeZone: "America/Sao_Paulo",
-                  }).format(new Date(`${dailyConnections[0].day}T12:00:00`))}
-                </span>
-                <span>
-                  {new Intl.DateTimeFormat("pt-BR", {
-                    day: "2-digit",
-                    month: "short",
-                    timeZone: "America/Sao_Paulo",
-                  }).format(
-                    new Date(
-                      `${dailyConnections[dailyConnections.length - 1].day}T12:00:00`,
-                    ),
-                  )}
-                </span>
+            <article className="dashboard-card rounded-xl p-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-accent">
+                  Crescimento
+                </p>
+                <h2 className="mt-1 text-base font-semibold text-fg">
+                  Novas contas por dia
+                </h2>
+                <p className="mt-1 text-xs text-muted">
+                  No máximo 30 dias do período selecionado
+                </p>
               </div>
-            </>
-          ) : (
-            <p className="mt-4 text-sm text-muted">
-              Sem dados diários de conexão para exibir.
-            </p>
-          )}
-        </article>
-      </section>
+              {dailyConnections.length ? (
+                <>
+                  <svg
+                    aria-label="Gráfico diário de contas conectadas"
+                    className="mt-4 h-28 w-full overflow-visible"
+                    preserveAspectRatio="none"
+                    role="img"
+                    viewBox="0 0 100 44"
+                  >
+                    <defs>
+                      <linearGradient id="accountConnectionsFill" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="#7187ff" stopOpacity="0.34" />
+                        <stop offset="100%" stopColor="#7187ff" stopOpacity="0.01" />
+                      </linearGradient>
+                    </defs>
+                    <polygon fill="url(#accountConnectionsFill)" points={dailyConnectionArea} />
+                    <polyline
+                      fill="none"
+                      points={dailyConnectionPoints.join(" ")}
+                      stroke="#8295ff"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="1.5"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  </svg>
+                  <div className="flex justify-between text-[10px] text-muted">
+                    <span>
+                      {new Intl.DateTimeFormat("pt-BR", {
+                        day: "2-digit",
+                        month: "short",
+                        timeZone: "America/Sao_Paulo",
+                      }).format(new Date(`${dailyConnections[0].day}T12:00:00`))}
+                    </span>
+                    <span>
+                      {new Intl.DateTimeFormat("pt-BR", {
+                        day: "2-digit",
+                        month: "short",
+                        timeZone: "America/Sao_Paulo",
+                      }).format(
+                        new Date(
+                          `${dailyConnections[dailyConnections.length - 1].day}T12:00:00`,
+                        ),
+                      )}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-4 text-sm text-muted">
+                  Sem dados diários de conexão para exibir.
+                </p>
+              )}
+            </article>
+          </section>
+        </div>
+        {/* Notices and ranking: right column on desktop, below everything on smaller screens. */}
+        <aside className="space-y-4 xl:sticky xl:top-20">
+          <NoticesCard />
+          <article className="dashboard-card rounded-xl p-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-accent">
+                Equipe
+              </p>
+              <h2 className="mt-1 text-base font-semibold text-fg">
+                Ranking de conexões
+              </h2>
+              <p className="mt-1 text-xs text-muted">
+                Contas novas conectadas {rankingTab === "day" ? "hoje" : "neste mês"}
+              </p>
+            </div>
+            <div className="mt-3 inline-flex gap-1 rounded-full bg-well p-1" role="tablist" aria-label="Período do ranking">
+              {([["day", "Dia"], ["month", "Mensal"]] as const).map(([value, label]) => (
+                <button
+                  aria-selected={rankingTab === value}
+                  className={`min-h-8 rounded-full px-4 text-xs font-medium ${rankingTab === value ? "bg-brand text-white" : "text-muted"}`}
+                  key={value}
+                  onClick={() => setRankingTab(value)}
+                  role="tab"
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {rankingList.length ? (
+              <ol className="mt-4 space-y-3">
+                {rankingList.slice(0, 5).map((member, index) => (
+                  <li className="flex items-center gap-3" key={member.user_id}>
+                    <span className="w-4 shrink-0 text-center text-xs font-semibold text-muted">{index + 1}</span>
+                    <Avatar className="size-8" name={member.full_name} src={member.avatar_url} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-sm text-fg">
+                          {member.full_name}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted">
+                          {formatCount(member.connected_accounts)}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-well">
+                          <div
+                            className="h-full rounded-full bg-brand-strong"
+                            style={{
+                              width: `${(member.connected_accounts / topConnectionCount) * 100}%`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-muted">
+                          {member.role === "OWNER" ? "Chefe" : "Colaborador"}
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="mt-4 text-sm text-muted">
+                Nenhuma conexão registrada {rankingTab === "day" ? "hoje" : "neste mês"}.
+              </p>
+            )}
+          </article>
+        </aside>
+      </div>
     </div>
   );
 }
