@@ -147,7 +147,7 @@ class Offer(_Model):
 
 class UpsellStep(_Model):
     """Offer sent after a purchase; declining (or buying) moves on to the next step.
-    With ``hide_decline`` there is no "no" button: the next step follows on its own delay."""
+    With ``hide_decline`` there is no "no" button: the next step only follows a payment."""
 
     name: Annotated[str, Field(min_length=1, max_length=60)]
     price: Money

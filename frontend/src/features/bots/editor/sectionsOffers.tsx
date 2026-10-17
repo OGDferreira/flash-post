@@ -255,7 +255,7 @@ export function UpsellSection({ draft, set }: SectionProps) {
             <label className="flex items-center justify-between gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
               <span>
                 Ocultar o botão de recusar
-                <span className="block text-xs text-muted">Sem o “não”, a próxima oferta vai sozinha depois do tempo dela.</span>
+                <span className="block text-xs text-muted">Sem o “não”, a próxima oferta só é liberada quando o cliente pagar esta.</span>
               </span>
               <Switch checked={step.hide_decline} label="Ocultar o botão de recusar" onChange={(hide_decline) => setStep(index, { hide_decline })} />
             </label>

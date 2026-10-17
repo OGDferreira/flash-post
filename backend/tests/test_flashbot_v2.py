@@ -260,17 +260,19 @@ async def test_upsell_only_delivery_hidden_decline_and_default_delivery(client, 
     await _run_jobs_now(db_session)
     first = apis.methods("sendMessage")[-1]
     assert first["text"] == "Oferta 1" and len(first["reply_markup"]["inline_keyboard"]) == 1  # no "no" button
-    # hidden decline: the next step is queued on its own
+    # hidden decline: nothing else is sent until this step is paid (one step per payment)
     await _run_jobs_now(db_session)
-    assert apis.methods("sendMessage")[-1]["text"] == "Oferta 2"
+    assert "Oferta 2" not in [m["text"] for m in apis.methods("sendMessage")]
 
-    # buying step 1 uses the flow's default delivery
+    # buying step 1 uses the flow's default delivery and only then releases step 2
     await _send(client, db_session, bot["id"], _tap(f"up:0:{order.id.hex}"))
     await db_session.commit()
     up = await db_session.scalar(select(TgOrder).where(TgOrder.kind == "upsell"))
     apis.pix_amount = 9.90
     await _pay(client, db_session, up)
     assert "Entrega padrão" in [m["text"] for m in apis.methods("sendMessage")]
+    await _run_jobs_now(db_session)
+    assert apis.methods("sendMessage")[-1]["text"] == "Oferta 2"
 
 
 @pytest.mark.anyio
