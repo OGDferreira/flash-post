@@ -73,6 +73,11 @@ class InstagramLoop(Base):
     )
     next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # A chief's loop offered to their partners, and the template a copy came from.
+    shared: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=text("false"))
+    template_loop_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_loops.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

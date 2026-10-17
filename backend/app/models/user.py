@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, LargeBinary, String, func, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, LargeBinary, String, func, text
 from sqlalchemy.orm import Mapped, deferred, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -43,6 +43,9 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(String(2048))
     # Code a chief shares so new users become affiliates (created lazily).
     invite_code: Mapped[str | None] = mapped_column(String(16))
+    invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
     # Fallback avatar stored in the database when object storage is not configured.
     avatar_data: Mapped[bytes | None] = deferred(mapped_column(LargeBinary))
     avatar_content_type: Mapped[str | None] = mapped_column(String(40))

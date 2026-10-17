@@ -345,7 +345,7 @@ async def get_finance_summary(
         (
             await db.scalars(
                 select(FinancialWithdrawal)
-                .where(FinancialWithdrawal.workspace_id == workspace_id)
+                .where(FinancialWithdrawal.workspace_id == workspace_id, FinancialWithdrawal.status == "PAID")
                 .order_by(
                     FinancialWithdrawal.created_at.desc(),
                     FinancialWithdrawal.id.desc(),
@@ -356,14 +356,14 @@ async def get_finance_summary(
     total_withdrawals = _money(
         await db.scalar(
             select(func.coalesce(func.sum(FinancialWithdrawal.amount), 0)).where(
-                FinancialWithdrawal.workspace_id == workspace_id
+                FinancialWithdrawal.workspace_id == workspace_id, FinancialWithdrawal.status == "PAID"
             )
         )
     )
     withdrawals_today = _money(
         await db.scalar(
             select(func.coalesce(func.sum(FinancialWithdrawal.amount), 0)).where(
-                FinancialWithdrawal.workspace_id == workspace_id,
+                FinancialWithdrawal.workspace_id == workspace_id, FinancialWithdrawal.status == "PAID",
                 FinancialWithdrawal.created_at >= day_start,
                 FinancialWithdrawal.created_at < day_end,
             )

@@ -36,6 +36,10 @@ class Affiliation(Base):
     participation_percent: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, default=Decimal("0.00"), server_default="0"
     )
+    # What the affiliate agreed to. Splits use this, never the proposal above,
+    # so a new percentage only applies after a new acceptance.
+    accepted_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE", server_default="ACTIVE")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

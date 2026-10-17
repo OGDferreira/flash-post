@@ -31,6 +31,31 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+_LOCK_TIMEOUT = "15s"
+_ATTEMPTS = 8
+
+
+def _release_stuck_sessions(connection) -> None:
+    """End sessions of this database left "idle in transaction", or inside one
+    transaction for minutes (e.g. a hung worker of the previous release); they
+    hold locks that would block the DDL forever."""
+    try:
+        ended = connection.execute(
+            text(
+                "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity "
+                "WHERE datname = current_database() AND pid <> pg_backend_pid() "
+                "AND ((state LIKE 'idle in transaction%' AND state_change < now() - interval '30 seconds') "
+                "OR xact_start < now() - interval '3 minutes')"
+            )
+        ).scalar()
+        connection.commit()
+        if ended:
+            print(f"[migrations] ended {ended} stuck session(s)", flush=True)
+    except Exception as exc:  # no permission on a pooled/managed database: keep going
+        connection.rollback()
+        print(f"[migrations] could not end stuck sessions: {type(exc).__name__}", flush=True)
+
+
 def do_run_migrations(connection) -> None:
     lock_acquired = connection.dialect.name == "postgresql"
     if lock_acquired:
@@ -42,8 +67,26 @@ def do_run_migrations(connection) -> None:
             target_metadata=target_metadata,
             compare_type=True,
         )
-        with context.begin_transaction():
-            context.run_migrations()
+        if not lock_acquired:
+            with context.begin_transaction():
+                context.run_migrations()
+            return
+        # Never wait forever for a table lock: fail the attempt, free stuck
+        # sessions and retry, so a deploy either finishes or fails with a reason.
+        for attempt in range(1, _ATTEMPTS + 1):
+            _release_stuck_sessions(connection)
+            try:
+                with context.begin_transaction():
+                    connection.execute(text(f"SET LOCAL lock_timeout = '{_LOCK_TIMEOUT}'"))
+                    context.run_migrations()
+                print("[migrations] up to date", flush=True)
+                return
+            except Exception as exc:
+                if connection.in_transaction():
+                    connection.rollback()
+                if "lock timeout" not in str(exc).lower() or attempt == _ATTEMPTS:
+                    raise
+                print(f"[migrations] table busy, retrying ({attempt}/{_ATTEMPTS})", flush=True)
     finally:
         if lock_acquired:
             if connection.in_transaction():

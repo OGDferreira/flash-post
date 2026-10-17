@@ -1,4 +1,5 @@
 import { EngagementCards } from "@/components/EngagementCards";
+import { NoticesCard, PartnerPanel } from "@/features/partners/PartnerPanel";
 import { TrendBadge } from "@/components/TrendBadge";
 import { MonthResultCards, useFinanceMonth } from "@/components/MonthResultCards";
 import { useState, type ReactNode } from "react";
@@ -480,6 +481,8 @@ export function DashboardPage() {
           ))}
           <EngagementCards />
         </section>
+        <PartnerPanel />
+        <NoticesCard />
       </main>
       <section
         aria-label="Resumo da equipe e novas contas"

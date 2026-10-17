@@ -140,6 +140,8 @@ async def _loop_response(
     return InstagramLoopResponse(
         id=loop.id,
         name=loop.name,
+        shared=bool(loop.shared),
+        from_template=loop.template_loop_id is not None,
         auto_folder_ids=[uuid.UUID(str(item)) for item in (loop.auto_folder_ids or [])],
         interval_min_minutes=loop.interval_min_minutes,
         interval_max_minutes=loop.interval_max_minutes,

@@ -15,7 +15,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,10 +28,12 @@ from app.models import (
     InstagramAccount,
     InstagramMediaInsight,
     InstagramPublicationJob,
+    TgOrder,
     User,
     Workspace,
     WorkspaceMember,
 )
+from app.partners.service import accepted, notify_user, pending_acceptance
 from app.shark.metrics import CRITERIA, compute_shark_metrics, window
 
 router = APIRouter(prefix="/api/affiliates", tags=["Affiliates"])
@@ -43,7 +45,8 @@ _MAX_CHAIN_DEPTH = 50
 PARTICIPATION_BASIS = (
     "Participação = receita aprovada do filiado no período (compras pagas com valor informado, "
     "valor bruto, sem descontar taxas, impostos ou custos) × percentual definido por você. "
-    "É um valor de referência calculado com o percentual atual; o FlashPost não faz repasses."
+    "É um valor de referência. Nas vendas do FlashBot, a comissão aceita pelo sócio é separada "
+    "automaticamente pela SmokePay (split) e aparece em “Comissão recebida”."
 )
 
 
@@ -112,6 +115,10 @@ async def link_affiliate(db: AsyncSession, code: str, affiliate: User) -> Affili
         raise HTTPException(status_code=422, detail="Você não pode usar o seu próprio código de convite.")
     if await db.scalar(select(Affiliation.id).where(Affiliation.affiliate_user_id == affiliate.id)):
         raise HTTPException(status_code=409, detail="Você já está vinculado a um chefe.")
+    if await db.scalar(
+        select(Affiliation.id).where(Affiliation.affiliate_user_id == chief.id, Affiliation.status == "ACTIVE")
+    ):
+        raise HTTPException(status_code=422, detail="Este código é de um sócio e serve só para novos cadastros.")
     if await chief_chain_contains(db, chief.id, affiliate.id):
         raise HTTPException(
             status_code=422, detail="Este vínculo criaria um ciclo entre chefe e filiado."
@@ -140,7 +147,8 @@ class MyChiefResponse(BaseModel):
 
 
 class PercentRequest(BaseModel):
-    participation_percent: Decimal = Field(ge=0, le=100, decimal_places=2)
+    # Below 100: SmokePay refuses splits that take the whole net amount.
+    participation_percent: Decimal = Field(ge=0, le=99, decimal_places=2)
 
 
 class AffiliateRow(BaseModel):
@@ -161,6 +169,11 @@ class AffiliateRow(BaseModel):
     lead_to_purchase_rate: float | None
     average_ticket: Decimal | None
     participation_amount: Decimal
+    accepted_percent: Decimal | None = None
+    pending_acceptance: bool = True
+    bot_revenue: Decimal = Decimal("0.00")
+    bot_sales: int = 0
+    commission_received: Decimal = Decimal("0.00")
 
 
 class AffiliatesResponse(BaseModel):
@@ -323,7 +336,35 @@ async def _row_for(db: AsyncSession, link: Affiliation, user: User, start, end) 
         lead_to_purchase_rate=metrics.lead_to_purchase_rate if metrics else None,
         average_ticket=metrics.average_ticket if metrics else None,
         participation_amount=(revenue * percent / Decimal(100)).quantize(Decimal("0.01")),
+        accepted_percent=link.accepted_percent,
+        pending_acceptance=pending_acceptance(link),
+        **(await _bot_numbers(db, workspace.id if workspace else None, link.chief_user_id, start, end)),
     )
+
+
+async def _bot_numbers(db: AsyncSession, workspace_id, chief_user_id, start, end) -> dict:
+    """FlashBot paid sales of the affiliate and the split the chief received from them."""
+    if workspace_id is None:
+        return {}
+    row = (
+        await db.execute(
+            select(
+                func.count(TgOrder.id),
+                func.coalesce(func.sum(TgOrder.amount), 0),
+                func.coalesce(
+                    func.sum(case((TgOrder.split_chief_user_id == chief_user_id, TgOrder.split_amount), else_=0)), 0
+                ),
+            ).where(
+                TgOrder.workspace_id == workspace_id, TgOrder.status == "paid",
+                TgOrder.paid_at >= start, TgOrder.paid_at < end,
+            )
+        )
+    ).one()
+    return {
+        "bot_sales": int(row[0]),
+        "bot_revenue": Decimal(row[1] or 0).quantize(Decimal("0.01")),
+        "commission_received": Decimal(row[2] or 0).quantize(Decimal("0.01")),
+    }
 
 
 @router.get("", response_model=AffiliatesResponse)
@@ -460,7 +501,14 @@ async def set_participation(
     end_date: date | None = None,
 ) -> AffiliateRow:
     link, affiliate = await _own_link(db, user, affiliation_id)
-    link.participation_percent = payload.participation_percent
+    if link.participation_percent != payload.participation_percent or not accepted(link):
+        link.participation_percent = payload.participation_percent
+        # The accepted percentage keeps applying until the partner accepts the new one.
+        await notify_user(
+            db, affiliate.id, "partner-commission", "Nova comissão para aceitar",
+            f"{user.full_name} propôs {float(payload.participation_percent):g}% de comissão. "
+            "Ela só vale para as próximas vendas depois do seu aceite.", "/",
+        )
     await db.commit()
     start, end = period_bounds(period, start_date, end_date, utc_now())
     return await _row_for(db, link, affiliate, start, end)

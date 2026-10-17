@@ -40,9 +40,11 @@ const ExtensionsPage = lazyPage(() => import("@/pages/ExtensionsPage"), "Extensi
 const SupportPage = lazyPage(() => import("@/pages/SupportPage"), "SupportPage");
 const FeedPage = lazyPage(() => import("@/pages/FeedPage"), "FeedPage");
 const BotsPage = lazyPage(() => import("@/pages/BotsPage"), "BotsPage");
+const WalletPage = lazyPage(() => import("@/pages/WalletPage"), "WalletPage");
 const AdminOverviewPage = lazyPage(() => import("@/pages/admin/AdminOverviewPage"), "AdminOverviewPage");
 const AdminNotificationsPage = lazyPage(() => import("@/pages/admin/AdminNotificationsPage"), "AdminNotificationsPage");
 const AdminSystemPage = lazyPage(() => import("@/pages/admin/AdminSystemPage"), "AdminSystemPage");
+const AdminOperationsPage = lazyPage(() => import("@/pages/admin/AdminOperationsPage"), "AdminOperationsPage");
 const AdminUsersPage = lazyPage(() => import("@/pages/admin/AdminUsersPage"), "AdminUsersPage");
 const AdminWorkspacesPage = lazyPage(() => import("@/pages/admin/AdminWorkspacesPage"), "AdminWorkspacesPage");
 
@@ -87,6 +89,7 @@ export default function App() {
                     <Route path="/feature/affiliates" element={<AffiliatesPage />} />
                     <Route path="/feature/feed" element={<FeedPage />} />
                     <Route path="/feature/bots" element={<BotsPage />} />
+                    <Route path="/carteira" element={<WalletPage />} />
                     <Route path="/feature/collaborators" element={<CollaboratorsPage />} />
                     <Route path="/feature/notifications" element={<NotificationsPage />} />
                     <Route path="/feature/ranking" element={<RankingPage />} />
@@ -112,6 +115,7 @@ export default function App() {
                 <Route path="/admin/users" element={<AdminUsersPage />} />
                 <Route path="/admin/workspaces" element={<AdminWorkspacesPage />} />
                 <Route path="/admin/system" element={<AdminSystemPage />} />
+                <Route path="/admin/operations" element={<AdminOperationsPage />} />
                 <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
               </Route>
             </Route>

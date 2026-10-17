@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Blocks,
   Bot,
   Bug,
@@ -20,6 +21,7 @@ import {
   Trophy,
   Users,
   UsersRound,
+  Wallet,
   Bell,
   BellRing,
   type LucideIcon,
@@ -32,15 +34,16 @@ export const adminLinks: NavItem[] = [
   { label: "Visão geral", to: "/admin", icon: Home },
   { label: "Usuários", to: "/admin/users", icon: Users },
   { label: "Workspaces", to: "/admin/workspaces", icon: Blocks },
+  { label: "Operações", to: "/admin/operations", icon: BarChart3 },
   { label: "Notificações", to: "/admin/notifications", icon: BellRing },
   { label: "Sistema", to: "/admin/system", icon: Settings2 },
 ];
 
 /** Six direct shortcuts, in this exact order (sidebar top and phone bottom bar). */
 export const directLinks: NavItem[] = [
+  { label: "FlashBot", to: "/feature/bots", icon: Bot },
   { label: "Painel", to: "/dashboard", icon: Home },
   { label: "Contas", to: "/feature/accounts", icon: Users },
-  { label: "Pastas", to: "/feature/profile-folders", icon: Folder },
   { label: "Loops", to: "/feature/loops", icon: InfinityIcon },
   { label: "Métricas", to: "/feature/analytics", icon: ChartNoAxesCombined },
   { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
@@ -76,6 +79,7 @@ const ownerGroups: NavGroup[] = [
     items: [
       { label: "Analytics", to: "/feature/analytics", icon: ChartNoAxesCombined },
       { label: "Ranking", to: "/feature/ranking", icon: Trophy },
+      { label: "Carteira", to: "/carteira", icon: Wallet },
       { label: "Financeiro", to: "/feature/finance", icon: CircleDollarSign },
     ],
   },
@@ -85,7 +89,7 @@ const ownerGroups: NavGroup[] = [
     icon: UsersRound,
     items: [
       { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
-      { label: "Filiados", to: "/feature/affiliates", icon: Handshake },
+      { label: "Sócios", to: "/feature/affiliates", icon: Handshake },
     ],
   },
   {

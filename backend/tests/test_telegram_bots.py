@@ -26,6 +26,31 @@ PNG = base64.b64encode(b"\x89PNG\r\n\x1a\nfake").decode()
 GROUP_ID = -1001234567890
 
 
+def _form_fields(request: httpx.Request) -> dict:
+    """Text fields of a multipart Telegram call (files are skipped)."""
+    fields = {}
+    for part in request.content.split(b"--" + request.headers["content-type"].split("boundary=")[1].encode()):
+        head, _, value = part.partition(b"\r\n\r\n")
+        if b"filename=" in head or b'name="' not in head:
+            continue
+        name = head.split(b'name="')[1].split(b'"')[0].decode()
+        text = value.rstrip(b"\r\n").decode()
+        try:
+            fields[name] = json.loads(text) if text[:1] in "{[" else text
+        except ValueError:
+            fields[name] = text
+    return fields
+
+
+def pix_message(apis: "FakeApis") -> dict:
+    """Last message carrying the PIX code (photo caption or plain text)."""
+    for method, body in reversed(apis.calls):
+        text = body.get("caption") if method == "sendPhoto" else body.get("text") if method == "sendMessage" else None
+        if text and "<code>" in text:
+            return {**body, "text": text}
+    raise AssertionError("no PIX message sent")
+
+
 class FakeApis:
     """Answers Telegram Bot API and SmokePay calls and records them."""
 
@@ -44,7 +69,7 @@ class FakeApis:
         if "api.telegram.org" in url:
             method = url.rsplit("/", 1)[-1]
             if request.headers.get("content-type", "").startswith("multipart"):
-                body = {"multipart": True}
+                body = {"multipart": True, **_form_fields(request)}
             else:
                 body = json.loads(request.content or b"{}")
             self.calls.append((method, body))
@@ -247,9 +272,9 @@ async def test_full_journey_start_pix_webhook_and_vip_invite(client, db_session:
     assert created["amount"] == 19.9 and created["external_id"] == f"tgo_{order.id}"
     assert created["expiration"] == 900
     assert created["webhook_url"] == "http://testserver/api/bots/pay/smokepay"
-    pix_message = apis.methods("sendMessage")[-1]
-    assert "00020126PIXCODE" in pix_message["text"]
-    buttons = pix_message["reply_markup"]["inline_keyboard"]
+    sent = pix_message(apis)
+    assert "00020126PIXCODE" in sent["text"]
+    buttons = sent["reply_markup"]["inline_keyboard"]
     assert buttons[0][0]["copy_text"]["text"] == "00020126PIXCODE"
     assert buttons[1][0]["callback_data"] == f"chk:{order.id}"
     # tapping the plan again reuses the pending PIX
@@ -392,7 +417,7 @@ async def test_media_blocks_upload_once_then_reuse_file_id(client, db_session, o
     media = await db_session.get(TgMedia, uuid.UUID(media_id))
     await db_session.refresh(media)
     assert media.file_ids[bot["id"]] == "PHOTO_FILE_ID"
-    assert apis.methods("sendPhoto")[0] == {"multipart": True}
+    assert apis.methods("sendPhoto")[0]["multipart"] is True
 
     await _send(client, db_session, bot["id"], _start("/start"))
     second = apis.methods("sendPhoto")[1]

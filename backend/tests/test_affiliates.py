@@ -111,28 +111,24 @@ async def test_cycles_are_rejected(client: AsyncClient, db_session: AsyncSession
     b, _ = await _make_owner(db_session, "bravo")
     c, _ = await _make_owner(db_session, "charlie")
 
-    # b joins a; c joins b  =>  a <- b <- c
+    # b joins a  =>  a <- b. A partner's code never creates a second level.
     await _login(client, "owner@example.com", "correct horse battery staple")
-    code_a = await _code(client)
+    await _code(client)
+    code_a = (await client.get("/api/affiliates/invite")).json()["code"]
     await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
     await _login(client, "bravo@example.com", PASSWORD)
     code_b = await _code(client)
     assert (await _join(client, code_a)).status_code == 200
     await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
     await _login(client, "charlie@example.com", PASSWORD)
-    assert (await _join(client, code_b)).status_code == 200
+    partner_code = await _join(client, code_b)
+    assert partner_code.status_code == 422 and "sócio" in partner_code.json()["detail"]
     await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
 
-    # a tries to join c (its own descendant) -> would close the loop a <- b <- c <- a
+    # a tries to join c's chief chain the other way round: a <- b <- a
     await _login(client, "owner@example.com", "correct horse battery staple")
-    await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
-    await _login(client, "charlie@example.com", PASSWORD)
-    code_c = await _code(client)
-    await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
-    await _login(client, "owner@example.com", "correct horse battery staple")
-    response = await _join(client, code_c)
+    response = await _join(client, code_b)
     assert response.status_code == 422
-    assert "ciclo" in response.json()["detail"]
     assert await _links(client) == 0
 
 

@@ -22,6 +22,9 @@ class AdminUser(BaseModel):
     workspace_name: str | None
     created_at: datetime
     last_login_at: datetime | None
+    hierarchy: str = "independent"  # chief | partner | independent
+    chief_name: str | None = None
+    invited_by_name: str | None = None
 
 
 class AdminUsersPage(BaseModel):
