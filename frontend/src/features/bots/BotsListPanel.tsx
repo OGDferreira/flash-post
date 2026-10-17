@@ -9,20 +9,30 @@ import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
-import { brl, type Bot, type Flow } from "./types";
+import type { MetricsPeriod } from "@/features/analytics/period";
+import { BotAvatar } from "./BotAvatar";
+import { useBotStats } from "./ConversionOverview";
+import { brl, type Bot, type BotGroup, type Flow, type SharedFlowOption } from "./types";
 
 const errorText = (error: unknown, fallback: string) => (error instanceof ApiError ? error.message : fallback);
 
 /** Connected bots: token from @BotFather, linked flow, on/off and stats. */
-export function BotsListPanel() {
+export function BotsListPanel({ period }: { period: MetricsPeriod }) {
   const queryClient = useQueryClient();
   const [connectOpen, setConnectOpen] = useState(false);
   const bots = useQuery({ queryKey: ["bots"], queryFn: () => apiRequest<{ bots: Bot[] }>("/api/bots"), retry: false });
   const flows = useQuery({
     queryKey: ["bots", "flows"],
-    queryFn: () => apiRequest<{ flows: Flow[] }>("/api/bots/flows/list"),
+    queryFn: () => apiRequest<{ flows: Flow[]; shared_flows?: SharedFlowOption[] }>("/api/bots/flows/list"),
     retry: false,
   });
+  const groups = useQuery({
+    queryKey: ["bots", "groups"],
+    queryFn: () => apiRequest<{ groups: BotGroup[] }>("/api/bots/groups/list"),
+    retry: false,
+  });
+  const stats = useBotStats(period);
+  const sharedIds = new Set((flows.data?.shared_flows ?? []).map((flow) => flow.id));
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["bots"] });
 
   const update = useMutation({
@@ -61,15 +71,18 @@ export function BotsListPanel() {
           action={<Button variant="primary" onClick={() => setConnectOpen(true)}>Conectar o primeiro robô</Button>}
         />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
           {bots.data.bots.map((bot) => (
             <Card key={bot.id} className="space-y-3">
               <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                <BotAvatar botId={bot.id} name={bot.name} size={44} />
                 <div className="min-w-0">
                   <p className="truncate font-medium text-fg">{bot.name}</p>
                   <a className="text-sm text-accent hover:underline" href={`https://t.me/${bot.username}`} rel="noreferrer" target="_blank">
                     @{bot.username}
                   </a>
+                </div>
                 </div>
                 {bot.status === "error" ? (
                   <Badge tone="danger">Com erro</Badge>
@@ -80,13 +93,14 @@ export function BotsListPanel() {
                 )}
               </div>
               {bot.last_error && <p className="break-words text-xs text-danger">{bot.last_error}</p>}
-              <dl className="grid grid-cols-3 gap-2 text-center">
+              <dl className="grid grid-cols-4 gap-2 text-center">
                 {[
                   ["Leads", String(bot.leads)],
                   ["Vendas", String(bot.sales)],
+                  ["Conversão", `${(stats.data?.bots[bot.id]?.conversion ?? 0).toLocaleString("pt-BR")}%`],
                   ["Faturado", brl(bot.revenue)],
                 ].map(([label, value]) => (
-                  <div className="rounded-xl bg-surface-inset p-2" key={label}>
+                  <div className="min-w-0 rounded-xl bg-surface-inset p-2" key={label}>
                     <dt className="text-[11px] text-muted">{label}</dt>
                     <dd className="text-sm font-semibold text-fg">{value}</dd>
                   </div>
@@ -111,8 +125,39 @@ export function BotsListPanel() {
                       {flow.name}
                     </option>
                   ))}
+                  {(flows.data?.shared_flows ?? []).length > 0 && (
+                    <optgroup label="Compartilhados pelo chefe">
+                      {flows.data!.shared_flows!.map((flow) => (
+                        <option key={flow.id} value={flow.id}>{flow.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </label>
+              {bot.flow_id && sharedIds.has(bot.flow_id) && (
+                <label className="grid gap-1.5 text-sm text-fg-2">
+                  Grupo de entrega deste robô
+                  <select
+                    className="field"
+                    disabled={update.isPending}
+                    onChange={(event) =>
+                      update.mutate({
+                        id: bot.id,
+                        body: event.target.value ? { delivery_group_chat_id: Number(event.target.value) } : { clear_delivery_group: true },
+                      })
+                    }
+                    value={bot.delivery_group_chat_id ?? ""}
+                  >
+                    <option value="">Escolha seu grupo VIP</option>
+                    {(groups.data?.groups ?? []).filter((group) => group.bot === bot.username).map((group) => (
+                      <option disabled={!group.can_invite} key={group.chat_id} value={group.chat_id}>
+                        {group.title}{group.can_invite ? "" : " (sem permissão de convidar)"}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[11px] text-muted">O funil é do seu chefe; quem compra entra no seu grupo. Adicione o robô como admin dele.</span>
+                </label>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => update.mutate({ id: bot.id, body: { is_active: !bot.is_active } })}>
                   {bot.is_active ? "Pausar" : "Ativar"}

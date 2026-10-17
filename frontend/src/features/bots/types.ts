@@ -124,6 +124,7 @@ export type Flow = {
   bots: number;
   updated_at: string | null;
   shared?: boolean;
+  shared_loop_id?: string | null;
   from_template?: boolean;
 };
 
@@ -139,7 +140,10 @@ export type Bot = {
   leads: number;
   sales: number;
   revenue: string;
+  delivery_group_chat_id?: number | null;
 };
+
+export type SharedFlowOption = { id: string; name: string; shared_from_chief: true };
 
 export type BotGroup = {
   chat_id: number;

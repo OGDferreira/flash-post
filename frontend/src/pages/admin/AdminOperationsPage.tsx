@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { PeriodFilter, isPeriodReady, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
@@ -50,6 +50,41 @@ function Table({ title, head, rows }: { title: string; head: string[]; rows: (st
   );
 }
 
+function PlatformFeeCard() {
+  const fee = useQuery({ queryKey: ["admin", "platform-fee"], queryFn: () => apiRequest<{ type: "percent" | "fixed"; value: number }>("/api/admin/platform-fee") });
+  const [type, setType] = useState<"percent" | "fixed">("percent");
+  const [value, setValue] = useState("0");
+  useEffect(() => {
+    if (fee.data) {
+      setType(fee.data.type);
+      setValue(String(fee.data.value).replace(".", ","));
+    }
+  }, [fee.data]);
+  const save = useMutation({
+    mutationFn: () => apiRequest("/api/admin/platform-fee", { method: "PUT", body: { type, value: value.replace(",", ".") || "0" } }),
+    onSuccess: () => void fee.refetch(),
+  });
+  return (
+    <section className="glass-panel space-y-2 p-4">
+      <h3 className="text-sm font-semibold text-fg">Taxa da plataforma (vendas de sócios em funis próprios)</h3>
+      <p className="text-xs text-muted">
+        Vendas por funil compartilhado pagam só a comissão do chefe. Vendas de sócios por funil próprio pagam só esta taxa, enviada para a
+        carteira principal pelo split da SmokePay. Vale para as próximas cobranças.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="field !min-h-10 !w-auto" onChange={(event) => setType(event.target.value as "percent" | "fixed")} value={type}>
+          <option value="percent">% do líquido</option>
+          <option value="fixed">R$ fixo por venda</option>
+        </select>
+        <input className="field !min-h-10 !w-28" inputMode="decimal" onChange={(event) => setValue(event.target.value)} value={value} />
+        <button className="btn-primary !min-h-10" disabled={save.isPending} onClick={() => save.mutate()} type="button">
+          {save.isPending ? "Salvando…" : save.isSuccess ? "Salvo ✓" : "Salvar"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function AdminOperationsPage() {
   const [period, setPeriod] = useState<MetricsPeriod>({ period: "30d", start: todayInput(), end: todayInput() });
   const query = useQuery({
@@ -69,6 +104,7 @@ export function AdminOperationsPage() {
         </div>
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>
+      <PlatformFeeCard />
       {query.isLoading && <LoadingState label="Carregando operações" />}
       {query.error && <ErrorState message="Não foi possível carregar." onRetry={() => void query.refetch()} />}
       {data && (

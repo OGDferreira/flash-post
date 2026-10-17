@@ -133,10 +133,16 @@ async def load_media_bytes(media: TgMedia) -> bytes:
 async def _media_rows(db: AsyncSession, bot: TgBot, ids: list[uuid.UUID]) -> list[TgMedia]:
     if not ids:
         return []
+    # A bot may run a funnel shared by the chief: its media live in the funnel's workspace.
+    workspaces = {bot.workspace_id}
+    if bot.flow_id:
+        flow_workspace = await db.scalar(select(TgFlow.workspace_id).where(TgFlow.id == bot.flow_id))
+        if flow_workspace:
+            workspaces.add(flow_workspace)
     rows = {
         m.id: m
         for m in await db.scalars(
-            select(TgMedia).where(TgMedia.id.in_(ids), TgMedia.workspace_id == bot.workspace_id)
+            select(TgMedia).where(TgMedia.id.in_(ids), TgMedia.workspace_id.in_(workspaces))
         )
     }
     return [rows[i] for i in ids if i in rows]
@@ -773,6 +779,11 @@ async def create_order(
     )
     first_pix = order is None and not await db.scalar(select(TgOrder.id).where(TgOrder.lead_id == lead.id).limit(1))
     if order is None:
+        route = await billing_route(db, bot.workspace_id, bot.flow_id)
+        if not route.allowed:  # a shared funnel that is no longer available to this bot
+            await tg.send_message(lead.chat_id, "Esta oferta não está disponível no momento.")
+            await notify_owners(db, bot, "⚠️ Funil indisponível", f"@{bot.username}: o funil compartilhado não está mais liberado.", "bot-flow")
+            return None
         snapshot = {
             "plan": plan.model_dump(mode="json"), "bump": bump.model_dump(mode="json") if bump else None,
             "kind": kind, "step": step, "chain": chain, "retry": retry or f"plan:{plan.id}",
@@ -784,7 +795,7 @@ async def create_order(
         )
         db.add(order)
         await db.flush()
-        route = await billing_route(db, bot.workspace_id)
+        order.origin = route.origin
         order.shop_ref = route.shop_ref
         order.split_chief_user_id = route.chief_user_id
         order.split_percent = route.percent
@@ -812,6 +823,13 @@ async def create_order(
             commission, partner = route.preview(charge.net_amount)
             order.split_amount = charge.split_total if charge.split_total is not None else commission
             order.partner_net = charge.owner_net if charge.owner_net is not None else partner
+        elif route.splits:  # platform fee only (partner's own funnel)
+            fee = charge.split_total if charge.split_total is not None else route.platform_fee(charge.net_amount)
+            order.platform_fee = fee
+            if charge.owner_net is not None:
+                order.partner_net = charge.owner_net
+            elif fee is not None and charge.net_amount is not None:
+                order.partner_net = charge.net_amount - fee
         order.pix_copy_paste = charge.copy_paste
         await schedule(db, bot, "expire_order", order.expires_at, f"expire:{order.id}", lead, {"order_id": str(order.id)})
         if first_pix and kind == "plan" and "pix" in (flow.downsell_audience or []):
@@ -995,6 +1013,10 @@ async def deliver(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead
 async def _deliver_group(db, tg, bot, lead, order, plan: Plan, delivery: Delivery, text: str) -> None:
     now = utcnow()
     chat_id = int(delivery.group_chat_id)
+    if bot.delivery_group_chat_id and (
+        chat_id == 0 or await db.scalar(select(TgFlow.workspace_id).where(TgFlow.id == bot.flow_id)) != bot.workspace_id
+    ):
+        chat_id = int(bot.delivery_group_chat_id)  # partner's own group for a shared funnel
     subscription = await db.scalar(
         select(TgSubscription).where(
             TgSubscription.lead_id == lead.id, TgSubscription.chat_id == chat_id, TgSubscription.status == "active"

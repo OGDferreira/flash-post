@@ -21,6 +21,7 @@ from sqlalchemy import func, select
 from app.auth.dependencies import AuthenticatedUser, DbSession, require_csrf
 from app.core.time import BRAZIL_TIME_ZONE, utc_now
 from app.bots import smokepay
+from app.core.config import get_settings
 from app.models import FinancialWithdrawal, TgOrder, User, Workspace
 from app.partners.service import owner_workspace, shop_ref
 
@@ -30,6 +31,10 @@ CENT = Decimal("0.01")
 MIN_WITHDRAWAL = Decimal("10.00")
 GOALS = [Decimal(v) for v in ("10000", "50000", "100000", "500000", "1000000")]
 GOAL_PRIZES = {10000: "Pulseira", 50000: "Caneca", 100000: "Placa", 500000: "Placa", 1000000: "Quadro, cordão e pingente de ouro"}
+
+
+def _brl(value: Decimal) -> str:
+    return f"R$ {value:.2f}".replace(".", ",")
 
 
 def _money(value: object) -> Decimal:
@@ -194,6 +199,10 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
     out = {k: float(v) for k, v in balance.items()}
     if gateway is not None:  # SmokePay's own number wins over our estimate
         out["available"] = float(gateway)
+    fee = get_settings().smokepay_withdraw_fee
+    out["withdraw_fee"] = float(fee)
+    # what can actually leave: SmokePay debits the fee from the balance too
+    out["withdrawable"] = float(max(Decimal("0.00"), Decimal(str(out["available"])) - fee))
     return {
         "is_main_account": shop is None,
         "shop_ref": shop,
@@ -216,6 +225,8 @@ def _gateway_message(exc: smokepay.SmokepayError) -> tuple[int, str]:
         return 422, "A SmokePay recusou o saque: confira se a chave de API tem permissão de saque."
     if exc.status == 404:
         return 422, "Sua subconta ainda não recebeu nenhuma venda, então não há saldo para sacar."
+    if exc.status == 400 and "insuficiente" in (exc.detail or "").lower():
+        return 422, "Saldo insuficiente: a SmokePay desconta a taxa de saque do saldo. Use o botão MAX, que já desconta a taxa."
     if exc.status == 400:
         return 422, f"A SmokePay recusou o saque: {exc.detail or 'dados inválidos'}."
     return 502, "A SmokePay não conseguiu processar o saque agora. Tente de novo em alguns minutos."
@@ -245,8 +256,13 @@ async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser
     except smokepay.SmokepayError as exc:
         status, message = _gateway_message(exc)
         raise HTTPException(status_code=status, detail=message) from None
-    if amount > (available or Decimal("0.00")):
-        raise HTTPException(status_code=422, detail="Valor maior que o saldo disponível na SmokePay.")
+    fee = get_settings().smokepay_withdraw_fee
+    if amount + fee > (available or Decimal("0.00")):
+        most = max(Decimal("0.00"), (available or Decimal("0.00")) - fee)
+        raise HTTPException(
+            status_code=422,
+            detail=f"A SmokePay desconta {_brl(fee)} de taxa do saldo: dá para sacar até {_brl(most)}.",
+        )
 
     # Saved first: its id is the idempotency key SmokePay uses for subaccounts.
     item = FinancialWithdrawal(

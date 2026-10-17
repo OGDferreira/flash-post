@@ -50,6 +50,12 @@ class ShareRequest(BaseModel):
     shared: bool
 
 
+class ShareFlowRequest(BaseModel):
+    shared: bool
+    # A funnel always goes out together with a loop (required when sharing).
+    loop_id: uuid.UUID | None = None
+
+
 def _f(value: Decimal | None) -> float:
     return float(value or 0)
 
@@ -183,12 +189,9 @@ async def shared_templates(access: OwnerAccess, user: AuthenticatedUser, db: DbS
         )
     )
     used_flows = set(
-        await db.scalars(
-            select(TgFlow.template_flow_id).where(
-                TgFlow.workspace_id == access.workspace.id, TgFlow.template_flow_id.is_not(None)
-            )
-        )
+        await db.scalars(select(TgBot.flow_id).where(TgBot.workspace_id == access.workspace.id, TgBot.flow_id.is_not(None)))
     )
+    loop_names = {loop.id: loop.name for loop in loops}
     media_counts = dict(
         (
             await db.execute(
@@ -210,13 +213,13 @@ async def shared_templates(access: OwnerAccess, user: AuthenticatedUser, db: DbS
             }
             for loop in loops
         ],
+        # Only the name and the paired loop: the funnel's content never leaves the chief.
         "flows": [
             {
-                "id": str(flow.id), "name": flow.name,
-                "plans": len((flow.definition or {}).get("plans") or []),
-                "upsells": len((flow.definition or {}).get("upsells") or []),
-                "downsells": len((flow.definition or {}).get("downsells") or []),
-                "in_use": flow.id in used_flows,
+                "id": str(flow.id), "name": flow.name, "in_use": flow.id in used_flows,
+                "loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
+                "loop_name": loop_names.get(flow.shared_loop_id),
+                "loop_in_use": flow.shared_loop_id in used_loops,
             }
             for flow in flows
         ],
@@ -246,9 +249,23 @@ async def use_shared_flow(flow_id: uuid.UUID, access: OwnerAccess, user: Authent
     )
     if source is None:
         raise HTTPException(status_code=404, detail="Funil compartilhado não encontrado.")
-    clone = await service.clone_flow(db, source, access.workspace.id)
+    # The funnel itself is never copied: the partner's bot runs it as is. Only the
+    # paired loop becomes an independent copy (zero accounts) in the partner's operation.
+    loop_out = None
+    if source.shared_loop_id:
+        existing = await db.scalar(
+            select(InstagramLoop).where(
+                InstagramLoop.workspace_id == access.workspace.id, InstagramLoop.template_loop_id == source.shared_loop_id
+            )
+        )
+        if existing is None:
+            template = await db.get(InstagramLoop, source.shared_loop_id)
+            if template is not None and template.workspace_id == chief_workspace.id:
+                existing = await service.clone_loop(db, template, access.workspace.id)
+        if existing is not None:
+            loop_out = {"id": str(existing.id), "name": existing.name}
     await db.commit()
-    return {"id": str(clone.id), "name": clone.name}
+    return {"id": str(source.id), "name": source.name, "loop": loop_out}
 
 
 # ------------------------------------------------------------------ chief
@@ -271,14 +288,26 @@ async def share_loop(loop_id: uuid.UUID, payload: ShareRequest, access: OwnerAcc
 
 
 @router.post("/flows/{flow_id}/share", dependencies=[Depends(require_csrf)])
-async def share_flow(flow_id: uuid.UUID, payload: ShareRequest, access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> dict:
+async def share_flow(flow_id: uuid.UUID, payload: ShareFlowRequest, access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> dict:
     await _owned_workspace(access, user)
     flow = await db.scalar(select(TgFlow).where(TgFlow.id == flow_id, TgFlow.workspace_id == access.workspace.id))
     if flow is None:
         raise HTTPException(status_code=404, detail="Funil não encontrado.")
+    if payload.shared:
+        loop = (
+            await db.scalar(
+                select(InstagramLoop).where(InstagramLoop.id == payload.loop_id, InstagramLoop.workspace_id == access.workspace.id)
+            )
+            if payload.loop_id
+            else None
+        )
+        if loop is None:
+            raise HTTPException(status_code=422, detail="Escolha o loop que vai junto com o funil.")
+        loop.shared = True
+        flow.shared_loop_id = loop.id
     flow.shared = payload.shared
     await db.commit()
-    return {"id": str(flow.id), "shared": flow.shared}
+    return {"id": str(flow.id), "shared": flow.shared, "loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None}
 
 
 async def operations_of(db, workspace_id: uuid.UUID, start, end) -> dict:

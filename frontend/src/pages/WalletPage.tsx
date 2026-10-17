@@ -32,7 +32,7 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
   const value = Number(amount.replace(/\./g, "").replace(",", "."));
   const main = wallet.is_main_account;
   const valid =
-    Number.isFinite(value) && value > 0 && value <= wallet.available && pixKey.trim().length > 3 && (main || value >= wallet.min_withdrawal);
+    Number.isFinite(value) && value > 0 && value <= (wallet.withdrawable ?? wallet.available) && pixKey.trim().length > 3 && (main || value >= wallet.min_withdrawal);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -66,15 +66,15 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
               placeholder="0,00"
               value={amount}
             />
-            <button className="rounded-lg bg-brand-soft px-2 py-1 text-xs font-semibold text-accent" onClick={() => setAmount(wallet.available.toFixed(2).replace(".", ","))} type="button">
+            <button className="rounded-lg bg-brand-soft px-2 py-1 text-xs font-semibold text-accent" onClick={() => setAmount((wallet.withdrawable ?? wallet.available).toFixed(2).replace(".", ","))} type="button">
               MAX
             </button>
           </span>
           {!main && (
-            <span className={`mt-1 block text-[11px] ${wallet.available < wallet.min_withdrawal ? "text-warning" : "text-muted"}`}>
-              Mínimo {brl(wallet.min_withdrawal)} (regra da SmokePay)
-              {wallet.available < wallet.min_withdrawal &&
-                ` · faltam ${brl(wallet.min_withdrawal - wallet.available)} de vendas para liberar o saque`}
+            <span className={`mt-1 block text-[11px] ${(wallet.withdrawable ?? wallet.available) < wallet.min_withdrawal ? "text-warning" : "text-muted"}`}>
+              Mínimo {brl(wallet.min_withdrawal)} · taxa de saque da SmokePay {brl(wallet.withdraw_fee ?? 0)} (sai do saldo) · dá para sacar até {brl(wallet.withdrawable ?? wallet.available)}
+              {(wallet.withdrawable ?? wallet.available) < wallet.min_withdrawal &&
+                ` · faltam ${brl(wallet.min_withdrawal - (wallet.withdrawable ?? wallet.available))} para liberar o saque`}
             </span>
           )}
         </label>

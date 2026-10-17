@@ -36,6 +36,8 @@ export type Wallet = {
   withdrawn: number;
   pending: number;
   available: number;
+  withdrawable?: number;
+  withdraw_fee?: number;
   min_withdrawal: number;
   withdrawals: Withdrawal[];
 };

@@ -120,7 +120,11 @@ async def test_partner_withdraws_from_own_subaccount(client, db_session, owner, 
     assert path == f"/api/shops/{ref}/withdraw" and body["pix_key"] == "12345678900"
     assert body["correlation_id"] == done.json()["id"]  # idempotent on our row id
     wallet = (await client.get("/api/wallet")).json()
-    assert wallet["withdrawn"] == 30.0 and wallet["available"] == 9.69
+    assert wallet["withdrawn"] == 30.0 and wallet["available"] == 9.69 and wallet["withdrawable"] == 6.69
+    # the withdrawal fee comes out of the balance too: the full balance cannot be withdrawn
+    smoke.shops[ref] = 12.42
+    over = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "12.42", **PIX})
+    assert over.status_code == 422 and "até R$ 9,42" in over.json()["detail"]
 
     # SmokePay cooldown is reported clearly and recorded as failed
     smoke.cooldown = True

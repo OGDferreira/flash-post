@@ -1,5 +1,8 @@
 import { useState } from "react";
 
+import { todayInput, type MetricsPeriod } from "@/features/analytics/period";
+import { ConversionOverview } from "@/features/bots/ConversionOverview";
+
 import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
 import { BotsListPanel } from "@/features/bots/BotsListPanel";
 import { FlowsPanel } from "@/features/bots/FlowsPanel";
@@ -18,8 +21,9 @@ export function BotsPage() {
   const [tab, setTab] = useState<Tab>("bots");
   // The flow editor has its own header and section navigation; give it the whole screen.
   const [editing, setEditing] = useState(false);
+  const [period, setPeriod] = useState<MetricsPeriod>({ period: "30d", start: todayInput(), end: todayInput() });
   return (
-    <div className="mx-auto max-w-[1320px] space-y-4">
+    <div className="mx-auto w-full max-w-[1500px] space-y-4">
       {!editing && (
         <>
           <header>
@@ -29,6 +33,7 @@ export function BotsPage() {
               Seus robôs de venda no Telegram: conecte, monte o funil de cada um e acompanhe as vendas no Pix em tempo real.
             </p>
           </header>
+          <ConversionOverview onPeriod={setPeriod} period={period} />
           <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-full bg-well p-1" role="tablist" aria-label="Seções dos robôs">
             {tabs.map((item) => (
               <button
@@ -45,8 +50,8 @@ export function BotsPage() {
           </div>
         </>
       )}
-      {tab === "bots" && <BotsListPanel />}
-      {tab === "flows" && <FlowsPanel onEditingChange={setEditing} />}
+      {tab === "bots" && <BotsListPanel period={period} />}
+      {tab === "flows" && <FlowsPanel onEditingChange={setEditing} period={period} />}
       {tab === "shared" && <SharedFlowsPanel />}
       {tab === "sales" && <BotSalesPanel />}
     </div>
