@@ -26,7 +26,7 @@ from app.diagnostics.router import router as diagnostics_router
 from app.api.health import router as health_router
 from app.core.config import get_settings
 from app.core.rate_limit import LoginRateLimiter
-from app.core.redaction import install_log_redaction, redact_secrets
+from app.core.redaction import install_app_logging, install_log_redaction, redact_secrets
 from app.collaborators.invites import router as collaborator_invites_router
 from app.collaborators.router import router as collaborators_router
 from app.emails.router import router as emails_router
@@ -51,6 +51,7 @@ from app.workers.scheduler_service import create_scheduler
 settings = get_settings()
 logger = logging.getLogger(__name__)
 install_log_redaction()
+install_app_logging()
 
 
 class _SensitiveAccessLogFilter(logging.Filter):

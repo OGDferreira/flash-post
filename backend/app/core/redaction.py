@@ -72,3 +72,20 @@ def install_log_redaction() -> None:
 
     factory._flashpost_redacting = True  # type: ignore[attr-defined]
     logging.setLogRecordFactory(factory)
+
+
+def install_app_logging() -> None:
+    """Show the app's own INFO lines (publications done, scheduler summaries) in the
+    server log. Without a handler only WARNING and above reached the output."""
+    import logging
+    import sys
+
+    app_logger = logging.getLogger("app")
+    if any(getattr(handler, "_flashpost", False) for handler in app_logger.handlers):
+        return
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
+    handler._flashpost = True  # type: ignore[attr-defined]
+    app_logger.addHandler(handler)
+    app_logger.setLevel(logging.INFO)
+    app_logger.propagate = False
