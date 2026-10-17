@@ -5,7 +5,8 @@ import { apiRequest } from "@/services/api";
 export type Withdrawal = {
   id: string;
   amount: number;
-  status: "PAID" | "REQUESTED" | "REJECTED";
+  status: "PAID" | "REQUESTED" | "REJECTED" | "PROCESSING" | "FAILED";
+  fee?: number | null;
   note: string | null;
   pix_key_type: string | null;
   pix_key: string | null;
@@ -26,6 +27,8 @@ export type Goal = {
 
 export type Wallet = {
   is_main_account: boolean;
+  shop_ref: string | null;
+  balance_source: "smokepay" | "estimate";
   month_revenue: number;
   goal: Goal;
   earned: number;
@@ -65,23 +68,5 @@ export function useWalletMutations() {
         apiRequest<Withdrawal>("/api/wallet/withdrawals", { method: "POST", body }),
       onSuccess: refresh,
     }),
-    cancel: useMutation({
-      mutationFn: (id: string) => apiRequest(`/api/wallet/withdrawals/${id}`, { method: "DELETE" }),
-      onSuccess: refresh,
-    }),
-    decide: useMutation({
-      mutationFn: ({ id, action, note }: { id: string; action: "paid" | "rejected"; note?: string }) =>
-        apiRequest(`/api/wallet/requests/${id}`, { method: "POST", body: { action, note } }),
-      onSuccess: refresh,
-    }),
   };
-}
-
-export function useWithdrawalRequests(enabled: boolean) {
-  return useQuery({
-    queryKey: ["wallet", "requests"],
-    queryFn: () => apiRequest<{ items: Withdrawal[] }>("/api/wallet/requests"),
-    enabled,
-    staleTime: 15_000,
-  });
 }

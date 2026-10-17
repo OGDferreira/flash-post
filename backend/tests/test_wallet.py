@@ -1,21 +1,74 @@
-"""Wallet: balance after split, withdrawal requests, Super Admin payout."""
+"""Wallet: balance after split, automatic SmokePay withdrawals (subaccount and main)."""
 
+import json
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
+import httpx
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import select
 
-from app.models import AppNotification, FinancialWithdrawal, TgBot, TgLead, TgOrder
+from app.bots import http
+from app.core.config import get_settings
+from app.models import FinancialWithdrawal, TgBot, TgLead, TgOrder
 from tests.test_affiliates import PASSWORD, _make_owner
 from tests.test_loops import _csrf, _login
 
 
-async def _paid(db, workspace, chief_id=None, net="18.90", partner_net=None, commission=None):
+class FakeSmokePay:
+    def __init__(self) -> None:
+        self.shops: dict[str, float] = {}
+        self.main = 100.0
+        self.calls: list[tuple[str, str, dict]] = []
+        self.cooldown = False
+        self.main_status = "processing"
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        body = json.loads(request.content) if request.content else {}
+        self.calls.append((request.method, path, body))
+        assert request.headers["x-api-key"] == "withdraw_key"
+        parts = path.strip("/").split("/")
+        if parts[:2] == ["api", "shops"]:
+            ref = parts[2]
+            if ref not in self.shops:
+                return httpx.Response(404, json={"error": "Subconta nao encontrada"})
+            if parts[3] == "balance":
+                return httpx.Response(200, json={"success": True, "wallet_balance": self.shops[ref]})
+            if parts[3] == "withdraw":
+                if self.cooldown:
+                    return httpx.Response(429, json={"error": "cooldown", "cooldown_seconds": 180})
+                self.shops[ref] -= body["amount"]
+                return httpx.Response(200, json={"success": True, "withdrawal_id": "w-shop-1", "amount": body["amount"],
+                                                 "fee": 2.0, "status": "completed", "new_balance": self.shops[ref]})
+        if path == "/api/wallet":
+            return httpx.Response(200, json={"success": True, "wallet_balance": self.main})
+        if path == "/api/withdrawals" and request.method == "POST":
+            self.main -= body["amount"]
+            return httpx.Response(200, json={"success": True, "withdrawal_id": "w-main-1", "amount": body["amount"],
+                                             "fee": 1.5, "status": self.main_status, "new_balance": self.main})
+        if path == "/api/withdrawals":
+            return httpx.Response(200, json={"success": True, "withdrawals": [{"id": "w-main-1", "amount": 30, "status": "completed"}]})
+        raise AssertionError(f"unexpected {request.method} {path}")
+
+
+@pytest.fixture
+def smoke(monkeypatch):
+    fake = FakeSmokePay()
+    http.set_transport(httpx.MockTransport(fake.handler))
+    settings = get_settings()
+    monkeypatch.setattr(settings, "smokepay_api_key", SecretStr("main_key"))
+    monkeypatch.setattr(settings, "smokepay_withdraw_api_key", SecretStr("withdraw_key"))
+    yield fake
+    http.set_transport(None)
+
+
+async def _paid(db, workspace, chief_id=None, partner_net=None, commission=None):
     bot = await db.scalar(select(TgBot).where(TgBot.workspace_id == workspace.id))
     if bot is None:
-        bot = TgBot(workspace_id=workspace.id, tg_bot_id=abs(hash(workspace.id)) % 10**9, username="b", name="b",
+        bot = TgBot(workspace_id=workspace.id, tg_bot_id=uuid.uuid4().int % 10**9, username="b", name="b",
                     encrypted_token="x", webhook_secret="s" * 32)
         db.add(bot)
         await db.flush()
@@ -25,7 +78,7 @@ async def _paid(db, workspace, chief_id=None, net="18.90", partner_net=None, com
     now = datetime.now(timezone.utc)
     db.add(TgOrder(workspace_id=workspace.id, bot_id=bot.id, lead_id=lead.id, kind="plan", offer_id="vip", offer_name="VIP",
                    offer_snapshot={}, amount=Decimal("19.90"), status="paid", paid_at=now, expires_at=now,
-                   gateway_fee=Decimal("1.00"), net_amount=Decimal(net), split_chief_user_id=chief_id,
+                   gateway_fee=Decimal("1.00"), net_amount=Decimal("18.90"), split_chief_user_id=chief_id,
                    split_amount=Decimal(commission) if commission else None,
                    partner_net=Decimal(partner_net) if partner_net else None))
     await db.commit()
@@ -37,66 +90,71 @@ async def _as(client, email, password=PASSWORD) -> dict:
     return {"X-CSRF-Token": await _csrf(client)}
 
 
+PIX = {"pix_key_type": "cpf", "pix_key": "12345678900"}
+
+
 @pytest.mark.anyio
-async def test_partner_requests_and_admin_pays(client, db_session, owner, super_admin) -> None:
-    chief, _ = owner
+async def test_partner_withdraws_from_own_subaccount(client, db_session, owner, smoke) -> None:
+    chief, chief_ws = owner
     partner, partner_ws = await _make_owner(db_session, "socio")
-    for _ in range(3):  # 3 sales: partner keeps 13.23 each, chief gets 5.67
+    for _ in range(3):
         await _paid(db_session, partner_ws, chief.id, partner_net="13.23", commission="5.67")
+    ref = f"fp-{partner_ws.id.hex}"
 
     headers = await _as(client, "socio@example.com")
+    # no sale reached SmokePay yet: the subaccount does not exist, balance is 0 there
     wallet = (await client.get("/api/wallet")).json()
-    assert wallet["available"] == 39.69 and wallet["is_main_account"] is False
-    assert wallet["month_revenue"] == 59.7 and wallet["goal"]["target"] == 10000.0
-    too_small = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "5", "pix_key_type": "cpf", "pix_key": "12345678900"})
-    assert too_small.status_code == 422
-    too_big = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "50", "pix_key_type": "cpf", "pix_key": "12345678900"})
-    assert too_big.status_code == 422
-    no_key = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "20"})
-    assert no_key.status_code == 422
-    ok = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "30", "pix_key_type": "cpf", "pix_key": "12345678900"})
-    assert ok.status_code == 201 and ok.json()["status"] == "REQUESTED"
+    assert wallet["shop_ref"] == ref and wallet["is_main_account"] is False and wallet["available"] == 0.0
+    smoke.shops[ref] = 39.69
     wallet = (await client.get("/api/wallet")).json()
-    assert wallet["available"] == 9.69 and wallet["pending"] == 30.0
-    assert (await client.get("/api/wallet/requests")).status_code == 403  # only the Super Admin pays
+    assert wallet["available"] == 39.69 and wallet["balance_source"] == "smokepay"
+    assert wallet["month_revenue"] == 59.7
 
-    # chief's own wallet counts the commissions received
-    await _as(client, "owner@example.com", "correct horse battery staple")
+    assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "5", **PIX})).status_code == 422
+    assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "50", **PIX})).status_code == 422
+    assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "20"})).status_code == 422
+    done = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "30", **PIX})
+    assert done.status_code == 201, done.text
+    assert done.json()["status"] == "PAID" and done.json()["fee"] == 2.0
+    method, path, body = smoke.calls[-1]
+    assert path == f"/api/shops/{ref}/withdraw" and body["pix_key"] == "12345678900"
+    assert body["correlation_id"] == done.json()["id"]  # idempotent on our row id
+    wallet = (await client.get("/api/wallet")).json()
+    assert wallet["withdrawn"] == 30.0 and wallet["available"] == 9.69
+
+    # SmokePay cooldown is reported clearly and recorded as failed
+    smoke.cooldown = True
+    smoke.shops[ref] = 20.0
+    blocked = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "10", **PIX})
+    assert blocked.status_code == 422 or blocked.status_code == 429
+    assert "5 minutos" in blocked.json()["detail"]
+    assert (await client.get("/api/wallet")).json()["withdrawals"][0]["status"] == "FAILED"
+
+    # a chief never withdraws from a partner's subaccount: the ref comes from the server
+    smoke.cooldown = False
+    chief_headers = await _as(client, "owner@example.com", "correct horse battery staple")
+    smoke.shops[f"fp-{chief_ws.id.hex}"] = 17.01
     chief_wallet = (await client.get("/api/wallet")).json()
-    assert chief_wallet["commissions_received"] == 17.01 and chief_wallet["available"] == 17.01
-
-    admin = await _as(client, "superadmin@example.com", "super admin password")
-    requests = (await client.get("/api/wallet/requests")).json()["items"]
-    assert len(requests) == 1 and requests[0]["pix_key"] == "12345678900"
-    assert requests[0]["shop_ref"] == f"fp-{partner_ws.id.hex}"
-    paid = await client.post(f"/api/wallet/requests/{requests[0]['id']}", headers=admin, json={"action": "paid"})
-    assert paid.status_code == 200 and paid.json()["status"] == "PAID"
-    again = await client.post(f"/api/wallet/requests/{requests[0]['id']}", headers=admin, json={"action": "paid"})
-    assert again.status_code == 404  # never paid twice
-
-    await _as(client, "socio@example.com")
-    wallet = (await client.get("/api/wallet")).json()
-    assert wallet["withdrawn"] == 30.0 and wallet["pending"] == 0.0 and wallet["available"] == 9.69
-    await db_session.commit()
-    kinds = list(await db_session.scalars(select(AppNotification.kind).where(AppNotification.user_id == partner.id)))
-    assert "withdrawal-paid" in kinds
+    assert chief_wallet["shop_ref"] == f"fp-{chief_ws.id.hex}" and chief_wallet["commissions_received"] == 17.01
+    ok = await client.post("/api/wallet/withdrawals", headers=chief_headers, json={"amount": "10", **PIX})
+    assert ok.status_code == 201 and smoke.calls[-1][1] == f"/api/shops/fp-{chief_ws.id.hex}/withdraw"
 
 
 @pytest.mark.anyio
-async def test_main_account_records_withdrawal_and_cancel(client, db_session, owner) -> None:
+async def test_main_account_withdraws_and_reconciles(client, db_session, owner, smoke) -> None:
     chief, chief_ws = owner
     chief.platform_role = "SUPER_ADMIN"
     await db_session.commit()
-    await _paid(db_session, chief_ws, net="18.90")
     headers = await _as(client, "owner@example.com", "correct horse battery staple")
     wallet = (await client.get("/api/wallet")).json()
-    assert wallet["is_main_account"] is True and wallet["available"] == 18.9
-    recorded = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "8"})
-    assert recorded.status_code == 201 and recorded.json()["status"] == "PAID"
-    assert (await client.get("/api/wallet")).json()["available"] == 10.9
+    assert wallet["is_main_account"] is True and wallet["available"] == 100.0
+    sent = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "30", **PIX})
+    assert sent.status_code == 201 and sent.json()["status"] == "PROCESSING"
+    assert smoke.calls[-1][1] == "/api/withdrawals"
+    wallet = (await client.get("/api/wallet")).json()  # reconcile: SmokePay says completed
+    assert wallet["withdrawals"][0]["status"] == "PAID" and wallet["withdrawn"] == 30.0
     summary = (await client.get("/api/wallet/summary")).json()
     assert summary["available"] is True and summary["target"] == 10000.0
-
-    # a pending request can be cancelled by its owner, a paid one cannot
+    await db_session.commit()
     item = await db_session.scalar(select(FinancialWithdrawal))
-    assert (await client.delete(f"/api/wallet/withdrawals/{item.id}", headers=headers)).status_code == 404
+    assert item.gateway_withdrawal_id == "w-main-1" and item.fee == Decimal("1.50")

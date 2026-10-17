@@ -20,6 +20,9 @@ class SmokepayError(RuntimeError):
     def __init__(self, message: str, status: int = 0) -> None:
         super().__init__(message)
         self.status = status
+        self.detail = ""
+        self.cooldown_seconds: int | None = None
+        self.requires_kyc = False
 
 
 class SmokepayNotConfigured(SmokepayError):
@@ -75,11 +78,20 @@ def _charge(data: dict) -> PixCharge:
     )
 
 
-async def _request(method: str, path: str, json_body: dict | None = None) -> dict:
+def _withdraw_key() -> str:
+    key = get_settings().smokepay_withdraw_api_key
+    if key is not None and key.get_secret_value().strip():
+        return key.get_secret_value().strip()
+    return _api_key()
+
+
+async def _request(
+    method: str, path: str, json_body: dict | None = None, *, key: str | None = None, attempts: int = MAX_ATTEMPTS
+) -> dict:
     url = f"{get_settings().smokepay_base_url.rstrip('/')}{path}"
-    headers = {"x-api-key": _api_key(), "Content-Type": "application/json"}
+    headers = {"x-api-key": key or _api_key(), "Content-Type": "application/json"}
     last: SmokepayError | None = None
-    for attempt in range(MAX_ATTEMPTS):
+    for attempt in range(attempts):
         if attempt:
             await asyncio.sleep(2 ** attempt)
         try:
@@ -88,7 +100,7 @@ async def _request(method: str, path: str, json_body: dict | None = None) -> dic
         except httpx.HTTPError as exc:
             last = SmokepayError(f"SmokePay unreachable ({type(exc).__name__}).")
             continue
-        if response.status_code in (429, 500, 502, 503, 504):
+        if response.status_code in (429, 500, 502, 503, 504) and attempt < attempts - 1:
             last = SmokepayError(f"SmokePay HTTP {response.status_code}.", response.status_code)
             continue
         try:
@@ -97,7 +109,11 @@ async def _request(method: str, path: str, json_body: dict | None = None) -> dic
             body = {}
         if response.is_error:
             detail = str(body.get("error") or body.get("message") or "")[:200]
-            raise SmokepayError(f"SmokePay HTTP {response.status_code}: {detail}", response.status_code)
+            error = SmokepayError(f"SmokePay HTTP {response.status_code}: {detail}", response.status_code)
+            error.detail = detail
+            error.cooldown_seconds = body.get("cooldown_seconds")
+            error.requires_kyc = bool(body.get("requires_kyc"))
+            raise error
         return body
     assert last is not None
     raise last
@@ -146,3 +162,65 @@ def verify_signature(raw_body: bytes, header: str | None, now: float | None = No
         secret.get_secret_value().encode(), timestamp.encode() + b"." + raw_body, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, received.lower())
+
+
+# ------------------------------------------------------------------ balances and withdrawals
+# docs: "Subcontas" (GET /api/shops/{id}/balance, POST /api/shops/{id}/withdraw,
+# GET /api/shops/{id}/withdrawals) and "Saldo"/"Saques" for the main wallet.
+
+
+@dataclass
+class Payout:
+    withdrawal_id: str
+    amount: Decimal
+    fee: Decimal | None
+    status: str  # completed | processing | pending | failed
+    failure_reason: str | None = None
+
+
+def _payout(data: dict) -> Payout:
+    return Payout(
+        withdrawal_id=str(data.get("withdrawal_id") or data.get("id") or ""),
+        amount=_money(data.get("amount")) or Decimal("0"),
+        fee=_money(data.get("fee")),
+        status=str(data.get("status") or "processing"),
+        failure_reason=data.get("failure_reason"),
+    )
+
+
+async def shop_balance(shop_ref: str) -> Decimal | None:
+    """Available balance of a subaccount; None when it was never created (no sale yet)."""
+    try:
+        body = await _request("GET", f"/api/shops/{shop_ref}/balance", key=_withdraw_key())
+    except SmokepayError as exc:
+        if exc.status == 404:
+            return None
+        raise
+    return _money(body.get("wallet_balance")) or Decimal("0.00")
+
+
+async def main_balance() -> Decimal:
+    body = await _request("GET", "/api/wallet", key=_withdraw_key())
+    return _money(body.get("wallet_balance", body.get("available"))) or Decimal("0.00")
+
+
+async def withdraw(
+    *, amount: Decimal, pix_key: str, pix_key_type: str, correlation_id: str,
+    shop_ref: str | None = None, sub_shop_id: str | None = None,
+) -> Payout:
+    """Pix withdrawal from a subaccount (``shop_ref``) or the main wallet. One attempt
+    only: a retry could move money twice (subaccounts are idempotent on correlation_id,
+    the main wallet is not)."""
+    body: dict = {"amount": float(amount.quantize(Decimal("0.01"))), "pix_key": pix_key, "pix_key_type": pix_key_type}
+    if shop_ref:
+        body.update({"correlation_id": correlation_id, "sub_shop_id": sub_shop_id or correlation_id})
+        path = f"/api/shops/{shop_ref}/withdraw"
+    else:
+        path = "/api/withdrawals"
+    return _payout(await _request("POST", path, body, key=_withdraw_key(), attempts=1))
+
+
+async def withdrawals(shop_ref: str | None = None) -> list[Payout]:
+    path = f"/api/shops/{shop_ref}/withdrawals?limit=50" if shop_ref else "/api/withdrawals?limit=50"
+    body = await _request("GET", path, key=_withdraw_key())
+    return [_payout(item) for item in body.get("withdrawals") or []]

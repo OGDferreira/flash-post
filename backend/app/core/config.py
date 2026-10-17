@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     vapid_private_key: SecretStr | None = None
     smokepay_api_key: SecretStr | None = None
     smokepay_webhook_secret: SecretStr | None = None
+    # Key with the "Saques" scope; falls back to SMOKEPAY_API_KEY when unset.
+    smokepay_withdraw_api_key: SecretStr | None = None
     smokepay_base_url: str = "https://smokepay.com.br"
     vapid_subject: str | None = None
     daily_views_goal_check_minutes: Annotated[int, Field(ge=5, le=240)] = 15
