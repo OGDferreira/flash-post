@@ -303,3 +303,14 @@ async def test_old_copy_of_a_chief_funnel_cannot_be_opened_or_copied(client, db_
     assert (await client.post(f"/api/bots/flows/{old.id}/import-code", headers=headers)).status_code == 403
     assert (await client.get("/api/bots/media/list")).json()["media"] == []
     assert (await client.get(f"/api/bots/media/{secret.id}/preview")).status_code == 403
+
+    # its sales still pay the chief's commission, exactly like the original funnel
+    route = await service.billing_route(db_session, partner_ws.id, old.id)
+    assert route.allowed and route.origin == "shared_funnel" and route.chief_user_id == chief.id
+    assert route.splits == [{"shop_id": f"fp-{chief_ws.id.hex}", "percent": 30.0}]
+    # a funnel the partner wrote from scratch pays no commission
+    mine = TgFlow(workspace_id=partner_ws.id, name="Meu", definition=source.definition)
+    db_session.add(mine)
+    await db_session.commit()
+    own = await service.billing_route(db_session, partner_ws.id, mine.id)
+    assert own.origin == "own_funnel" and own.chief_user_id is None

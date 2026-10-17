@@ -162,6 +162,19 @@ async def shared_funnel_access(db: AsyncSession, flow: TgFlow, workspace_id: uui
     return link
 
 
+async def _chief_copy_link(db: AsyncSession, flow: TgFlow, owner_id: uuid.UUID) -> Affiliation | None:
+    """A partner's own copy of their chief's funnel (copies made before funnels were
+    protected): its sales still pay the chief's commission, like the original."""
+    if flow.template_flow_id is None:
+        return None
+    template = await db.get(TgFlow, flow.template_flow_id)
+    link = await partner_link(db, owner_id)
+    if template is None or not accepted(link):
+        return None
+    chief_workspace = await owner_workspace(db, link.chief_user_id)
+    return link if chief_workspace is not None and template.workspace_id == chief_workspace.id else None
+
+
 async def billing_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.UUID | None = None) -> BillingRoute:
     workspace = await db.get(Workspace, workspace_id)
     owner = await db.get(User, workspace.owner_id) if workspace else None
@@ -170,11 +183,15 @@ async def billing_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid
     if owner is None or owner.platform_role == "SUPER_ADMIN":
         return BillingRoute(allowed=not foreign)
     route = BillingRoute(shop_ref=shop_ref(workspace_id), origin="own_funnel")
+    link = None
     if foreign:
         link = await shared_funnel_access(db, flow, workspace_id)
         if link is None:
             route.allowed = False  # unshared, or partnership ended/not accepted
             return route
+    elif flow is not None:
+        link = await _chief_copy_link(db, flow, owner.id)
+    if link is not None:
         route.origin = "shared_funnel"
         if not link.accepted_percent:
             return route

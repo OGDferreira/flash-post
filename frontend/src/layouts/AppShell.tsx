@@ -134,8 +134,38 @@ export function AppShell() {
     lastNotice.current = newest;
     if (seen === undefined || newest === seen) return; // first load or nothing new
     const fresh = items.slice(0, Math.max(0, items.findIndex((item) => item.id === seen)) || items.length);
-    if (fresh.some((item) => !item.read && (item.kind === "sale" || item.kind === "commission"))) playCashSound();
+    if (fresh.some((item) => !item.read && (item.kind === "sale" || item.kind === "commission"))) {
+      playCashSound();
+      refreshMoney();
+    }
   }, [notices.data]);
+  // Revenue and balances refresh the moment a sale arrives: on the push itself (the service
+  // worker tells this window) and whenever the app comes back to the foreground.
+  const refreshMoney = () => {
+    for (const key of [["wallet"], ["finance"], ["analytics"], ["partners", "me"], ["bots"]]) {
+      void queryClient.invalidateQueries({ queryKey: key });
+    }
+  };
+  useEffect(() => {
+    if (!user) return;
+    const onPush = (event: MessageEvent) => {
+      if (event.data?.type !== "flashpost-push") return;
+      void notices.refetch();
+      refreshMoney();
+    };
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void notices.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+    };
+    navigator.serviceWorker?.addEventListener("message", onPush);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      navigator.serviceWorker?.removeEventListener("message", onPush);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
   const notificationItems = [
     ...(notices.data?.items ?? []).filter((item) => !item.read).slice(0, 10).map((item) => ({
       title: item.title,
