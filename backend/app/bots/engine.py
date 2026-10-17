@@ -448,9 +448,9 @@ async def send_upsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: Tg
     step = flow.upsells[index]
     text = render(step.text, lead, step.name, step.price, bot)
     rows = [[button(f"{step.accept_label} · {brl(step.price)}", step.accept_style, callback_data=f"up:{index}:{chain}")]]
-    if step.hide_decline:
-        await schedule_upsell(db, bot, lead, flow, index + 1, chain)  # no "no" button: move on by time
-    else:
+    # One step per purchase: the next step only follows a payment of this one
+    # (approve_order) or an explicit "no" tap. Hidden decline = wait for the payment.
+    if not step.hide_decline:
         rows.append([button(step.decline_label, callback_data=f"upn:{index}:{chain}")])
     await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, {"inline_keyboard": rows})
 
