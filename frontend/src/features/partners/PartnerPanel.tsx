@@ -8,7 +8,7 @@ import { brl, useAcceptCommission, useMarkNoticesRead, useNotices, usePartnerMe,
 const percent = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
 
-export function TotalsGrid({ totals, commissionLabel = "Comissão do chefe", netLabel = "Seu líquido" }: {
+export function TotalsGrid({ totals, commissionLabel = "Comissão do chefe", netLabel = "Você recebe (após taxa e comissão)" }: {
   totals: SaleTotals;
   commissionLabel?: string;
   netLabel?: string;
@@ -17,14 +17,15 @@ export function TotalsGrid({ totals, commissionLabel = "Comissão do chefe", net
     ["Vendas pagas", String(totals.sales)],
     ["Bruto", brl(totals.gross)],
     ["Taxas SmokePay", brl(totals.fees)],
+    ["Líquido (após taxas)", brl(totals.gross - totals.fees)],
     [commissionLabel, brl(totals.commission)],
     [netLabel, brl(totals.net), "text-success"],
   ];
   return (
-    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
       {items.map(([title, value, tone]) => (
-        <div className="rounded-xl border border-line-soft bg-surface-inset px-3 py-2" key={title}>
-          <dt className="text-[11px] text-muted">{title}</dt>
+        <div className="min-w-0 rounded-xl border border-line-soft bg-surface-inset px-3 py-2" key={title}>
+          <dt className="truncate text-[11px] text-muted" title={title}>{title}</dt>
           <dd className={`mt-1 text-base font-semibold ${tone ?? "text-fg"}`}>{value}</dd>
         </div>
       ))}

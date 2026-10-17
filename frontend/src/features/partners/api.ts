@@ -121,11 +121,13 @@ export function useShareToggle(kind: "loops" | "flows") {
   });
 }
 
-export function useNotices() {
+export function useNotices(enabled = true) {
   return useQuery({
     queryKey: ["partners", "notifications"],
     queryFn: () => apiRequest<{ items: Notice[]; unread: number }>("/api/partners/notifications"),
-    staleTime: 60_000,
+    enabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }
 

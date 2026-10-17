@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNotices } from "@/features/partners/api";
 import { RevenueBadge } from "@/features/wallet/RevenueBadge";
 import { PushPrompt } from "@/components/PushPrompt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -120,7 +121,12 @@ export function AppShell() {
     expired: "Conta desconectada",
     manual: "Conta desconectada manualmente",
   };
+  const notices = useNotices(Boolean(user) && !isAdminRoute);
   const notificationItems = [
+    ...(notices.data?.items ?? []).filter((item) => !item.read).slice(0, 10).map((item) => ({
+      title: item.title,
+      message: item.body,
+    })),
     ...(analyticsNotifications.data?.disconnected_today_accounts ?? []).slice(0, 10).map((item) => ({
       title: droppedKindTitle[item.kind] ?? "Conta desconectada",
       message:

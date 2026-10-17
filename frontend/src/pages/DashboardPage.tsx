@@ -481,8 +481,10 @@ export function DashboardPage() {
           ))}
           <EngagementCards />
         </section>
-        <PartnerPanel />
-        <NoticesCard />
+        <div className="mt-4 space-y-4">
+          <PartnerPanel />
+          <NoticesCard />
+        </div>
       </main>
       <section
         aria-label="Resumo da equipe e novas contas"

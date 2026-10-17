@@ -93,6 +93,13 @@ async def test_commission_needs_acceptance_and_split_goes_into_the_charge(client
         assert (await client.post("/api/bots/pay/smokepay", content=raw, headers=sig)).status_code == 200
     totals = (await client.get("/api/partners/me")).json()["totals"]
     assert totals["sales"] == 1 and totals["commission"] == 5.67 and totals["net"] == 13.23
+    await db_session.commit()
+    notices = {
+        (row.user_id, row.kind): row.title
+        for row in await db_session.scalars(select(AppNotification).where(AppNotification.kind.in_(("sale", "commission"))))
+    }
+    assert "Nova venda" in notices[(partner.id, "sale")]
+    assert "R$ 5,67" in notices[(chief.id, "commission")]  # sent once: the resent webhook added nothing
 
     # chief: sees the partner's numbers and operation, never the bot token
     chief_headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)

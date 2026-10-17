@@ -938,10 +938,34 @@ async def approve_order(
         elif delivery is None or delivery.type == "upsell" or delivery.start_upsell:
             await schedule_upsell(db, bot, lead, flow, 0, order.id.hex)
     await db.commit()
-    await notify_owners(
-        db, bot, f"💸 Venda aprovada · {brl(order.amount)}", f"{order.offer_name} · @{bot.username}", f"sale-{order.id}"
-    )
+    await notify_sale(db, bot, order)
     return True
+
+
+async def notify_sale(db: AsyncSession, bot: TgBot, order: TgOrder) -> None:
+    """In-app notice + push for the seller, and the chief's commission when split. Best effort."""
+    from app.models import User, Workspace
+    from app.partners.service import notify_user
+
+    try:
+        workspace = await db.get(Workspace, bot.workspace_id)
+        net = order.partner_net if order.partner_net is not None else order.net_amount
+        if workspace is not None:
+            body = f"{order.offer_name} · @{bot.username}"
+            if net is not None:
+                body += f" · você recebe {brl(net)}"
+            await notify_user(db, workspace.owner_id, "sale", f"💸 Nova venda · {brl(order.amount)}", body, "/feature/bots")
+        if order.split_chief_user_id and order.split_amount:
+            seller = await db.get(User, workspace.owner_id) if workspace else None
+            await notify_user(
+                db, order.split_chief_user_id, "commission", f"💰 Comissão recebida · {brl(order.split_amount)}",
+                f"Venda de {seller.full_name if seller else 'um sócio'} ({brl(order.amount)}) · {float(order.split_percent):g}% do líquido",
+                "/carteira",
+            )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Sale notification failed")
 
 
 async def deliver(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, order: TgOrder, plan: Plan, delivery: Delivery) -> None:
