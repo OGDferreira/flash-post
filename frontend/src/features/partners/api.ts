@@ -127,7 +127,7 @@ export function useNotices(enabled = true) {
     queryFn: () => apiRequest<{ items: Notice[]; unread: number }>("/api/partners/notifications"),
     enabled,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 20_000,
   });
 }
 
