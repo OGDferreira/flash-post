@@ -299,7 +299,8 @@ async def start_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDe
     run = utcnow()
     nonce = secrets.token_hex(4)
     for index, block in enumerate(flow.welcome):
-        run += timedelta(seconds=block.delay_seconds, microseconds=index)
+        # The first block always answers /start right away; delays only space the next ones.
+        run += timedelta(seconds=block.delay_seconds if index else 0, microseconds=index)
         await schedule(db, bot, "send_block", run, f"welcome:{lead.id}:{nonce}:{index}", lead, {"index": index})
     # Microsecond offset keeps the offer after the last block yet due right away when there are no delays.
     run += timedelta(microseconds=len(flow.welcome) + 1)

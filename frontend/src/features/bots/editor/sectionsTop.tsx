@@ -294,7 +294,7 @@ export function WelcomeSection({ draft, set }: SectionProps) {
                 open={openBlock === index}
                 onToggle={() => setOpenBlock(openBlock === index ? null : index)}
                 title={`${index + 1}. ${meta.label}`}
-                subtitle={block.delay_seconds ? `espera ${block.delay_seconds}s` : "sem espera"}
+                subtitle={index === 0 ? "enviada na hora do /start" : block.delay_seconds ? `espera ${block.delay_seconds}s` : "sem espera"}
                 actions={
                   <span className="flex gap-1">
                     <button aria-label="Subir" className="btn-ghost !min-h-8 !px-2" disabled={index === 0} onClick={() => set({ welcome: move(draft.welcome, index, -1) })} type="button"><ArrowUp size={14} /></button>
@@ -309,8 +309,8 @@ export function WelcomeSection({ draft, set }: SectionProps) {
                       {blockTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                     </select>
                   </Field>
-                  <Field label="Esperar antes (segundos)">
-                    <input className="field" min={0} max={86400} type="number" value={block.delay_seconds} onChange={(event) => setBlock(index, { ...block, delay_seconds: Math.max(0, Number(event.target.value) || 0) })} />
+                  <Field label={index === 0 ? "Enviada na hora do /start" : "Esperar antes (segundos)"}>
+                    <input className="field" disabled={index === 0} min={0} max={86400} type="number" value={index === 0 ? 0 : block.delay_seconds} onChange={(event) => setBlock(index, { ...block, delay_seconds: Math.max(0, Number(event.target.value) || 0) })} />
                   </Field>
                 </div>
                 {meta.max > 0 && (
@@ -331,7 +331,7 @@ export function WelcomeSection({ draft, set }: SectionProps) {
         <Button
           disabled={draft.welcome.length >= 30}
           onClick={() => {
-            set({ welcome: [...draft.welcome, { type: "text", text: "", media_ids: [], spoiler: false, delay_seconds: 2 }] });
+            set({ welcome: [...draft.welcome, { type: "text", text: "", media_ids: [], spoiler: false, delay_seconds: 0 }] });
             setOpenBlock(draft.welcome.length);
           }}
           size="sm"

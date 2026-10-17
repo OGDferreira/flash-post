@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { RevenueBadge } from "@/features/wallet/RevenueBadge";
 import { PushPrompt } from "@/components/PushPrompt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -491,6 +492,7 @@ export function AppShell() {
             </span>
           </div>
           <div className="app-header-actions flex shrink-0 items-center gap-1 pl-2">
+            <RevenueBadge enabled={hasWorkspaceOwnerAccess && !isAdminRoute} />
             <div className="relative max-sm:static">
               <button
                 aria-label={
