@@ -184,8 +184,12 @@ export function AppShell() {
     mutationFn: () => apiRequest("/api/auth/logout", { method: "POST" }),
     onSettled: () => {
       setCsrfToken(undefined);
-      queryClient.clear();
+      // Keep the auth query itself (its observer stays attached) and empty it; drop every other
+      // cached query. Clearing everything left the screen holding the old user.
+      void queryClient.cancelQueries();
       queryClient.setQueryData(["auth", "me"], null);
+      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "auth" });
+      setMobileOpen(false);
       navigate("/login", { replace: true });
     },
   });
