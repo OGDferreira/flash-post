@@ -3,8 +3,7 @@ import { ArrowDownToLine, CheckCircle2, Clock, Gift, Trophy, Wallet as WalletIco
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Modal } from "@/components/ui/Modal";
-import { useAuth } from "@/features/auth/AuthProvider";
-import { brl, compact, useWallet, useWalletMutations, useWithdrawalRequests, type Wallet, type Withdrawal } from "@/features/wallet/api";
+import { brl, compact, useWallet, useWalletMutations, type Wallet, type Withdrawal } from "@/features/wallet/api";
 import { ApiError } from "@/services/api";
 
 const keyTypes = [
@@ -21,6 +20,8 @@ const statusInfo = {
   PAID: { label: "Pago", tone: "text-success", Icon: CheckCircle2 },
   REQUESTED: { label: "Em análise", tone: "text-warning", Icon: Clock },
   REJECTED: { label: "Recusado", tone: "text-danger", Icon: XCircle },
+  PROCESSING: { label: "Processando", tone: "text-warning", Icon: Clock },
+  FAILED: { label: "Falhou", tone: "text-danger", Icon: XCircle },
 } as const;
 
 function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolean; onClose: () => void }) {
@@ -31,12 +32,12 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
   const value = Number(amount.replace(/\./g, "").replace(",", "."));
   const main = wallet.is_main_account;
   const valid =
-    Number.isFinite(value) && value > 0 && value <= wallet.available && (main || (value >= wallet.min_withdrawal && pixKey.trim().length > 3));
+    Number.isFinite(value) && value > 0 && value <= wallet.available && pixKey.trim().length > 3 && (main || value >= wallet.min_withdrawal);
 
   function submit(event: FormEvent) {
     event.preventDefault();
     request.mutate(
-      { amount: value.toFixed(2), ...(main ? { note: "Saque feito na SmokePay" } : { pix_key_type: keyType, pix_key: pixKey.trim() }) },
+      { amount: value.toFixed(2), pix_key_type: keyType, pix_key: pixKey.trim() },
       { onSuccess: () => { setAmount(""); setPixKey(""); onClose(); } },
     );
   }
@@ -45,12 +46,12 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
       description={`Saldo disponível: ${brl(wallet.available)}`}
       onClose={onClose}
       open={open}
-      title={main ? "Registrar saque" : "Solicitar saque"}
+      title="Solicitar saque — SmokePay"
     >
       <form className="space-y-4" onSubmit={submit}>
         {main && (
           <p className="rounded-xl border border-line-soft bg-surface-inset p-3 text-xs text-muted">
-            Sua conta é a principal da SmokePay: faça o saque no painel da SmokePay e registre o valor aqui para o saldo ficar certo.
+            Saque da carteira principal da SmokePay (a conta dona da chave de API).
           </p>
         )}
         <label className="block">
@@ -71,7 +72,7 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
           </span>
           {!main && <span className="mt-1 block text-[11px] text-muted">Mínimo {brl(wallet.min_withdrawal)}</span>}
         </label>
-        {!main && (
+        {(
           <div className="space-y-2">
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Chave Pix de destino</span>
             <select className="field" onChange={(event) => setKeyType(event.target.value)} value={keyType}>
@@ -87,15 +88,15 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
         )}
         {request.error && <p className="text-xs text-danger" role="alert">{errorText(request.error)}</p>}
         <button className="btn-primary w-full" disabled={!valid || request.isPending} type="submit">
-          {request.isPending ? "Enviando…" : main ? "Registrar saque" : "Confirmar saque"}
+          {request.isPending ? "Enviando…" : "Confirmar saque"}
         </button>
-        {!main && <p className="text-center text-[11px] text-muted">O administrador paga pela SmokePay e você é avisado aqui.</p>}
+        <p className="text-center text-[11px] text-muted">O Pix é enviado na hora pela SmokePay. Um saque a cada 5 minutos.</p>
       </form>
     </Modal>
   );
 }
 
-function History({ items, onCancel }: { items: Withdrawal[]; onCancel: (id: string) => void }) {
+function History({ items }: { items: Withdrawal[] }) {
   if (items.length === 0) return <p className="text-xs text-muted">Nenhum saque ainda.</p>;
   return (
     <ul className="divide-y divide-[color:var(--color-line-soft)]">
@@ -115,11 +116,6 @@ function History({ items, onCancel }: { items: Withdrawal[]; onCancel: (id: stri
               <span className={`flex items-center gap-1 text-xs font-medium ${info.tone}`}>
                 <info.Icon size={14} /> {info.label}
               </span>
-              {item.status === "REQUESTED" && (
-                <button className="text-[11px] text-muted underline hover:text-fg" onClick={() => onCancel(item.id)} type="button">
-                  cancelar
-                </button>
-              )}
             </span>
           </li>
         );
@@ -128,47 +124,8 @@ function History({ items, onCancel }: { items: Withdrawal[]; onCancel: (id: stri
   );
 }
 
-function AdminRequests() {
-  const requests = useWithdrawalRequests(true);
-  const { decide } = useWalletMutations();
-  const items = requests.data?.items ?? [];
-  return (
-    <section className="glass-panel space-y-3 p-4">
-      <h3 className="text-base font-semibold text-fg">Pedidos de saque para pagar ({items.length})</h3>
-      <p className="text-xs text-muted">
-        Pague pela SmokePay a partir da subconta indicada e marque como pago. O usuário é avisado na hora.
-      </p>
-      {decide.error && <ErrorState message={errorText(decide.error)} />}
-      {items.length === 0 ? (
-        <p className="text-xs text-muted">Nenhum pedido pendente.</p>
-      ) : (
-        <ul className="space-y-2">
-          {items.map((item) => (
-            <li className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line-soft bg-surface-inset p-3" key={item.id}>
-              <span className="min-w-0 text-xs text-muted">
-                <span className="block text-sm font-semibold text-fg">{item.owner} · {brl(item.amount)}</span>
-                Pix ({item.pix_key_type}): <strong className="text-fg">{item.pix_key}</strong> · subconta {item.shop_ref} · pedido em {when(item.created_at)}
-              </span>
-              <span className="flex gap-2">
-                <button className="btn-primary !min-h-9 text-xs" disabled={decide.isPending} onClick={() => decide.mutate({ id: item.id, action: "paid" })} type="button">
-                  Marcar como pago
-                </button>
-                <button className="btn-secondary !min-h-9 text-xs" disabled={decide.isPending} onClick={() => decide.mutate({ id: item.id, action: "rejected" })} type="button">
-                  Recusar
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 export function WalletPage() {
-  const { user } = useAuth();
   const wallet = useWallet();
-  const { cancel } = useWalletMutations();
   const [open, setOpen] = useState(false);
   if (wallet.isLoading) return <LoadingState label="Carregando carteira" />;
   if (wallet.error) return <ErrorState message={errorText(wallet.error)} onRetry={() => void wallet.refetch()} />;
@@ -176,7 +133,7 @@ export function WalletPage() {
   const cards: [string, string, string?][] = [
     ["Faturamento do mês", brl(data.month_revenue)],
     ["Disponível para sacar", brl(data.available), "text-success"],
-    ["Em análise", brl(data.pending), "text-warning"],
+    ["Processando", brl(data.pending), "text-warning"],
     ["Já sacado", brl(data.withdrawn)],
   ];
   return (
@@ -190,7 +147,7 @@ export function WalletPage() {
           <p className="mt-1 text-sm text-muted">Seu faturamento, o que tem para sacar, o que já sacou e suas metas.</p>
         </div>
         <button className="btn-primary" disabled={data.available <= 0} onClick={() => setOpen(true)} type="button">
-          <ArrowDownToLine size={16} /> {data.is_main_account ? "Registrar saque" : "Sacar"}
+          <ArrowDownToLine size={16} /> Sacar
         </button>
       </header>
 
@@ -203,7 +160,8 @@ export function WalletPage() {
         ))}
       </dl>
       <p className="text-[11px] text-muted">
-        Ganho total no FlashBot (já sem taxas e comissões): {brl(data.earned)}
+        {data.balance_source === "smokepay" ? "Saldo lido agora da SmokePay" : "Saldo estimado (SmokePay indisponível)"}
+        {data.shop_ref ? ` · subconta ${data.shop_ref}` : " · carteira principal"}. Ganho total no FlashBot (já sem taxas e comissões): {brl(data.earned)}
         {data.commissions_received > 0 && ` · inclui ${brl(data.commissions_received)} de comissões dos sócios`}.
       </p>
 
@@ -227,11 +185,9 @@ export function WalletPage() {
         </ul>
       </section>
 
-      {user?.role === "SUPER_ADMIN" && <AdminRequests />}
-
       <section className="glass-panel space-y-2 p-4">
         <h3 className="text-base font-semibold text-fg">Histórico de saques</h3>
-        {data.withdrawals.length === 0 ? <EmptyState message="Nenhum saque ainda." /> : <History items={data.withdrawals} onCancel={(id) => cancel.mutate(id)} />}
+        {data.withdrawals.length === 0 ? <EmptyState message="Nenhum saque ainda." /> : <History items={data.withdrawals} />}
       </section>
 
       <WithdrawModal onClose={() => setOpen(false)} open={open} wallet={data} />

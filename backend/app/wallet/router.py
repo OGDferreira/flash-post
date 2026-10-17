@@ -2,14 +2,15 @@
 
 Money from FlashBot sales sits in SmokePay: the platform owner's main account
 (Super Admin) or each operation's subaccount. The balance shown here is what
-the sales left for this user after fees and the partner split, minus what was
-withdrawn or is waiting. Partners/users *request* a withdrawal; the Super
-Admin pays it in SmokePay and marks it paid. Amounts always come from the
-database, never from the browser.
+the sales left for this user after fees and the partner split. Withdrawals go
+straight to SmokePay: a subaccount pays out with POST /api/shops/{ref}/withdraw
+(idempotent on our row id), the main wallet with POST /api/withdrawals. The
+balance shown is SmokePay's own when reachable. Amounts are checked on the
+server, never trusted from the browser.
 """
 
 import uuid
-from datetime import timezone
+from datetime import timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
@@ -17,10 +18,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 
-from app.auth.dependencies import AuthenticatedUser, DbSession, SuperAdminUser, require_csrf
+from app.auth.dependencies import AuthenticatedUser, DbSession, require_csrf
 from app.core.time import BRAZIL_TIME_ZONE, utc_now
+from app.bots import smokepay
 from app.models import FinancialWithdrawal, TgOrder, User, Workspace
-from app.partners.service import notify_user, owner_workspace
+from app.partners.service import owner_workspace, shop_ref
 
 router = APIRouter(prefix="/api/wallet", tags=["Wallet"])
 
@@ -45,11 +47,6 @@ class WithdrawalRequest(BaseModel):
     def _strip(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
-
-
-class Decision(BaseModel):
-    action: Literal["paid", "rejected"]
-    note: str | None = Field(default=None, max_length=240)
 
 
 async def _workspace_for(db, user: User) -> Workspace:
@@ -81,7 +78,8 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
         ).all()
     )
     earned = _money(own) + _money(commissions)
-    withdrawn, pending = _money(sums.get("PAID")), _money(sums.get("REQUESTED"))
+    withdrawn = _money(sums.get("PAID"))
+    pending = _money(sums.get("PROCESSING")) + _money(sums.get("REQUESTED"))
     return {
         "earned": earned,
         "commissions_received": _money(commissions),
@@ -119,6 +117,7 @@ def _withdrawal_out(item: FinancialWithdrawal, owner: str | None = None) -> dict
     return {
         "id": str(item.id), "amount": float(item.amount), "status": item.status, "note": item.note,
         "pix_key_type": item.pix_key_type, "pix_key": item.pix_key, "owner": owner,
+        "fee": float(item.fee) if item.fee is not None else None,
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "processed_at": item.processed_at.isoformat() if item.processed_at else None,
     }
@@ -134,11 +133,57 @@ async def summary(user: AuthenticatedUser, db: DbSession) -> dict:
     return {"available": True, "month_revenue": float(revenue), **{k: float(v) if isinstance(v, Decimal) else v for k, v in goal_progress(revenue).items() if k in ("target", "percent", "prize")}}
 
 
+def _shop_for(user: User, workspace: Workspace) -> str | None:
+    """None = the platform owner's main SmokePay wallet."""
+    return None if user.platform_role == "SUPER_ADMIN" else shop_ref(workspace.id)
+
+
+async def _gateway_balance(shop: str | None) -> Decimal | None:
+    try:
+        if shop is None:
+            return await smokepay.main_balance()
+        value = await smokepay.shop_balance(shop)
+        return value if value is not None else Decimal("0.00")
+    except smokepay.SmokepayError:
+        return None
+
+
+async def _reconcile(db, workspace_id: uuid.UUID, shop: str | None) -> None:
+    """Settle PROCESSING withdrawals with SmokePay's final status."""
+    waiting = list(
+        await db.scalars(
+            select(FinancialWithdrawal).where(
+                FinancialWithdrawal.workspace_id == workspace_id, FinancialWithdrawal.status == "PROCESSING",
+                FinancialWithdrawal.gateway_withdrawal_id.is_not(None),
+            )
+        )
+    )
+    if not waiting:
+        return
+    try:
+        remote = {p.withdrawal_id: p for p in await smokepay.withdrawals(shop)}
+    except smokepay.SmokepayError:
+        return
+    for item in waiting:
+        payout = remote.get(item.gateway_withdrawal_id or "")
+        if payout is None:
+            continue
+        if payout.status == "completed":
+            item.status, item.processed_at = "PAID", utc_now()
+        elif payout.status == "failed":
+            item.status, item.processed_at = "FAILED", utc_now()
+            item.note = (f"SmokePay: {payout.failure_reason}" if payout.failure_reason else "Falhou na SmokePay")[:240]
+    await db.commit()
+
+
 @router.get("")
 async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
     workspace = await _workspace_for(db, user)
+    shop = _shop_for(user, workspace)
+    await _reconcile(db, workspace.id, shop)
     revenue = await month_revenue(db, workspace.id)
     balance = await balances(db, user, workspace.id)
+    gateway = await _gateway_balance(shop)
     history = await db.scalars(
         select(FinancialWithdrawal)
         .where(FinancialWithdrawal.workspace_id == workspace.id)
@@ -146,108 +191,92 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         .limit(50)
     )
     goal = goal_progress(revenue)
+    out = {k: float(v) for k, v in balance.items()}
+    if gateway is not None:  # SmokePay's own number wins over our estimate
+        out["available"] = float(gateway)
     return {
-        "is_main_account": user.platform_role == "SUPER_ADMIN",
+        "is_main_account": shop is None,
+        "shop_ref": shop,
+        "balance_source": "smokepay" if gateway is not None else "estimate",
         "month_revenue": float(revenue),
         "goal": {**goal, "target": float(goal["target"])},
-        **{k: float(v) for k, v in balance.items()},
+        **out,
         "min_withdrawal": float(MIN_WITHDRAWAL),
         "withdrawals": [_withdrawal_out(item) for item in history],
     }
 
 
+def _gateway_message(exc: smokepay.SmokepayError) -> tuple[int, str]:
+    if exc.status == 429:
+        minutes = max(1, round((exc.cooldown_seconds or 300) / 60))
+        return 429, f"A SmokePay só permite um saque a cada 5 minutos. Tente de novo em {minutes} min."
+    if exc.status == 403:
+        if exc.requires_kyc:
+            return 422, "A conta SmokePay precisa concluir a verificação de identidade (KYC) para sacar."
+        return 422, "A SmokePay recusou o saque: confira se a chave de API tem permissão de saque."
+    if exc.status == 404:
+        return 422, "Sua subconta ainda não recebeu nenhuma venda, então não há saldo para sacar."
+    if exc.status == 400:
+        return 422, f"A SmokePay recusou o saque: {exc.detail or 'dados inválidos'}."
+    return 502, "A SmokePay não conseguiu processar o saque agora. Tente de novo em alguns minutos."
+
+
 @router.post("/withdrawals", status_code=201, dependencies=[Depends(require_csrf)])
 async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser, db: DbSession) -> dict:
     workspace = await _workspace_for(db, user)
-    balance = await balances(db, user, workspace.id)
+    shop = _shop_for(user, workspace)
     amount = payload.amount.quantize(CENT)
-    main_account = user.platform_role == "SUPER_ADMIN"
-    if not main_account:
-        if amount < MIN_WITHDRAWAL:
-            raise HTTPException(status_code=422, detail=f"O saque mínimo é R$ {MIN_WITHDRAWAL:.2f}.".replace(".", ","))
-        if not payload.pix_key or not payload.pix_key_type:
-            raise HTTPException(status_code=422, detail="Informe a chave Pix que vai receber.")
-    if amount > balance["available"]:
-        raise HTTPException(status_code=422, detail="Valor maior que o saldo disponível.")
+    if shop is not None and amount < MIN_WITHDRAWAL:
+        raise HTTPException(status_code=422, detail=f"O saque mínimo é R$ {MIN_WITHDRAWAL:.2f}".replace(".", ",") + ".")
+    if not payload.pix_key or not payload.pix_key_type:
+        raise HTTPException(status_code=422, detail="Informe a chave Pix que vai receber.")
+    if await db.scalar(
+        select(FinancialWithdrawal.id).where(
+            FinancialWithdrawal.workspace_id == workspace.id, FinancialWithdrawal.status == "PROCESSING",
+            FinancialWithdrawal.gateway_withdrawal_id.is_(None),
+            FinancialWithdrawal.created_at > utc_now() - timedelta(minutes=10),
+        )
+    ):
+        raise HTTPException(status_code=409, detail="Há um saque em andamento. Aguarde a confirmação.")
+    try:
+        available = await (smokepay.main_balance() if shop is None else smokepay.shop_balance(shop))
+    except smokepay.SmokepayNotConfigured:
+        raise HTTPException(status_code=503, detail="Saque automático não configurado no servidor.") from None
+    except smokepay.SmokepayError as exc:
+        status, message = _gateway_message(exc)
+        raise HTTPException(status_code=status, detail=message) from None
+    if amount > (available or Decimal("0.00")):
+        raise HTTPException(status_code=422, detail="Valor maior que o saldo disponível na SmokePay.")
+
+    # Saved first: its id is the idempotency key SmokePay uses for subaccounts.
     item = FinancialWithdrawal(
         workspace_id=workspace.id, created_by_user_id=user.id, amount=amount, note=payload.note,
-        # The platform owner withdraws in SmokePay itself and only records it here.
-        status="PAID" if main_account else "REQUESTED",
-        pix_key_type=payload.pix_key_type, pix_key=payload.pix_key,
-        processed_at=utc_now() if main_account else None,
-        processed_by_user_id=user.id if main_account else None,
+        status="PROCESSING", pix_key_type=payload.pix_key_type, pix_key=payload.pix_key,
     )
     db.add(item)
-    if not main_account:
-        admins = list(await db.scalars(select(User.id).where(User.platform_role == "SUPER_ADMIN", User.is_active.is_(True))))
-        for admin_id in admins:
-            await notify_user(
-                db, admin_id, "withdrawal-request", "Novo pedido de saque",
-                f"{user.full_name} pediu R$ {amount:.2f} via Pix.".replace(".", ","), "/carteira",
-            )
+    await db.commit()
+    try:
+        payout = await smokepay.withdraw(
+            amount=amount, pix_key=payload.pix_key, pix_key_type=payload.pix_key_type,
+            correlation_id=str(item.id), shop_ref=shop, sub_shop_id=str(user.id),
+        )
+    except smokepay.SmokepayError as exc:
+        if exc.status == 0:  # no answer: the money may have left; keep it pending, never resend
+            item.note = "Sem resposta da SmokePay; confira o extrato antes de tentar de novo."
+            await db.commit()
+            raise HTTPException(status_code=502, detail=item.note) from None
+        status, message = _gateway_message(exc)
+        item.status, item.processed_at, item.note = "FAILED", utc_now(), message[:240]
+        await db.commit()
+        raise HTTPException(status_code=status, detail=message) from None
+    item.gateway_withdrawal_id = payout.withdrawal_id or None
+    item.fee = payout.fee
+    item.amount = payout.amount if payout.amount > 0 else amount  # SmokePay may cap it to the limit/balance
+    if payout.status == "completed":
+        item.status, item.processed_at = "PAID", utc_now()
+    elif payout.status == "failed":
+        item.status, item.processed_at = "FAILED", utc_now()
+    item.processed_by_user_id = user.id
     await db.commit()
     await db.refresh(item)
-    return _withdrawal_out(item)
-
-
-@router.delete("/withdrawals/{withdrawal_id}", status_code=204, dependencies=[Depends(require_csrf)])
-async def cancel_withdrawal(withdrawal_id: uuid.UUID, user: AuthenticatedUser, db: DbSession) -> None:
-    workspace = await _workspace_for(db, user)
-    item = await db.scalar(
-        select(FinancialWithdrawal).where(
-            FinancialWithdrawal.id == withdrawal_id, FinancialWithdrawal.workspace_id == workspace.id
-        )
-    )
-    if item is None or item.status != "REQUESTED":
-        raise HTTPException(status_code=404, detail="Pedido não encontrado ou já processado.")
-    await db.delete(item)
-    await db.commit()
-
-
-# ------------------------------------------------------------------ super admin
-
-
-@router.get("/requests")
-async def pending_requests(_admin: SuperAdminUser, db: DbSession) -> dict:
-    rows = (
-        await db.execute(
-            select(FinancialWithdrawal, User.full_name)
-            .join(Workspace, Workspace.id == FinancialWithdrawal.workspace_id)
-            .join(User, User.id == Workspace.owner_id)
-            .where(FinancialWithdrawal.status == "REQUESTED")
-            .order_by(FinancialWithdrawal.created_at)
-        )
-    ).all()
-    out = []
-    for item, name in rows:
-        data = _withdrawal_out(item, name)
-        workspace = await db.get(Workspace, item.workspace_id)
-        owner = await db.get(User, workspace.owner_id) if workspace else None
-        data["shop_ref"] = f"fp-{item.workspace_id.hex}"
-        data["owner_available"] = float((await balances(db, owner, item.workspace_id))["available"] + item.amount) if owner else None
-        out.append(data)
-    return {"items": out}
-
-
-@router.post("/requests/{withdrawal_id}", dependencies=[Depends(require_csrf)])
-async def decide_request(withdrawal_id: uuid.UUID, payload: Decision, admin: SuperAdminUser, db: DbSession) -> dict:
-    item = await db.get(FinancialWithdrawal, withdrawal_id)
-    if item is None or item.status != "REQUESTED":
-        raise HTTPException(status_code=404, detail="Pedido não encontrado ou já processado.")
-    item.status = "PAID" if payload.action == "paid" else "REJECTED"
-    item.processed_at = utc_now()
-    item.processed_by_user_id = admin.id
-    if payload.note:
-        item.note = payload.note
-    workspace = await db.get(Workspace, item.workspace_id)
-    if workspace is not None:
-        paid = payload.action == "paid"
-        await notify_user(
-            db, workspace.owner_id, "withdrawal-" + payload.action,
-            "Saque pago ✅" if paid else "Saque recusado",
-            (f"R$ {item.amount:.2f} foi enviado para sua chave Pix." if paid
-             else f"O pedido de R$ {item.amount:.2f} foi recusado. {payload.note or ''}").replace(".", ",", 1),
-            "/carteira",
-        )
-    await db.commit()
     return _withdrawal_out(item)

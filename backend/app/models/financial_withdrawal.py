@@ -13,7 +13,9 @@ class FinancialWithdrawal(Base):
     __tablename__ = "financial_withdrawals"
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_financial_withdrawals_amount_positive"),
-        CheckConstraint("status IN ('PAID', 'REQUESTED', 'REJECTED')", name="ck_financial_withdrawals_status"),
+        CheckConstraint(
+            "status IN ('PAID', 'REQUESTED', 'REJECTED', 'PROCESSING', 'FAILED')", name="ck_financial_withdrawals_status"
+        ),
         Index("ix_financial_withdrawals_workspace_created_at", "workspace_id", "created_at"),
     )
 
@@ -33,6 +35,9 @@ class FinancialWithdrawal(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="PAID", server_default="PAID")
     pix_key_type: Mapped[str | None] = mapped_column(String(16))
     pix_key: Mapped[str | None] = mapped_column(String(140))
+    # Automatic payout through SmokePay: its withdrawal id and fee.
+    gateway_withdrawal_id: Mapped[str | None] = mapped_column(String(64))
+    fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     processed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
