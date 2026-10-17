@@ -62,13 +62,13 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
             <span className="text-sm text-muted">R$</span>
             <input
               autoFocus
-              className="min-h-12 flex-1 bg-transparent text-2xl font-semibold text-fg outline-none"
+              className="min-h-12 w-full min-w-0 flex-1 bg-transparent text-2xl font-semibold text-fg outline-none"
               inputMode="decimal"
               onChange={(event) => setAmount(event.target.value)}
               placeholder="0,00"
               value={amount}
             />
-            <button className="rounded-lg bg-brand-soft px-2 py-1 text-xs font-semibold text-accent" onClick={() => setAmount((wallet.withdrawable ?? wallet.available).toFixed(2).replace(".", ","))} type="button">
+            <button className="shrink-0 rounded-lg bg-brand-soft px-3 py-2 text-xs font-semibold text-accent" onClick={() => setAmount((wallet.withdrawable ?? wallet.available).toFixed(2).replace(".", ","))} type="button">
               MAX
             </button>
           </span>

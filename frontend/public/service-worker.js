@@ -79,8 +79,12 @@ self.addEventListener("push", (event) => {
   }
   const title = typeof data.title === "string" && data.title ? data.title : "FlashPost";
   const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/dashboard";
+  // Tell any open FlashPost window right away, so its numbers refresh without waiting.
+  const tellWindows = self.clients
+    .matchAll({ type: "window", includeUncontrolled: true })
+    .then((windows) => windows.forEach((client) => client.postMessage({ type: "flashpost-push", tag: data.tag || null })));
   event.waitUntil(
-    self.registration.showNotification(title, {
+    Promise.all([tellWindows.catch(() => undefined), self.registration.showNotification(title, {
       body: typeof data.body === "string" ? data.body : "",
       icon: "/flashpost-icon-192.png",
       badge: "/flashpost-icon-192.png",
@@ -88,7 +92,7 @@ self.addEventListener("push", (event) => {
       renotify: false,
       lang: "pt-BR",
       data: { url },
-    }),
+    })]),
   );
 });
 

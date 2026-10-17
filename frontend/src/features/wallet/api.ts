@@ -61,7 +61,13 @@ export function useWalletSummary(enabled: boolean) {
 }
 
 export function useWallet() {
-  return useQuery({ queryKey: ["wallet", "full"], queryFn: () => apiRequest<Wallet>("/api/wallet"), staleTime: 15_000 });
+  return useQuery({
+    queryKey: ["wallet", "full"],
+    queryFn: () => apiRequest<Wallet>("/api/wallet"),
+    staleTime: 15_000,
+    // While a withdrawal is on its way, check every 5 s so it flips to "Pago" by itself.
+    refetchInterval: (query) => (query.state.data?.withdrawals.some((item) => item.status === "PROCESSING") ? 5_000 : false),
+  });
 }
 
 export function useWalletMutations() {
