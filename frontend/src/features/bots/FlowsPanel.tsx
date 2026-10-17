@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download, GitBranch, KeyRound, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { Copy, Download, GitBranch, KeyRound, Lock, Pencil, Plus, Trash2, Upload } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
@@ -86,29 +86,39 @@ export function FlowsPanel({ onEditingChange, period }: { onEditingChange?: (edi
               <div className="flex items-start justify-between gap-3">
                 <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
                 <span className="flex shrink-0 gap-1">
-                  {flow.from_template && <Badge tone="warning">Modelo do chefe</Badge>}
+                  {flow.protected ? <Badge tone="warning">Protegido</Badge> : flow.from_template && <Badge tone="warning">Modelo do chefe</Badge>}
                   {flow.shared && <Badge tone="success">Compartilhado</Badge>}
                   <Badge tone="success">{(stats.data?.flows[flow.id]?.conversion ?? 0).toLocaleString("pt-BR")}% conv.</Badge>
                   <Badge tone={flow.bots ? "brand" : "neutral"}>{flow.bots ? `${flow.bots} robô(s)` : "Sem robô"}</Badge>
                 </span>
               </div>
-              <p className="text-xs text-muted">
-                {flow.definition.offer.media_ids.length} mídia(s) na boas-vindas ·{" "}
-                {flow.definition.plans.length
-                  ? flow.definition.plans.map((plan) => `${plan.name} ${brl(plan.price)}`).join(" · ")
+              {flow.protected || !flow.definition ? (
+                <p className="flex items-center gap-1.5 text-xs text-warning">
+                  <Lock size={13} /> Funil do chefe protegido: roda no seu robô, mas não pode ser aberto, copiado ou exportado.
+                </p>
+              ) : (
+                <p className="text-xs text-muted">
+                {flow.definition!.offer.media_ids.length} mídia(s) na boas-vindas ·{" "}
+                {flow.definition!.plans.length
+                  ? flow.definition!.plans.map((plan) => `${plan.name} ${brl(plan.price)}`).join(" · ")
                   : "nenhum plano"}
-                {flow.definition.upsells.length > 0 && ` · ${flow.definition.upsells.length} upsell(s)`}
-                {flow.definition.downsells.length > 0 && ` · ${flow.definition.downsells.length} downsell(s)`}
-                {flow.definition.age_gate.enabled && " · +18"}
+                {flow.definition!.upsells.length > 0 && ` · ${flow.definition!.upsells.length} upsell(s)`}
+                {flow.definition!.downsells.length > 0 && ` · ${flow.definition!.downsells.length} downsell(s)`}
+                {flow.definition!.age_gate.enabled && " · +18"}
               </p>
+              )}
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="primary" onClick={() => setEditing(flow.id)}>
-                  <Pencil size={14} /> Editar
-                </Button>
-                <Button size="sm" onClick={() => duplicate.mutate(flow.id)}>
-                  <Copy size={14} /> Duplicar
-                </Button>
-                {!flow.from_template && (
+                {!flow.protected && (
+                  <>
+                    <Button size="sm" variant="primary" onClick={() => setEditing(flow.id)}>
+                      <Pencil size={14} /> Editar
+                    </Button>
+                    <Button size="sm" onClick={() => duplicate.mutate(flow.id)}>
+                      <Copy size={14} /> Duplicar
+                    </Button>
+                  </>
+                )}
+                {!flow.from_template && !flow.protected && (
                   <>
                     <Button size="sm" onClick={() => downloadFlow(`/api/bots/flows/${flow.id}/export`, flow.name).catch((err: Error) => setExportError(err.message))}>
                       <Download size={14} /> Exportar

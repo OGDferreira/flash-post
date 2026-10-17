@@ -284,7 +284,7 @@ async def clone_loop(db: AsyncSession, source: InstagramLoop, workspace_id: uuid
             InstagramMedia(
                 id=new_id, workspace_id=workspace_id, storage_path=path, filename=media.filename,
                 mime_type=media.mime_type, media_type=media.media_type, size_bytes=media.size_bytes,
-                caption=media.caption,
+                caption=media.caption, locked=media.locked or source.workspace_id != workspace_id,
             )
         )
         db.add(InstagramLoopMedia(loop_id=clone.id, media_id=new_id))
@@ -345,6 +345,7 @@ async def clone_flow(db: AsyncSession, source: TgFlow, workspace_id: uuid.UUID) 
             TgMedia(
                 id=new_id, workspace_id=workspace_id, kind=media.kind, file_name=media.file_name,
                 content_type=media.content_type, size_bytes=media.size_bytes, storage_path=path, file_ids={},
+                locked=media.locked,
             )
         )
     clone = TgFlow(

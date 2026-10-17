@@ -122,6 +122,8 @@ class InstagramMedia(Base):
     media_type: Mapped[str] = mapped_column(String(16), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     caption: Mapped[str | None] = mapped_column(String(2200))
+    # copied from a chief's shared loop: posts normally, but the partner never sees it
+    locked: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

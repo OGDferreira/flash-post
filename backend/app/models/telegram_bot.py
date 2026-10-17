@@ -135,6 +135,8 @@ class TgMedia(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
     file_ids: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # copied from a chief's shared funnel: delivered normally, never shown to the partner
+    locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

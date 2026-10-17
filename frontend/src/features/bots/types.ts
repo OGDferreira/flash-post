@@ -126,6 +126,8 @@ export type Flow = {
   shared?: boolean;
   shared_loop_id?: string | null;
   from_template?: boolean;
+  /** Copy received from a chief: runs in the bot, but its content is never sent here. */
+  protected?: boolean;
 };
 
 export type Bot = {

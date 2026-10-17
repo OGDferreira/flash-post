@@ -49,6 +49,12 @@ async def _chief_shares_funnel(client, db, chief_ws) -> str:
     loop = InstagramLoop(workspace_id=chief_ws.id, name="Loop do funil", interval_min_minutes=10, interval_max_minutes=20,
                          daily_limit_per_account=5, post_type="reels", status="active")
     db.add(loop)
+    await db.flush()
+    video = InstagramMedia(workspace_id=chief_ws.id, storage_path=f"{chief_ws.id}/v/segredo.mp4", filename="segredo.mp4",
+                           mime_type="video/mp4", media_type="video", size_bytes=10, caption="legenda secreta")
+    db.add(video)
+    await db.flush()
+    db.add(InstagramLoopMedia(loop_id=loop.id, media_id=video.id))
     await db.commit()
     headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
     flow = await client.post("/api/bots/flows", headers=headers, json={"name": "Funil Chefe", "definition": _flow()})
@@ -189,6 +195,11 @@ async def test_shared_funnel_runs_but_its_content_never_reaches_the_partner(clie
     assert copy.workspace_id == partner_ws.id and copy.status == "paused"
     assert not await db_session.scalar(select(InstagramLoopAccount.loop_id).where(InstagramLoopAccount.loop_id == copy.id))
     assert await db_session.scalar(select(func.count(TgFlow.id)).where(TgFlow.workspace_id == partner_ws.id)) == 0
+    # the loop's videos post normally, but the partner can never see or download them
+    media = (await client.get("/api/media")).json()["media"]
+    assert len(media) == 1 and media[0]["locked"] is True and media[0]["caption"] is None
+    assert "segredo" not in json.dumps(media)
+    assert (await client.get(f"/api/media/{media[0]['id']}/preview", follow_redirects=False)).status_code == 403
 
     # the partner's bot runs it; once the chief stops sharing, new charges stop
     bot = (await client.post("/api/bots", headers=headers, json={"token": TOKEN, "flow_id": flow_id})).json()
@@ -267,3 +278,28 @@ async def test_admin_operations_is_super_admin_only(client, db_session, owner, s
     assert by_name["Socio"]["hierarchy"] == "partner" and by_name["FlashPost Owner"]["hierarchy"] == "chief"
     users = (await client.get("/api/admin/users")).json()["items"]
     assert {u["full_name"]: u["hierarchy"] for u in users}["Socio"] == "partner"
+
+
+@pytest.mark.anyio
+async def test_old_copy_of_a_chief_funnel_cannot_be_opened_or_copied(client, db_session, owner) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
+    flow_id = await _chief_shares_funnel(client, db_session, chief_ws)
+    source = await db_session.get(TgFlow, uuid.UUID(flow_id))
+    secret = TgMedia(workspace_id=partner_ws.id, kind="video", file_name="vip.mp4", content_type="video/mp4",
+                     size_bytes=10, storage_path="x/vip.mp4", file_ids={}, locked=True)
+    db_session.add(secret)
+    old = TgFlow(workspace_id=partner_ws.id, name="Cópia antiga", definition=source.definition, template_flow_id=source.id)
+    db_session.add(old)
+    await db_session.commit()
+
+    headers = await _as(client, "socio@example.com")
+    listed = (await client.get("/api/bots/flows/list")).json()["flows"]
+    assert listed[0]["protected"] is True and listed[0]["definition"] is None
+    for path in (f"/api/bots/flows/{old.id}", f"/api/bots/flows/{old.id}/export"):
+        assert (await client.get(path)).status_code == 403, path
+    assert (await client.put(f"/api/bots/flows/{old.id}", headers=headers, json={"name": "x", "definition": _flow()})).status_code == 403
+    assert (await client.post(f"/api/bots/flows/{old.id}/duplicate", headers=headers)).status_code == 403
+    assert (await client.post(f"/api/bots/flows/{old.id}/import-code", headers=headers)).status_code == 403
+    assert (await client.get("/api/bots/media/list")).json()["media"] == []
+    assert (await client.get(f"/api/bots/media/{secret.id}/preview")).status_code == 403

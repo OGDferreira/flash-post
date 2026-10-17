@@ -94,11 +94,13 @@ def _definition_out(raw: dict) -> dict:
         return raw
 
 
-def _flow_out(flow: TgFlow, bots: int = 0) -> dict:
+def _flow_out(flow: TgFlow, bots: int = 0, protected: bool = False) -> dict:
     return {
         "id": str(flow.id),
         "name": flow.name,
-        "definition": _definition_out(flow.definition),
+        "protected": protected,
+        # a copy received from a chief runs, but its content never reaches the partner
+        "definition": None if protected else _definition_out(flow.definition),
         "version": flow.version,
         "bots": bots,
         "updated_at": flow.updated_at.isoformat() if flow.updated_at else None,
@@ -106,6 +108,21 @@ def _flow_out(flow: TgFlow, bots: int = 0) -> dict:
         "shared_loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
         "from_template": flow.template_flow_id is not None,
     }
+
+
+async def _is_received_copy(db, flow: TgFlow) -> bool:
+    if flow.template_flow_id is None:
+        return False
+    template = await db.get(TgFlow, flow.template_flow_id)
+    return template is not None and template.workspace_id != flow.workspace_id
+
+
+async def _readable(db, flow_id: uuid.UUID, access) -> TgFlow:
+    """A funnel of this operation whose content the owner may read, copy or edit."""
+    flow = await _owned(db, TgFlow, flow_id, access)
+    if await _is_received_copy(db, flow):
+        raise HTTPException(status_code=403, detail="Funil recebido do chefe: pode ser usado no bot, mas não pode ser aberto, copiado ou exportado.")
+    return flow
 
 
 async def _usable_flow(db, flow_id: uuid.UUID, access) -> TgFlow:
@@ -337,7 +354,8 @@ async def list_flows(access: OwnerAccess, db: DbSession) -> dict:
                     select(TgFlow).where(TgFlow.workspace_id == chief_workspace.id, TgFlow.shared.is_(True)).order_by(TgFlow.name)
                 )
             ]
-    return {"flows": [_flow_out(f, int(usage.get(f.id, 0))) for f in flows], "shared_flows": shared}
+    received = {f.id for f in flows if await _is_received_copy(db, f)}
+    return {"flows": [_flow_out(f, int(usage.get(f.id, 0)), f.id in received) for f in flows], "shared_flows": shared}
 
 
 class ImportCode(BaseModel):
@@ -346,12 +364,7 @@ class ImportCode(BaseModel):
 
 async def _exportable(db, flow_id: uuid.UUID, access) -> TgFlow:
     """Only funnels of this operation; never a copy of a chief's shared funnel."""
-    flow = await _owned(db, TgFlow, flow_id, access)
-    if flow.template_flow_id:
-        template = await db.get(TgFlow, flow.template_flow_id)
-        if template is not None and template.workspace_id != flow.workspace_id:
-            raise HTTPException(status_code=403, detail="Funis recebidos de um chefe não podem ser exportados.")
-    return flow
+    return await _readable(db, flow_id, access)
 
 
 def _download(data: dict, name: str) -> Response:
@@ -416,7 +429,7 @@ async def create_flow(payload: FlowCreate, access: OwnerAccess, db: DbSession) -
 
 @router.get("/flows/{flow_id}")
 async def get_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
-    return _flow_out(await _owned(db, TgFlow, flow_id, access))
+    return _flow_out(await _readable(db, flow_id, access))
 
 
 @router.get("/flows/{flow_id}/summary")
@@ -437,7 +450,7 @@ async def flow_summary(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -
 
 @router.put("/flows/{flow_id}", dependencies=csrf)
 async def save_flow(flow_id: uuid.UUID, payload: FlowUpdate, access: OwnerAccess, db: DbSession) -> dict:
-    flow = await _owned(db, TgFlow, flow_id, access)
+    flow = await _readable(db, flow_id, access)
     definition = _validate_definition(payload.definition)
     media_ids = definition.media_ids()
     if media_ids:
@@ -483,7 +496,7 @@ async def _notify_template_change(db, flow: TgFlow, workspace_id: uuid.UUID) -> 
 
 @router.post("/flows/{flow_id}/duplicate", status_code=201, dependencies=csrf)
 async def duplicate_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
-    source = await _owned(db, TgFlow, flow_id, access)
+    source = await _readable(db, flow_id, access)
     flow = TgFlow(workspace_id=access.workspace.id, name=f"{source.name} (cópia)"[:120], definition=source.definition)
     db.add(flow)
     await db.commit()
@@ -512,7 +525,9 @@ def _media_out(media: TgMedia) -> dict:
 
 @router.get("/media/list")
 async def list_media(access: OwnerAccess, db: DbSession) -> dict:
-    rows = await db.scalars(select(TgMedia).where(TgMedia.workspace_id == access.workspace.id).order_by(TgMedia.created_at.desc()))
+    rows = await db.scalars(
+        select(TgMedia).where(TgMedia.workspace_id == access.workspace.id, TgMedia.locked.is_(False)).order_by(TgMedia.created_at.desc())
+    )
     return {"media": [_media_out(m) for m in rows]}
 
 
@@ -521,6 +536,8 @@ async def preview_media(media_id: uuid.UUID, access: OwnerAccess, db: DbSession)
     from app.instagram.storage import SupabaseStorage
 
     media = await _owned(db, TgMedia, media_id, access)
+    if media.locked:
+        raise HTTPException(status_code=403, detail="Mídia protegida do chefe: não pode ser vista nem baixada.")
     try:
         url = await SupabaseStorage.from_settings().create_signed_url(media.storage_path)
     except Exception:
