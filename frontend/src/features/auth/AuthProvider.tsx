@@ -1,9 +1,10 @@
 import {
   createContext,
   useContext,
+  useEffect,
   type PropsWithChildren,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, apiRequest, type User } from "@/services/api";
 
@@ -15,6 +16,14 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const ended = () => {
+      if (queryClient.getQueryData(["auth", "me"])) void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    };
+    window.addEventListener("flashpost:session-ended", ended);
+    return () => window.removeEventListener("flashpost:session-ended", ended);
+  }, [queryClient]);
   const auth = useQuery({
     queryKey: ["auth", "me"],
     queryFn: () => apiRequest<User>("/api/auth/me"),
@@ -24,7 +33,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   });
 
   const isUnauthorized = auth.error instanceof ApiError && auth.error.status === 401;
-  const user = auth.data ?? null;
+  const user = isUnauthorized ? null : (auth.data ?? null);
 
   return (
     <AuthContext.Provider

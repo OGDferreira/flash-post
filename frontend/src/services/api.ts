@@ -129,6 +129,10 @@ export async function apiRequest<T>(
     | { detail?: string; csrf_token?: string }
     | null;
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith("/api/auth/")) {
+      // The session ended (logout elsewhere, expiry): let the app go back to the login page.
+      window.dispatchEvent(new Event("flashpost:session-ended"));
+    }
     if (response.status >= 500 && !path.startsWith("/api/diagnostics/")) {
       const message =
         body?.detail ?? `The server returned HTTP ${response.status}.`;

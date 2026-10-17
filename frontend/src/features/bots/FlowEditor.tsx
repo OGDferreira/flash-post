@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   Bot as BotIcon,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CreditCard,
   Hand,
   Save,
@@ -108,6 +110,13 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   const [notice, setNotice] = useState<string | null>(null);
   const top = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    // The section bar takes the bottom of the screen; the global refresh button steps aside.
+    document.body.dataset.flowEditor = "1";
+    return () => {
+      delete document.body.dataset.flowEditor;
+    };
+  }, []);
   useEffect(() => {
     if (flow.data && !draft) {
       setName(flow.data.name);
@@ -234,33 +243,54 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
 
       <Section draft={draft} flowId={flowId} set={set} />
 
+      {createPortal(
       <nav
         aria-label="Navegar entre seções"
-        className="sticky bottom-[calc(env(safe-area-inset-bottom)+92px)] z-10 mr-14 grid grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-2xl border border-line bg-surface/95 p-2 backdrop-blur lg:bottom-3 lg:mr-16"
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 z-40 grid w-[calc(100vw-1.5rem)] max-w-xl -translate-x-1/2 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 rounded-2xl border border-line bg-[var(--nm-bg)] p-1.5 shadow-2xl lg:bottom-6 lg:ml-[34px]"
       >
         <button
-          className="flex min-h-11 items-center gap-1 rounded-xl px-2 text-sm text-fg-2 disabled:opacity-30"
+          aria-label={current > 0 ? `Voltar para ${sections[current - 1].label}` : "Primeira seção"}
+          className="flex min-h-11 min-w-0 items-center gap-1 rounded-xl bg-well px-2 text-xs font-medium text-fg-2 disabled:opacity-30"
           disabled={current === 0}
           onClick={() => go(current - 1)}
           type="button"
         >
-          <ChevronLeft size={18} />
+          <ChevronLeft className="shrink-0" size={18} />
           <span className="truncate">{current > 0 ? sections[current - 1].label : "Início"}</span>
         </button>
         <button
           aria-expanded={bottomPicker}
           aria-label="Ver todas as seções"
-          className="rounded-xl px-2 py-1 text-center hover:bg-well"
+          className="flex min-h-11 max-w-[42vw] flex-col items-center justify-center rounded-xl px-2 hover:bg-well sm:max-w-none"
           onClick={() => setBottomPicker(!bottomPicker)}
           type="button"
         >
-          <span className="block text-[11px] text-muted">
-            {current + 1}/{sections.length} · todas as seções
+          <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted">
+            {current + 1}/{sections.length} <ChevronUp className={`transition-transform ${bottomPicker ? "rotate-180" : ""}`} size={12} />
           </span>
-          <span className="block text-sm font-medium text-fg">{section.label}</span>
+          <span className="block max-w-full truncate text-sm font-semibold text-fg">{section.label}</span>
         </button>
-        {bottomPicker && (
-          <ul className="absolute inset-x-0 bottom-full z-30 mb-2 grid max-h-[60vh] gap-0.5 overflow-y-auto rounded-2xl border border-line bg-[var(--nm-bg)] p-1.5 shadow-2xl" role="listbox">
+        <button
+          aria-label={current < sections.length - 1 ? `Avançar para ${sections[current + 1].label}` : "Última seção"}
+          className="flex min-h-11 min-w-0 items-center justify-end gap-1 rounded-xl bg-brand px-2 text-xs font-semibold text-white disabled:bg-well disabled:text-fg-2 disabled:opacity-30"
+          disabled={current === sections.length - 1}
+          onClick={() => go(current + 1)}
+          type="button"
+        >
+          <span className="truncate">{current < sections.length - 1 ? sections[current + 1].label : "Fim"}</span>
+          <ChevronRight className="shrink-0" size={18} />
+        </button>
+      </nav>,
+        document.body,
+      )}
+        {bottomPicker &&
+          createPortal(
+            <div className="fixed inset-0 z-[70]" role="presentation">
+              <button aria-label="Fechar lista de seções" className="absolute inset-0 cursor-default bg-black/50" onClick={() => setBottomPicker(false)} type="button" />
+          <ul
+            className="absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+176px)] grid max-h-[calc(100dvh-280px)] gap-0.5 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-[var(--nm-bg)] p-1.5 shadow-2xl sm:left-1/2 sm:right-auto sm:w-80 sm:-translate-x-1/2 lg:bottom-auto lg:top-1/2 lg:max-h-[80vh] lg:-translate-y-1/2"
+            role="listbox"
+          >
             {sections.map((item, index) => {
               const Icon = item.icon;
               return (
@@ -280,17 +310,9 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
               );
             })}
           </ul>
-        )}
-        <button
-          className="flex min-h-11 items-center justify-end gap-1 rounded-xl px-2 text-sm text-fg-2 disabled:opacity-30"
-          disabled={current === sections.length - 1}
-          onClick={() => go(current + 1)}
-          type="button"
-        >
-          <span className="truncate">{current < sections.length - 1 ? sections[current + 1].label : "Fim"}</span>
-          <ChevronRight size={18} />
-        </button>
-      </nav>
+            </div>,
+            document.body,
+          )}
     </div>
   );
 }
