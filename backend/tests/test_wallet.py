@@ -109,6 +109,7 @@ async def test_partner_withdraws_from_own_subaccount(client, db_session, owner, 
     wallet = (await client.get("/api/wallet")).json()
     assert wallet["available"] == 39.69 and wallet["balance_source"] == "smokepay"
     assert wallet["month_revenue"] == 59.7
+    assert wallet["commission_paid"] == 17.01 and wallet["withdraw_fee"] == 3.0
 
     assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "5", **PIX})).status_code == 422
     assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "50", **PIX})).status_code == 422
@@ -162,3 +163,50 @@ async def test_main_account_withdraws_and_reconciles(client, db_session, owner, 
     await db_session.commit()
     item = await db_session.scalar(select(FinancialWithdrawal))
     assert item.gateway_withdrawal_id == "w-main-1" and item.fee == Decimal("1.50")
+
+
+@pytest.mark.anyio
+async def test_goals_and_award_photos(client, db_session, owner, super_admin, monkeypatch) -> None:
+    saved: dict[str, bytes] = {}
+
+    class FakeStorage:
+        async def upload(self, path, content, content_type):
+            saved[path] = content
+
+        async def create_signed_url(self, path):
+            return f"https://cdn.test/{path}"
+
+    from app.instagram import storage as storage_module
+    from app.wallet import router as wallet_router
+
+    monkeypatch.setattr(storage_module.SupabaseStorage, "from_settings", classmethod(lambda cls: FakeStorage()))
+    wallet_router._signed_cache.clear()
+    _, workspace = owner
+    await _paid(db_session, workspace)
+
+    await _as(client, "owner@example.com", "correct horse battery staple")
+    goals = (await client.get("/api/wallet/goals")).json()
+    assert goals["available"] and goals["month_revenue"] == 19.9 and goals["target"] == 10000.0
+    assert [g["current"] for g in goals["goals"]] == [True, False, False, False, False]
+    assert all(g["image_url"] is None for g in goals["goals"])
+    # only the Super Admin uploads award photos
+    headers = await _as(client, "owner@example.com", "correct horse battery staple")
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+    denied = await client.put("/api/admin/awards/10000/image", headers={**headers, "Content-Type": "image/png"}, content=png)
+    assert denied.status_code == 403
+
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    bad = await client.put("/api/admin/awards/10000/image", headers={**admin, "Content-Type": "image/png"}, content=b"nope")
+    assert bad.status_code == 415
+    assert (await client.put("/api/admin/awards/123/image", headers={**admin, "Content-Type": "image/png"}, content=png)).status_code == 404
+    ok = await client.put("/api/admin/awards/10000/image", headers={**admin, "Content-Type": "image/png"}, content=png)
+    assert ok.status_code == 200, ok.text
+    items = (await client.get("/api/admin/awards")).json()["items"]
+    assert items[0]["image_url"].startswith("https://cdn.test/awards/10000-") and items[1]["image_url"] is None
+
+    await _as(client, "owner@example.com", "correct horse battery staple")
+    goals = (await client.get("/api/wallet/goals")).json()
+    assert goals["goals"][0]["image_url"] == items[0]["image_url"]
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    assert (await client.delete("/api/admin/awards/10000/image", headers=admin)).status_code == 200
+    assert (await client.get("/api/admin/awards")).json()["items"][0]["image_url"] is None

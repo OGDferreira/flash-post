@@ -1,5 +1,6 @@
 import { EngagementCards } from "@/components/EngagementCards";
 import { NoticesCard, PartnerPanel } from "@/features/partners/PartnerPanel";
+import { GoalsCard } from "@/features/wallet/GoalsCard";
 import { TrendBadge } from "@/components/TrendBadge";
 import { MonthResultCards, useFinanceMonth } from "@/components/MonthResultCards";
 import { useState, type ReactNode } from "react";
@@ -483,6 +484,9 @@ export function DashboardPage() {
               ))}
               <EngagementCards />
             </section>
+            <div className="mt-4">
+              <GoalsCard />
+            </div>
             <div className="mt-4">
               <PartnerPanel />
             </div>

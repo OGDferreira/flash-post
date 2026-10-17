@@ -73,6 +73,11 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
             TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid"
         )
     )
+    commission_paid = await db.scalar(
+        select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
+            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.split_chief_user_id.is_not(None)
+        )
+    )
     sums = dict(
         (
             await db.execute(
@@ -88,6 +93,7 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
     return {
         "earned": earned,
         "commissions_received": _money(commissions),
+        "commission_paid": _money(commission_paid),
         "withdrawn": withdrawn,
         "pending": pending,
         "available": max(Decimal("0.00"), earned - withdrawn - pending),
@@ -116,6 +122,61 @@ def goal_progress(revenue: Decimal) -> dict:
         "reached": reached,
         "goals": [{"amount": int(g), "prize": GOAL_PRIZES[int(g)], "reached": revenue >= g} for g in GOALS],
     }
+
+
+# ------------------------------------------------------------------ award photos
+
+AWARD_IMAGES_KEY = "award_images"
+_signed_cache: dict[str, tuple[float, str]] = {}
+
+
+async def award_image_paths(db) -> dict[int, str]:
+    from app.models import SystemSetting
+
+    row = await db.get(SystemSetting, AWARD_IMAGES_KEY)
+    value = row.value if row and isinstance(row.value, dict) else {}
+    return {int(k): v for k, v in value.items() if str(k).isdigit() and isinstance(v, str) and v}
+
+
+async def award_image_urls(db) -> dict[int, str]:
+    """Signed URLs for the award photos, cached in process (they last 4h)."""
+    import time
+
+    from app.instagram.storage import SupabaseStorage
+
+    urls: dict[int, str] = {}
+    for amount, path in (await award_image_paths(db)).items():
+        cached = _signed_cache.get(path)
+        if cached and cached[0] > time.time():
+            urls[amount] = cached[1]
+            continue
+        try:
+            url = await SupabaseStorage.from_settings().create_signed_url(path)
+        except Exception:
+            continue
+        _signed_cache[path] = (time.time() + 3 * 3600, url)
+        urls[amount] = url
+    return urls
+
+
+def _goals_out(revenue: Decimal, images: dict[int, str]) -> dict:
+    goal = goal_progress(revenue)
+    current = int(goal["target"]) if revenue < GOALS[-1] else int(GOALS[-1])
+    return {
+        **goal,
+        "target": float(goal["target"]),
+        "goals": [{**g, "image_url": images.get(g["amount"]), "current": g["amount"] == current} for g in goal["goals"]],
+    }
+
+
+@router.get("/goals")
+async def goals(user: AuthenticatedUser, db: DbSession) -> dict:
+    """Revenue goals and award photos for the dashboard."""
+    workspace = await owner_workspace(db, user.id)
+    if workspace is None:
+        return {"available": False}
+    revenue = await month_revenue(db, workspace.id)
+    return {"available": True, "month_revenue": float(revenue), **_goals_out(revenue, await award_image_urls(db))}
 
 
 def _withdrawal_out(item: FinancialWithdrawal, owner: str | None = None) -> dict:
@@ -173,6 +234,8 @@ async def _reconcile(db, workspace_id: uuid.UUID, shop: str | None) -> None:
         payout = remote.get(item.gateway_withdrawal_id or "")
         if payout is None:
             continue
+        if payout.fee is not None:
+            item.fee = payout.fee
         if payout.status == "completed":
             item.status, item.processed_at = "PAID", utc_now()
         elif payout.status == "failed":
@@ -195,7 +258,7 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         .order_by(FinancialWithdrawal.created_at.desc())
         .limit(50)
     )
-    goal = goal_progress(revenue)
+    goal = _goals_out(revenue, await award_image_urls(db))
     out = {k: float(v) for k, v in balance.items()}
     if gateway is not None:  # SmokePay's own number wins over our estimate
         out["available"] = float(gateway)
@@ -208,7 +271,7 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "shop_ref": shop,
         "balance_source": "smokepay" if gateway is not None else "estimate",
         "month_revenue": float(revenue),
-        "goal": {**goal, "target": float(goal["target"])},
+        "goal": goal,
         **out,
         "min_withdrawal": float(MIN_WITHDRAWAL),
         "withdrawals": [_withdrawal_out(item) for item in history],

@@ -25,7 +25,7 @@ from app.models import (
     User,
     Workspace,
 )
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app.partners.service import PLATFORM_FEE_KEY, platform_fee_setting
@@ -270,3 +270,68 @@ async def set_platform_fee(payload: PlatformFee, admin: SuperAdminUser, db: DbSe
         row.value, row.updated_by_user_id = value, admin.id
     await db.commit()
     return {"type": payload.type, "value": float(payload.value)}
+
+
+# ------------------------------------------------------------------ award photos
+
+AWARD_TYPES = {"image/jpeg": b"\xff\xd8\xff", "image/png": b"\x89PNG", "image/webp": b"RIFF"}
+AWARD_MAX_BYTES = 8 * 1024 * 1024
+
+
+@router.get("/awards")
+async def list_awards(_admin: SuperAdminUser, db: DbSession) -> dict:
+    from app.wallet.router import GOAL_PRIZES, GOALS, award_image_urls
+
+    urls = await award_image_urls(db)
+    return {"items": [{"amount": int(g), "prize": GOAL_PRIZES[int(g)], "image_url": urls.get(int(g))} for g in GOALS]}
+
+
+async def _save_award_paths(db, admin_id, paths: dict[int, str]) -> None:
+    from app.wallet.router import AWARD_IMAGES_KEY
+
+    value = {str(k): v for k, v in paths.items()}
+    row = await db.get(SystemSetting, AWARD_IMAGES_KEY)
+    if row is None:
+        db.add(SystemSetting(key=AWARD_IMAGES_KEY, value=value, updated_by_user_id=admin_id))
+    else:
+        row.value, row.updated_by_user_id = value, admin_id
+    await db.commit()
+
+
+@router.put("/awards/{amount}/image", dependencies=[Depends(require_csrf)])
+async def upload_award_image(amount: int, request: Request, admin: SuperAdminUser, db: DbSession) -> dict:
+    from app.instagram.storage import SupabaseStorage
+    from app.wallet.router import GOALS, award_image_paths
+
+    if Decimal(amount) not in GOALS:
+        raise HTTPException(status_code=404, detail="Meta não encontrada.")
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in AWARD_TYPES:
+        raise HTTPException(status_code=415, detail="Envie uma imagem JPG, PNG ou WEBP.")
+    content = b""
+    async for chunk in request.stream():
+        content += chunk
+        if len(content) > AWARD_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Imagem maior que 8 MB.")
+    if not content.startswith(AWARD_TYPES[content_type]):
+        raise HTTPException(status_code=415, detail="O conteúdo do arquivo não é uma imagem válida.")
+    ext = content_type.split("/")[1].replace("jpeg", "jpg")
+    path = f"awards/{amount}-{uuid.uuid4().hex[:10]}.{ext}"
+    try:
+        await SupabaseStorage.from_settings().upload(path, content, content_type)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Não foi possível salvar a imagem.") from None
+    paths = await award_image_paths(db)
+    paths[amount] = path
+    await _save_award_paths(db, admin.id, paths)
+    return {"amount": amount, "saved": True}
+
+
+@router.delete("/awards/{amount}/image", dependencies=[Depends(require_csrf)])
+async def remove_award_image(amount: int, admin: SuperAdminUser, db: DbSession) -> dict:
+    from app.wallet.router import award_image_paths
+
+    paths = await award_image_paths(db)
+    paths.pop(amount, None)
+    await _save_award_paths(db, admin.id, paths)
+    return {"amount": amount, "saved": True}

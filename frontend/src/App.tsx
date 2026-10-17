@@ -46,6 +46,7 @@ const AdminNotificationsPage = lazyPage(() => import("@/pages/admin/AdminNotific
 const AdminSystemPage = lazyPage(() => import("@/pages/admin/AdminSystemPage"), "AdminSystemPage");
 const AdminOperationsPage = lazyPage(() => import("@/pages/admin/AdminOperationsPage"), "AdminOperationsPage");
 const AdminFlowsPage = lazyPage(() => import("@/pages/admin/AdminFlowsPage"), "AdminFlowsPage");
+const AdminAwardsPage = lazyPage(() => import("@/pages/admin/AdminAwardsPage"), "AdminAwardsPage");
 const AdminUsersPage = lazyPage(() => import("@/pages/admin/AdminUsersPage"), "AdminUsersPage");
 const AdminWorkspacesPage = lazyPage(() => import("@/pages/admin/AdminWorkspacesPage"), "AdminWorkspacesPage");
 
@@ -118,6 +119,7 @@ export default function App() {
                 <Route path="/admin/system" element={<AdminSystemPage />} />
                 <Route path="/admin/operations" element={<AdminOperationsPage />} />
                 <Route path="/admin/flows" element={<AdminFlowsPage />} />
+                <Route path="/admin/awards" element={<AdminAwardsPage />} />
                 <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
               </Route>
             </Route>
