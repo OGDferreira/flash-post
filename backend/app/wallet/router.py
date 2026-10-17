@@ -9,6 +9,8 @@ balance shown is SmokePay's own when reachable. Amounts are checked on the
 server, never trusted from the browser.
 """
 
+import logging
+import re
 import uuid
 from datetime import timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -21,15 +23,21 @@ from sqlalchemy import func, select
 from app.auth.dependencies import AuthenticatedUser, DbSession, require_csrf
 from app.core.time import BRAZIL_TIME_ZONE, utc_now
 from app.bots import smokepay
+from app.core.config import get_settings
 from app.models import FinancialWithdrawal, TgOrder, User, Workspace
 from app.partners.service import owner_workspace, shop_ref
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/wallet", tags=["Wallet"])
 
 CENT = Decimal("0.01")
 MIN_WITHDRAWAL = Decimal("10.00")
 GOALS = [Decimal(v) for v in ("10000", "50000", "100000", "500000", "1000000")]
 GOAL_PRIZES = {10000: "Pulseira", 50000: "Caneca", 100000: "Placa", 500000: "Placa", 1000000: "Quadro, cordão e pingente de ouro"}
+
+
+def _brl(value: Decimal) -> str:
+    return f"R$ {value:.2f}".replace(".", ",")
 
 
 def _money(value: object) -> Decimal:
@@ -47,6 +55,45 @@ class WithdrawalRequest(BaseModel):
     def _strip(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
+
+
+def _check_digits(digits: str, weights_from: int) -> int:
+    total = sum(int(d) * w for d, w in zip(digits, range(weights_from, 1, -1)))
+    return (total * 10 % 11) % 10
+
+
+def _cnpj_digit(digits: str) -> int:
+    weights = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2][-len(digits):]
+    rest = sum(int(d) * w for d, w in zip(digits, weights)) % 11
+    return 0 if rest < 2 else 11 - rest
+
+
+def normalize_pix_key(kind: str, key: str) -> str:
+    """The key SmokePay should receive, or 422 with what is wrong (a bad key makes the
+    Pix fail at the bank and the amount comes back, wasting the 5-minute cooldown)."""
+    digits = "".join(c for c in key if c.isdigit())
+    if kind == "cpf":
+        if len(digits) != 11 or len(set(digits)) == 1 or [_check_digits(digits[:9], 10), _check_digits(digits[:10], 11)] != [int(digits[9]), int(digits[10])]:
+            raise HTTPException(status_code=422, detail="CPF inválido: confira os números da chave Pix.")
+        return digits
+    if kind == "cnpj":
+        if len(digits) != 14 or len(set(digits)) == 1 or [_cnpj_digit(digits[:12]), _cnpj_digit(digits[:13])] != [int(digits[12]), int(digits[13])]:
+            raise HTTPException(status_code=422, detail="CNPJ inválido: confira os números da chave Pix.")
+        return digits
+    if kind == "email":
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", key):
+            raise HTTPException(status_code=422, detail="E-mail inválido para chave Pix.")
+        return key.lower()
+    if kind == "phone":
+        if digits.startswith("55") and len(digits) in (12, 13):
+            digits = digits[2:]
+        if len(digits) not in (10, 11):
+            raise HTTPException(status_code=422, detail="Telefone inválido: use DDD + número, ex.: 11 91234-5678.")
+        return f"+55{digits}"
+    try:
+        return str(uuid.UUID(key))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Chave aleatória inválida: cole a chave completa (32 letras e números com traços).") from None
 
 
 async def _workspace_for(db, user: User) -> Workspace:
@@ -68,6 +115,11 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
             TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid"
         )
     )
+    commission_paid = await db.scalar(
+        select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
+            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.split_chief_user_id.is_not(None)
+        )
+    )
     sums = dict(
         (
             await db.execute(
@@ -83,6 +135,7 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
     return {
         "earned": earned,
         "commissions_received": _money(commissions),
+        "commission_paid": _money(commission_paid),
         "withdrawn": withdrawn,
         "pending": pending,
         "available": max(Decimal("0.00"), earned - withdrawn - pending),
@@ -111,6 +164,61 @@ def goal_progress(revenue: Decimal) -> dict:
         "reached": reached,
         "goals": [{"amount": int(g), "prize": GOAL_PRIZES[int(g)], "reached": revenue >= g} for g in GOALS],
     }
+
+
+# ------------------------------------------------------------------ award photos
+
+AWARD_IMAGES_KEY = "award_images"
+_signed_cache: dict[str, tuple[float, str]] = {}
+
+
+async def award_image_paths(db) -> dict[int, str]:
+    from app.models import SystemSetting
+
+    row = await db.get(SystemSetting, AWARD_IMAGES_KEY)
+    value = row.value if row and isinstance(row.value, dict) else {}
+    return {int(k): v for k, v in value.items() if str(k).isdigit() and isinstance(v, str) and v}
+
+
+async def award_image_urls(db) -> dict[int, str]:
+    """Signed URLs for the award photos, cached in process (they last 4h)."""
+    import time
+
+    from app.instagram.storage import SupabaseStorage
+
+    urls: dict[int, str] = {}
+    for amount, path in (await award_image_paths(db)).items():
+        cached = _signed_cache.get(path)
+        if cached and cached[0] > time.time():
+            urls[amount] = cached[1]
+            continue
+        try:
+            url = await SupabaseStorage.from_settings().create_signed_url(path)
+        except Exception:
+            continue
+        _signed_cache[path] = (time.time() + 3 * 3600, url)
+        urls[amount] = url
+    return urls
+
+
+def _goals_out(revenue: Decimal, images: dict[int, str]) -> dict:
+    goal = goal_progress(revenue)
+    current = int(goal["target"]) if revenue < GOALS[-1] else int(GOALS[-1])
+    return {
+        **goal,
+        "target": float(goal["target"]),
+        "goals": [{**g, "image_url": images.get(g["amount"]), "current": g["amount"] == current} for g in goal["goals"]],
+    }
+
+
+@router.get("/goals")
+async def goals(user: AuthenticatedUser, db: DbSession) -> dict:
+    """Revenue goals and award photos for the dashboard."""
+    workspace = await owner_workspace(db, user.id)
+    if workspace is None:
+        return {"available": False}
+    revenue = await month_revenue(db, workspace.id)
+    return {"available": True, "month_revenue": float(revenue), **_goals_out(revenue, await award_image_urls(db))}
 
 
 def _withdrawal_out(item: FinancialWithdrawal, owner: str | None = None) -> dict:
@@ -168,6 +276,8 @@ async def _reconcile(db, workspace_id: uuid.UUID, shop: str | None) -> None:
         payout = remote.get(item.gateway_withdrawal_id or "")
         if payout is None:
             continue
+        if payout.fee is not None:
+            item.fee = payout.fee
         if payout.status == "completed":
             item.status, item.processed_at = "PAID", utc_now()
         elif payout.status == "failed":
@@ -190,16 +300,20 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         .order_by(FinancialWithdrawal.created_at.desc())
         .limit(50)
     )
-    goal = goal_progress(revenue)
+    goal = _goals_out(revenue, await award_image_urls(db))
     out = {k: float(v) for k, v in balance.items()}
     if gateway is not None:  # SmokePay's own number wins over our estimate
         out["available"] = float(gateway)
+    fee = get_settings().smokepay_withdraw_fee
+    out["withdraw_fee"] = float(fee)
+    # what can actually leave: SmokePay debits the fee from the balance too
+    out["withdrawable"] = float(max(Decimal("0.00"), Decimal(str(out["available"])) - fee))
     return {
         "is_main_account": shop is None,
         "shop_ref": shop,
         "balance_source": "smokepay" if gateway is not None else "estimate",
         "month_revenue": float(revenue),
-        "goal": {**goal, "target": float(goal["target"])},
+        "goal": goal,
         **out,
         "min_withdrawal": float(MIN_WITHDRAWAL),
         "withdrawals": [_withdrawal_out(item) for item in history],
@@ -216,8 +330,12 @@ def _gateway_message(exc: smokepay.SmokepayError) -> tuple[int, str]:
         return 422, "A SmokePay recusou o saque: confira se a chave de API tem permissão de saque."
     if exc.status == 404:
         return 422, "Sua subconta ainda não recebeu nenhuma venda, então não há saldo para sacar."
+    if exc.status == 400 and "insuficiente" in (exc.detail or "").lower():
+        return 422, "Saldo insuficiente: a SmokePay desconta a taxa de saque do saldo. Use o botão MAX, que já desconta a taxa."
     if exc.status == 400:
         return 422, f"A SmokePay recusou o saque: {exc.detail or 'dados inválidos'}."
+    if exc.detail:  # say exactly what SmokePay answered (e.g. "Falha no gateway PIX")
+        return 502, f"A SmokePay recusou o saque: {exc.detail}. Confira a chave Pix e tente de novo em 5 minutos."
     return 502, "A SmokePay não conseguiu processar o saque agora. Tente de novo em alguns minutos."
 
 
@@ -230,6 +348,7 @@ async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser
         raise HTTPException(status_code=422, detail=f"O saque mínimo é R$ {MIN_WITHDRAWAL:.2f}".replace(".", ",") + ".")
     if not payload.pix_key or not payload.pix_key_type:
         raise HTTPException(status_code=422, detail="Informe a chave Pix que vai receber.")
+    pix_key = normalize_pix_key(payload.pix_key_type, payload.pix_key)
     if await db.scalar(
         select(FinancialWithdrawal.id).where(
             FinancialWithdrawal.workspace_id == workspace.id, FinancialWithdrawal.status == "PROCESSING",
@@ -245,19 +364,24 @@ async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser
     except smokepay.SmokepayError as exc:
         status, message = _gateway_message(exc)
         raise HTTPException(status_code=status, detail=message) from None
-    if amount > (available or Decimal("0.00")):
-        raise HTTPException(status_code=422, detail="Valor maior que o saldo disponível na SmokePay.")
+    fee = get_settings().smokepay_withdraw_fee
+    if amount + fee > (available or Decimal("0.00")):
+        most = max(Decimal("0.00"), (available or Decimal("0.00")) - fee)
+        raise HTTPException(
+            status_code=422,
+            detail=f"A SmokePay desconta {_brl(fee)} de taxa do saldo: dá para sacar até {_brl(most)}.",
+        )
 
     # Saved first: its id is the idempotency key SmokePay uses for subaccounts.
     item = FinancialWithdrawal(
         workspace_id=workspace.id, created_by_user_id=user.id, amount=amount, note=payload.note,
-        status="PROCESSING", pix_key_type=payload.pix_key_type, pix_key=payload.pix_key,
+        status="PROCESSING", pix_key_type=payload.pix_key_type, pix_key=pix_key,
     )
     db.add(item)
     await db.commit()
     try:
         payout = await smokepay.withdraw(
-            amount=amount, pix_key=payload.pix_key, pix_key_type=payload.pix_key_type,
+            amount=amount, pix_key=pix_key, pix_key_type=payload.pix_key_type,
             correlation_id=str(item.id), shop_ref=shop, sub_shop_id=str(user.id),
         )
     except smokepay.SmokepayError as exc:
@@ -266,6 +390,7 @@ async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser
             await db.commit()
             raise HTTPException(status_code=502, detail=item.note) from None
         status, message = _gateway_message(exc)
+        logger.warning("SmokePay withdrawal refused: HTTP %s %s", exc.status, exc.detail or "")
         item.status, item.processed_at, item.note = "FAILED", utc_now(), message[:240]
         await db.commit()
         raise HTTPException(status_code=status, detail=message) from None

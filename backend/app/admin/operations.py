@@ -3,25 +3,32 @@ template, bot conversion and revenue/commissions per user. Never returns tokens.
 
 import uuid
 from datetime import date
+from decimal import Decimal
+from typing import Literal
 
 from sqlalchemy import case, func, select
 
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
-from app.auth.dependencies import DbSession, SuperAdminUser
+from app.auth.dependencies import DbSession, SuperAdminUser, require_csrf
 from app.core.time import utc_now
 from app.models import (
     Affiliation,
     InstagramLoop,
     InstagramLoopAccount,
     InstagramPublicationJob,
+    SystemSetting,
     TgBot,
     TgFlow,
     TgLead,
+    TgMedia,
     TgOrder,
     User,
     Workspace,
 )
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field
+
+from app.partners.service import PLATFORM_FEE_KEY, platform_fee_setting
 
 router = APIRouter(prefix="/api/admin", tags=["platform administration"])
 
@@ -162,3 +169,169 @@ async def operations(
         "period_label": period_label(start, end),
         "users": user_rows, "bots": bot_rows, "funnels": funnel_rows, "loops": loop_rows,
     }
+
+
+# ------------------------------------------------------------------ funnels (Super Admin sees everything)
+
+
+@router.get("/flows")
+async def all_flows(_admin: SuperAdminUser, db: DbSession) -> dict:
+    users = {u.id: u for u in await db.scalars(select(User))}
+    workspaces = {w.id: w for w in await db.scalars(select(Workspace))}
+    bots = dict((await db.execute(select(TgBot.flow_id, func.count(TgBot.id)).group_by(TgBot.flow_id))).all())
+    rows = []
+    for flow in await db.scalars(select(TgFlow).order_by(TgFlow.updated_at.desc())):
+        ws = workspaces.get(flow.workspace_id)
+        owner = users.get(ws.owner_id) if ws else None
+        definition = flow.definition or {}
+        rows.append({
+            "id": str(flow.id), "name": flow.name, "owner": owner.full_name if owner else "—",
+            "shared": bool(flow.shared), "bots": int(bots.get(flow.id, 0)),
+            "plans": len(definition.get("plans") or []), "upsells": len(definition.get("upsells") or []),
+            "downsells": len(definition.get("downsells") or []),
+            "updated_at": flow.updated_at.isoformat() if flow.updated_at else None,
+        })
+    return {"flows": rows}
+
+
+async def _flow(db, flow_id: uuid.UUID) -> TgFlow:
+    flow = await db.get(TgFlow, flow_id)
+    if flow is None:
+        raise HTTPException(status_code=404, detail="Funil não encontrado.")
+    return flow
+
+
+@router.get("/flows/{flow_id}")
+async def flow_detail(flow_id: uuid.UUID, _admin: SuperAdminUser, db: DbSession) -> dict:
+    """Full funnel (copy, media) of any account. Bot tokens are never part of a funnel."""
+    from app.bots.portable import _flow_media
+    from app.bots.router import _definition_out
+
+    flow = await _flow(db, flow_id)
+    medias = await _flow_media(db, flow)
+    return {
+        "id": str(flow.id), "name": flow.name, "definition": _definition_out(flow.definition),
+        "media": [
+            {"id": str(m.id), "kind": m.kind, "file_name": m.file_name, "content_type": m.content_type, "size_bytes": m.size_bytes}
+            for m in medias
+        ],
+    }
+
+
+@router.get("/flows/{flow_id}/media/{media_id}/preview")
+async def flow_media_preview(flow_id: uuid.UUID, media_id: uuid.UUID, _admin: SuperAdminUser, db: DbSession) -> dict:
+    from app.instagram.storage import SupabaseStorage
+
+    flow = await _flow(db, flow_id)
+    media = await db.get(TgMedia, media_id)
+    if media is None or media.workspace_id != flow.workspace_id:
+        raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+    return {"url": await SupabaseStorage.from_settings().create_signed_url(media.storage_path)}
+
+
+@router.get("/flows/{flow_id}/export")
+async def admin_export_flow(flow_id: uuid.UUID, _admin: SuperAdminUser, db: DbSession) -> Response:
+    from app.bots import portable
+    from app.bots.router import _download
+
+    flow = await _flow(db, flow_id)
+    return _download(await portable.export_flow(db, flow), flow.name)
+
+
+@router.post("/flows/{flow_id}/import-code", dependencies=[Depends(require_csrf)])
+async def admin_flow_code(flow_id: uuid.UUID, _admin: SuperAdminUser, db: DbSession) -> dict:
+    from app.bots import portable
+
+    flow = await _flow(db, flow_id)
+    return {"code": portable.make_code(flow.id), "valid_days": portable.CODE_TTL_SECONDS // 86400}
+
+
+# ------------------------------------------------------------------ platform fee
+
+
+class PlatformFee(BaseModel):
+    type: Literal["percent", "fixed"]
+    value: Decimal = Field(ge=0, le=99, decimal_places=2)
+
+
+@router.get("/platform-fee")
+async def get_platform_fee(_admin: SuperAdminUser, db: DbSession) -> dict:
+    fee = await platform_fee_setting(db)
+    return {"type": fee["type"], "value": float(fee["value"])}
+
+
+@router.put("/platform-fee", dependencies=[Depends(require_csrf)])
+async def set_platform_fee(payload: PlatformFee, admin: SuperAdminUser, db: DbSession) -> dict:
+    row = await db.get(SystemSetting, PLATFORM_FEE_KEY)
+    value = {"type": payload.type, "value": str(payload.value.quantize(Decimal("0.01")))}
+    if row is None:
+        db.add(SystemSetting(key=PLATFORM_FEE_KEY, value=value, updated_by_user_id=admin.id))
+    else:
+        row.value, row.updated_by_user_id = value, admin.id
+    await db.commit()
+    return {"type": payload.type, "value": float(payload.value)}
+
+
+# ------------------------------------------------------------------ award photos
+
+AWARD_TYPES = {"image/jpeg": b"\xff\xd8\xff", "image/png": b"\x89PNG", "image/webp": b"RIFF"}
+AWARD_MAX_BYTES = 8 * 1024 * 1024
+
+
+@router.get("/awards")
+async def list_awards(_admin: SuperAdminUser, db: DbSession) -> dict:
+    from app.wallet.router import GOAL_PRIZES, GOALS, award_image_urls
+
+    urls = await award_image_urls(db)
+    return {"items": [{"amount": int(g), "prize": GOAL_PRIZES[int(g)], "image_url": urls.get(int(g))} for g in GOALS]}
+
+
+async def _save_award_paths(db, admin_id, paths: dict[int, str]) -> None:
+    from app.wallet.router import AWARD_IMAGES_KEY
+
+    value = {str(k): v for k, v in paths.items()}
+    row = await db.get(SystemSetting, AWARD_IMAGES_KEY)
+    if row is None:
+        db.add(SystemSetting(key=AWARD_IMAGES_KEY, value=value, updated_by_user_id=admin_id))
+    else:
+        row.value, row.updated_by_user_id = value, admin_id
+    await db.commit()
+
+
+@router.put("/awards/{amount}/image", dependencies=[Depends(require_csrf)])
+async def upload_award_image(amount: int, request: Request, admin: SuperAdminUser, db: DbSession) -> dict:
+    from app.instagram.storage import SupabaseStorage
+    from app.wallet.router import GOALS, award_image_paths
+
+    if Decimal(amount) not in GOALS:
+        raise HTTPException(status_code=404, detail="Meta não encontrada.")
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in AWARD_TYPES:
+        raise HTTPException(status_code=415, detail="Envie uma imagem JPG, PNG ou WEBP.")
+    content = b""
+    async for chunk in request.stream():
+        content += chunk
+        if len(content) > AWARD_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Imagem maior que 8 MB.")
+    if not content.startswith(AWARD_TYPES[content_type]):
+        raise HTTPException(status_code=415, detail="O conteúdo do arquivo não é uma imagem válida.")
+    ext = content_type.split("/")[1].replace("jpeg", "jpg")
+    path = f"awards/{amount}-{uuid.uuid4().hex[:10]}.{ext}"
+    try:
+        await SupabaseStorage.from_settings().upload(path, content, content_type)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Não foi possível salvar a imagem.") from None
+    paths = await award_image_paths(db)
+    paths[amount] = path
+    await _save_award_paths(db, admin.id, paths)
+    return {"amount": amount, "saved": True}
+
+
+@router.delete("/awards/{amount}/image", dependencies=[Depends(require_csrf)])
+async def remove_award_image(amount: int, admin: SuperAdminUser, db: DbSession) -> dict:
+    from app.wallet.router import award_image_paths
+
+    paths = await award_image_paths(db)
+    paths.pop(amount, None)
+    await _save_award_paths(db, admin.id, paths)
+    return {"amount": amount, "saved": True}

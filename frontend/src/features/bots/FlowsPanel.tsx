@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, GitBranch, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, Download, GitBranch, KeyRound, Lock, Pencil, Plus, Trash2, Upload } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
@@ -8,10 +8,24 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
+import type { MetricsPeriod } from "@/features/analytics/period";
+import { useBotStats } from "./ConversionOverview";
 import { FlowEditor } from "./FlowEditor";
+import { ImportFlowModal, downloadFlow } from "./FlowPortability";
 import { brl, type Flow } from "./types";
+import { useChiefLabel } from "@/features/partners/api";
 
-export function FlowsPanel({ onEditingChange }: { onEditingChange?: (editing: boolean) => void }) {
+export function FlowsPanel({ onEditingChange, period }: { onEditingChange?: (editing: boolean) => void; period: MetricsPeriod }) {
+  const chief = useChiefLabel();
+  const stats = useBotStats(period);
+  const [importOpen, setImportOpen] = useState(false);
+  const [code, setCode] = useState<{ name: string; code: string } | null>(null);
+  const makeCode = useMutation({
+    mutationFn: (flow: Flow) =>
+      apiRequest<{ code: string }>(`/api/bots/flows/${flow.id}/import-code`, { method: "POST" }).then((data) => ({ name: flow.name, code: data.code })),
+    onSuccess: setCode,
+  });
+  const [exportError, setExportError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
   useEffect(() => onEditingChange?.(editing !== null), [editing, onEditingChange]);
@@ -42,47 +56,80 @@ export function FlowsPanel({ onEditingChange }: { onEditingChange?: (editing: bo
   if (!flows.data) {
     return <ErrorState message="Não foi possível carregar os fluxos." onRetry={() => void flows.refetch()} />;
   }
-  const error = create.error ?? duplicate.error ?? remove.error;
+  const error = create.error ?? duplicate.error ?? remove.error ?? makeCode.error;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">O fluxo define tudo que o robô envia: boas-vindas, oferta, planos, Pix e entrega.</p>
-        <Button variant="primary" disabled={create.isPending} onClick={() => create.mutate()}>
-          <Plus size={16} /> Novo fluxo
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setImportOpen(true)}>
+            <Upload size={16} /> Importar funil
+          </Button>
+          <Button variant="primary" disabled={create.isPending} onClick={() => create.mutate()}>
+            <Plus size={16} /> Novo fluxo
+          </Button>
+        </div>
       </div>
+      {exportError && <ErrorState message={exportError} />}
+      {code && (
+        <div className="rounded-xl border border-brand/40 bg-brand-soft p-3 text-xs text-fg-2">
+          Código de importação de <strong className="text-fg">{code.name}</strong> (vale 7 dias). Quem colar em “Importar funil” recebe uma cópia completa:
+          <code className="mt-2 block select-all break-all rounded-lg bg-surface-inset p-2 text-[11px] text-fg">{code.code}</code>
+        </div>
+      )}
       {error && <ErrorState message={error instanceof ApiError ? error.message : "A ação não pôde ser concluída."} />}
       {flows.data.flows.length === 0 ? (
         <EmptyState icon={<GitBranch size={18} />} message="Crie seu primeiro fluxo e depois ligue-o a um robô." />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
           {flows.data.flows.map((flow) => (
             <Card key={flow.id} className="space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
                 <span className="flex shrink-0 gap-1">
-                  {flow.from_template && <Badge tone="warning">Modelo do chefe</Badge>}
+                  {flow.protected ? <Badge tone="warning">Protegido</Badge> : flow.from_template && <Badge tone="warning">Modelo de {chief}</Badge>}
                   {flow.shared && <Badge tone="success">Compartilhado</Badge>}
+                  <Badge tone="success">{(stats.data?.flows[flow.id]?.conversion ?? 0).toLocaleString("pt-BR")}% conv.</Badge>
                   <Badge tone={flow.bots ? "brand" : "neutral"}>{flow.bots ? `${flow.bots} robô(s)` : "Sem robô"}</Badge>
                 </span>
               </div>
-              <p className="text-xs text-muted">
-                {flow.definition.offer.media_ids.length} mídia(s) na boas-vindas ·{" "}
-                {flow.definition.plans.length
-                  ? flow.definition.plans.map((plan) => `${plan.name} ${brl(plan.price)}`).join(" · ")
+              {flow.protected || !flow.definition ? (
+                <p className="flex items-center gap-1.5 text-xs text-warning">
+                  <Lock size={13} /> Funil de {chief} protegido: roda no seu robô, mas não pode ser aberto, copiado ou exportado.
+                </p>
+              ) : (
+                <p className="text-xs text-muted">
+                {flow.definition!.offer.media_ids.length} mídia(s) na boas-vindas ·{" "}
+                {flow.definition!.plans.length
+                  ? flow.definition!.plans.map((plan) => `${plan.name} ${brl(plan.price)}`).join(" · ")
                   : "nenhum plano"}
-                {flow.definition.upsells.length > 0 && ` · ${flow.definition.upsells.length} upsell(s)`}
-                {flow.definition.downsells.length > 0 && ` · ${flow.definition.downsells.length} downsell(s)`}
-                {flow.definition.age_gate.enabled && " · +18"}
+                {flow.definition!.upsells.length > 0 && ` · ${flow.definition!.upsells.length} upsell(s)`}
+                {flow.definition!.downsells.length > 0 && ` · ${flow.definition!.downsells.length} downsell(s)`}
+                {flow.definition!.age_gate.enabled && " · +18"}
               </p>
+              )}
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="primary" onClick={() => setEditing(flow.id)}>
-                  <Pencil size={14} /> Editar
-                </Button>
-                <Button size="sm" onClick={() => duplicate.mutate(flow.id)}>
-                  <Copy size={14} /> Duplicar
-                </Button>
+                {!flow.protected && (
+                  <>
+                    <Button size="sm" variant="primary" onClick={() => setEditing(flow.id)}>
+                      <Pencil size={14} /> Editar
+                    </Button>
+                    <Button size="sm" onClick={() => duplicate.mutate(flow.id)}>
+                      <Copy size={14} /> Duplicar
+                    </Button>
+                  </>
+                )}
+                {!flow.from_template && !flow.protected && (
+                  <>
+                    <Button size="sm" onClick={() => downloadFlow(`/api/bots/flows/${flow.id}/export`, flow.name).catch((err: Error) => setExportError(err.message))}>
+                      <Download size={14} /> Exportar
+                    </Button>
+                    <Button size="sm" disabled={makeCode.isPending} onClick={() => makeCode.mutate(flow)}>
+                      <KeyRound size={14} /> Código
+                    </Button>
+                  </>
+                )}
                 <Button
                   size="sm"
                   variant="danger"
@@ -98,6 +145,7 @@ export function FlowsPanel({ onEditingChange }: { onEditingChange?: (editing: bo
           ))}
         </div>
       )}
+      <ImportFlowModal open={importOpen} onClose={() => setImportOpen(false)} onDone={refresh} />
     </div>
   );
 }

@@ -96,14 +96,29 @@ async def role_of(db: AsyncSession, user: User) -> str:
 # ------------------------------------------------------------------ payments
 
 
+PLATFORM_FEE_KEY = "platform_fee"
+
+
 @dataclass
 class BillingRoute:
-    """Where a PIX charge goes: ``shop_ref`` None = the platform's main account."""
+    """Where a PIX charge goes: ``shop_ref`` None = the platform's main account.
+
+    ``origin`` is fixed on the order when the charge is created:
+    * ``main`` — the platform owner's own sale (main wallet, no split);
+    * ``shared_funnel`` — a partner selling with the chief's shared funnel:
+      the accepted commission goes to the chief (SmokePay split);
+    * ``own_funnel`` — a funnel of the seller's own: no chief commission; a
+      partner pays only the platform fee set by the Super Admin.
+    """
 
     shop_ref: str | None = None
     splits: list[dict] = field(default_factory=list)
     chief_user_id: uuid.UUID | None = None
     percent: Decimal | None = None
+    origin: str = "main"
+    fee_percent: Decimal | None = None
+    fee_amount: Decimal | None = None
+    allowed: bool = True
 
     def preview(self, net: Decimal | None) -> tuple[Decimal | None, Decimal | None]:
         """(chief commission, partner net) from the net after the gateway fee."""
@@ -112,31 +127,83 @@ class BillingRoute:
         commission = money(net * self.percent / Decimal(100))
         return commission, money(net - commission)
 
+    def platform_fee(self, net: Decimal | None) -> Decimal | None:
+        if self.fee_amount is not None:
+            return self.fee_amount
+        if self.fee_percent is not None and net is not None:
+            return money(net * self.fee_percent / Decimal(100))
+        return None
 
-async def billing_route(db: AsyncSession, workspace_id: uuid.UUID) -> BillingRoute:
+
+async def platform_fee_setting(db: AsyncSession) -> dict:
+    from app.models import SystemSetting
+
+    row = await db.get(SystemSetting, PLATFORM_FEE_KEY)
+    value = row.value if row and isinstance(row.value, dict) else {}
+    kind = value.get("type") if value.get("type") in ("percent", "fixed") else "percent"
+    try:
+        amount = Decimal(str(value.get("value") or "0")).quantize(CENT)
+    except Exception:
+        amount = Decimal("0.00")
+    return {"type": kind, "value": max(Decimal("0.00"), amount)}
+
+
+async def shared_funnel_access(db: AsyncSession, flow: TgFlow, workspace_id: uuid.UUID) -> Affiliation | None:
+    """The accepted partnership that lets ``workspace_id`` run this foreign funnel, or None."""
+    if flow.workspace_id == workspace_id or not flow.shared:
+        return None
+    workspace = await db.get(Workspace, workspace_id)
+    flow_workspace = await db.get(Workspace, flow.workspace_id)
+    if workspace is None or flow_workspace is None:
+        return None
+    link = await partner_link(db, workspace.owner_id)
+    if not accepted(link) or link.chief_user_id != flow_workspace.owner_id:
+        return None
+    return link
+
+
+async def billing_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.UUID | None = None) -> BillingRoute:
     workspace = await db.get(Workspace, workspace_id)
     owner = await db.get(User, workspace.owner_id) if workspace else None
+    flow = await db.get(TgFlow, flow_id) if flow_id else None
+    foreign = flow is not None and flow.workspace_id != workspace_id
     if owner is None or owner.platform_role == "SUPER_ADMIN":
-        return BillingRoute()
-    route = BillingRoute(shop_ref=shop_ref(workspace_id))
-    link = await partner_link(db, owner.id)
-    if not accepted(link) or not link.accepted_percent:
-        return route  # independent user, or terms not accepted yet: no split
-    chief = await db.get(User, link.chief_user_id)
-    if chief is None:
-        return route
-    if chief.platform_role == "SUPER_ADMIN":
-        rule: dict = {"parent": True}
-    else:
-        chief_workspace = await owner_workspace(db, chief.id)
-        if chief_workspace is None:
+        return BillingRoute(allowed=not foreign)
+    route = BillingRoute(shop_ref=shop_ref(workspace_id), origin="own_funnel")
+    if foreign:
+        link = await shared_funnel_access(db, flow, workspace_id)
+        if link is None:
+            route.allowed = False  # unshared, or partnership ended/not accepted
             return route
-        rule = {"shop_id": shop_ref(chief_workspace.id)}
-    percent = min(link.accepted_percent, MAX_COMMISSION)
-    rule["percent"] = float(percent)
-    route.splits = [rule]
-    route.chief_user_id = chief.id
-    route.percent = percent
+        route.origin = "shared_funnel"
+        if not link.accepted_percent:
+            return route
+        chief = await db.get(User, link.chief_user_id)
+        if chief is None:
+            return route
+        if chief.platform_role == "SUPER_ADMIN":
+            rule: dict = {"parent": True}
+        else:
+            chief_workspace = await owner_workspace(db, chief.id)
+            if chief_workspace is None:
+                return route
+            rule = {"shop_id": shop_ref(chief_workspace.id)}
+        percent = min(link.accepted_percent, MAX_COMMISSION)
+        rule["percent"] = float(percent)
+        route.splits = [rule]
+        route.chief_user_id = chief.id
+        route.percent = percent
+        return route
+    # Own funnel: a partner pays only the platform fee (never the chief's commission).
+    if await partner_link(db, owner.id):
+        fee = await platform_fee_setting(db)
+        if fee["value"] > 0:
+            if fee["type"] == "fixed":
+                route.fee_amount = fee["value"]
+                route.splits = [{"parent": True, "amount": float(fee["value"])}]
+            else:
+                route.fee_percent = min(fee["value"], MAX_COMMISSION)
+                route.splits = [{"parent": True, "percent": float(route.fee_percent)}]
     return route
 
 
@@ -217,7 +284,7 @@ async def clone_loop(db: AsyncSession, source: InstagramLoop, workspace_id: uuid
             InstagramMedia(
                 id=new_id, workspace_id=workspace_id, storage_path=path, filename=media.filename,
                 mime_type=media.mime_type, media_type=media.media_type, size_bytes=media.size_bytes,
-                caption=media.caption,
+                caption=media.caption, locked=media.locked or source.workspace_id != workspace_id,
             )
         )
         db.add(InstagramLoopMedia(loop_id=clone.id, media_id=new_id))
@@ -278,6 +345,7 @@ async def clone_flow(db: AsyncSession, source: TgFlow, workspace_id: uuid.UUID) 
             TgMedia(
                 id=new_id, workspace_id=workspace_id, kind=media.kind, file_name=media.file_name,
                 content_type=media.content_type, size_bytes=media.size_bytes, storage_path=path, file_ids={},
+                locked=media.locked,
             )
         )
     clone = TgFlow(

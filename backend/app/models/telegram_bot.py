@@ -50,6 +50,10 @@ class TgFlow(Base):
         Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="SET NULL")
     )
     customized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # A funnel shared with partners always goes out together with a loop.
+    shared_loop_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_loops.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -76,6 +80,9 @@ class TgBot(Base):
     encrypted_token: Mapped[str] = mapped_column(String(4096), nullable=False)
     # Telegram echoes it in X-Telegram-Bot-Api-Secret-Token on every update.
     webhook_secret: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Group/channel this bot delivers to when it runs a funnel shared by the chief
+    # (the chief's own group would not accept invites from the partner's bot).
+    delivery_group_chat_id: Mapped[int | None] = mapped_column(BigInteger)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
@@ -128,6 +135,8 @@ class TgMedia(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
     file_ids: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # copied from a chief's shared funnel: delivered normally, never shown to the partner
+    locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -205,6 +214,9 @@ class TgOrder(Base):
     split_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     split_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     partner_net: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    # Fixed when the charge is created, never changed: shared_funnel | own_funnel | main
+    origin: Mapped[str | None] = mapped_column(String(16))
+    platform_fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     pix_copy_paste: Mapped[str | None] = mapped_column(Text)
     # pending -> paid | expired | review (amount mismatch) | failed (gateway error)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")

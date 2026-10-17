@@ -6,26 +6,29 @@ import logging
 import secrets
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
-from app.bots import engine, smokepay
+from app.bots import engine, portable, smokepay
 from app.bots.flow_schema import FlowDefinition, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import encrypt_value
 from app.core.database import get_session_factory
 from app.models import TgBot, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
-from app.partners.service import notify_user
+from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access
+from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
+from app.bots.stats import conversion_stats
+from app.core.time import utc_now
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/bots", tags=["Bots"])
@@ -54,6 +57,8 @@ class BotUpdate(BaseModel):
     flow_id: uuid.UUID | None = None
     clear_flow: bool = False
     is_active: bool | None = None
+    delivery_group_chat_id: int | None = None
+    clear_delivery_group: bool = False
 
 
 class FlowCreate(BaseModel):
@@ -72,6 +77,7 @@ def _bot_out(bot: TgBot, stats: dict | None = None) -> dict:
         "username": bot.username,
         "name": bot.name,
         "flow_id": str(bot.flow_id) if bot.flow_id else None,
+        "delivery_group_chat_id": bot.delivery_group_chat_id,
         "is_active": bot.is_active,
         "status": bot.status,
         "last_error": bot.last_error,
@@ -88,17 +94,45 @@ def _definition_out(raw: dict) -> dict:
         return raw
 
 
-def _flow_out(flow: TgFlow, bots: int = 0) -> dict:
+def _flow_out(flow: TgFlow, bots: int = 0, protected: bool = False) -> dict:
     return {
         "id": str(flow.id),
         "name": flow.name,
-        "definition": _definition_out(flow.definition),
+        "protected": protected,
+        # a copy received from a chief runs, but its content never reaches the partner
+        "definition": None if protected else _definition_out(flow.definition),
         "version": flow.version,
         "bots": bots,
         "updated_at": flow.updated_at.isoformat() if flow.updated_at else None,
         "shared": bool(flow.shared),
+        "shared_loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
         "from_template": flow.template_flow_id is not None,
     }
+
+
+async def _is_received_copy(db, flow: TgFlow) -> bool:
+    if flow.template_flow_id is None:
+        return False
+    template = await db.get(TgFlow, flow.template_flow_id)
+    return template is not None and template.workspace_id != flow.workspace_id
+
+
+async def _readable(db, flow_id: uuid.UUID, access) -> TgFlow:
+    """A funnel of this operation whose content the owner may read, copy or edit."""
+    flow = await _owned(db, TgFlow, flow_id, access)
+    if await _is_received_copy(db, flow):
+        raise HTTPException(status_code=403, detail="Funil recebido do seu sócio: pode ser usado no bot, mas não pode ser aberto, copiado ou exportado.")
+    return flow
+
+
+async def _usable_flow(db, flow_id: uuid.UUID, access) -> TgFlow:
+    """A funnel of this operation, or one the chief shared with this partner (run only, never read)."""
+    flow = await db.get(TgFlow, flow_id)
+    if flow is None:
+        raise HTTPException(status_code=404, detail="Não encontrado.")
+    if flow.workspace_id != access.workspace.id and await shared_funnel_access(db, flow, access.workspace.id) is None:
+        raise HTTPException(status_code=404, detail="Não encontrado.")
+    return flow
 
 
 async def _owned(db, model, item_id: uuid.UUID, access) -> Any:
@@ -178,7 +212,7 @@ async def connect_bot(payload: BotCreate, access: OwnerAccess, db: DbSession) ->
     if await db.scalar(select(TgBot.id).where(TgBot.tg_bot_id == me["id"])):
         raise HTTPException(status_code=409, detail="Este bot já está conectado.")
     if payload.flow_id:
-        await _owned(db, TgFlow, payload.flow_id, access)
+        await _usable_flow(db, payload.flow_id, access)
     bot = TgBot(
         workspace_id=access.workspace.id,
         flow_id=payload.flow_id,
@@ -198,14 +232,64 @@ async def connect_bot(payload: BotCreate, access: OwnerAccess, db: DbSession) ->
     return _bot_out(bot)
 
 
+_PHOTO_CACHE: dict[uuid.UUID, tuple[float, bytes | None]] = {}
+_PHOTO_TTL = 6 * 3600
+
+
+async def _bot_photo(bot: TgBot) -> bytes | None:
+    """Profile photo of the bot from Telegram (small size), cached per process.
+    The bot token stays on the server; the browser only sees our URL."""
+    cached = _PHOTO_CACHE.get(bot.id)
+    if cached and cached[0] > time.time():
+        return cached[1]
+    from app.bots import http
+
+    tg = engine.telegram(bot)
+    content: bytes | None = None
+    try:
+        photos = await tg.call("getUserProfilePhotos", {"user_id": bot.tg_bot_id, "limit": 1})
+        sizes = (photos or {}).get("photos") or []
+        if sizes and sizes[0]:
+            pick = sizes[0][min(1, len(sizes[0]) - 1)]  # ~160px is enough for an avatar
+            file = await tg.call("getFile", {"file_id": pick["file_id"]})
+            path = (file or {}).get("file_path")
+            if path:
+                async with http.client(20.0) as session:
+                    response = await session.get(f"https://api.telegram.org/file/bot{tg._token}/{path}")
+                if response.status_code == 200:
+                    content = response.content
+    except (TelegramError, httpx.HTTPError, KeyError, TypeError):
+        content = None
+    _PHOTO_CACHE[bot.id] = (time.time() + (_PHOTO_TTL if content else 600), content)
+    return content
+
+
+@router.get("/{bot_id}/photo")
+async def bot_photo(bot_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> Response:
+    bot = await _owned(db, TgBot, bot_id, access)
+    content = await _bot_photo(bot)
+    if not content:
+        raise HTTPException(status_code=404, detail="Sem foto.")
+    return Response(content, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=21600"})
+
+
 @router.patch("/{bot_id}", dependencies=csrf)
 async def update_bot(bot_id: uuid.UUID, payload: BotUpdate, access: OwnerAccess, db: DbSession) -> dict:
     bot = await _owned(db, TgBot, bot_id, access)
     if payload.clear_flow:
         bot.flow_id = None
     elif payload.flow_id:
-        await _owned(db, TgFlow, payload.flow_id, access)
+        await _usable_flow(db, payload.flow_id, access)
         bot.flow_id = payload.flow_id
+    if payload.clear_delivery_group:
+        bot.delivery_group_chat_id = None
+    elif payload.delivery_group_chat_id is not None:
+        group = await db.scalar(
+            select(TgGroup).where(TgGroup.bot_id == bot.id, TgGroup.chat_id == payload.delivery_group_chat_id)
+        )
+        if group is None:
+            raise HTTPException(status_code=422, detail="Adicione o robô como admin desse grupo primeiro.")
+        bot.delivery_group_chat_id = group.chat_id
     if payload.is_active is not None:
         bot.is_active = payload.is_active
     await db.commit()
@@ -258,7 +342,80 @@ async def list_flows(access: OwnerAccess, db: DbSession) -> dict:
     usage = dict((await db.execute(
         select(TgBot.flow_id, func.count()).where(TgBot.workspace_id == access.workspace.id).group_by(TgBot.flow_id)
     )).all())
-    return {"flows": [_flow_out(f, int(usage.get(f.id, 0))) for f in flows]}
+    shared = []
+    link = await partner_link(db, access.workspace.owner_id)
+    if accepted(link):
+        chief_workspace = await owner_workspace(db, link.chief_user_id)
+        if chief_workspace is not None:
+            # Name only: the chief's funnel content is never sent to a partner.
+            shared = [
+                {"id": str(f.id), "name": f.name, "shared_from_chief": True}
+                for f in await db.scalars(
+                    select(TgFlow).where(TgFlow.workspace_id == chief_workspace.id, TgFlow.shared.is_(True)).order_by(TgFlow.name)
+                )
+            ]
+    received = {f.id for f in flows if await _is_received_copy(db, f)}
+    return {"flows": [_flow_out(f, int(usage.get(f.id, 0)), f.id in received) for f in flows], "shared_flows": shared}
+
+
+class ImportCode(BaseModel):
+    code: Annotated[str, Field(min_length=10, max_length=300)]
+
+
+async def _exportable(db, flow_id: uuid.UUID, access) -> TgFlow:
+    """Only funnels of this operation; never a copy of a chief's shared funnel."""
+    return await _readable(db, flow_id, access)
+
+
+def _download(data: dict, name: str) -> Response:
+    safe = "".join(c for c in name if c.isalnum() or c in " _-").strip().replace(" ", "-") or "funil"
+    return Response(
+        portable.dumps(data), media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{safe}.flashpost.json"', "Cache-Control": "no-store"},
+    )
+
+
+@router.get("/flows/{flow_id}/export")
+async def export_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> Response:
+    flow = await _exportable(db, flow_id, access)
+    return _download(await portable.export_flow(db, flow), flow.name)
+
+
+@router.post("/flows/{flow_id}/import-code", dependencies=csrf)
+async def flow_import_code(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
+    flow = await _exportable(db, flow_id, access)
+    return {"code": portable.make_code(flow.id), "valid_days": portable.CODE_TTL_SECONDS // 86400}
+
+
+@router.post("/flows/import", status_code=201, dependencies=csrf)
+async def import_flow(request: Request, access: OwnerAccess, db: DbSession) -> dict:
+    try:
+        data = json.loads(await request.body())
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Arquivo inválido.") from None
+    flow = await portable.import_flow(db, data, access.workspace.id)
+    await db.commit()
+    await db.refresh(flow)
+    return _flow_out(flow)
+
+
+@router.post("/flows/import-code", status_code=201, dependencies=csrf)
+async def import_flow_code(payload: ImportCode, access: OwnerAccess, db: DbSession) -> dict:
+    flow = await portable.import_from_code(db, payload.code, access.workspace.id)
+    await db.commit()
+    await db.refresh(flow)
+    return _flow_out(flow)
+
+
+@router.get("/stats")
+async def bot_stats(
+    access: OwnerAccess, db: DbSession, period: AnalyticsPeriod = "30d",
+    start_date: date | None = None, end_date: date | None = None,
+) -> dict:
+    start, end = period_bounds(period, start_date, end_date, utc_now())
+    data = await conversion_stats(db, access.workspace.id, start, end)
+    data["period_label"] = period_label(start, end)
+    return data
 
 
 @router.post("/flows", status_code=201, dependencies=csrf)
@@ -272,7 +429,7 @@ async def create_flow(payload: FlowCreate, access: OwnerAccess, db: DbSession) -
 
 @router.get("/flows/{flow_id}")
 async def get_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
-    return _flow_out(await _owned(db, TgFlow, flow_id, access))
+    return _flow_out(await _readable(db, flow_id, access))
 
 
 @router.get("/flows/{flow_id}/summary")
@@ -293,7 +450,7 @@ async def flow_summary(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -
 
 @router.put("/flows/{flow_id}", dependencies=csrf)
 async def save_flow(flow_id: uuid.UUID, payload: FlowUpdate, access: OwnerAccess, db: DbSession) -> dict:
-    flow = await _owned(db, TgFlow, flow_id, access)
+    flow = await _readable(db, flow_id, access)
     definition = _validate_definition(payload.definition)
     media_ids = definition.media_ids()
     if media_ids:
@@ -339,7 +496,7 @@ async def _notify_template_change(db, flow: TgFlow, workspace_id: uuid.UUID) -> 
 
 @router.post("/flows/{flow_id}/duplicate", status_code=201, dependencies=csrf)
 async def duplicate_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
-    source = await _owned(db, TgFlow, flow_id, access)
+    source = await _readable(db, flow_id, access)
     flow = TgFlow(workspace_id=access.workspace.id, name=f"{source.name} (cópia)"[:120], definition=source.definition)
     db.add(flow)
     await db.commit()
@@ -368,7 +525,9 @@ def _media_out(media: TgMedia) -> dict:
 
 @router.get("/media/list")
 async def list_media(access: OwnerAccess, db: DbSession) -> dict:
-    rows = await db.scalars(select(TgMedia).where(TgMedia.workspace_id == access.workspace.id).order_by(TgMedia.created_at.desc()))
+    rows = await db.scalars(
+        select(TgMedia).where(TgMedia.workspace_id == access.workspace.id, TgMedia.locked.is_(False)).order_by(TgMedia.created_at.desc())
+    )
     return {"media": [_media_out(m) for m in rows]}
 
 
@@ -377,6 +536,8 @@ async def preview_media(media_id: uuid.UUID, access: OwnerAccess, db: DbSession)
     from app.instagram.storage import SupabaseStorage
 
     media = await _owned(db, TgMedia, media_id, access)
+    if media.locked:
+        raise HTTPException(status_code=403, detail="Mídia protegida do seu sócio: não pode ser vista nem baixada.")
     try:
         url = await SupabaseStorage.from_settings().create_signed_url(media.storage_path)
     except Exception:

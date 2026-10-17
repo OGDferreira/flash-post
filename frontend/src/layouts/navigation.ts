@@ -7,6 +7,7 @@ import {
   CircleDollarSign,
   Clapperboard,
   Folder,
+  GitBranch,
   Handshake,
   Home,
   Infinity as InfinityIcon,
@@ -34,6 +35,8 @@ export const adminLinks: NavItem[] = [
   { label: "Usuários", to: "/admin/users", icon: Users },
   { label: "Workspaces", to: "/admin/workspaces", icon: Blocks },
   { label: "Operações", to: "/admin/operations", icon: BarChart3 },
+  { label: "Funis", to: "/admin/flows", icon: GitBranch },
+  { label: "Premiações", to: "/admin/awards", icon: Trophy },
   { label: "Notificações", to: "/admin/notifications", icon: BellRing },
   { label: "Sistema", to: "/admin/system", icon: Settings2 },
 ];

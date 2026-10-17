@@ -90,7 +90,7 @@ async def _as(client, email, password=PASSWORD) -> dict:
     return {"X-CSRF-Token": await _csrf(client)}
 
 
-PIX = {"pix_key_type": "cpf", "pix_key": "12345678900"}
+PIX = {"pix_key_type": "cpf", "pix_key": "529.982.247-25"}
 
 
 @pytest.mark.anyio
@@ -109,18 +109,27 @@ async def test_partner_withdraws_from_own_subaccount(client, db_session, owner, 
     wallet = (await client.get("/api/wallet")).json()
     assert wallet["available"] == 39.69 and wallet["balance_source"] == "smokepay"
     assert wallet["month_revenue"] == 59.7
+    assert wallet["commission_paid"] == 17.01 and wallet["withdraw_fee"] == 3.0
 
     assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "5", **PIX})).status_code == 422
     assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "50", **PIX})).status_code == 422
     assert (await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "20"})).status_code == 422
+    # a CPF with wrong check digits never reaches SmokePay (the bank would bounce it)
+    calls = len(smoke.calls)
+    bad = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "20", "pix_key_type": "cpf", "pix_key": "16051416796"})
+    assert bad.status_code == 422 and "CPF inválido" in bad.json()["detail"] and len(smoke.calls) == calls
     done = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "30", **PIX})
     assert done.status_code == 201, done.text
     assert done.json()["status"] == "PAID" and done.json()["fee"] == 2.0
     method, path, body = smoke.calls[-1]
-    assert path == f"/api/shops/{ref}/withdraw" and body["pix_key"] == "12345678900"
+    assert path == f"/api/shops/{ref}/withdraw" and body["pix_key"] == "52998224725"
     assert body["correlation_id"] == done.json()["id"]  # idempotent on our row id
     wallet = (await client.get("/api/wallet")).json()
-    assert wallet["withdrawn"] == 30.0 and wallet["available"] == 9.69
+    assert wallet["withdrawn"] == 30.0 and wallet["available"] == 9.69 and wallet["withdrawable"] == 6.69
+    # the withdrawal fee comes out of the balance too: the full balance cannot be withdrawn
+    smoke.shops[ref] = 12.42
+    over = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "12.42", **PIX})
+    assert over.status_code == 422 and "até R$ 9,42" in over.json()["detail"]
 
     # SmokePay cooldown is reported clearly and recorded as failed
     smoke.cooldown = True
@@ -158,3 +167,50 @@ async def test_main_account_withdraws_and_reconciles(client, db_session, owner, 
     await db_session.commit()
     item = await db_session.scalar(select(FinancialWithdrawal))
     assert item.gateway_withdrawal_id == "w-main-1" and item.fee == Decimal("1.50")
+
+
+@pytest.mark.anyio
+async def test_goals_and_award_photos(client, db_session, owner, super_admin, monkeypatch) -> None:
+    saved: dict[str, bytes] = {}
+
+    class FakeStorage:
+        async def upload(self, path, content, content_type):
+            saved[path] = content
+
+        async def create_signed_url(self, path):
+            return f"https://cdn.test/{path}"
+
+    from app.instagram import storage as storage_module
+    from app.wallet import router as wallet_router
+
+    monkeypatch.setattr(storage_module.SupabaseStorage, "from_settings", classmethod(lambda cls: FakeStorage()))
+    wallet_router._signed_cache.clear()
+    _, workspace = owner
+    await _paid(db_session, workspace)
+
+    await _as(client, "owner@example.com", "correct horse battery staple")
+    goals = (await client.get("/api/wallet/goals")).json()
+    assert goals["available"] and goals["month_revenue"] == 19.9 and goals["target"] == 10000.0
+    assert [g["current"] for g in goals["goals"]] == [True, False, False, False, False]
+    assert all(g["image_url"] is None for g in goals["goals"])
+    # only the Super Admin uploads award photos
+    headers = await _as(client, "owner@example.com", "correct horse battery staple")
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+    denied = await client.put("/api/admin/awards/10000/image", headers={**headers, "Content-Type": "image/png"}, content=png)
+    assert denied.status_code == 403
+
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    bad = await client.put("/api/admin/awards/10000/image", headers={**admin, "Content-Type": "image/png"}, content=b"nope")
+    assert bad.status_code == 415
+    assert (await client.put("/api/admin/awards/123/image", headers={**admin, "Content-Type": "image/png"}, content=png)).status_code == 404
+    ok = await client.put("/api/admin/awards/10000/image", headers={**admin, "Content-Type": "image/png"}, content=png)
+    assert ok.status_code == 200, ok.text
+    items = (await client.get("/api/admin/awards")).json()["items"]
+    assert items[0]["image_url"].startswith("https://cdn.test/awards/10000-") and items[1]["image_url"] is None
+
+    await _as(client, "owner@example.com", "correct horse battery staple")
+    goals = (await client.get("/api/wallet/goals")).json()
+    assert goals["goals"][0]["image_url"] == items[0]["image_url"]
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    assert (await client.delete("/api/admin/awards/10000/image", headers=admin)).status_code == 200
+    assert (await client.get("/api/admin/awards")).json()["items"][0]["image_url"] is None

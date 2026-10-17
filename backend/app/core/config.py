@@ -1,3 +1,4 @@
+from decimal import Decimal
 from functools import lru_cache
 import logging
 from pathlib import Path
@@ -27,6 +28,8 @@ class Settings(BaseSettings):
     smokepay_webhook_secret: SecretStr | None = None
     # Key with the "Saques" scope; falls back to SMOKEPAY_API_KEY when unset.
     smokepay_withdraw_api_key: SecretStr | None = None
+    # SmokePay takes its withdrawal fee from the balance on top of the amount.
+    smokepay_withdraw_fee: Decimal = Decimal("3.00")
     smokepay_base_url: str = "https://smokepay.com.br"
     vapid_subject: str | None = None
     daily_views_goal_check_minutes: Annotated[int, Field(ge=5, le=240)] = 15

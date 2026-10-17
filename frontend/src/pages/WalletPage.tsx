@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { ArrowDownToLine, CheckCircle2, Clock, Gift, Trophy, Wallet as WalletIcon, XCircle } from "lucide-react";
+import { ArrowDownToLine, CheckCircle2, Clock, Trophy, Wallet as WalletIcon, XCircle } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Modal } from "@/components/ui/Modal";
+import { useChiefLabel } from "@/features/partners/api";
+import { AwardsCarousel } from "@/features/wallet/AwardsCarousel";
 import { brl, compact, useWallet, useWalletMutations, type Wallet, type Withdrawal } from "@/features/wallet/api";
 import { ApiError } from "@/services/api";
 
@@ -32,7 +34,7 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
   const value = Number(amount.replace(/\./g, "").replace(",", "."));
   const main = wallet.is_main_account;
   const valid =
-    Number.isFinite(value) && value > 0 && value <= wallet.available && pixKey.trim().length > 3 && (main || value >= wallet.min_withdrawal);
+    Number.isFinite(value) && value > 0 && value <= (wallet.withdrawable ?? wallet.available) && pixKey.trim().length > 3 && (main || value >= wallet.min_withdrawal);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -66,15 +68,15 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
               placeholder="0,00"
               value={amount}
             />
-            <button className="rounded-lg bg-brand-soft px-2 py-1 text-xs font-semibold text-accent" onClick={() => setAmount(wallet.available.toFixed(2).replace(".", ","))} type="button">
+            <button className="rounded-lg bg-brand-soft px-2 py-1 text-xs font-semibold text-accent" onClick={() => setAmount((wallet.withdrawable ?? wallet.available).toFixed(2).replace(".", ","))} type="button">
               MAX
             </button>
           </span>
           {!main && (
-            <span className={`mt-1 block text-[11px] ${wallet.available < wallet.min_withdrawal ? "text-warning" : "text-muted"}`}>
-              Mínimo {brl(wallet.min_withdrawal)} (regra da SmokePay)
-              {wallet.available < wallet.min_withdrawal &&
-                ` · faltam ${brl(wallet.min_withdrawal - wallet.available)} de vendas para liberar o saque`}
+            <span className={`mt-1 block text-[11px] ${(wallet.withdrawable ?? wallet.available) < wallet.min_withdrawal ? "text-warning" : "text-muted"}`}>
+              Mínimo {brl(wallet.min_withdrawal)} · taxa de saque da SmokePay {brl(wallet.withdraw_fee ?? 0)} (sai do saldo) · dá para sacar até {brl(wallet.withdrawable ?? wallet.available)}
+              {(wallet.withdrawable ?? wallet.available) < wallet.min_withdrawal &&
+                ` · faltam ${brl(wallet.min_withdrawal - (wallet.withdrawable ?? wallet.available))} para liberar o saque`}
             </span>
           )}
         </label>
@@ -92,6 +94,11 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
             />
           </div>
         )}
+        <dl className="space-y-1 rounded-xl border border-line-soft bg-surface-inset p-3 text-xs">
+          <div className="flex justify-between"><dt className="text-muted">Você recebe no Pix</dt><dd className="font-semibold text-fg">{brl(value > 0 ? value : 0)}</dd></div>
+          <div className="flex justify-between"><dt className="text-muted">Taxa de saque (SmokePay)</dt><dd className="font-semibold text-warning">+ {brl(wallet.withdraw_fee ?? 0)}</dd></div>
+          <div className="flex justify-between border-t border-line-soft pt-1"><dt className="text-muted">Sai do seu saldo</dt><dd className="font-semibold text-fg">{brl((value > 0 ? value : 0) + (wallet.withdraw_fee ?? 0))}</dd></div>
+        </dl>
         {request.error && <p className="text-xs text-danger" role="alert">{errorText(request.error)}</p>}
         <button className="btn-primary w-full" disabled={!valid || request.isPending} type="submit">
           {request.isPending ? "Enviando…" : "Confirmar saque"}
@@ -131,17 +138,21 @@ function History({ items }: { items: Withdrawal[] }) {
 }
 
 export function WalletPage() {
+  const chief = useChiefLabel();
   const wallet = useWallet();
   const [open, setOpen] = useState(false);
   if (wallet.isLoading) return <LoadingState label="Carregando carteira" />;
   if (wallet.error) return <ErrorState message={errorText(wallet.error)} onRetry={() => void wallet.refetch()} />;
   const data = wallet.data!;
-  const cards: [string, string, string?][] = [
+  const fee = data.withdraw_fee ?? 0;
+  const cards: [string, string, string?, string?][] = [
     ["Faturamento do mês", brl(data.month_revenue)],
-    ["Disponível para sacar", brl(data.available), "text-success"],
+    ["Disponível para sacar", brl(data.available), "text-success", `Taxa por saque ${brl(fee)} · saque até ${brl(data.withdrawable ?? data.available)}`],
     ["Processando", brl(data.pending), "text-warning"],
     ["Já sacado", brl(data.withdrawn)],
   ];
+  if ((data.commission_paid ?? 0) > 0) cards.push([`Comissão paga a ${chief}`, brl(data.commission_paid ?? 0), "text-danger", "Já descontada do seu saldo"]);
+  if (data.commissions_received > 0) cards.push(["Comissões recebidas dos sócios", brl(data.commissions_received), "text-success"]);
   return (
     <div className="mx-auto max-w-[1100px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -158,10 +169,11 @@ export function WalletPage() {
       </header>
 
       <dl className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        {cards.map(([title, value, tone]) => (
-          <div className="glass-panel px-4 py-3" key={title}>
-            <dt className="text-[11px] text-muted">{title}</dt>
-            <dd className={`mt-1 text-xl font-semibold ${tone ?? "text-fg"}`}>{value}</dd>
+        {cards.map(([title, value, tone, hint]) => (
+          <div className="glass-panel min-w-0 px-4 py-3" key={title}>
+            <dt className="truncate text-[11px] text-muted">{title}</dt>
+            <dd className={`mt-1 truncate text-xl font-semibold ${tone ?? "text-fg"}`}>{value}</dd>
+            {hint && <dd className="mt-0.5 text-[10px] leading-tight text-muted">{hint}</dd>}
           </div>
         ))}
       </dl>
@@ -181,14 +193,7 @@ export function WalletPage() {
         <div className="h-2 overflow-hidden rounded-full bg-well">
           <div className="h-full rounded-full bg-success" style={{ width: `${Math.min(100, data.goal.percent)}%` }} />
         </div>
-        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {data.goal.goals.map((goal) => (
-            <li className={`rounded-xl border p-2.5 text-xs ${goal.reached ? "border-success/50 bg-success-soft text-success" : "border-line-soft bg-surface-inset text-muted"}`} key={goal.amount}>
-              <span className="flex items-center gap-1 font-semibold"><Gift size={13} /> {compact(goal.amount)}</span>
-              <span className="mt-0.5 block">{goal.prize}</span>
-            </li>
-          ))}
-        </ul>
+        <AwardsCarousel goals={data.goal.goals} revenue={data.month_revenue} />
       </section>
 
       <section className="glass-panel space-y-2 p-4">

@@ -7,14 +7,15 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import type { Flow } from "@/features/bots/types";
 import { ApiError, apiRequest } from "@/services/api";
-import { useShareToggle, useSharedTemplates, useUseTemplate } from "./api";
+import { useChiefLabel, useShareToggle, useSharedTemplates, useUseTemplate } from "./api";
 
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : "Não foi possível concluir a ação.");
 
 function AcceptFirst() {
+  const chief = useChiefLabel();
   return (
     <p className="rounded-xl border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning">
-      Aceite a comissão da sociedade no Painel para poder usar os modelos do seu chefe.
+      Aceite a comissão da sociedade no Painel para poder usar os modelos de {chief}.
     </p>
   );
 }
@@ -42,6 +43,7 @@ export function ShareLoopButton({ loop }: { loop: { id: string; name: string; sh
 
 /** Partner: the chief's shared loops, copied into the partner's own operation. */
 export function SharedLoopsSection() {
+  const chief = useChiefLabel();
   const shared = useSharedTemplates();
   const use = useUseTemplate("loops");
   const data = shared.data;
@@ -49,10 +51,10 @@ export function SharedLoopsSection() {
   return (
     <section className="glass-panel space-y-3 p-4">
       <div>
-        <h3 className="text-base font-semibold text-fg">Loops compartilhados pelo seu chefe</h3>
+        <h3 className="text-base font-semibold text-fg">Loops compartilhados por {chief}</h3>
         <p className="mt-1 text-xs text-muted">
           Ao usar, o loop é copiado para a sua operação com as mesmas configurações e mídias, sem contas. Sua fila, posts e
-          métricas são só seus, e o original do chefe não muda.
+          métricas são só seus, e o original de {chief} não muda.
         </p>
       </div>
       {!data.accepted && <AcceptFirst />}
@@ -80,12 +82,18 @@ export function SharedLoopsSection() {
 
 /** FlashBot tab: partners pick the chief's shared funnels; owners choose what to share. */
 export function SharedFlowsPanel() {
+  const chief = useChiefLabel();
   const shared = useSharedTemplates();
   const use = useUseTemplate("flows");
   const toggle = useShareToggle("flows");
   const own = useQuery({
     queryKey: ["bots", "flows"],
     queryFn: () => apiRequest<{ flows: Flow[] }>("/api/bots/flows/list"),
+    enabled: shared.data !== undefined && !shared.data.available,
+  });
+  const loops = useQuery({
+    queryKey: ["loops"],
+    queryFn: () => apiRequest<{ loops: { id: string; name: string }[] }>("/api/loops"),
     enabled: shared.data !== undefined && !shared.data.available,
   });
   if (shared.isLoading) return <LoadingState label="Carregando funis compartilhados" />;
@@ -96,31 +104,31 @@ export function SharedFlowsPanel() {
     return (
       <div className="space-y-3">
         <p className="text-sm text-muted">
-          Funis que o seu chefe compartilhou. Ao usar, uma cópia vai para “Meus funis”: ligue-a a um dos seus robôs. Leads,
-          vendas e métricas ficam com você; o funil original não muda.
+          Funis de {chief} prontos para rodar no seu robô. Cada funil vem com um loop: ao usar, o loop é copiado para a sua
+          operação (sem contas, você adiciona as suas). Depois, escolha o funil no seu robô em “Meus bots”. O conteúdo do funil
+          é de {chief} e fica protegido; leads, vendas e métricas são seus.
         </p>
         {!data.accepted && <AcceptFirst />}
         {use.error && <ErrorState message={errorText(use.error)} />}
         {use.data && (
           <p className="text-xs text-success">
-            “{use.data.name}” está em Meus funis. Se a entrega for em grupo, escolha o seu grupo no editor antes de ligar ao robô.
+            Pronto! {use.data.loop ? `O loop “${use.data.loop.name}” está em Loops (pausado, sem contas). ` : ""}
+            Agora vá em “Meus bots” e escolha “{use.data.name}” no seu robô, junto com o seu grupo de entrega.
           </p>
         )}
         {data.flows.length === 0 ? (
-          <EmptyState message="Seu chefe ainda não compartilhou nenhum funil." />
+          <EmptyState message={`${chief} ainda não compartilhou nenhum funil.`} />
         ) : (
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
             {data.flows.map((flow) => (
               <Card className="space-y-2" key={flow.id}>
                 <div className="flex items-start justify-between gap-2">
                   <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
-                  {flow.in_use && <Badge tone="success">Em uso</Badge>}
+                  {flow.in_use && <Badge tone="success">No seu robô</Badge>}
                 </div>
-                <p className="text-xs text-muted">
-                  {flow.plans} plano(s) · {flow.upsells} upsell(s) · {flow.downsells} downsell(s)
-                </p>
+                <p className="text-xs text-muted">Loop junto: {flow.loop_name ?? "—"}{flow.loop_in_use ? " · já copiado" : ""}</p>
                 <Button disabled={!data.accepted || use.isPending} onClick={() => use.mutate(flow.id)} size="sm" variant="primary">
-                  <CopyPlus size={14} /> Usar no meu robô
+                  <CopyPlus size={14} /> {flow.loop_in_use ? "Usar de novo" : "Usar funil + loop"}
                 </Button>
               </Card>
             ))}
@@ -131,30 +139,43 @@ export function SharedFlowsPanel() {
   }
 
   const flows = (own.data?.flows ?? []).filter((flow) => !flow.from_template);
+  const myLoops = loops.data?.loops ?? [];
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        Marque os funis que seus sócios podem usar como modelo. Cada sócio recebe uma cópia para o próprio robô e você é
-        avisado quando alguém altera a cópia. O seu robô, token e contas nunca são compartilhados.
+        Compartilhe um funil junto com um loop. O sócio roda o funil no robô dele sem ver nem copiar textos, mídias ou
+        ofertas, e recebe o loop sem contas. Só as vendas por funis seus geram a sua comissão.
       </p>
       {toggle.error && <ErrorState message={errorText(toggle.error)} />}
       {own.isLoading && <LoadingState label="Carregando funis" />}
       {own.data && flows.length === 0 && <EmptyState message="Crie um funil em “Meus funis” para poder compartilhar." />}
-      <div className="grid gap-2 md:grid-cols-2">
+      <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
         {flows.map((flow) => (
-          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line-soft bg-surface-inset p-3" key={flow.id}>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-fg">{flow.name}</span>
-              <span className="text-[11px] text-muted">{flow.shared ? "Compartilhado com seus sócios" : "Só seu"}</span>
-            </span>
-            <input
-              checked={Boolean(flow.shared)}
-              className="size-5 accent-[var(--color-brand)]"
+          <div className="space-y-2 rounded-xl border border-line-soft bg-surface-inset p-3" key={flow.id}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-fg">{flow.name}</span>
+                <span className="text-[11px] text-muted">{flow.shared ? "Compartilhado com seus sócios" : "Só seu"}</span>
+              </span>
+              {flow.shared && (
+                <Button disabled={toggle.isPending} onClick={() => toggle.mutate({ id: flow.id, shared: false })} size="sm">
+                  Parar
+                </Button>
+              )}
+            </div>
+            <select
+              aria-label={`Loop que vai junto com ${flow.name}`}
+              className="field !min-h-9 text-xs"
               disabled={toggle.isPending}
-              onChange={(event) => toggle.mutate({ id: flow.id, shared: event.target.checked })}
-              type="checkbox"
-            />
-          </label>
+              onChange={(event) => event.target.value && toggle.mutate({ id: flow.id, shared: true, loop_id: event.target.value })}
+              value={flow.shared ? flow.shared_loop_id ?? "" : ""}
+            >
+              <option value="">{flow.shared ? "Trocar o loop…" : "Compartilhar com o loop…"}</option>
+              {myLoops.map((loop) => (
+                <option key={loop.id} value={loop.id}>{loop.name}</option>
+              ))}
+            </select>
+          </div>
         ))}
       </div>
     </div>

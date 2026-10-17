@@ -48,7 +48,7 @@ export type SharedTemplates = {
     media_count: number;
     in_use: boolean;
   }[];
-  flows: { id: string; name: string; plans: number; upsells: number; downsells: number; in_use: boolean }[];
+  flows: { id: string; name: string; in_use: boolean; loop_id: string | null; loop_name: string | null; loop_in_use: boolean }[];
 };
 
 export type Operations = {
@@ -104,7 +104,8 @@ export function useSharedTemplates(enabled = true) {
 export function useUseTemplate(kind: "loops" | "flows") {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiRequest<{ id: string; name: string }>(`/api/partners/shared/${kind}/${id}/use`, { method: "POST" }),
+    mutationFn: (id: string) =>
+      apiRequest<{ id: string; name: string; loop?: { id: string; name: string } | null }>(`/api/partners/shared/${kind}/${id}/use`, { method: "POST" }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["partners"] });
       void queryClient.invalidateQueries({ queryKey: kind === "flows" ? ["bots", "flows"] : ["loops"] });
@@ -115,8 +116,8 @@ export function useUseTemplate(kind: "loops" | "flows") {
 export function useShareToggle(kind: "loops" | "flows") {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, shared }: { id: string; shared: boolean }) =>
-      apiRequest(`/api/partners/${kind}/${id}/share`, { method: "POST", body: { shared } }),
+    mutationFn: ({ id, shared, loop_id }: { id: string; shared: boolean; loop_id?: string }) =>
+      apiRequest(`/api/partners/${kind}/${id}/share`, { method: "POST", body: { shared, loop_id } }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: kind === "flows" ? ["bots", "flows"] : ["loops"] }),
   });
 }
@@ -137,4 +138,12 @@ export function useMarkNoticesRead() {
     mutationFn: () => apiRequest("/api/partners/notifications/read", { method: "POST" }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["partners", "notifications"] }),
   });
+}
+
+/** How a partner sees the operation owner: "Guilherme Sócio" (falls back to "seu sócio"). */
+export function useChiefLabel() {
+  const me = usePartnerMe();
+  const link = me.data?.partnership;
+  const first = (link?.chief_name || link?.chief_nickname || "").trim().split(/\s+/)[0];
+  return first ? `${first} Sócio` : "seu sócio";
 }

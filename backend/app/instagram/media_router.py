@@ -30,6 +30,12 @@ SUPPORTED_MEDIA_TYPES = {
 
 
 def _media_response(media: InstagramMedia) -> InstagramMediaResponse:
+    if media.locked:  # from a chief's shared loop: never revealed to the partner
+        return InstagramMediaResponse(
+            id=media.id, filename="🔒 Mídia protegida do seu sócio", mime_type=media.mime_type,
+            media_type=media.media_type, size_bytes=media.size_bytes, caption=None,
+            created_at=media.created_at, locked=True,
+        )
     return InstagramMediaResponse(
         id=media.id,
         filename=media.filename,
@@ -84,6 +90,8 @@ async def preview_media(
     )
     if media is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found.")
+    if media.locked:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Mídia protegida do seu sócio: não pode ser vista nem baixada.")
     storage = _storage_or_http_error()
     try:
         signed_url = await storage.create_signed_url(media.storage_path)

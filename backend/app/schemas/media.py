@@ -13,6 +13,7 @@ class InstagramMediaResponse(BaseModel):
     size_bytes: int
     caption: str | None
     created_at: datetime
+    locked: bool = False
 
 
 class InstagramMediaListResponse(BaseModel):
