@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import secrets
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -489,9 +490,30 @@ async def summary(access: OwnerAccess, db: DbSession, days: int = Query(1, ge=1,
 # ---------------------------------------------------------------- public webhooks
 
 
-async def _run_lead_jobs(lead_id: uuid.UUID) -> None:
+async def _process_update(bot_id: uuid.UUID, update: dict) -> None:
+    """Runs after Telegram already got its 200: replies go out straight from here
+    (no queue round trip); only delayed messages wait in the job table."""
+    started = time.perf_counter()
     async with get_session_factory()() as db:
-        await engine.follow_lead_jobs(db, lead_id)
+        bot = await db.get(TgBot, bot_id)
+        if bot is None:
+            return
+        try:
+            lead_id = await engine.handle_update(db, bot, update)
+            if bot.status != "online":
+                bot.status, bot.last_error = "online", None
+            await db.commit()
+        except TelegramError as exc:
+            await db.rollback()
+            logger.warning("Bot update failed: %s", exc)
+            return
+        except Exception:
+            await db.rollback()
+            logger.exception("Bot update crashed")
+            return
+        logger.info("bot update handled in %d ms", (time.perf_counter() - started) * 1000)
+        if lead_id:
+            await engine.follow_lead_jobs(db, lead_id)
 
 
 @router.post("/telegram/{bot_id}", include_in_schema=False)
@@ -508,25 +530,15 @@ async def telegram_webhook(bot_id: uuid.UUID, request: Request, background: Back
     if not bot.is_active:
         return {"ok": True}
     try:
-        async with db.begin_nested():
-            db.add(TgUpdateSeen(bot_id=bot.id, update_id=update_id))
-            await db.flush()
-    except IntegrityError:
-        return {"ok": True}  # redelivery
-    try:
-        lead_id = await engine.handle_update(db, bot, update)
-        if bot.status != "online":
-            bot.status, bot.last_error = "online", None
+        db.add(TgUpdateSeen(bot_id=bot.id, update_id=update_id))
         await db.commit()
-    except TelegramError as exc:
+    except IntegrityError:
         await db.rollback()
-        logger.warning("Bot update failed: %s", exc)
-        return {"ok": True}
+        return {"ok": True}  # redelivery
     except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(status_code=500, detail="Retry.") from None
-    if lead_id:
-        background.add_task(_run_lead_jobs, lead_id)
+    background.add_task(_process_update, bot.id, update)
     return {"ok": True}
 
 

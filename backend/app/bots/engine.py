@@ -13,6 +13,7 @@ import io
 import html
 import logging
 import secrets
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -294,18 +295,29 @@ async def cancel_lead_jobs(db: AsyncSession, lead: TgLead, kinds: tuple[str, ...
 
 
 async def start_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
-    """Queue the welcome blocks with their delays, then the offer."""
+    """Send the welcome right away; blocks after a delay (and what follows them)
+    are queued as jobs with their delays."""
     await cancel_lead_jobs(db, lead, ("send_block", "send_offer"))
+    tg = telegram(bot)
     run = utcnow()
     nonce = secrets.token_hex(4)
+    lead.stage = "welcome"
+    immediate = True
     for index, block in enumerate(flow.welcome):
         # The first block always answers /start right away; delays only space the next ones.
-        run += timedelta(seconds=block.delay_seconds if index else 0, microseconds=index)
-        await schedule(db, bot, "send_block", run, f"welcome:{lead.id}:{nonce}:{index}", lead, {"index": index})
-    # Microsecond offset keeps the offer after the last block yet due right away when there are no delays.
-    run += timedelta(microseconds=len(flow.welcome) + 1)
-    await schedule(db, bot, "send_offer", run, f"offer:{lead.id}:{nonce}", lead)
-    lead.stage = "welcome"
+        delay = block.delay_seconds if index else 0
+        immediate = immediate and delay == 0
+        run += timedelta(seconds=delay, microseconds=index)
+        if immediate:
+            await send_block(db, tg, bot, lead, block)
+        else:
+            await schedule(db, bot, "send_block", run, f"welcome:{lead.id}:{nonce}:{index}", lead, {"index": index})
+    if immediate:
+        await send_offer(db, tg, bot, lead, flow)
+    else:
+        # Microsecond offset keeps the offer after the last block.
+        run += timedelta(microseconds=len(flow.welcome) + 1)
+        await schedule(db, bot, "send_offer", run, f"offer:{lead.id}:{nonce}", lead)
     if "no_pix" in (flow.downsell_audience or []):
         await schedule_downsells(db, bot, lead, flow)
 
@@ -644,9 +656,13 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict, flow: Flow
         if isinstance(resolved, str):
             await tg.answer_callback(query["id"], resolved)
             return None
-        # Answer right away; the charge is created by a job right after the response.
+        # Telegram already got its 200 (updates run in the background), so the charge
+        # is created right here: no queue round trip before the PIX goes out.
         await tg.answer_callback(query["id"], "Gerando seu Pix…")
-        await schedule(db, bot, "create_pix", utcnow(), f"pix:{query['id']}:{data}", lead, {"data": data})
+        plan, options = resolved
+        started = time.perf_counter()
+        await create_order(db, tg, bot, lead, flow, plan, **options)
+        logger.info("pix sent in %d ms", (time.perf_counter() - started) * 1000)
         return lead.id
     if data.startswith("chk:"):
         try:
