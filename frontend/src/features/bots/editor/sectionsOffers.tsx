@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Copy, CreditCard, Gift, Plus, ShieldCheck, ShoppingCart, Trash2, TrendingDown, TrendingUp, Truck } from "lucide-react";
+import { Copy, CreditCard, Eye, Gift, Plus, QrCode, ShieldCheck, ShoppingCart, Timer, Trash2, TrendingDown, TrendingUp, Truck } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
-import { brl, emptyBump, emptyDelivery, type CustomOffer, type Delivery, type DownsellStep, type Plan, type UpsellStep } from "../types";
+import { brl, emptyBump, emptyDelivery, emptyPreviews, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type Plan, type UpsellStep } from "../types";
 import { BumpEditor, DeliveryEditor } from "./DeliveryEditor";
 import { MediaGrid } from "./MediaGrid";
 import { BASE_VARIABLES, RichTextEditor } from "./RichTextEditor";
@@ -95,6 +95,7 @@ export function PlansSection({ draft, set }: SectionProps) {
     name: base ? `${base.name} (cópia)`.slice(0, 60) : "Plano mensal",
   });
   return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
     <Panel
       icon={<CreditCard size={18} />}
       title="Planos de pagamento"
@@ -132,6 +133,8 @@ export function PlansSection({ draft, set }: SectionProps) {
         <Plus size={14} /> Adicionar plano
       </Button>
     </Panel>
+    <DefaultDeliveryPanel draft={draft} set={set} />
+    </div>
   );
 }
 
@@ -307,52 +310,40 @@ function newCustomOffer(): CustomOffer {
   return { name: "Oferta especial", price: "9.90", duration_days: 30, delivery: null };
 }
 
-export function DownsellSection({ draft, set }: SectionProps) {
+const SEQUENCES = {
+  pix: {
+    label: "Pix gerado",
+    hint: "Gerou o Pix e não pagou",
+    first: "Enviar depois que o Pix foi gerado",
+    icon: QrCode,
+  },
+  no_pix: {
+    label: "Pix não gerado",
+    hint: "Deu /start e não gerou o Pix",
+    first: "Enviar depois do /start",
+    icon: Timer,
+  },
+} as const;
+
+type Sequence = keyof typeof SEQUENCES;
+
+function DownsellList({ sequence, steps, plans, onChange }: { sequence: Sequence; steps: DownsellStep[]; plans: Plan[]; onChange: (next: DownsellStep[]) => void }) {
   const { open, toggle, setOpen } = useOpen();
-  const setStep = (index: number, patch: Partial<DownsellStep>) =>
-    set({ downsells: draft.downsells.map((item, i) => (i === index ? { ...item, ...patch } : item)) });
+  const setStep = (index: number, patch: Partial<DownsellStep>) => onChange(steps.map((item, i) => (i === index ? { ...item, ...patch } : item)));
   return (
-    <Panel
-      icon={<TrendingDown size={18} />}
-      title="Sequências de downsell"
-      description="Planos com desconto para quem não pagou. Para sozinho assim que o lead paga."
-      aside={<span className="text-xs text-muted">{draft.downsells.length}/20</span>}
-    >
-      <div className="grid gap-1.5 text-sm text-fg-2">
-        <span>Enviar para</span>
-        <div className="grid grid-cols-2 gap-2">
-          {(
-            [
-              ["no_pix", "Pix não gerado", "deu /start e não gerou Pix"],
-              ["pix", "Pix gerado", "gerou o Pix e não pagou"],
-            ] as const
-          ).map(([value, label, hint]) => {
-            const on = draft.downsell_audience.includes(value);
-            return (
-              <button
-                aria-pressed={on}
-                className={`rounded-xl border p-3 text-left transition ${on ? "border-brand bg-brand-soft" : "border-line bg-surface-inset opacity-70"}`}
-                key={value}
-                onClick={() =>
-                  set({ downsell_audience: on ? draft.downsell_audience.filter((item) => item !== value) : [...draft.downsell_audience, value] })
-                }
-                type="button"
-              >
-                <span className={`block text-sm font-medium ${on ? "text-accent" : "text-fg"}`}>{on ? "✓ " : ""}{label}</span>
-                <span className="block text-xs text-muted">{hint}</span>
-              </button>
-            );
-          })}
-        </div>
-        {draft.downsell_audience.length === 0 && <span className="text-xs text-warning">Nenhum público marcado: o downsell não será enviado.</span>}
-      </div>
+    <>
       <div className="space-y-2">
-        {draft.downsells.map((step, index) => (
+        {steps.length === 0 && (
+          <p className="rounded-xl border border-dashed border-line p-4 text-center text-sm text-muted">
+            Nenhuma mensagem nesta sequência. Quem {sequence === "pix" ? "gerar o Pix e não pagar" : "não gerar o Pix"} não recebe downsell.
+          </p>
+        )}
+        {steps.map((step, index) => (
           <Collapsible
             key={index}
             open={open === index}
             onToggle={() => toggle(index)}
-            title={`Sequência ${index + 1}`}
+            title={`Mensagem ${index + 1}`}
             subtitle={`${
               step.custom_offer
                 ? `${step.custom_offer.name} · ${brl(step.custom_offer.price || 0)}`
@@ -360,14 +351,14 @@ export function DownsellSection({ draft, set }: SectionProps) {
             } · ${delayLabel(step.delay_minutes)}`}
             actions={
               <StepActions
-                canCopy={draft.downsells.length < 20}
-                onCopy={() => set({ downsells: [...draft.downsells, { ...step }] })}
-                onRemove={() => set({ downsells: draft.downsells.filter((_, i) => i !== index) })}
+                canCopy={steps.length < 20}
+                onCopy={() => onChange([...steps, { ...step }])}
+                onRemove={() => onChange(steps.filter((_, i) => i !== index))}
               />
             }
           >
             <MediaGrid max={3} value={step.media_ids} onChange={(media_ids) => setStep(index, { media_ids })} />
-            <Field label={index === 0 ? "Enviar depois de" : "Enviar depois da sequência anterior"}>
+            <Field label={index === 0 ? SEQUENCES[sequence].first : "Enviar depois da mensagem anterior"}>
               <DelayInput allowZero={false} value={step.delay_minutes} onChange={(delay_minutes) => setStep(index, { delay_minutes })} />
             </Field>
             <label className="flex items-center justify-between gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
@@ -448,57 +439,204 @@ export function DownsellSection({ draft, set }: SectionProps) {
               onChange={(text) => setStep(index, { text })}
             />
             {!step.custom_offer && (
-            <div className="grid gap-1.5 text-sm text-fg-2">
-              <span>Planos oferecidos</span>
-              <div className="flex flex-wrap gap-2">
-                {draft.plans.map((plan) => {
-                  const on = step.plan_ids.length === 0 || step.plan_ids.includes(plan.id);
-                  return (
-                    <button
-                      aria-pressed={on}
-                      className={`min-h-9 rounded-full border px-3 text-xs ${on ? "border-brand bg-brand-soft text-accent" : "border-line text-muted"}`}
-                      key={plan.id}
-                      onClick={() => {
-                        const current = step.plan_ids.length ? step.plan_ids : draft.plans.map((p) => p.id);
-                        const next = on ? current.filter((id) => id !== plan.id) : [...current, plan.id];
-                        setStep(index, { plan_ids: next.length === draft.plans.length ? [] : next });
-                      }}
-                      type="button"
-                    >
-                      {plan.name}
-                    </button>
-                  );
-                })}
-                {draft.plans.length === 0 && <span className="text-xs text-muted">Crie planos na seção Planos.</span>}
+              <div className="grid gap-1.5 text-sm text-fg-2">
+                <span>Planos oferecidos</span>
+                <div className="flex flex-wrap gap-2">
+                  {plans.map((plan) => {
+                    const on = step.plan_ids.length === 0 || step.plan_ids.includes(plan.id);
+                    return (
+                      <button
+                        aria-pressed={on}
+                        className={`min-h-9 rounded-full border px-3 text-xs ${on ? "border-brand bg-brand-soft text-accent" : "border-line text-muted"}`}
+                        key={plan.id}
+                        onClick={() => {
+                          const current = step.plan_ids.length ? step.plan_ids : plans.map((p) => p.id);
+                          const next = on ? current.filter((id) => id !== plan.id) : [...current, plan.id];
+                          setStep(index, { plan_ids: next.length === plans.length ? [] : next });
+                        }}
+                        type="button"
+                      >
+                        {plan.name}
+                      </button>
+                    );
+                  })}
+                  {plans.length === 0 && <span className="text-xs text-muted">Crie planos na seção Planos.</span>}
+                </div>
               </div>
-            </div>
             )}
             <StylePicker value={step.button_style} onChange={(button_style) => setStep(index, { button_style })} />
           </Collapsible>
         ))}
       </div>
       <Button
-        disabled={draft.downsells.length >= 20}
+        disabled={steps.length >= 20}
         onClick={() => {
-          set({ downsells: [...draft.downsells, newDownsell(draft.downsells.length)] });
-          setOpen(draft.downsells.length);
+          onChange([...steps, newDownsell(steps.length)]);
+          setOpen(steps.length);
         }}
         size="sm"
       >
-        <Plus size={14} /> Adicionar sequência
+        <Plus size={14} /> Adicionar mensagem
       </Button>
+    </>
+  );
+}
+
+export function DownsellSection({ draft, set }: SectionProps) {
+  const [sequence, setSequence] = useState<Sequence>("pix");
+  const lists: Record<Sequence, DownsellStep[]> = { pix: draft.downsells, no_pix: draft.downsells_no_pix ?? [] };
+  const update = (next: DownsellStep[]) => set(sequence === "pix" ? { downsells: next } : { downsells_no_pix: next });
+  return (
+    <Panel
+      icon={<TrendingDown size={18} />}
+      title="Downsell"
+      description="Duas sequências separadas: uma para quem gerou o Pix e não pagou, outra para quem nem gerou. Param sozinhas assim que o lead paga."
+      aside={<span className="text-xs text-muted">{lists[sequence].length}/20</span>}
+    >
+      <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Sequência de downsell">
+        {(Object.keys(SEQUENCES) as Sequence[]).map((key) => {
+          const item = SEQUENCES[key];
+          const Icon = item.icon;
+          const on = sequence === key;
+          return (
+            <button
+              aria-selected={on}
+              className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${on ? "border-brand bg-brand-soft" : "border-line bg-surface-inset hover:border-line-soft"}`}
+              key={key}
+              onClick={() => setSequence(key)}
+              role="tab"
+              type="button"
+            >
+              <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${on ? "bg-brand text-white" : "bg-well text-muted"}`}>
+                <Icon size={16} />
+              </span>
+              <span className="min-w-0">
+                <span className={`block text-sm font-medium ${on ? "text-accent" : "text-fg"}`}>
+                  {item.label} <span className="text-xs text-muted">· {lists[key].length}</span>
+                </span>
+                <span className="block truncate text-xs text-muted">{item.hint}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {sequence === "no_pix" && (
+        <p className="text-xs leading-5 text-muted">Se o lead gerar o Pix no meio desta sequência, ela para e começa a sequência de Pix gerado.</p>
+      )}
+      <DownsellList key={sequence} onChange={update} plans={draft.plans} sequence={sequence} steps={lists[sequence]} />
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------------- Prévias
+
+const PREVIEW_TIMES = [
+  [10, "10 segundos"],
+  [30, "30 segundos"],
+  [60, "1 minuto"],
+  [300, "5 minutos"],
+  [900, "15 minutos"],
+  [3600, "1 hora"],
+  [21600, "6 horas"],
+  [86400, "24 horas"],
+] as const;
+
+const timeUnits = [
+  { value: 1, label: "segundos" },
+  { value: 60, label: "minutos" },
+  { value: 3600, label: "horas" },
+];
+
+export function PreviewsSection({ draft, set }: SectionProps) {
+  const previews = draft.previews ?? emptyPreviews();
+  const setPreviews = (patch: Partial<NonNullable<FlowDefinition["previews"]>>) => set({ previews: { ...previews, ...patch } });
+  const seconds = previews.delete_after_seconds;
+  const unit = seconds % 3600 === 0 ? 3600 : seconds % 60 === 0 ? 60 : 1;
+  const clamp = (value: number) => Math.min(172800, Math.max(5, value));
+  return (
+    <Panel
+      icon={<Eye size={18} />}
+      title="Prévias"
+      description="Um botão na boas-vindas que envia uma ou mais mídias de amostra. Elas se apagam sozinhas depois do tempo que você escolher."
+      aside={<Switch checked={previews.enabled} label="Botão de prévias" onChange={(enabled) => setPreviews({ enabled })} />}
+    >
+      {previews.enabled ? (
+        <div className="grid gap-4">
+          <MediaGrid max={10} title="Mídias das prévias" value={previews.media_ids} onChange={(media_ids) => setPreviews({ media_ids })} />
+          {previews.media_ids.length === 0 && <p className="text-xs text-warning">Adicione pelo menos uma mídia para o botão aparecer.</p>}
+          <Field label="Apagar depois de" hint="O Telegram só deixa o robô apagar mensagens com até 48 horas.">
+            <div className="grid gap-2">
+              <div className="flex flex-wrap gap-2">
+                {PREVIEW_TIMES.map(([value, label]) => (
+                  <button
+                    className={`min-h-9 rounded-full border px-3 text-xs ${seconds === value ? "border-brand bg-brand-soft text-accent" : "border-line text-muted"}`}
+                    key={value}
+                    onClick={() => setPreviews({ delete_after_seconds: value })}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  aria-label="Tempo até apagar"
+                  className="field !w-24"
+                  min={1}
+                  type="number"
+                  value={Math.max(1, Math.round(seconds / unit))}
+                  onChange={(event) => setPreviews({ delete_after_seconds: clamp((Number(event.target.value) || 1) * unit) })}
+                />
+                <select
+                  aria-label="Unidade"
+                  className="field !w-auto"
+                  value={unit}
+                  onChange={(event) => setPreviews({ delete_after_seconds: clamp(Math.max(1, Math.round(seconds / unit)) * Number(event.target.value)) })}
+                >
+                  {timeUnits.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </Field>
+          <RichTextEditor
+            label="Legenda (opcional)"
+            rows={2}
+            value={previews.text ?? ""}
+            variables={[...BASE_VARIABLES, "{tempo}"]}
+            onChange={(text) => setPreviews({ text })}
+          />
+          <Field label="Texto do botão">
+            <input className="field" maxLength={64} value={previews.label} onChange={(event) => setPreviews({ label: event.target.value })} />
+          </Field>
+          <StylePicker value={previews.style} onChange={(style) => setPreviews({ style })} />
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
+            <span>
+              Mídias com spoiler (borradas até tocar)
+              <span className="block text-xs text-muted">As prévias também vão protegidas: o lead não consegue encaminhar nem salvar.</span>
+            </span>
+            <Switch checked={previews.spoiler} label="Spoiler nas prévias" onChange={(spoiler) => setPreviews({ spoiler })} />
+          </label>
+        </div>
+      ) : (
+        <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão “{previews.label}” junto dos planos.</p>
+      )}
     </Panel>
   );
 }
 
 // ---------------------------------------------------------------- Entrega, Pagamento, Configurações
 
-export function DeliverySection({ draft, set }: SectionProps) {
+function DefaultDeliveryPanel({ draft, set }: Pick<SectionProps, "draft" | "set">) {
+  const using = draft.plans.filter((plan) => !plan.delivery).length;
   return (
     <Panel
       icon={<Truck size={18} />}
       title="Entrega padrão"
-      description="Usada pelos planos que não têm entrega própria."
+      description={`Usada quando o plano está em “Usar entrega padrão”${using ? ` (${using} plano(s) agora)` : ""}. Cada plano pode ter a própria.`}
       aside={<Switch checked={Boolean(draft.default_delivery)} label="Entrega padrão" onChange={(on) => set({ default_delivery: on ? draft.default_delivery ?? emptyDelivery("group") : null })} />}
     >
       {draft.default_delivery ? (

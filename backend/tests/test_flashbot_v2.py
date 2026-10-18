@@ -305,8 +305,8 @@ async def test_downsell_audience_and_custom_offer(client, db_session, owner, api
     await _run_jobs_now(db_session)
     offer = apis.methods("sendMessage")[-1]
     assert offer["text"] == "Só pra você"
-    assert offer["reply_markup"]["inline_keyboard"] == [[{"text": "🔥 Semana VIP · R$ 7,00", "callback_data": "dplan:0:@", "style": "success"}]]
-    await _send(client, db_session, bot["id"], _tap("dplan:0:@"))
+    assert offer["reply_markup"]["inline_keyboard"] == [[{"text": "🔥 Semana VIP · R$ 7,00", "callback_data": "nplan:0:@", "style": "success"}]]
+    await _send(client, db_session, bot["id"], _tap("nplan:0:@"))
     assert apis.methods("pix.create")[-1]["amount"] == 7.0
     await db_session.commit()
     order = await db_session.scalar(select(TgOrder))
@@ -327,8 +327,79 @@ async def test_no_pix_audience_skips_leads_who_generated_a_pix(client, db_sessio
     assert "Volta!" not in [m["text"] for m in apis.methods("sendMessage")[before:]]
 
 
-def test_old_downsell_trigger_maps_to_audience() -> None:
+def test_old_downsell_audience_becomes_two_sequences() -> None:
     from app.bots.flow_schema import FlowDefinition
 
-    assert FlowDefinition.model_validate(_flow(downsell_trigger="start")).downsell_audience == ["no_pix", "pix"]
-    assert FlowDefinition.model_validate(_flow()).downsell_audience == ["pix"]
+    steps = [{"text": "Volta!"}]
+    both = FlowDefinition.model_validate(_flow(downsell_trigger="start", downsells=steps))
+    assert len(both.downsells) == 1 and len(both.downsells_no_pix) == 1
+    only_pix = FlowDefinition.model_validate(_flow(downsells=steps))
+    assert len(only_pix.downsells) == 1 and only_pix.downsells_no_pix == []
+    only_start = FlowDefinition.model_validate(_flow(downsell_audience=["no_pix"], downsells=steps))
+    assert only_start.downsells == [] and len(only_start.downsells_no_pix) == 1
+    # once split, the saved shape keeps each sequence as it is
+    again = FlowDefinition.model_validate(only_start.model_dump(mode="json"))
+    assert again.downsells == [] and len(again.downsells_no_pix) == 1 and again.downsell_audience is None
+
+
+@pytest.mark.anyio
+async def test_pix_and_no_pix_downsells_are_separate_sequences(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(
+        welcome=[],
+        downsells_no_pix=[{"delay_minutes": 5, "text": "Nem gerou o Pix?", "discount_value": "20"}],
+        downsells=[{"delay_minutes": 10, "text": "Seu Pix está esperando", "discount_value": "30"}],
+    ))
+    await _send(client, db_session, bot["id"], _start())
+    await db_session.commit()
+    no_pix = list(await db_session.scalars(select(TgJob).where(TgJob.kind == "send_downsell_np")))
+    assert len(no_pix) == 1 and not list(await db_session.scalars(select(TgJob).where(TgJob.kind == "send_downsell")))
+    await _run_jobs_now(db_session)
+    offer = apis.methods("sendMessage")[-1]
+    assert offer["text"] == "Nem gerou o Pix?"
+    assert offer["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == "nplan:0:vip"
+
+    # buying from the "não gerado" offer is the first PIX: that sequence ends, the "gerado" one starts
+    await _send(client, db_session, bot["id"], _tap("nplan:0:vip"))
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.kind == "downsell" and order.offer_id == "vip-n0" and order.amount == engine.Decimal("15.92")
+    pix_jobs = list(await db_session.scalars(select(TgJob).where(TgJob.kind == "send_downsell", TgJob.status == "pending")))
+    assert len(pix_jobs) == 1
+    await _run_jobs_now(db_session)
+    offer = apis.methods("sendMessage")[-1]
+    assert offer["text"] == "Seu Pix está esperando"
+    assert offer["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == "dplan:0:vip"
+
+
+@pytest.mark.anyio
+async def test_previews_button_sends_media_that_delete_themselves(client, db_session, owner, apis, monkeypatch) -> None:
+    headers = await _login(client)
+    photos = [await _media(client, headers, monkeypatch, f"p{i}.jpg") for i in range(2)]
+    bot, _ = await _setup(client, headers, _flow(
+        welcome=[], previews={"enabled": True, "media_ids": photos, "delete_after_seconds": 120, "label": "Ver prévias"},
+    ))
+    await _send(client, db_session, bot["id"], _start())
+    rows = apis.methods("sendMessage")[-1]["reply_markup"]["inline_keyboard"]
+    assert [{"text": "Ver prévias", "callback_data": "prev", "style": "primary"}] in rows
+
+    await _send(client, db_session, bot["id"], _tap("prev"))
+    album = apis.methods("sendMediaGroup")[-1]
+    assert album["protect_content"] in (True, "true")
+    await db_session.commit()
+    job = await db_session.scalar(select(TgJob).where(TgJob.kind == "delete_messages"))
+    assert job is not None and job.status == "pending" and job.payload["chat_id"] == 555
+    # a second tap while they are open sends nothing new
+    await _send(client, db_session, bot["id"], _tap("prev"))
+    assert len(apis.methods("sendMediaGroup")) == 1
+    await _run_jobs_now(db_session)
+    assert apis.methods("deleteMessages")[-1]["chat_id"] == 555
+
+
+def test_previews_need_media() -> None:
+    from pydantic import ValidationError
+
+    from app.bots.flow_schema import FlowDefinition
+
+    with pytest.raises(ValidationError):
+        FlowDefinition.model_validate(_flow(previews={"enabled": True}))

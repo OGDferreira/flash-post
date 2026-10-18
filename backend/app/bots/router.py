@@ -14,7 +14,7 @@ from typing import Annotated, Any
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import case, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
@@ -24,7 +24,7 @@ from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import encrypt_value
 from app.core.database import get_session_factory
-from app.models import TgBot, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
+from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access, shares_with
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.bots.stats import conversion_stats
@@ -511,6 +511,7 @@ async def delete_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) ->
     # Explicit unlink: the FK's SET NULL is not enforced on every backend (e.g. SQLite).
     for model in (TgBot, TgLead, TgOrder):
         await db.execute(update(model).where(model.flow_id == flow.id).values(flow_id=None))
+    await db.execute(delete(TgCampaign).where(TgCampaign.flow_id == flow.id))
     await db.delete(flow)
     await db.commit()
 

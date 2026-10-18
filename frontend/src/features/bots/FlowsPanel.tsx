@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download, GitBranch, KeyRound, Lock, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { Copy, Download, GitBranch, KeyRound, Lock, Megaphone, Plus, Settings2, Trash2, Upload, Zap } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 import type { MetricsPeriod } from "@/features/analytics/period";
@@ -15,7 +14,15 @@ import { ImportFlowModal, downloadFlow } from "./FlowPortability";
 import { brl, type Flow } from "./types";
 import { useChiefLabel } from "@/features/partners/api";
 
-export function FlowsPanel({ onEditingChange, period }: { onEditingChange?: (editing: boolean) => void; period: MetricsPeriod }) {
+export function FlowsPanel({
+  onEditingChange,
+  onRemarketing,
+  period,
+}: {
+  onEditingChange?: (editing: boolean) => void;
+  onRemarketing?: (flowId: string) => void;
+  period: MetricsPeriod;
+}) {
   const chief = useChiefLabel();
   const stats = useBotStats(period);
   const [importOpen, setImportOpen] = useState(false);
@@ -84,64 +91,94 @@ export function FlowsPanel({ onEditingChange, period }: { onEditingChange?: (edi
       ) : (
         <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
           {flows.data.flows.map((flow) => (
-            <Card key={flow.id} className="space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
-                <span className="flex shrink-0 gap-1">
-                  {flow.protected ? <Badge tone="warning">Protegido</Badge> : flow.from_template && <Badge tone="warning">Modelo de {chief}</Badge>}
-                  {flow.shared && <Badge tone="success">Compartilhado</Badge>}
-                  <Badge tone="success">{(stats.data?.flows[flow.id]?.conversion ?? 0).toLocaleString("pt-BR")}% conv.</Badge>
-                  <Badge tone={flow.bots ? "brand" : "neutral"}>{flow.bots ? `${flow.bots} robô(s)` : "Sem robô"}</Badge>
-                </span>
+            <article className="flex flex-col overflow-hidden rounded-2xl border border-line bg-surface" key={flow.id}>
+              <div className="grid gap-2 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="grid size-10 place-items-center rounded-xl border border-line bg-surface-inset text-accent">
+                    <Zap size={18} />
+                  </span>
+                  <span className="flex flex-wrap justify-end gap-1">
+                    {flow.protected ? <Badge tone="warning">Protegido</Badge> : flow.from_template && <Badge tone="warning">Modelo de {chief}</Badge>}
+                    {flow.shared && <Badge tone="success">Compartilhado</Badge>}
+                    <Badge tone={flow.bots ? "brand" : "neutral"}>{flow.bots ? `${flow.bots} robô(s)` : "Sem robô"}</Badge>
+                  </span>
+                </div>
+                <p className="truncate font-semibold text-fg">{flow.name}</p>
+                {flow.protected || !flow.definition ? (
+                  <p className="flex items-center gap-1.5 text-xs text-warning">
+                    <Lock size={13} /> Funil de {chief} protegido: roda no seu robô, mas não pode ser aberto, copiado ou exportado.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted">
+                    {flow.definition!.plans.length
+                      ? flow.definition!.plans.map((plan) => `${plan.name} ${brl(plan.price)}`).join(" · ")
+                      : "nenhum plano"}
+                    {flow.definition!.upsells.length > 0 && ` · ${flow.definition!.upsells.length} upsell(s)`}
+                    {flow.definition!.downsells.length + (flow.definition!.downsells_no_pix?.length ?? 0) > 0 &&
+                      ` · ${flow.definition!.downsells.length + (flow.definition!.downsells_no_pix?.length ?? 0)} downsell(s)`}
+                    {flow.definition!.previews?.enabled && " · prévias"}
+                    {flow.definition!.age_gate.enabled && " · +18"}
+                  </p>
+                )}
               </div>
-              {flow.protected || !flow.definition ? (
-                <p className="flex items-center gap-1.5 text-xs text-warning">
-                  <Lock size={13} /> Funil de {chief} protegido: roda no seu robô, mas não pode ser aberto, copiado ou exportado.
-                </p>
-              ) : (
-                <p className="text-xs text-muted">
-                {flow.definition!.offer.media_ids.length} mídia(s) na boas-vindas ·{" "}
-                {flow.definition!.plans.length
-                  ? flow.definition!.plans.map((plan) => `${plan.name} ${brl(plan.price)}`).join(" · ")
-                  : "nenhum plano"}
-                {flow.definition!.upsells.length > 0 && ` · ${flow.definition!.upsells.length} upsell(s)`}
-                {flow.definition!.downsells.length > 0 && ` · ${flow.definition!.downsells.length} downsell(s)`}
-                {flow.definition!.age_gate.enabled && " · +18"}
-              </p>
+              <dl className="mt-auto grid grid-cols-2 border-y border-line text-center">
+                <div className="border-r border-line p-3">
+                  <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted">Starts</dt>
+                  <dd className="font-semibold text-fg">{(stats.data?.flows[flow.id]?.leads ?? 0).toLocaleString("pt-BR")}</dd>
+                </div>
+                <div className="p-3">
+                  <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted">Conversão</dt>
+                  <dd className="font-semibold text-fg">{(stats.data?.flows[flow.id]?.conversion ?? 0).toLocaleString("pt-BR")}%</dd>
+                </div>
+              </dl>
+              <button
+                className="flex min-h-11 items-center justify-center gap-2 border-b border-line text-sm font-medium text-fg hover:bg-well"
+                onClick={() => onRemarketing?.(flow.id)}
+                type="button"
+              >
+                <Megaphone size={15} /> Remarketing
+              </button>
+              {!flow.protected && (
+                <button
+                  className="flex min-h-11 items-center justify-center gap-2 border-b border-line text-sm font-medium text-fg hover:bg-well"
+                  onClick={() => setEditing(flow.id)}
+                  type="button"
+                >
+                  <Settings2 size={15} /> Editar fluxo
+                </button>
               )}
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap justify-center gap-1 p-2">
                 {!flow.protected && (
-                  <>
-                    <Button size="sm" variant="primary" onClick={() => setEditing(flow.id)}>
-                      <Pencil size={14} /> Editar
-                    </Button>
-                    <Button size="sm" onClick={() => duplicate.mutate(flow.id)}>
-                      <Copy size={14} /> Duplicar
-                    </Button>
-                  </>
+                  <button aria-label="Duplicar" className="btn-ghost !min-h-9 !px-2.5 text-xs" onClick={() => duplicate.mutate(flow.id)} type="button">
+                    <Copy size={14} /> Duplicar
+                  </button>
                 )}
                 {!flow.from_template && !flow.protected && (
                   <>
-                    <Button size="sm" onClick={() => downloadFlow(`/api/bots/flows/${flow.id}/export`, flow.name).catch((err: Error) => setExportError(err.message))}>
+                    <button
+                      className="btn-ghost !min-h-9 !px-2.5 text-xs"
+                      onClick={() => downloadFlow(`/api/bots/flows/${flow.id}/export`, flow.name).catch((err: Error) => setExportError(err.message))}
+                      type="button"
+                    >
                       <Download size={14} /> Exportar
-                    </Button>
-                    <Button size="sm" disabled={makeCode.isPending} onClick={() => makeCode.mutate(flow)}>
+                    </button>
+                    <button className="btn-ghost !min-h-9 !px-2.5 text-xs" disabled={makeCode.isPending} onClick={() => makeCode.mutate(flow)} type="button">
                       <KeyRound size={14} /> Código
-                    </Button>
+                    </button>
                   </>
                 )}
-                <Button
-                  size="sm"
-                  variant="danger"
+                <button
+                  className="btn-ghost !min-h-9 !px-2.5 text-xs text-danger"
                   onClick={async () => {
                     const warning = flow.bots ? " Os robôs ligados a ele param de responder até você escolher outro fluxo." : "";
-                    if (await confirmAction(`Excluir o fluxo “${flow.name}”?${warning}`)) remove.mutate(flow.id);
+                    if (await confirmAction(`Excluir o fluxo “${flow.name}”? As campanhas de remarketing dele também são excluídas.${warning}`)) remove.mutate(flow.id);
                   }}
+                  type="button"
                 >
                   <Trash2 size={14} /> Excluir
-                </Button>
+                </button>
               </div>
-            </Card>
+            </article>
           ))}
         </div>
       )}

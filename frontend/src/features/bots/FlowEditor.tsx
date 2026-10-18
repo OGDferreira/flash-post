@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronUp,
   CreditCard,
+  Eye,
   Hand,
   Save,
   Settings2,
@@ -16,40 +17,43 @@ import {
   Tags,
   TrendingDown,
   TrendingUp,
-  Truck,
 } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
-import type { Delivery, Flow, FlowDefinition, OrderBump } from "./types";
+import type { Delivery, DownsellStep, Flow, FlowDefinition, OrderBump } from "./types";
 import { BotsSection, WelcomeSection, type SectionProps } from "./editor/sectionsTop";
 import {
   BumpSection,
-  DeliverySection,
   DownsellSection,
   PaymentSection,
   PlansSection,
+  PreviewsSection,
   SettingsSection,
   UpsellSection,
 } from "./editor/sectionsOffers";
 
-const sections: { id: string; label: string; icon: ComponentType<{ size?: number }>; component: ComponentType<SectionProps> }[] = [
-  { id: "bots", label: "Bots", icon: BotIcon, component: BotsSection },
-  { id: "welcome", label: "Boas-vindas", icon: Hand, component: WelcomeSection },
-  { id: "plans", label: "Planos", icon: Tags, component: PlansSection },
-  { id: "bump", label: "Order bump", icon: ShoppingCart, component: BumpSection },
-  { id: "upsell", label: "Upsell", icon: TrendingUp, component: UpsellSection },
-  { id: "downsell", label: "Downsell", icon: TrendingDown, component: DownsellSection },
-  { id: "delivery", label: "Entrega padrão", icon: Truck, component: DeliverySection },
-  { id: "payment", label: "Pagamento", icon: CreditCard, component: PaymentSection },
-  { id: "settings", label: "Verificação +18", icon: Settings2, component: SettingsSection },
+type Section = { id: string; label: string; group: string; icon: ComponentType<{ size?: number }>; component: ComponentType<SectionProps> };
+
+// Same order and groups as the SharkBot editor's side navigation.
+const sections: Section[] = [
+  { id: "bots", label: "Bots", group: "Estrutura", icon: BotIcon, component: BotsSection },
+  { id: "welcome", label: "Boas-vindas", group: "Estrutura", icon: Hand, component: WelcomeSection },
+  { id: "plans", label: "Planos", group: "Estrutura", icon: Tags, component: PlansSection },
+  { id: "upsell", label: "Upsell", group: "Conversão", icon: TrendingUp, component: UpsellSection },
+  { id: "downsell", label: "Downsell", group: "Conversão", icon: TrendingDown, component: DownsellSection },
+  { id: "bump", label: "Order bump", group: "Conversão", icon: ShoppingCart, component: BumpSection },
+  { id: "previews", label: "Prévias", group: "Conversão", icon: Eye, component: PreviewsSection },
+  { id: "payment", label: "Pagamento", group: "Operação", icon: CreditCard, component: PaymentSection },
+  { id: "settings", label: "Verificação +18", group: "Operação", icon: Settings2, component: SettingsSection },
 ];
+const groups = [...new Set(sections.map((item) => item.group))];
 
 const blank = (value?: string | null) => (value && value.trim() ? value : null);
-const money = (value: string | number) => Number(String(value).replace(",", ".")).toFixed(2);
+export const money = (value: string | number) => Number(String(value).replace(",", ".")).toFixed(2);
 
-function cleanDelivery<T extends Delivery | null | undefined>(delivery: T): T {
+export function cleanDelivery<T extends Delivery | null | undefined>(delivery: T): T {
   if (!delivery) return delivery;
   return {
     ...delivery,
@@ -60,8 +64,18 @@ function cleanDelivery<T extends Delivery | null | undefined>(delivery: T): T {
   } as T;
 }
 
-function cleanBump(bump: OrderBump | null | undefined): OrderBump | null {
+export function cleanBump(bump: OrderBump | null | undefined): OrderBump | null {
   return bump ? { ...bump, price: money(bump.price), delivery: cleanDelivery(bump.delivery) } : null;
+}
+
+function cleanDownsell(step: DownsellStep): DownsellStep {
+  return {
+    ...step,
+    discount_value: money(step.discount_value),
+    custom_offer: step.custom_offer
+      ? { ...step.custom_offer, price: money(step.custom_offer.price), delivery: cleanDelivery(step.custom_offer.delivery) }
+      : null,
+  };
 }
 
 /** Strips UI-only empties so the server validator sees exactly what the user set. */
@@ -87,13 +101,10 @@ function toPayload(definition: FlowDefinition): FlowDefinition {
     default_delivery: cleanDelivery(definition.default_delivery),
     order_bump: cleanBump(definition.order_bump),
     upsells: definition.upsells.map((step) => ({ ...step, price: money(step.price), delivery: cleanDelivery(step.delivery) })),
-    downsells: definition.downsells.map((step) => ({
-      ...step,
-      discount_value: money(step.discount_value),
-      custom_offer: step.custom_offer
-        ? { ...step.custom_offer, price: money(step.custom_offer.price), delivery: cleanDelivery(step.custom_offer.delivery) }
-        : null,
-    })),
+    downsells: definition.downsells.map(cleanDownsell),
+    downsells_no_pix: (definition.downsells_no_pix ?? []).map(cleanDownsell),
+    downsell_audience: null,
+    previews: definition.previews ? { ...definition.previews, text: blank(definition.previews.text) } : undefined,
     support_username: blank(definition.support_username),
   };
 }
@@ -172,7 +183,7 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   const SectionIcon = section.icon;
 
   return (
-    <div className="space-y-4 pb-40 lg:pb-24" ref={top}>
+    <div className="space-y-4 pb-40 lg:pb-8" ref={top}>
       <div className="flex items-center gap-2">
         <button aria-label="Voltar para os fluxos" className="btn-secondary !min-h-11 !px-3" onClick={() => void back()} type="button">
           <ArrowLeft size={18} />
@@ -185,10 +196,13 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
-          <p className="text-[11px] uppercase tracking-[0.18em] text-muted">Editor de fluxo{dirty ? " · não salvo" : ""}</p>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-muted">Editor de fluxo</p>
         </div>
+        <span className={`hidden items-center gap-1.5 text-xs sm:flex ${dirty ? "text-warning" : "text-muted"}`}>
+          <span className={`size-2 rounded-full ${dirty ? "bg-warning" : "bg-success"}`} /> {dirty ? "Alterações não salvas" : "Tudo salvo"}
+        </span>
         <button className="btn-primary !min-h-11" disabled={save.isPending || !name.trim()} onClick={() => save.mutate()} type="button">
-          <Save size={16} /> {save.isPending ? "Salvando…" : "Salvar"}
+          <Save size={16} /> {save.isPending ? "Salvando…" : "Salvar alterações"}
         </button>
       </div>
 
@@ -198,7 +212,38 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
         </p>
       )}
 
-      <div className="relative">
+      <div className="grid gap-4 lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start">
+      <nav aria-label="Seções do fluxo" className="hidden rounded-2xl border border-line bg-surface p-3 lg:sticky lg:top-24 lg:block">
+        <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Navegação</p>
+        <p className="px-2 text-xs text-muted">
+          {current + 1} de {sections.length} seções
+        </p>
+        {groups.map((group) => (
+          <div className="mt-3" key={group}>
+            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">{group}</p>
+            {sections.map((item, index) => {
+              if (item.group !== group) return null;
+              const Icon = item.icon;
+              return (
+                <button
+                  aria-current={index === current ? "page" : undefined}
+                  className={`flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm ${
+                    index === current ? "nm-active border-l-2 border-brand font-medium text-fg" : "text-fg-2 hover:bg-well"
+                  }`}
+                  key={item.id}
+                  onClick={() => go(index)}
+                  type="button"
+                >
+                  <Icon size={16} />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+      <div className="min-w-0 space-y-4">
+      <div className="relative lg:hidden">
         <button
           aria-expanded={picker}
           className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-3 text-left"
@@ -242,11 +287,13 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
       </div>
 
       <Section draft={draft} flowId={flowId} set={set} />
+      </div>
+      </div>
 
       {createPortal(
       <nav
         aria-label="Navegar entre seções"
-        className="fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 z-40 grid w-[calc(100vw-1.5rem)] max-w-xl -translate-x-1/2 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 rounded-2xl border border-line bg-[var(--nm-bg)] p-1.5 shadow-2xl lg:bottom-6 lg:ml-[34px]"
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] left-1/2 z-40 grid lg:hidden w-[calc(100vw-1.5rem)] max-w-xl -translate-x-1/2 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 rounded-2xl border border-line bg-[var(--nm-bg)] p-1.5 shadow-2xl"
       >
         <button
           aria-label={current > 0 ? `Voltar para ${sections[current - 1].label}` : "Primeira seção"}
