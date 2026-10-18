@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time import BRAZIL_TIME_ZONE
-from app.models import Affiliation, TgLead, TgOrder, User, Workspace, WorkspaceMember
+from app.models import Affiliation, TgBot, TgLead, TgOrder, User, Workspace, WorkspaceMember
 
 
 def _f(value) -> float:
@@ -158,3 +158,50 @@ async def partners_ranking_of(db: AsyncSession, user_id: uuid.UUID, start: datet
             for index, uid in enumerate(ordered, start=1)
         ],
     }
+
+
+async def recent_activity(db: AsyncSession, workspace_id: uuid.UUID, limit: int = 30) -> list[dict]:
+    """Latest leads, Pix generated and approved sales of one operation, newest first."""
+    leads = (
+        await db.execute(
+            select(TgLead.first_name, TgLead.username, TgLead.created_at, TgBot.username)
+            .join(TgBot, TgBot.id == TgLead.bot_id)
+            .where(TgLead.workspace_id == workspace_id)
+            .order_by(TgLead.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    order_cols = (TgLead.first_name, TgLead.username, TgOrder.amount, TgBot.username)
+    pix = (
+        await db.execute(
+            select(*order_cols, TgOrder.created_at)
+            .join(TgLead, TgLead.id == TgOrder.lead_id).join(TgBot, TgBot.id == TgOrder.bot_id)
+            .where(TgOrder.workspace_id == workspace_id)
+            .order_by(TgOrder.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    paid = (
+        await db.execute(
+            select(*order_cols, TgOrder.paid_at)
+            .join(TgLead, TgLead.id == TgOrder.lead_id).join(TgBot, TgBot.id == TgOrder.bot_id)
+            .where(TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at.is_not(None))
+            .order_by(TgOrder.paid_at.desc())
+            .limit(limit)
+        )
+    ).all()
+
+    def who(first_name: str | None, username: str | None) -> str:
+        return (first_name or "").strip() or (f"@{username}" if username else "Lead")
+
+    events = [
+        {"kind": "lead", "lead": who(first, user), "bot": bot, "amount": None, "at": at}
+        for first, user, at, bot in leads
+    ]
+    events += [
+        {"kind": kind, "lead": who(first, user), "bot": bot, "amount": _f(amount), "at": at}
+        for kind, rows in (("pix", pix), ("sale", paid))
+        for first, user, amount, bot, at in rows
+    ]
+    events.sort(key=lambda event: event["at"], reverse=True)
+    return [{**event, "at": event["at"].isoformat()} for event in events[:limit]]

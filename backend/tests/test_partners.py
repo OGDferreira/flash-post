@@ -502,3 +502,18 @@ async def test_partners_ranking_shows_positions_but_never_revenue(client, db_ses
     await _as(client, "solo@example.com")
     alone = (await client.get("/api/bots/partners-ranking")).json()["members"]
     assert [m["nickname"] for m in alone] == ["solo"]
+
+
+@pytest.mark.anyio
+async def test_activity_log_lists_leads_pix_and_sales(client, db_session, owner) -> None:
+    from tests.test_wallet import _paid
+
+    _, chief_ws = owner
+    await _paid(db_session, chief_ws)
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    response = await client.get("/api/bots/activity")
+    assert response.status_code == 200, response.text
+    kinds = sorted(item["kind"] for item in response.json()["items"])
+    assert kinds == ["lead", "pix", "sale"]
+    sale = next(item for item in response.json()["items"] if item["kind"] == "sale")
+    assert sale["amount"] == 19.9 and sale["bot"] == "b"

@@ -27,7 +27,7 @@ from app.core.database import get_session_factory
 from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access, shares_with
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
-from app.bots.stats import conversion_stats, partners_ranking_of
+from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
 from app.core.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -418,6 +418,12 @@ async def bot_stats(
     data = await conversion_stats(db, access.workspace.id, start, end)
     data["period_label"] = period_label(start, end)
     return data
+
+
+@router.get("/activity")
+async def bot_activity(access: OwnerAccess, db: DbSession, limit: int = Query(30, ge=1, le=100)) -> dict:
+    """Live log of the operation: new leads, Pix generated and approved sales."""
+    return {"items": await recent_activity(db, access.workspace.id, limit)}
 
 
 @router.get("/partners-ranking")
