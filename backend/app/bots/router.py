@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
+from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
 from app.bots import engine, portable, smokepay
 from app.bots.flow_schema import FlowDefinition, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
@@ -27,7 +27,7 @@ from app.core.database import get_session_factory
 from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access, shares_with
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
-from app.bots.stats import conversion_stats
+from app.bots.stats import conversion_stats, partners_ranking_of
 from app.core.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -416,6 +416,19 @@ async def bot_stats(
 ) -> dict:
     start, end = period_bounds(period, start_date, end_date, utc_now())
     data = await conversion_stats(db, access.workspace.id, start, end)
+    data["period_label"] = period_label(start, end)
+    return data
+
+
+@router.get("/partners-ranking")
+async def partners_ranking(
+    access: OwnerAccess, user: AuthenticatedUser, db: DbSession, period: AnalyticsPeriod = "30d",
+    start_date: date | None = None, end_date: date | None = None,
+) -> dict:
+    """Revenue ranking of the chief and their partners. Only positions go out:
+    nobody sees how much another member billed (not even the chief)."""
+    start, end = period_bounds(period, start_date, end_date, utc_now())
+    data = await partners_ranking_of(db, user.id, start, end)
     data["period_label"] = period_label(start, end)
     return data
 

@@ -475,3 +475,30 @@ async def test_chief_shares_from_the_partner_row(client, db_session, owner) -> N
     # another chief's partner row is out of reach
     assert (await client.post(f"/api/partners/{uuid.uuid4()}/shares", headers=headers,
                               json={"kind": "loop", "id": str(loop.id), "shared": True})).status_code == 404
+
+@pytest.mark.anyio
+async def test_partners_ranking_shows_positions_but_never_revenue(client, db_session, owner) -> None:
+    from tests.test_wallet import _paid
+
+    chief, chief_ws = owner
+    partner, partner_ws, _ = await _partner(db_session, owner, accepted=True)
+    other, other_ws = await _make_owner(db_session, "outro")
+    db_session.add(Affiliation(chief_user_id=chief.id, affiliate_user_id=other.id, participation_percent=Decimal("10")))
+    await db_session.commit()
+    for _ in range(2):
+        await _paid(db_session, partner_ws)
+    await _paid(db_session, chief_ws)
+
+    await _as(client, "socio@example.com")
+    response = await client.get("/api/bots/partners-ranking?period=today")
+    assert response.status_code == 200, response.text
+    members = response.json()["members"]
+    assert [(m["nickname"], m["position"], m["is_me"]) for m in members][:2] == [("socio", 1, True), (chief.nickname, 2, False)]
+    assert members[2]["nickname"] == "outro" and members[2]["has_sales"] is False
+    assert "19.9" not in response.text and "39.8" not in response.text and "revenue" not in response.text
+
+    # someone outside the partnership only sees themselves
+    await _make_owner(db_session, "solo")
+    await _as(client, "solo@example.com")
+    alone = (await client.get("/api/bots/partners-ranking")).json()["members"]
+    assert [m["nickname"] for m in alone] == ["solo"]
