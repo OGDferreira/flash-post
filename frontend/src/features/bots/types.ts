@@ -124,6 +124,8 @@ export type Flow = {
   bots: number;
   updated_at: string | null;
   shared?: boolean;
+  /** null = every partner; otherwise the partner user ids it is shared with. */
+  shared_with?: string[] | null;
   shared_loop_id?: string | null;
   from_template?: boolean;
   /** Copy received from a chief: runs in the bot, but its content is never sent here. */

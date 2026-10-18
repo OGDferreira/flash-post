@@ -76,7 +76,11 @@ class InstagramLoopResponse(BaseModel):
     repeat_media: bool
     status: Literal["active", "paused"]
     shared: bool = False
+    shared_with: list[UUID] | None = None
     from_template: bool = False
+    # follows a loop the chief shares: media and schedule come from the chief, accounts are the partner's
+    linked: bool = False
+    linked_available: bool = False
     next_run_at: datetime | None
     last_run_at: datetime | None
     auto_folder_ids: list[UUID] = []

@@ -155,8 +155,9 @@ export function LoopsPage() {
   });
   const visibleLoops = useMemo(
     () =>
+      // A partner's linked copies live in the "Loops compartilhados" area, not in this list.
       (loops.data?.loops ?? []).filter(
-        () => tab !== "errors",
+        (loop) => tab !== "errors" && !loop.linked,
       ),
     [loops.data?.loops, tab],
   );
@@ -254,7 +255,9 @@ export function LoopsPage() {
           </button>
         )}
       </header>
-      {loops.data.can_configure && <SharedLoopsSection />}
+      {loops.data.can_configure && (
+        <SharedLoopsSection accounts={loops.data.available_accounts} loops={loops.data.loops} />
+      )}
 
       {!loops.data.publishing_enabled ? (
         <div className="rounded-lg border border-warning/30 bg-warning-soft p-4 text-sm text-warning">
@@ -855,7 +858,9 @@ export function LoopsPage() {
           message={
             loops.data.loops.length === 0
               ? "Nenhum loop configurado neste workspace."
-              : "Não há loops nesta categoria."
+              : loops.data.loops.every((loop) => loop.linked)
+                ? "Você ainda não criou loops próprios."
+                : "Não há loops nesta categoria."
           }
         />
       ) : (

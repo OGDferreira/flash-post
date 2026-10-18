@@ -1130,7 +1130,7 @@ async def notify_owners(db: AsyncSession, bot: TgBot, title: str, body: str, tag
             return
         keys = await get_vapid_keys(db)
         async with http.client(15.0) as session:
-            await push_to(db, subscriptions, {"title": title, "body": body, "url": "/bots", "tag": tag}, keys, session, tag[:32])
+            await push_to(db, subscriptions, {"title": title, "body": body, "url": "/bots", "tag": tag, "brand": "flashbot"}, keys, session, tag[:32])
         await db.commit()
     except Exception:
         logger.exception("Bot push notification failed")

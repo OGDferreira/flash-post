@@ -18,6 +18,7 @@ import {
 import { ApiError, apiRequest } from "@/services/api";
 import { brl, type Operations } from "@/features/partners/api";
 import { NoticesCard, SalesTable, TotalsGrid } from "@/features/partners/PartnerPanel";
+import { PartnerSharesCell } from "@/features/partners/PartnerShares";
 import { confirmAction } from "@/lib/confirm";
 
 type Row = {
@@ -291,7 +292,7 @@ export function AffiliatesPage() {
             <Handshake className="text-accent" size={26} /> Sócios
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Acompanhe contas, robôs, funis, vendas e a comissão recebida de cada sócio. Clique no nome para ver a operação dele.
+            Acompanhe contas, robôs, funis, vendas e a comissão recebida de cada sócio. Clique no nome para ver a operação dele e em “Compartilhados” para ver ou adicionar funis e loops.
           </p>
         </div>
         <PeriodFilter onChange={setPeriod} value={period} />
@@ -328,7 +329,7 @@ export function AffiliatesPage() {
             <EmptyState message="Você ainda não tem sócios. Compartilhe seu código ou link de cadastro." />
           ) : (
             <div className="glass-panel overflow-x-auto">
-              <table className="w-full min-w-[1000px] text-left text-xs">
+              <table className="w-full min-w-[1120px] text-left text-xs">
                 <thead className="text-muted">
                   <tr className="border-b border-line-soft">
                     <th className="px-4 py-3 font-medium">Sócio</th>
@@ -339,6 +340,7 @@ export function AffiliatesPage() {
                     <th className="px-2 py-3 text-right font-medium">Receita</th>
                     <th className="px-2 py-3 text-right font-medium">FlashBot</th>
                     <th className="px-2 py-3 text-right font-medium">Comissão recebida</th>
+                    <th className="px-2 py-3 font-medium">Compartilhados</th>
                     <th className="px-2 py-3 text-right font-medium">Comissão (%)</th>
                     <th className="px-4 py-3" />
                   </tr>
@@ -359,6 +361,9 @@ export function AffiliatesPage() {
                       <td className="px-2 py-3 text-right font-semibold text-success">{money(row.revenue)}</td>
                       <td className="px-2 py-3 text-right text-fg">{money(row.bot_revenue)}<span className="block text-[10px] text-muted">{row.bot_sales} venda(s)</span></td>
                       <td className="px-2 py-3 text-right font-semibold text-fg">{money(row.commission_received)}</td>
+                      <td className="px-2 py-3">
+                        <PartnerSharesCell affiliationId={row.id} name={row.full_name} userId={row.user_id} />
+                      </td>
                       <td className="px-2 py-3">
                         <PercentEditor key={`${row.id}-${row.participation_percent}`} period={period} row={row} />
                         <p className={`mt-1 text-right text-[10px] ${row.pending_acceptance ? "text-warning" : "text-muted"}`}>

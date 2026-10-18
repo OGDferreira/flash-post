@@ -40,7 +40,11 @@ export type InstagramLoop = {
   repeat_media: boolean;
   status: "active" | "paused";
   shared?: boolean;
+  shared_with?: string[] | null;
   from_template?: boolean;
+  /** Follows a loop the chief shares: media and schedule are the chief's, accounts are the partner's. */
+  linked?: boolean;
+  linked_available?: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
   auto_folder_ids?: string[];
