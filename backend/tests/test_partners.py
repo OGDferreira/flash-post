@@ -68,6 +68,22 @@ async def _chief_shares_funnel(client, db, chief_ws) -> str:
 
 
 @pytest.fixture
+def foreign_keys():
+    """Enforce foreign keys like Postgres does (SQLite skips them by default)."""
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    def on(dbapi_connection, _record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    event.listen(Engine, "connect", on)
+    yield
+    event.remove(Engine, "connect", on)
+
+
+@pytest.fixture
 def storage(monkeypatch):
     copies: list[tuple[str, str]] = []
 
@@ -171,7 +187,7 @@ async def test_billing_routes(db_session, owner, super_admin) -> None:
 
 
 @pytest.mark.anyio
-async def test_shared_funnel_runs_but_its_content_never_reaches_the_partner(client, db_session, owner, apis, storage) -> None:
+async def test_shared_funnel_runs_but_its_content_never_reaches_the_partner(foreign_keys, client, db_session, owner, apis, storage) -> None:
     chief, chief_ws = owner
     partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
     stranger, _ = await _make_owner(db_session, "estranho")
@@ -377,9 +393,11 @@ async def test_share_with_one_partner_or_everyone(client, db_session, owner, api
 
 
 @pytest.mark.anyio
-async def test_linked_loop_follows_the_chief_and_posts_only_with_partner_accounts(client, db_session, owner, storage) -> None:
+async def test_linked_loop_follows_the_chief_and_posts_only_with_partner_accounts(foreign_keys, client, db_session, owner, storage) -> None:
     chief, chief_ws = owner
     partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
+    from sqlalchemy import text
+    assert (await db_session.execute(text("PRAGMA foreign_keys"))).scalar() == 1
     loop = await _chief_loop(db_session, chief_ws, videos=("1.mp4", "2.mp4"))
     headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
     assert (await client.post(f"/api/partners/loops/{loop.id}/share", headers=headers,

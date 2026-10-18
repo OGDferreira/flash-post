@@ -295,6 +295,14 @@ async def _copy_objects(pairs: list[tuple[str, str]]) -> None:
     await asyncio.gather(*(one(src, dst) for src, dst in pairs))
 
 
+async def _flush_media_then_links(db: AsyncSession, links: list[InstagramLoopMedia]) -> None:
+    """Insert the copied media before the playlist rows that point at them: the models have
+    no relationship, so one flush may insert the links first and break the foreign key."""
+    await db.flush()
+    db.add_all(links)
+    await db.flush()
+
+
 def _copied_path(workspace_id: uuid.UUID, media_id: uuid.UUID, source_path: str) -> str:
     return f"{workspace_id}/{media_id}/{source_path.rsplit('/', 1)[-1]}"
 
@@ -323,7 +331,7 @@ async def clone_loop(db: AsyncSession, source: InstagramLoop, workspace_id: uuid
             .where(InstagramLoopMedia.loop_id == source.id, InstagramMedia.workspace_id == source.workspace_id)
         )
     )
-    pairs = []
+    pairs, links = [], []
     for media in medias:
         new_id = uuid.uuid4()
         path = _copied_path(workspace_id, new_id, media.storage_path)
@@ -335,8 +343,8 @@ async def clone_loop(db: AsyncSession, source: InstagramLoop, workspace_id: uuid
                 caption=media.caption, locked=media.locked or source.workspace_id != workspace_id,
             )
         )
-        db.add(InstagramLoopMedia(loop_id=clone.id, media_id=new_id))
-    await db.flush()
+        links.append(InstagramLoopMedia(loop_id=clone.id, media_id=new_id))
+    await _flush_media_then_links(db, links)
     await _copy_objects(pairs)
     return clone
 
@@ -394,7 +402,7 @@ async def sync_linked_loop(db: AsyncSession, source: InstagramLoop, copy: Instag
         await db.execute(
             delete(InstagramLoopMedia).where(InstagramLoopMedia.loop_id == copy.id, InstagramLoopMedia.media_id.in_(gone))
         )
-    pairs = []
+    pairs, links = [], []
     for media in wanted.values():
         if media.id in present:
             continue
@@ -409,8 +417,8 @@ async def sync_linked_loop(db: AsyncSession, source: InstagramLoop, copy: Instag
                 created_at=media.created_at,  # same playlist order as the chief's loop
             )
         )
-        db.add(InstagramLoopMedia(loop_id=copy.id, media_id=new_id))
-    await db.flush()
+        links.append(InstagramLoopMedia(loop_id=copy.id, media_id=new_id))
+    await _flush_media_then_links(db, links)
     await _copy_objects(pairs)
 
 
