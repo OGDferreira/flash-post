@@ -19,7 +19,7 @@ export function GoalsCard() {
         <Link className="text-xs font-semibold text-accent" to="/carteira">Ver carteira</Link>
       </div>
       <p className="text-xs text-muted">
-        Este mês: <span className="font-semibold text-fg">{brl(data.month_revenue)}</span> · próxima meta {compact(data.target)} ({data.percent.toLocaleString("pt-BR")}%) · prêmio: {data.prize}
+        Este mês: <span className="font-semibold text-fg">{brl(data.month_revenue)}</span> · próxima meta {compact(data.target)} ({data.percent.toLocaleString("pt-BR")}%)
       </p>
       <div className="h-2 overflow-hidden rounded-full bg-well">
         <div className="h-full rounded-full bg-success transition-[width] duration-700" style={{ width: `${Math.min(100, data.percent)}%` }} />

@@ -1,7 +1,7 @@
 import { ImagePlus, RotateCcw, Trophy } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
-import { compact, useAwards } from "@/features/wallet/api";
+import { awardTitle, useAwards } from "@/features/wallet/api";
 import { ApiError } from "@/services/api";
 
 /** Super Admin: the photo of each award card shown to every user. */
@@ -22,11 +22,11 @@ export function AdminAwardsPage() {
         {list.data!.items.map((item) => (
           <li className="glass-panel overflow-hidden" key={item.amount}>
             <div className="relative flex aspect-[4/5] items-center justify-center bg-well">
-              {item.image_url ? <img alt={item.prize} className="h-full w-full object-cover" src={item.image_url} /> : <Trophy className="text-warning opacity-40" size={48} />}
+              {item.image_url ? <img alt={awardTitle(item.amount)} className="h-full w-full object-cover" src={item.image_url} /> : <Trophy className="text-warning opacity-40" size={48} />}
               <span className={`absolute left-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white ${item.custom ? "bg-accent" : "bg-black/60"}`}>{item.custom ? "Personalizada" : "Padrão"}</span>
             </div>
             <div className="space-y-2 p-3">
-              <p className="text-sm font-semibold text-fg">{compact(item.amount)} · {item.prize}</p>
+              <p className="text-sm font-semibold text-fg">{awardTitle(item.amount)} faturados</p>
               <div className="flex gap-2">
                 <label className="btn-secondary flex-1 cursor-pointer justify-center text-xs">
                   <ImagePlus size={14} /> {upload.isPending && upload.variables?.amount === item.amount ? "Enviando…" : item.image_url ? "Trocar" : "Enviar"}

@@ -49,6 +49,15 @@ export const brl = (value: number) => value.toLocaleString("pt-BR", { style: "cu
 export const compact = (value: number) =>
   value >= 1_000_000 ? `${value / 1_000_000}M` : value >= 1000 ? `${value / 1000}k` : String(value);
 
+/** Award title: the revenue needed, e.g. "R$ 10 mil", "R$ 1 milhão", "R$ 5 milhões". */
+export const awardTitle = (amount: number) =>
+  amount >= 1_000_000
+    ? `R$ ${(amount / 1_000_000).toLocaleString("pt-BR")} ${amount === 1_000_000 ? "milhão" : "milhões"}`
+    : `R$ ${(amount / 1000).toLocaleString("pt-BR")} mil`;
+
+/** An award only unlocks once its revenue goal is reached; the next goal stays locked too. */
+export const awardUnlocked = (goal: Pick<GoalItem, "reached">) => goal.reached;
+
 export function useWalletSummary(enabled: boolean) {
   return useQuery({
     queryKey: ["wallet", "summary"],
