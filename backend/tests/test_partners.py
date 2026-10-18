@@ -448,3 +448,30 @@ async def test_linked_loop_follows_the_chief_and_posts_only_with_partner_account
     headers = await _as(client, "socio@example.com")
     assert (await client.patch(f"/api/loops/{copy_id}/status", headers=headers, json={"enabled": True})).status_code == 409
     assert (await client.delete(f"/api/loops/{copy_id}", headers=headers)).status_code == 204
+
+
+@pytest.mark.anyio
+async def test_chief_shares_from_the_partner_row(client, db_session, owner) -> None:
+    chief, chief_ws = owner
+    ana, _ana_ws, ana_link = await _partner(db_session, owner, accepted=True)
+    bia, _ = await _make_owner(db_session, "bia")
+    bia_link = Affiliation(chief_user_id=chief.id, affiliate_user_id=bia.id, participation_percent=Decimal("30"))
+    db_session.add(bia_link)
+    loop = await _chief_loop(db_session, chief_ws)
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    flow = (await client.post("/api/bots/flows", headers=headers, json={"name": "Funil", "definition": _flow()})).json()
+
+    on = await client.post(f"/api/partners/{ana_link.id}/shares", headers=headers, json={"kind": "flow", "id": flow["id"], "shared": True})
+    assert on.status_code == 200 and on.json()["shared_with"] == [str(ana.id)], on.text
+    await client.post(f"/api/partners/{bia_link.id}/shares", headers=headers, json={"kind": "flow", "id": flow["id"], "shared": True})
+    off = await client.post(f"/api/partners/{ana_link.id}/shares", headers=headers, json={"kind": "flow", "id": flow["id"], "shared": False})
+    assert off.json()["shared_with"] == [str(bia.id)]
+    # a loop shared with everyone: removing one partner keeps the others
+    await client.post(f"/api/partners/loops/{loop.id}/share", headers=headers, json={"shared": True})
+    off = await client.post(f"/api/partners/{bia_link.id}/shares", headers=headers, json={"kind": "loop", "id": str(loop.id), "shared": False})
+    assert off.json() == {"id": str(loop.id), "shared": True, "shared_with": [str(ana.id)]}
+    off = await client.post(f"/api/partners/{ana_link.id}/shares", headers=headers, json={"kind": "loop", "id": str(loop.id), "shared": False})
+    assert off.json()["shared"] is False
+    # another chief's partner row is out of reach
+    assert (await client.post(f"/api/partners/{uuid.uuid4()}/shares", headers=headers,
+                              json={"kind": "loop", "id": str(loop.id), "shared": True})).status_code == 404

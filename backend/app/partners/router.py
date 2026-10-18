@@ -9,6 +9,7 @@ Permissions are enforced here, never only in the UI:
 
 import uuid
 from datetime import date
+from typing import Literal
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -352,6 +353,52 @@ async def share_flow(flow_id: uuid.UUID, payload: ShareFlowRequest, access: Owne
         "id": str(flow.id), "shared": flow.shared, "shared_with": _share_out(flow),
         "loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
     }
+
+
+class PartnerShareRequest(BaseModel):
+    kind: Literal["flow", "loop"]
+    id: uuid.UUID
+    shared: bool
+
+
+def _with_partner(item: InstagramLoop | TgFlow, partner_id: str, everyone: set[str], on: bool) -> None:
+    """Turn one partner on or off for a funnel/loop, keeping everyone else as they were."""
+    if on:
+        if not item.shared:
+            item.shared, item.shared_with = True, [partner_id]
+        elif item.shared_with is not None:
+            item.shared_with = service.merge_targets(item.shared_with, [partner_id])
+        return
+    if not item.shared:
+        return
+    current = everyone if item.shared_with is None else {str(t) for t in item.shared_with}
+    remaining = sorted(current - {partner_id})
+    item.shared, item.shared_with = (True, remaining) if remaining else (False, None)
+
+
+@router.post("/{affiliation_id}/shares", dependencies=[Depends(require_csrf)])
+async def share_with_partner(
+    affiliation_id: uuid.UUID, payload: PartnerShareRequest, access: OwnerAccess, user: AuthenticatedUser, db: DbSession,
+) -> dict:
+    """From the partner's row: share (or stop sharing) one funnel or loop with just this partner."""
+    await _owned_workspace(access, user)
+    link = await db.scalar(
+        select(Affiliation).where(
+            Affiliation.id == affiliation_id, Affiliation.chief_user_id == user.id, Affiliation.status == "ACTIVE"
+        )
+    )
+    if link is None:
+        raise HTTPException(status_code=404, detail="Sócio não encontrado.")
+    model = TgFlow if payload.kind == "flow" else InstagramLoop
+    where = [model.id == payload.id, model.workspace_id == access.workspace.id]
+    if model is InstagramLoop:
+        where.append(InstagramLoop.linked.is_(False))
+    item = await db.scalar(select(model).where(*where))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Funil não encontrado." if payload.kind == "flow" else "Loop não encontrado.")
+    _with_partner(item, str(link.affiliate_user_id), await service.partner_ids(db, user.id), payload.shared)
+    await db.commit()
+    return {"id": str(item.id), "shared": item.shared, "shared_with": _share_out(item)}
 
 
 async def operations_of(db, workspace_id: uuid.UUID, start, end) -> dict:
