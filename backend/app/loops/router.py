@@ -30,6 +30,7 @@ from app.loops.scheduler import (
     loop_media_pool,
     next_media_index,
     record_publication_confirmed,
+    reschedule_loop_accounts,
 )
 from app.core.security import WorkspaceRole
 from app.partners.service import linked_loop_available
@@ -997,6 +998,10 @@ async def update_loop(
     )
     loop.name = payload.name
     now = utc_now()
+    interval_changed = (loop.interval_min_minutes, loop.interval_max_minutes) != (
+        payload.interval_min_minutes,
+        payload.interval_max_minutes,
+    )
     loop.interval_min_minutes = payload.interval_min_minutes
     loop.interval_max_minutes = payload.interval_max_minutes
     loop.daily_limit_per_account = payload.daily_limit_per_account
@@ -1029,6 +1034,9 @@ async def update_loop(
     if media is None:
         pending = pending.where(InstagramPublicationJob.account_id.not_in(selected_account_ids))
     await db.execute(pending)
+    if interval_changed:
+        await reschedule_loop_accounts(db, loop, now)
+        await db.flush()
     if loop.status == "active":
         await enqueue_loop_publications_now(db, loop, accounts, now=now)
     await db.commit()

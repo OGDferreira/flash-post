@@ -1383,3 +1383,83 @@ async def test_loop_edit_still_refuses_accounts_of_another_workspace(
         },
     )
     assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_changing_the_interval_reschedules_every_account_right_away(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    from app.models import InstagramLoopAccountState
+
+    _user, workspace = owner
+    now = datetime.now(timezone.utc)
+    accounts = [_active_account(workspace.id, f"resched_{index}") for index in range(3)]
+    video = InstagramMedia(
+        workspace_id=workspace.id,
+        storage_path=f"{workspace.id}/resched/1.mp4",
+        filename="1.mp4",
+        mime_type="video/mp4",
+        media_type="video",
+        size_bytes=100,
+    )
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Interval loop",
+        interval_min_minutes=50,
+        interval_max_minutes=60,
+        daily_limit_per_account=100,
+        post_type="reels",
+        repeat_media=True,
+        status="paused",
+    )
+    db_session.add_all([*accounts, video, loop])
+    await db_session.flush()
+    db_session.add(InstagramLoopMedia(loop_id=loop.id, media_id=video.id))
+    published = now - timedelta(minutes=10)
+    for account in accounts:
+        db_session.add(InstagramLoopAccount(loop_id=loop.id, account_id=account.id))
+        db_session.add(
+            InstagramLoopAccountState(
+                loop_id=loop.id,
+                account_id=account.id,
+                next_position=0,
+                cycles_completed=0,
+                last_published_at=published,
+                next_run_at=published + timedelta(minutes=55),
+            )
+        )
+    # One account already hit today's limit: it keeps waiting for midnight.
+    blocked = accounts[2]
+    await db_session.commit()
+    state = await db_session.get(InstagramLoopAccountState, (loop.id, blocked.id))
+    state.blocked_reason = "daily_limit"
+    midnight = now + timedelta(hours=5)
+    state.next_run_at = midnight
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+
+    response = await client.put(
+        f"/api/loops/{loop.id}",
+        headers={"X-CSRF-Token": token},
+        json={
+            "name": "Interval loop",
+            "interval_min_minutes": 20,
+            "interval_max_minutes": 25,
+            "daily_limit_per_account": 100,
+            "post_type": "reels",
+            "account_ids": [str(account.id) for account in accounts],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    loop_id, ids = loop.id, [account.id for account in accounts]
+    db_session.expire_all()
+    for account_id in ids[:2]:
+        state = await db_session.get(InstagramLoopAccountState, (loop_id, account_id))
+        wait = state.next_run_at.replace(tzinfo=timezone.utc) - published
+        assert timedelta(minutes=20) <= wait <= timedelta(minutes=25)
+    state = await db_session.get(InstagramLoopAccountState, (loop_id, ids[2]))
+    assert abs(state.next_run_at.replace(tzinfo=timezone.utc) - midnight) < timedelta(seconds=1)
