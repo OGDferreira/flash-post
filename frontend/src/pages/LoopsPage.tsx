@@ -103,6 +103,7 @@ export function LoopsPage() {
       setFormOpen(false);
       setEditingId(null);
       void queryClient.invalidateQueries({ queryKey: ["loops"] });
+      void queryClient.invalidateQueries({ queryKey: ["instagram-media"] });
     },
   });
   const changeStatus = useMutation({
@@ -217,6 +218,7 @@ export function LoopsPage() {
       repeat_media: loop.repeat_media,
       media_ids: loop.media_ids,
       auto_folder_ids: loop.auto_folder_ids ?? [],
+      media_captions: {},
       account_ids: loop.accounts
         .filter((account) =>
           loops.data?.available_accounts.some((available) => available.id === account.id),
@@ -551,12 +553,12 @@ export function LoopsPage() {
                                 type="checkbox"
                                 checked={checked}
                                 onChange={() =>
-                                  setForm({
-                                    ...form,
-                                    account_ids: checked
-                                      ? form.account_ids.filter((id) => id !== account.id)
-                                      : [...form.account_ids, account.id],
-                                  })
+                                  setForm((current) => ({
+                                    ...current,
+                                    account_ids: current.account_ids.includes(account.id)
+                                      ? current.account_ids.filter((id) => id !== account.id)
+                                      : [...current.account_ids, account.id],
+                                  }))
                                 }
                               />
                               @{account.username}
@@ -617,7 +619,7 @@ export function LoopsPage() {
                 Nenhuma mídia no loop. Envie arquivos do seu computador na seção de configurações.
               </p>
             ) : (
-              <ul className="max-h-48 space-y-1 overflow-y-auto">
+              <ul className="max-h-72 space-y-1 overflow-y-auto">
                 {form.media_ids.map((mediaId) => {
                   const item = media.data?.media.find((entry) => entry.id === mediaId);
                   return (
@@ -638,7 +640,25 @@ export function LoopsPage() {
                           }}
                         />
                       )}
-                      <span className="flex-1 truncate">{item?.filename ?? "Arquivo indisponível"}</span>
+                      <span className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className="truncate">{item?.filename ?? "Arquivo indisponível"}</span>
+                        {loops.data.can_configure && item && (
+                          <input
+                            aria-label={`Legenda de ${item.filename}`}
+                            className="min-h-9 w-full rounded border border-line bg-surface-inset px-2 text-xs text-fg outline-none focus:border-brand"
+                            maxLength={2200}
+                            onChange={(event) => {
+                              const caption = event.target.value;
+                              setForm((current) => ({
+                                ...current,
+                                media_captions: { ...current.media_captions, [mediaId]: caption },
+                              }));
+                            }}
+                            placeholder="Legenda do post (opcional)"
+                            value={form.media_captions[mediaId] ?? item.caption ?? ""}
+                          />
+                        )}
+                      </span>
                       {loops.data.can_configure && (
                         <button
                           className="shrink-0 text-danger hover:text-white"
@@ -671,7 +691,7 @@ export function LoopsPage() {
               maxLength={120}
               required
               value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
+              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
               placeholder="Ex.: Reels diários"
             />
           </label>
@@ -687,7 +707,7 @@ export function LoopsPage() {
                 required
                 value={form.interval_min_minutes}
                 onChange={(event) =>
-                  setForm({ ...form, interval_min_minutes: Number(event.target.value) })
+                  setForm((current) => ({ ...current, interval_min_minutes: Number(event.target.value) }))
                 }
               />
             </label>
@@ -701,7 +721,7 @@ export function LoopsPage() {
                 required
                 value={form.interval_max_minutes}
                 onChange={(event) =>
-                  setForm({ ...form, interval_max_minutes: Number(event.target.value) })
+                  setForm((current) => ({ ...current, interval_max_minutes: Number(event.target.value) }))
                 }
               />
             </label>
@@ -721,7 +741,7 @@ export function LoopsPage() {
               required
               value={form.daily_limit_per_account}
               onChange={(event) =>
-                setForm({ ...form, daily_limit_per_account: Number(event.target.value) })
+                setForm((current) => ({ ...current, daily_limit_per_account: Number(event.target.value) }))
               }
             />
           </label>
@@ -773,7 +793,7 @@ export function LoopsPage() {
             </legend>
             <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
               <label className="grid gap-2 text-sm text-fg-2">
-                Legenda para esta mídia (opcional)
+                Legenda dos próximos arquivos enviados (opcional)
                 <input
                   className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
                   maxLength={2200}
@@ -827,6 +847,11 @@ export function LoopsPage() {
           </fieldset>
 
           </details>
+          {saveLoop.error && (
+            <p className="rounded-lg border border-danger/30 bg-danger-soft p-3 text-sm text-danger" role="alert">
+              {apiErrorMessage(saveLoop.error, "Não foi possível salvar o loop.")}
+            </p>
+          )}
           <button
             className="min-h-11 w-full rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
             type="submit"
