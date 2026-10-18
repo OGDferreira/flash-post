@@ -1,4 +1,4 @@
-const CACHE_NAME = "flashpost-shell-v29";
+const CACHE_NAME = "flashpost-shell-v30";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -8,6 +8,7 @@ const SHELL_ASSETS = [
   "/flashpost-icon-512.png",
   "/flashbot-logo.png",
   "/favicon.ico",
+  "/sounds/venda.mp3",
 ];
 
 self.addEventListener("install", (event) => {

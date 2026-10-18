@@ -1,5 +1,21 @@
-/** "Ka-ching" synthesized with Web Audio (no audio file to download). */
+/** Sale sound: the chosen clip (public/sounds/venda.mp3), played through Web Audio so it
+ * works once the page was touched; falls back to a synthesized "ka-ching". */
 let context: AudioContext | null = null;
+let clip: AudioBuffer | null = null;
+let loading: Promise<void> | null = null;
+
+function loadClip(ctx: AudioContext) {
+  loading ??= fetch("/sounds/venda.mp3")
+    .then((response) => (response.ok ? response.arrayBuffer() : Promise.reject(new Error("sound"))))
+    .then((data) => ctx.decodeAudioData(data))
+    .then((buffer) => {
+      clip = buffer;
+    })
+    .catch(() => {
+      loading = null; // try again next time; the synthesized sound plays meanwhile
+    });
+  return loading;
+}
 
 function audio(): AudioContext | null {
   const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -11,7 +27,9 @@ function audio(): AudioContext | null {
 /** Browsers only allow sound after the user touched the page once; unlock on the first tap. */
 export function unlockCashSound() {
   const resume = () => {
-    void audio()?.resume();
+    const ctx = audio();
+    void ctx?.resume();
+    if (ctx) void loadClip(ctx);
     window.removeEventListener("pointerdown", resume);
     window.removeEventListener("keydown", resume);
   };
@@ -53,6 +71,16 @@ function rattle(ctx: AudioContext, start: number) {
 export function playCashSound() {
   const ctx = audio();
   if (!ctx || ctx.state === "suspended") return;
+  if (clip) {
+    const source = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    source.buffer = clip;
+    gain.gain.value = 0.9;
+    source.connect(gain).connect(ctx.destination);
+    source.start();
+    return;
+  }
+  void loadClip(ctx);
   const now = ctx.currentTime + 0.01;
   rattle(ctx, now);
   bell(ctx, now + 0.06, 1318.5, 0.5, 0.22); // E6
