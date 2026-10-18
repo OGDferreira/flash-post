@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { Avatar } from "@/components/Avatar";
 import { isPeriodReady, periodParams, type MetricsPeriod } from "@/features/analytics/period";
-import { brl, compact, useGoals } from "@/features/wallet/api";
+import { brl, useGoals } from "@/features/wallet/api";
 import { apiRequest } from "@/services/api";
 
 type RankingMember = {
@@ -108,7 +108,8 @@ export function ActivityLog() {
 
 // ------------------------------------------------------------------ awards
 
-/** The user's next FlashBot award, with the banners; arrows browse the other goals. */
+/** The user's next FlashBot award, with the banners; arrows browse the other goals.
+ * Every award stays locked (grey) until its revenue goal is reached. */
 export function NextAward() {
   const goals = useGoals();
   const data = goals.data && goals.data.available ? goals.data : null;
@@ -140,28 +141,35 @@ export function NextAward() {
               <img
                 alt=""
                 aria-hidden="true"
-                className={`absolute top-1/2 hidden h-[78%] -translate-y-1/2 rounded-xl object-cover opacity-25 sm:block ${side < shown ? "left-0 -rotate-3" : "right-0 rotate-3"}`}
+                className={`absolute top-1/2 hidden h-[78%] -translate-y-1/2 rounded-xl object-cover opacity-25 sm:block ${neighbour.reached ? "" : "grayscale"} ${side < shown ? "left-0 -rotate-3" : "right-0 rotate-3"}`}
                 key={side}
                 src={neighbour.image_url}
               />
             );
           })}
-          <article className={`relative z-10 w-[220px] overflow-hidden rounded-2xl border ${goal.current ? "border-accent shadow-[0_0_28px_-8px_var(--color-accent)]" : goal.reached ? "border-success/60" : "border-line-soft"}`}>
-            <div className="relative aspect-[4/5] bg-well">
+          <article className={`group relative z-10 w-[220px] overflow-hidden rounded-2xl border ${goal.reached ? "border-success/60" : goal.current ? "border-accent/60" : "border-line-soft"}`}>
+            <div className="relative aspect-[4/5] overflow-hidden bg-well">
               {goal.image_url ? (
-                <img alt={`Premiação de ${compact(goal.amount)}: ${goal.prize}`} className={`h-full w-full object-cover ${!goal.reached && !goal.current ? "brightness-[.45] grayscale" : ""}`} src={goal.image_url} />
+                <img
+                  alt={`Premiação de ${brl(goal.amount)} faturados: ${goal.prize}`}
+                  className={`h-full w-full object-cover transition duration-500 ${goal.reached ? "" : "brightness-[.4] grayscale group-hover:scale-105 group-hover:brightness-[.6]"}`}
+                  src={goal.image_url}
+                />
               ) : (
                 <div className="grid h-full place-items-center"><Trophy className="text-warning" size={56} /></div>
               )}
-              {!goal.reached && !goal.current && (
-                <span className="absolute inset-0 grid place-items-center"><span className="rounded-full bg-black/60 p-3 text-white"><Lock size={20} /></span></span>
+              {!goal.reached && (
+                <span className="absolute inset-0 grid place-items-center">
+                  <span className="rounded-full bg-black/60 p-3 text-white transition duration-500 group-hover:scale-110"><Lock size={20} /></span>
+                </span>
               )}
               <span className={`absolute left-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white ${goal.reached ? "bg-success" : goal.current ? "bg-accent" : "bg-black/60"}`}>
                 {goal.reached ? "Conquistada" : goal.current ? "★ Próxima" : "Bloqueada"}
               </span>
             </div>
             <div className="space-y-1.5 bg-surface-inset p-3">
-              <p className="truncate text-sm font-bold text-fg">{goal.prize}</p>
+              <p className="truncate text-sm font-bold text-fg">{brl(goal.amount)} faturados</p>
+              <p className="truncate text-[11px] text-muted">{goal.prize}</p>
               <p className="flex justify-between text-[10px] text-muted">
                 <span className="font-semibold uppercase text-accent">Meta</span>
                 <span className="font-semibold text-fg">{brl(Math.min(data.month_revenue, goal.amount))} / {brl(goal.amount)}</span>
