@@ -46,6 +46,6 @@ async def test_conversion_stats_per_funnel(client, db_session, owner, apis) -> N
     await db_session.commit()
     await _pay(client, db_session, await db_session.scalar(select(TgOrder)))
     stats = (await client.get("/api/bots/stats?period=30d")).json()
-    assert stats["totals"] == {"leads": 1, "sales": 1, "buyers": 1, "revenue": 19.9, "conversion": 100.0, "ticket": 19.9}
+    assert stats["totals"] == {"leads": 1, "sales": 1, "buyers": 1, "revenue": 19.9, "conversion": 100.0, "ticket": 19.9, "pix_generated": 1}
     assert stats["flows"][flow["id"]]["conversion"] == 100.0 and stats["bots"][bot["id"]]["sales"] == 1
     assert stats["series"][-1]["sales"] == 1

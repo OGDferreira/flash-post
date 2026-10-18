@@ -18,7 +18,7 @@ export function AwardsCarousel({ goals, revenue }: { goals: GoalItem[]; revenue:
               className={`relative w-[220px] shrink-0 snap-start overflow-hidden rounded-2xl border bg-surface-inset ${goal.current ? "border-accent shadow-[0_0_24px_-8px_var(--color-accent)]" : goal.reached ? "border-success/50" : "border-line-soft"}`}
               key={goal.amount}
             >
-              <div className="relative aspect-square overflow-hidden bg-well">
+              <div className="relative aspect-[4/5] overflow-hidden bg-well">
                 {goal.image_url ? (
                   <img alt={goal.prize} className={`h-full w-full object-cover transition duration-500 ${locked ? "scale-105 blur-[2px] brightness-[.35] grayscale" : ""}`} loading="lazy" src={goal.image_url} />
                 ) : (
