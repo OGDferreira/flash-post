@@ -1250,3 +1250,136 @@ async def test_ambiguous_403_keeps_account_connected_when_token_still_works(
     )
     await db_session.refresh(account)
     assert account.status == "connected"
+
+
+@pytest.mark.anyio
+async def test_owner_edit_saves_settings_and_captions_even_if_an_account_errored_meanwhile(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    healthy = _active_account(workspace.id, "edit_healthy")
+    flaky = _active_account(workspace.id, "edit_flaky")
+    video = InstagramMedia(
+        workspace_id=workspace.id,
+        storage_path=f"{workspace.id}/edit/1.mp4",
+        filename="1.mp4",
+        mime_type="video/mp4",
+        media_type="video",
+        size_bytes=100,
+        caption="old caption",
+    )
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Editable loop",
+        interval_min_minutes=50,
+        interval_max_minutes=60,
+        daily_limit_per_account=100,
+        post_type="reels",
+        repeat_media=True,
+        status="paused",
+    )
+    db_session.add_all([healthy, flaky, video, loop])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            InstagramLoopAccount(loop_id=loop.id, account_id=healthy.id),
+            InstagramLoopAccount(loop_id=loop.id, account_id=flaky.id),
+            InstagramLoopMedia(loop_id=loop.id, media_id=video.id),
+        ]
+    )
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+
+    # The form was opened with both accounts; one errors before the owner saves.
+    flaky.status = "error"
+    await db_session.commit()
+
+    response = await client.put(
+        f"/api/loops/{loop.id}",
+        headers={"X-CSRF-Token": token},
+        json={
+            "name": "Editable loop",
+            "interval_min_minutes": 10,
+            "interval_max_minutes": 15,
+            "daily_limit_per_account": 30,
+            "post_type": "reels",
+            "account_ids": [str(healthy.id), str(flaky.id)],
+            "media_ids": [str(video.id)],
+            "media_captions": {str(video.id): "  new caption  "},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["interval_min_minutes"], body["interval_max_minutes"]) == (10, 15)
+    assert body["daily_limit_per_account"] == 30
+    await db_session.refresh(video)
+    assert video.caption == "new caption"
+    # The errored account stays in the loop and comes back once reconnected.
+    members = set(
+        (
+            await db_session.scalars(
+                select(InstagramLoopAccount.account_id).where(InstagramLoopAccount.loop_id == loop.id)
+            )
+        ).all()
+    )
+    assert members == {healthy.id, flaky.id}
+
+    # A form that never showed the errored account does not remove it either.
+    response = await client.put(
+        f"/api/loops/{loop.id}",
+        headers={"X-CSRF-Token": token},
+        json={
+            "name": "Editable loop",
+            "interval_min_minutes": 10,
+            "interval_max_minutes": 15,
+            "daily_limit_per_account": 30,
+            "post_type": "reels",
+            "account_ids": [str(healthy.id)],
+            "media_ids": [str(video.id)],
+            "media_captions": {str(video.id): ""},
+        },
+    )
+    assert response.status_code == 200, response.text
+    await db_session.refresh(video)
+    assert video.caption is None
+
+
+@pytest.mark.anyio
+async def test_loop_edit_still_refuses_accounts_of_another_workspace(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    _user, workspace = owner
+    account = _active_account(workspace.id, "own_account")
+    loop = InstagramLoop(
+        workspace_id=workspace.id,
+        name="Guarded loop",
+        interval_min_minutes=10,
+        interval_max_minutes=20,
+        daily_limit_per_account=10,
+        post_type="reels",
+        repeat_media=True,
+        status="paused",
+    )
+    db_session.add_all([account, loop])
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+
+    response = await client.put(
+        f"/api/loops/{loop.id}",
+        headers={"X-CSRF-Token": token},
+        json={
+            "name": "Guarded loop",
+            "interval_min_minutes": 10,
+            "interval_max_minutes": 20,
+            "post_type": "reels",
+            "account_ids": [str(account.id), str(uuid.uuid4())],
+        },
+    )
+    assert response.status_code == 422

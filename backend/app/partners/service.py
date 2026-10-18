@@ -397,6 +397,10 @@ async def sync_linked_loop(db: AsyncSession, source: InstagramLoop, copy: Instag
     )
     present = {media.template_media_id for media in have}
     gone = [media.id for media in have if media.template_media_id not in wanted]
+    for media in have:  # captions the chief edited later follow too
+        source_media = wanted.get(media.template_media_id)
+        if source_media is not None and media.caption != source_media.caption:
+            media.caption = source_media.caption
     if gone:
         await _drop_pending_jobs(db, copy.id, gone)
         await db.execute(

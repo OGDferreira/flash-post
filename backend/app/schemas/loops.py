@@ -18,6 +18,21 @@ class InstagramLoopCreateRequest(BaseModel):
     # Folders whose accounts join this loop automatically.
     auto_folder_ids: Annotated[list[UUID], Field(max_length=100)] = []
     media_ids: list[UUID] | None = None
+    # Edited post captions of media in this loop (update only); empty clears it.
+    media_captions: Annotated[dict[UUID, str | None], Field(max_length=1000)] | None = None
+
+    @field_validator("media_captions")
+    @classmethod
+    def clean_captions(cls, values: dict[UUID, str | None] | None) -> dict[UUID, str | None] | None:
+        if values is None:
+            return None
+        cleaned: dict[UUID, str | None] = {}
+        for media_id, caption in values.items():
+            text = (caption or "").strip()
+            if len(text) > 2200:
+                raise ValueError("A legenda pode ter no máximo 2200 caracteres.")
+            cleaned[media_id] = text or None
+        return cleaned
 
     @field_validator("name")
     @classmethod
