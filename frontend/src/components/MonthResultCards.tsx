@@ -108,7 +108,7 @@ function Card({
  * an indicator against the all-time daily average. Rendered as dashboard metric
  * cards, so it drops into any `dashboard-metrics` grid.
  */
-export function MonthResultCards() {
+export function MonthResultCards({ hideCollaboratorDue = false }: { hideCollaboratorDue?: boolean } = {}) {
   const month = useFinanceMonth();
   if (month.isError) return null; // owner-only figures: hide quietly otherwise
   const data = month.data;
@@ -137,20 +137,22 @@ export function MonthResultCards() {
         value={money(data?.today.gross_revenue)}
         valueColor="text-fg"
       />
-      <Card
-        color="text-warning"
-        detail={
-          data
-            ? `Custo da equipe no mês ${money(data.collaborator_earnings)} = já pago ${money(data.collaborator_paid)} + a pagar ${money(data.collaborator_due)}`
-            : "Ganhos do mês menos o que já foi pago"
-        }
-        icon={<HandCoins size={16} />}
-        loading={loading}
-        title="A pagar aos colaboradores"
-        trend={data && <MonthTrend data={data} field="collaborator_earnings" inverse />}
-        value={money(data?.collaborator_due)}
-        valueColor="text-warning"
-      />
+      {!hideCollaboratorDue && (
+        <Card
+          color="text-warning"
+          detail={
+            data
+              ? `Custo da equipe no mês ${money(data.collaborator_earnings)} = já pago ${money(data.collaborator_paid)} + a pagar ${money(data.collaborator_due)}`
+              : "Ganhos do mês menos o que já foi pago"
+          }
+          icon={<HandCoins size={16} />}
+          loading={loading}
+          title="A pagar aos colaboradores"
+          trend={data && <MonthTrend data={data} field="collaborator_earnings" inverse />}
+          value={money(data?.collaborator_due)}
+          valueColor="text-warning"
+        />
+      )}
       <Card
         color={profit < 0 ? "text-danger" : "text-success"}
         detail={

@@ -292,14 +292,6 @@ export function DashboardPage() {
       color: "text-accent",
     },
     {
-      title: "Colaboradores ativos",
-      target: metrics?.active_collaborators ?? null,
-      loading: summary.isFetching && !summary.data,
-      detail: "Membros ativos deste workspace",
-      icon: UsersRound,
-      color: "text-accent",
-    },
-    {
       title: "Seguidores",
       target: metrics?.followers_count ?? null,
       loading: summary.isFetching && !summary.data,
@@ -478,7 +470,7 @@ export function DashboardPage() {
                   {droppedDetail || "Nenhuma queda de conta no período"}
                 </p>
               </article>
-              <MonthResultCards />
+              <MonthResultCards hideCollaboratorDue />
               {metricsCards.map((metric) => (
                 <MetricCard key={metric.title} {...metric} />
               ))}
