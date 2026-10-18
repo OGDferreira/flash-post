@@ -32,8 +32,11 @@ router = APIRouter(prefix="/api/wallet", tags=["Wallet"])
 
 CENT = Decimal("0.01")
 MIN_WITHDRAWAL = Decimal("10.00")
-GOALS = [Decimal(v) for v in ("10000", "50000", "100000", "500000", "1000000")]
-GOAL_PRIZES = {10000: "Pulseira", 50000: "Caneca", 100000: "Placa", 500000: "Placa", 1000000: "Quadro, cordão e pingente de ouro"}
+GOALS = [Decimal(v) for v in ("10000", "50000", "100000", "500000", "1000000", "5000000", "10000000")]
+GOAL_PRIZES = {
+    10000: "Pulseira", 50000: "Caneca", 100000: "Placa", 500000: "Placa", 1000000: "Quadro, cordão e pingente de ouro",
+    5000000: "Placa Ouro Elite", 10000000: "Placa Diamante",
+}
 
 
 def _brl(value: Decimal) -> str:
@@ -169,6 +172,13 @@ def goal_progress(revenue: Decimal) -> dict:
 # ------------------------------------------------------------------ award photos
 
 AWARD_IMAGES_KEY = "award_images"
+# FlashBot award art shipped with the site (frontend/public/premiacoes); a Super Admin upload replaces it.
+DEFAULT_AWARD_IMAGES = {
+    10000: "/premiacoes/flashbot-10k.webp", 50000: "/premiacoes/flashbot-50k.webp",
+    100000: "/premiacoes/flashbot-100k.webp", 500000: "/premiacoes/flashbot-500k.webp",
+    1000000: "/premiacoes/flashbot-1m.webp", 5000000: "/premiacoes/flashbot-5m.webp",
+    10000000: "/premiacoes/flashbot-10m.webp",
+}
 _signed_cache: dict[str, tuple[float, str]] = {}
 
 
@@ -181,7 +191,12 @@ async def award_image_paths(db) -> dict[int, str]:
 
 
 async def award_image_urls(db) -> dict[int, str]:
-    """Signed URLs for the award photos, cached in process (they last 4h)."""
+    """Award photo per goal: the Super Admin's upload, else the default FlashBot art."""
+    return {**DEFAULT_AWARD_IMAGES, **await custom_award_image_urls(db)}
+
+
+async def custom_award_image_urls(db) -> dict[int, str]:
+    """Signed URLs for the uploaded award photos, cached in process (they last 4h)."""
     import time
 
     from app.instagram.storage import SupabaseStorage

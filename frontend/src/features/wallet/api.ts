@@ -91,7 +91,7 @@ export function useGoals(enabled = true) {
   });
 }
 
-export type AwardItem = { amount: number; prize: string; image_url: string | null };
+export type AwardItem = { amount: number; prize: string; image_url: string | null; custom: boolean };
 
 export function useAwards() {
   const queryClient = useQueryClient();
