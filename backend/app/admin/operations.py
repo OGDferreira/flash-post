@@ -280,10 +280,18 @@ AWARD_MAX_BYTES = 8 * 1024 * 1024
 
 @router.get("/awards")
 async def list_awards(_admin: SuperAdminUser, db: DbSession) -> dict:
-    from app.wallet.router import GOAL_PRIZES, GOALS, award_image_urls
+    from app.wallet.router import DEFAULT_AWARD_IMAGES, GOAL_PRIZES, GOALS, custom_award_image_urls
 
-    urls = await award_image_urls(db)
-    return {"items": [{"amount": int(g), "prize": GOAL_PRIZES[int(g)], "image_url": urls.get(int(g))} for g in GOALS]}
+    urls = await custom_award_image_urls(db)
+    return {
+        "items": [
+            {
+                "amount": int(g), "prize": GOAL_PRIZES[int(g)], "custom": int(g) in urls,
+                "image_url": urls.get(int(g)) or DEFAULT_AWARD_IMAGES.get(int(g)),
+            }
+            for g in GOALS
+        ]
+    }
 
 
 async def _save_award_paths(db, admin_id, paths: dict[int, str]) -> None:
