@@ -43,6 +43,7 @@ const BotsPage = lazyPage(() => import("@/pages/BotsPage"), "BotsPage");
 const WalletPage = lazyPage(() => import("@/pages/WalletPage"), "WalletPage");
 const AdminOverviewPage = lazyPage(() => import("@/pages/admin/AdminOverviewPage"), "AdminOverviewPage");
 const AdminNotificationsPage = lazyPage(() => import("@/pages/admin/AdminNotificationsPage"), "AdminNotificationsPage");
+const AdminPartnerWalletsPage = lazyPage(() => import("@/pages/admin/AdminPartnerWalletsPage"), "AdminPartnerWalletsPage");
 const AdminSystemPage = lazyPage(() => import("@/pages/admin/AdminSystemPage"), "AdminSystemPage");
 const AdminOperationsPage = lazyPage(() => import("@/pages/admin/AdminOperationsPage"), "AdminOperationsPage");
 const AdminFlowsPage = lazyPage(() => import("@/pages/admin/AdminFlowsPage"), "AdminFlowsPage");
@@ -121,6 +122,7 @@ export default function App() {
                 <Route path="/admin/flows" element={<AdminFlowsPage />} />
                 <Route path="/admin/awards" element={<AdminAwardsPage />} />
                 <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
+                <Route path="/admin/partner-wallets" element={<AdminPartnerWalletsPage />} />
               </Route>
             </Route>
           </Route>

@@ -191,8 +191,10 @@ export type AdminUser = {
   full_name: string;
   email: string;
   role: string;
-  status: string;
+  platform_role?: "USER" | "SUPER_ADMIN";
+  status: "PENDING_APPROVAL" | "ACTIVE" | "BLOCKED";
   is_approved: boolean;
+  is_active?: boolean;
   workspace_name: string | null;
   created_at: string;
   last_login_at: string | null;

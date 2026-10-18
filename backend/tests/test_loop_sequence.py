@@ -435,3 +435,18 @@ async def test_concurrent_ticks_queue_a_single_job_per_account(
         )
     )
     assert total == 3
+
+
+@pytest.mark.anyio
+async def test_blocked_owner_loops_stop_posting_until_unblocked(
+    db_session: AsyncSession, owner
+) -> None:
+    user, workspace = owner
+    await _setup(db_session, workspace, accounts=1)
+    now = datetime(2026, 3, 2, 12, 0, tzinfo=timezone.utc)
+    user.is_active = False
+    await db_session.commit()
+    assert await enqueue_due_loop_publications(db_session, now=now) == 0
+    user.is_active = True
+    await db_session.commit()
+    assert await enqueue_due_loop_publications(db_session, now=now) == 1

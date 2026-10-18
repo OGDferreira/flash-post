@@ -1,6 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr
 
 
@@ -17,14 +19,24 @@ class AdminUser(BaseModel):
     full_name: str
     email: EmailStr
     role: str
-    status: str
+    platform_role: str = "USER"
+    status: str  # PENDING_APPROVAL | ACTIVE | BLOCKED
     is_approved: bool
+    is_active: bool = True
     workspace_name: str | None
     created_at: datetime
     last_login_at: datetime | None
     hierarchy: str = "independent"  # chief | partner | independent
     chief_name: str | None = None
     invited_by_name: str | None = None
+
+
+class AdminUserAccessRequest(BaseModel):
+    blocked: bool
+
+
+class AdminUserRoleRequest(BaseModel):
+    platform_role: Literal["USER", "SUPER_ADMIN"]
 
 
 class AdminUsersPage(BaseModel):

@@ -239,9 +239,15 @@ async def login(payload: LoginRequest, request: Request, db: DbSession) -> AuthR
 
     user = await db.scalar(select(User).where(User.email == str(payload.email)))
     is_valid = verify_password(payload.password, user.password_hash if user else None)
-    if user is None or not user.is_active or not is_valid:
+    if user is None or not is_valid:
         await limiter.record_failure(rate_key)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email or password is incorrect.")
+    if not user.is_active:
+        await limiter.record_failure(rate_key)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Seu acesso foi bloqueado pelo administrador.",
+        )
     if not user.is_approved:
         await limiter.record_failure(rate_key)
         raise HTTPException(

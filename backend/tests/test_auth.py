@@ -784,3 +784,80 @@ async def test_admin_summary_counts_real_rows(client: AsyncClient, super_admin) 
     assert response.json()["users_total"] == 1
     assert response.json()["workspaces_total"] == 0
     assert response.json()["owners"] == 0
+
+
+@pytest.mark.anyio
+async def test_super_admin_blocks_unblocks_and_changes_role(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    super_admin,
+    owner,
+) -> None:
+    owner_user, _workspace = owner
+    await login(client, "superadmin@example.com", "super admin password")
+
+    self_block = await client.patch(
+        f"/api/admin/users/{super_admin.id}/access",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={"blocked": True},
+    )
+    assert self_block.status_code == 409
+
+    blocked = await client.patch(
+        f"/api/admin/users/{owner_user.id}/access",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={"blocked": True},
+    )
+    assert blocked.status_code == 200, blocked.text
+    assert blocked.json()["status"] == "BLOCKED"
+    assert blocked.json()["is_active"] is False
+
+    await client.post("/api/auth/logout", headers={"X-CSRF-Token": await csrf(client)})
+    denied = await client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={"email": "owner@example.com", "password": "correct horse battery staple"},
+    )
+    assert denied.status_code == 403
+    assert "bloqueado" in denied.json()["detail"]
+    # A wrong password never reveals the block.
+    wrong = await client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={"email": "owner@example.com", "password": "wrong password!!"},
+    )
+    assert wrong.status_code == 401
+
+    await login(client, "superadmin@example.com", "super admin password")
+    unblocked = await client.patch(
+        f"/api/admin/users/{owner_user.id}/access",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={"blocked": False},
+    )
+    assert unblocked.json()["status"] == "ACTIVE"
+
+    promoted = await client.patch(
+        f"/api/admin/users/{owner_user.id}/role",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={"platform_role": "SUPER_ADMIN"},
+    )
+    assert promoted.status_code == 200, promoted.text
+    assert promoted.json()["role"] == "SUPER_ADMIN"
+    block_admin = await client.patch(
+        f"/api/admin/users/{owner_user.id}/access",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={"blocked": True},
+    )
+    assert block_admin.status_code == 409
+    demoted = await client.patch(
+        f"/api/admin/users/{owner_user.id}/role",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={"platform_role": "USER"},
+    )
+    assert demoted.json()["role"] == "OWNER"
+    self_demote = await client.patch(
+        f"/api/admin/users/{super_admin.id}/role",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={"platform_role": "USER"},
+    )
+    assert self_demote.status_code == 409

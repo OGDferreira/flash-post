@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app.bots import http
 from app.core.config import get_settings
-from app.models import FinancialWithdrawal, TgBot, TgLead, TgOrder
+from app.models import Affiliation, FinancialWithdrawal, TgBot, TgLead, TgOrder
 from tests.test_affiliates import PASSWORD, _make_owner
 from tests.test_loops import _csrf, _login
 
@@ -217,3 +217,43 @@ async def test_goals_and_award_photos(client, db_session, owner, super_admin, mo
     assert (await client.delete("/api/admin/awards/10000/image", headers=admin)).status_code == 200
     reset = (await client.get("/api/admin/awards")).json()["items"][0]
     assert reset["image_url"] == "/premiacoes/flashbot-10k.webp" and not reset["custom"]
+
+
+@pytest.mark.anyio
+async def test_only_super_admin_sees_and_withdraws_partner_balances(client, db_session, owner, super_admin, smoke) -> None:
+    chief, _chief_ws = owner
+    partner, partner_ws = await _make_owner(db_session, "socio")
+    db_session.add(Affiliation(chief_user_id=chief.id, affiliate_user_id=partner.id, participation_percent=Decimal("30"),
+                               accepted_percent=Decimal("30"), accepted_at=datetime.now(timezone.utc)))
+    await db_session.commit()
+    for _ in range(3):
+        await _paid(db_session, partner_ws, chief.id, partner_net="13.23", commission="5.67")
+    ref = f"fp-{partner_ws.id.hex}"
+    smoke.shops[ref] = 39.69
+
+    # the partner sees billing, net balance and what was paid out, never the chief's commission
+    headers = await _as(client, "socio@example.com")
+    wallet = (await client.get("/api/wallet")).json()
+    assert wallet["is_partner"] is True and wallet["available"] == 39.69 and wallet["month_revenue"] == 59.7
+    assert "commission_paid" not in wallet and wallet["withdrawals"] == []
+    refused = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "20", **PIX})
+    assert refused.status_code == 403
+    assert (await client.get("/api/admin/partner-wallets")).status_code == 403
+
+    admin_headers = await _as(client, "superadmin@example.com", "super admin password")
+    listing = (await client.get("/api/admin/partner-wallets")).json()
+    (item,) = listing["items"]
+    assert item["user_id"] == str(partner.id) and item["chief"] == chief.full_name and item["available"] == 39.69
+    done = await client.post(f"/api/admin/partner-wallets/{partner.id}/withdrawals", headers=admin_headers, json={"amount": "30", **PIX})
+    assert done.status_code == 201, done.text
+    assert smoke.calls[-1][1] == f"/api/shops/{ref}/withdraw" and smoke.calls[-1][2]["sub_shop_id"] == str(partner.id)
+    item = (await client.get("/api/admin/partner-wallets")).json()["items"][0]
+    assert item["withdrawn"] == 30.0 and item["withdrawals"][0]["status"] == "PAID"
+    # an independent user is not a partner: nothing to withdraw on their behalf
+    missing = await client.post(f"/api/admin/partner-wallets/{chief.id}/withdrawals", headers=admin_headers, json={"amount": "10", **PIX})
+    assert missing.status_code == 404
+
+    # the partner now sees what was withdrawn, still without the history
+    await _as(client, "socio@example.com")
+    wallet = (await client.get("/api/wallet")).json()
+    assert wallet["withdrawn"] == 30.0 and wallet["withdrawals"] == []

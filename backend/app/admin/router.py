@@ -21,6 +21,8 @@ from app.models import (
 from app.schemas.admin import (
     AdminSummary,
     AdminUser,
+    AdminUserAccessRequest,
+    AdminUserRoleRequest,
     AdminUsersPage,
     AdminWorkspace,
     AdminWorkspaceCollaborator,
@@ -74,7 +76,8 @@ async def list_users(
         select(WorkspaceMember.role)
         .where(
             WorkspaceMember.user_id == User.id,
-            WorkspaceMember.status == "ACTIVE",
+            # pending collaborators still show whose team they joined
+            WorkspaceMember.status.in_(("ACTIVE", "INVITED", "SUSPENDED")),
         )
         .order_by(WorkspaceMember.created_at, WorkspaceMember.workspace_id)
         .limit(1)
@@ -85,7 +88,8 @@ async def list_users(
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
         .where(
             WorkspaceMember.user_id == User.id,
-            WorkspaceMember.status == "ACTIVE",
+            # pending collaborators still show whose team they joined
+            WorkspaceMember.status.in_(("ACTIVE", "INVITED", "SUSPENDED")),
         )
         .order_by(WorkspaceMember.created_at, WorkspaceMember.workspace_id)
         .limit(1)
@@ -127,12 +131,10 @@ async def list_users(
             full_name=user.full_name,
             email=user.email,
             role=resolved_role,
-            status=(
-                "PENDING_APPROVAL"
-                if not user.is_approved
-                else "ACTIVE" if user.is_active else "INACTIVE"
-            ),
+            platform_role=user.platform_role,
+            status=_user_status(user),
             is_approved=user.is_approved,
+            is_active=user.is_active,
             workspace_name=workspace,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
@@ -145,21 +147,13 @@ async def list_users(
     return AdminUsersPage(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.post(
-    "/users/{user_id}/approve",
-    response_model=AdminUser,
-    dependencies=[Depends(require_csrf)],
-)
-async def approve_user(
-    user_id: uuid.UUID,
-    _admin: SuperAdminUser,
-    db: DbSession,
-) -> AdminUser:
-    user = await db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-    user.is_approved = True
-    await db.commit()
+def _user_status(user: User) -> str:
+    if not user.is_approved:
+        return "PENDING_APPROVAL"
+    return "ACTIVE" if user.is_active else "BLOCKED"
+
+
+async def _admin_user(db: AsyncSession, user: User) -> AdminUser:
     membership_role = (
         select(WorkspaceMember.role)
         .where(
@@ -191,12 +185,90 @@ async def approve_user(
         full_name=user.full_name,
         email=user.email,
         role=resolved_role,
-        status="ACTIVE" if user.is_active else "INACTIVE",
+        platform_role=user.platform_role,
+        status=_user_status(user),
         is_approved=user.is_approved,
+        is_active=user.is_active,
         workspace_name=await db.scalar(select(workspace_name)),
         created_at=user.created_at,
         last_login_at=user.last_login_at,
     )
+
+
+async def _target_user(db: AsyncSession, admin: User, user_id: uuid.UUID, action: str) -> User:
+    if user_id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Você não pode {action} próprio usuário administrador.",
+        )
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    return user
+
+
+@router.post(
+    "/users/{user_id}/approve",
+    response_model=AdminUser,
+    dependencies=[Depends(require_csrf)],
+)
+async def approve_user(
+    user_id: uuid.UUID,
+    _admin: SuperAdminUser,
+    db: DbSession,
+) -> AdminUser:
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    user.is_approved = True
+    await db.commit()
+    return await _admin_user(db, user)
+
+
+@router.patch(
+    "/users/{user_id}/access",
+    response_model=AdminUser,
+    dependencies=[Depends(require_csrf)],
+)
+async def update_user_access(
+    user_id: uuid.UUID,
+    payload: AdminUserAccessRequest,
+    admin: SuperAdminUser,
+    db: DbSession,
+) -> AdminUser:
+    """Block or unblock a user: a blocked user cannot sign in (open sessions end on
+    the next request) and the loops of the operations they own stop posting."""
+    user = await _target_user(db, admin, user_id, "bloquear o")
+    if user.platform_role == "SUPER_ADMIN" and payload.blocked:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tire a função de Super Admin antes de bloquear este usuário.",
+        )
+    user.is_active = not payload.blocked
+    await db.commit()
+    return await _admin_user(db, user)
+
+
+@router.patch(
+    "/users/{user_id}/role",
+    response_model=AdminUser,
+    dependencies=[Depends(require_csrf)],
+)
+async def update_user_role(
+    user_id: uuid.UUID,
+    payload: AdminUserRoleRequest,
+    admin: SuperAdminUser,
+    db: DbSession,
+) -> AdminUser:
+    user = await _target_user(db, admin, user_id, "alterar a função do")
+    if payload.platform_role == "SUPER_ADMIN" and not (user.is_approved and user.is_active):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Aprove e desbloqueie o usuário antes de torná-lo Super Admin.",
+        )
+    user.platform_role = payload.platform_role
+    await db.commit()
+    return await _admin_user(db, user)
 
 
 @router.delete(

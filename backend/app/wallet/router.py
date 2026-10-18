@@ -20,15 +20,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 
-from app.auth.dependencies import AuthenticatedUser, DbSession, require_csrf
+from app.auth.dependencies import AuthenticatedUser, DbSession, SuperAdminUser, require_csrf
 from app.core.time import BRAZIL_TIME_ZONE, utc_now
 from app.bots import smokepay
 from app.core.config import get_settings
 from app.models import FinancialWithdrawal, TgOrder, User, Workspace
-from app.partners.service import owner_workspace, shop_ref
+from app.models import Affiliation
+from app.partners.service import owner_workspace, partner_link, shop_ref
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/wallet", tags=["Wallet"])
+admin_router = APIRouter(prefix="/api/admin/partner-wallets", tags=["platform administration"])
 
 CENT = Decimal("0.01")
 MIN_WITHDRAWAL = Decimal("10.00")
@@ -301,21 +303,16 @@ async def _reconcile(db, workspace_id: uuid.UUID, shop: str | None) -> None:
     await db.commit()
 
 
-@router.get("")
-async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
-    workspace = await _workspace_for(db, user)
-    shop = _shop_for(user, workspace)
+async def _is_partner(db, user: User) -> bool:
+    """Partners see what they billed, the net free to withdraw and what was paid out;
+    the withdrawals themselves (and their history) belong to the Super Admin."""
+    return user.platform_role != "SUPER_ADMIN" and await partner_link(db, user.id) is not None
+
+
+async def _wallet_numbers(db, user: User, workspace: Workspace, shop: str | None) -> dict:
     await _reconcile(db, workspace.id, shop)
-    revenue = await month_revenue(db, workspace.id)
     balance = await balances(db, user, workspace.id)
     gateway = await _gateway_balance(shop)
-    history = await db.scalars(
-        select(FinancialWithdrawal)
-        .where(FinancialWithdrawal.workspace_id == workspace.id)
-        .order_by(FinancialWithdrawal.created_at.desc())
-        .limit(50)
-    )
-    goal = _goals_out(revenue, await award_image_urls(db))
     out = {k: float(v) for k, v in balance.items()}
     if gateway is not None:  # SmokePay's own number wins over our estimate
         out["available"] = float(gateway)
@@ -323,15 +320,38 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
     out["withdraw_fee"] = float(fee)
     # what can actually leave: SmokePay debits the fee from the balance too
     out["withdrawable"] = float(max(Decimal("0.00"), Decimal(str(out["available"])) - fee))
+    out["balance_source"] = "smokepay" if gateway is not None else "estimate"
+    return out
+
+
+async def _history(db, workspace_id: uuid.UUID, limit: int = 50) -> list[dict]:
+    rows = await db.scalars(
+        select(FinancialWithdrawal)
+        .where(FinancialWithdrawal.workspace_id == workspace_id)
+        .order_by(FinancialWithdrawal.created_at.desc())
+        .limit(limit)
+    )
+    return [_withdrawal_out(item) for item in rows]
+
+
+@router.get("")
+async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
+    workspace = await _workspace_for(db, user)
+    shop = _shop_for(user, workspace)
+    revenue = await month_revenue(db, workspace.id)
+    numbers = await _wallet_numbers(db, user, workspace, shop)
+    is_partner = await _is_partner(db, user)
+    if is_partner:
+        numbers.pop("commission_paid", None)
     return {
         "is_main_account": shop is None,
+        "is_partner": is_partner,
         "shop_ref": shop,
-        "balance_source": "smokepay" if gateway is not None else "estimate",
         "month_revenue": float(revenue),
-        "goal": goal,
-        **out,
+        "goal": _goals_out(revenue, await award_image_urls(db)),
+        **numbers,
         "min_withdrawal": float(MIN_WITHDRAWAL),
-        "withdrawals": [_withdrawal_out(item) for item in history],
+        "withdrawals": [] if is_partner else await _history(db, workspace.id),
     }
 
 
@@ -357,7 +377,13 @@ def _gateway_message(exc: smokepay.SmokepayError) -> tuple[int, str]:
 @router.post("/withdrawals", status_code=201, dependencies=[Depends(require_csrf)])
 async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser, db: DbSession) -> dict:
     workspace = await _workspace_for(db, user)
-    shop = _shop_for(user, workspace)
+    if await _is_partner(db, user):
+        raise HTTPException(status_code=403, detail="Os saques dos sócios são feitos pelo administrador da plataforma.")
+    return await _withdraw(db, user, workspace, _shop_for(user, workspace), payload)
+
+
+async def _withdraw(db, user: User, workspace: Workspace, shop: str | None, payload: WithdrawalRequest) -> dict:
+    """Pays out ``workspace``'s SmokePay balance; ``user`` is who asked for it."""
     amount = payload.amount.quantize(CENT)
     if shop is not None and amount < MIN_WITHDRAWAL:
         raise HTTPException(status_code=422, detail=f"O saque mínimo é R$ {MIN_WITHDRAWAL:.2f}".replace(".", ",") + ".")
@@ -397,7 +423,7 @@ async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser
     try:
         payout = await smokepay.withdraw(
             amount=amount, pix_key=pix_key, pix_key_type=payload.pix_key_type,
-            correlation_id=str(item.id), shop_ref=shop, sub_shop_id=str(user.id),
+            correlation_id=str(item.id), shop_ref=shop, sub_shop_id=str(workspace.owner_id),
         )
     except smokepay.SmokepayError as exc:
         if exc.status == 0:  # no answer: the money may have left; keep it pending, never resend
@@ -420,3 +446,55 @@ async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser
     await db.commit()
     await db.refresh(item)
     return _withdrawal_out(item)
+
+
+# ------------------------------------------------------------------ Super Admin: partners' wallets
+
+
+async def _partner_workspace(db, user_id: uuid.UUID) -> tuple[User, Workspace]:
+    link = await partner_link(db, user_id)
+    partner = await db.get(User, user_id)
+    workspace = await owner_workspace(db, user_id) if link else None
+    if link is None or partner is None or workspace is None:
+        raise HTTPException(status_code=404, detail="Sócio não encontrado.")
+    return partner, workspace
+
+
+@admin_router.get("")
+async def partner_wallets(_admin: SuperAdminUser, db: DbSession) -> dict:
+    """Every partner's billing, net balance free to withdraw, payouts and history."""
+    links = list(await db.scalars(select(Affiliation).where(Affiliation.status == "ACTIVE")))
+    users = {
+        u.id: u
+        for u in await db.scalars(
+            select(User).where(User.id.in_({l.affiliate_user_id for l in links} | {l.chief_user_id for l in links}))
+        )
+    } if links else {}
+    items = []
+    for link in links:
+        partner = users.get(link.affiliate_user_id)
+        workspace = await owner_workspace(db, link.affiliate_user_id)
+        if partner is None or workspace is None:
+            continue
+        numbers = await _wallet_numbers(db, partner, workspace, shop_ref(workspace.id))
+        chief = users.get(link.chief_user_id)
+        items.append({
+            "user_id": str(partner.id),
+            "name": partner.full_name,
+            "email": partner.email,
+            "chief": chief.full_name if chief else None,
+            "shop_ref": shop_ref(workspace.id),
+            "month_revenue": float(await month_revenue(db, workspace.id)),
+            **numbers,
+            "withdrawals": await _history(db, workspace.id, limit=20),
+        })
+    items.sort(key=lambda item: item["available"], reverse=True)
+    return {"items": items, "min_withdrawal": float(MIN_WITHDRAWAL)}
+
+
+@admin_router.post("/{user_id}/withdrawals", status_code=201, dependencies=[Depends(require_csrf)])
+async def partner_withdrawal(
+    user_id: uuid.UUID, payload: WithdrawalRequest, admin: SuperAdminUser, db: DbSession
+) -> dict:
+    _partner, workspace = await _partner_workspace(db, user_id)
+    return await _withdraw(db, admin, workspace, shop_ref(workspace.id), payload)
