@@ -21,6 +21,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time import utc_now
 from app.models import (
     Affiliation,
     AppNotification,
@@ -375,11 +376,19 @@ async def sync_linked_loop(db: AsyncSession, source: InstagramLoop, copy: Instag
     """Make the partner's linked copy match the chief's loop: settings and media.
     New media are copied (locked) into the partner's workspace; removed ones leave the playlist."""
     copy.name = source.name[:120]
+    interval_changed = (copy.interval_min_minutes, copy.interval_max_minutes) != (
+        source.interval_min_minutes,
+        source.interval_max_minutes,
+    )
     copy.interval_min_minutes = source.interval_min_minutes
     copy.interval_max_minutes = source.interval_max_minutes
     copy.daily_limit_per_account = source.daily_limit_per_account
     copy.post_type = source.post_type
     copy.repeat_media = source.repeat_media
+    if interval_changed:
+        from app.loops.scheduler import reschedule_loop_accounts
+
+        await reschedule_loop_accounts(db, copy, utc_now())
     wanted = {
         media.id: media
         for media in await db.scalars(
@@ -397,6 +406,10 @@ async def sync_linked_loop(db: AsyncSession, source: InstagramLoop, copy: Instag
     )
     present = {media.template_media_id for media in have}
     gone = [media.id for media in have if media.template_media_id not in wanted]
+    for media in have:  # captions the chief edited later follow too
+        source_media = wanted.get(media.template_media_id)
+        if source_media is not None and media.caption != source_media.caption:
+            media.caption = source_media.caption
     if gone:
         await _drop_pending_jobs(db, copy.id, gone)
         await db.execute(

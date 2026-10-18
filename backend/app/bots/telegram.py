@@ -139,6 +139,16 @@ class TelegramClient:
         params = {"chat_id": chat_id, "media": media, "protect_content": protect or None}
         return await self.call("sendMediaGroup", params, files=files or None)
 
+    async def delete_messages(self, chat_id: int, message_ids: list[int]) -> None:
+        """Best effort: messages already deleted by the lead (or older than 48h) are skipped."""
+        if not message_ids:
+            return
+        try:
+            await self.call("deleteMessages", {"chat_id": chat_id, "message_ids": message_ids[:100]})
+        except TelegramError as exc:
+            if exc.status != 400:
+                raise
+
     async def send_chat_action(self, chat_id: int, action: str) -> None:
         try:
             await self.call("sendChatAction", {"chat_id": chat_id, "action": action})

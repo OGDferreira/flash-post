@@ -85,6 +85,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             SmokepayOperation,
             SystemSetting,
             TgBot,
+            TgCampaign,
             TgFlow,
             TgGroup,
             TgJob,
@@ -98,7 +99,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             WorkspaceMember,
         )
 
-        for model in (TgUpdateSeen, TgJob, TgSubscription, TgOrder, TgLead, TgGroup, TgBot, TgMedia, TgFlow):
+        for model in (TgCampaign, TgUpdateSeen, TgJob, TgSubscription, TgOrder, TgLead, TgGroup, TgBot, TgMedia, TgFlow):
             await connection.execute(delete(model))
         await connection.execute(delete(InstagramMediaInsight))
         await connection.execute(delete(InstagramAccountDailyViews))

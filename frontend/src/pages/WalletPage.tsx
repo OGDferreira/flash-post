@@ -218,7 +218,7 @@ export function WalletPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-2 text-base font-semibold text-fg"><Trophy className="text-warning" size={17} /> Metas de faturamento</h3>
           <span className="text-xs text-muted">
-            Próxima: {compact(data.goal.target)} · {data.goal.percent.toLocaleString("pt-BR")}% · prêmio: {data.goal.prize}
+            Próxima: {compact(data.goal.target)} · {data.goal.percent.toLocaleString("pt-BR")}%
           </span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-well">

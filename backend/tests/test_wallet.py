@@ -191,8 +191,9 @@ async def test_goals_and_award_photos(client, db_session, owner, super_admin, mo
     await _as(client, "owner@example.com", "correct horse battery staple")
     goals = (await client.get("/api/wallet/goals")).json()
     assert goals["available"] and goals["month_revenue"] == 19.9 and goals["target"] == 10000.0
-    assert [g["current"] for g in goals["goals"]] == [True, False, False, False, False]
-    assert all(g["image_url"] is None for g in goals["goals"])
+    assert [g["current"] for g in goals["goals"]] == [True] + [False] * 6
+    assert goals["goals"][-1]["amount"] == 10_000_000
+    assert all(g["image_url"].startswith("/premiacoes/flashbot-") for g in goals["goals"])
     # only the Super Admin uploads award photos
     headers = await _as(client, "owner@example.com", "correct horse battery staple")
     png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
@@ -206,14 +207,16 @@ async def test_goals_and_award_photos(client, db_session, owner, super_admin, mo
     ok = await client.put("/api/admin/awards/10000/image", headers={**admin, "Content-Type": "image/png"}, content=png)
     assert ok.status_code == 200, ok.text
     items = (await client.get("/api/admin/awards")).json()["items"]
-    assert items[0]["image_url"].startswith("https://cdn.test/awards/10000-") and items[1]["image_url"] is None
+    assert items[0]["image_url"].startswith("https://cdn.test/awards/10000-") and items[0]["custom"]
+    assert items[1]["image_url"] == "/premiacoes/flashbot-50k.webp" and not items[1]["custom"]
 
     await _as(client, "owner@example.com", "correct horse battery staple")
     goals = (await client.get("/api/wallet/goals")).json()
     assert goals["goals"][0]["image_url"] == items[0]["image_url"]
     admin = await _as(client, "superadmin@example.com", "super admin password")
     assert (await client.delete("/api/admin/awards/10000/image", headers=admin)).status_code == 200
-    assert (await client.get("/api/admin/awards")).json()["items"][0]["image_url"] is None
+    reset = (await client.get("/api/admin/awards")).json()["items"][0]
+    assert reset["image_url"] == "/premiacoes/flashbot-10k.webp" and not reset["custom"]
 
 
 @pytest.mark.anyio

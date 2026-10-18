@@ -192,6 +192,25 @@ class DownsellStep(_Model):
         return self
 
 
+class Previews(_Model):
+    """"Ver prévias" button on the welcome screen: sends media that delete themselves."""
+
+    enabled: bool = False
+    label: Label = "👀 Ver prévias"
+    style: ButtonStyle = "primary"
+    text: Caption | None = "👀 Prévias liberadas! Elas somem em {tempo}."
+    media_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
+    spoiler: bool = False
+    # Telegram only deletes a bot's message within 48 hours of sending it.
+    delete_after_seconds: Annotated[int, Field(ge=5, le=172800)] = 60
+
+    @model_validator(mode="after")
+    def _check(self) -> "Previews":
+        if self.enabled and not self.media_ids:
+            raise ValueError("Adicione pelo menos uma mídia nas prévias.")
+        return self
+
+
 class Payment(_Model):
     expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 30
     pix_text: Text = (
@@ -215,10 +234,15 @@ class FlowDefinition(_Model):
     default_delivery: Delivery | None = None
     order_bump: OrderBump | None = None  # flow default, used by plans in "default" bump mode
     upsells: list[UpsellStep] = Field(default_factory=list, max_length=20)
-    downsell_trigger: Literal["pix", "start"] = "pix"  # phase 2; folded into downsell_audience
-    # "no_pix": started and never generated a PIX; "pix": generated a PIX and did not pay.
+    previews: Previews = Field(default_factory=Previews)
+    # Legacy: one sequence aimed at "no_pix" and/or "pix" leads. Folded on load into the
+    # two separate sequences below and then dropped.
+    downsell_trigger: Literal["pix", "start"] = "pix"
     downsell_audience: list[Literal["no_pix", "pix"]] | None = None
+    # Sequence for leads who generated a PIX and did not pay.
     downsells: list[DownsellStep] = Field(default_factory=list, max_length=20)
+    # Sequence for leads who started and never generated a PIX (None = not migrated yet).
+    downsells_no_pix: Annotated[list[DownsellStep], Field(max_length=20)] | None = None
     support_username: Annotated[str, Field(max_length=33, pattern=r"^@?[A-Za-z0-9_]{0,32}$")] | None = None
 
     @model_validator(mode="after")
@@ -229,17 +253,23 @@ class FlowDefinition(_Model):
         for plan in self.plans:
             if plan.delivery is None and self.default_delivery is None:
                 raise ValueError(f"O plano '{plan.name}' não tem entrega e o fluxo não tem entrega padrão.")
+        if self.downsells_no_pix is None:
+            audience = self.downsell_audience
+            if audience is None:
+                audience = ["pix"] if self.downsell_trigger == "pix" else ["no_pix", "pix"]
+            self.downsells_no_pix = [step.model_copy(deep=True) for step in self.downsells] if "no_pix" in audience else []
+            if "pix" not in audience:
+                self.downsells = []
+        self.downsell_trigger, self.downsell_audience = "pix", None
         known = set(ids)
-        for index, step in enumerate(self.downsells, start=1):
-            if any(plan_id not in known for plan_id in step.plan_ids):
-                raise ValueError(f"O downsell {index} usa um plano que não existe mais.")
+        for label, steps in (("Pix gerado", self.downsells), ("Pix não gerado", self.downsells_no_pix)):
+            for index, step in enumerate(steps, start=1):
+                if any(plan_id not in known for plan_id in step.plan_ids):
+                    raise ValueError(f"O downsell {index} ({label}) usa um plano que não existe mais.")
         if self.support_username:
             self.support_username = self.support_username.lstrip("@") or None
-        if self.downsell_audience is None:
-            self.downsell_audience = ["pix"] if self.downsell_trigger == "pix" else ["no_pix", "pix"]
-        self.downsell_audience = sorted(set(self.downsell_audience))
         needs_default = [step.delivery is None for step in self.upsells] + [
-            bool(step.custom_offer and step.custom_offer.delivery is None) for step in self.downsells
+            bool(step.custom_offer and step.custom_offer.delivery is None) for step in self.all_downsells()
         ]
         if any(needs_default) and self.default_delivery is None:
             raise ValueError("Uma oferta usa a entrega padrão, mas o fluxo não tem entrega padrão.")
@@ -250,6 +280,7 @@ class FlowDefinition(_Model):
         for block in self.welcome:
             found.update(block.media_ids)
         found.update(self.offer.media_ids)
+        found.update(self.previews.media_ids)
         bumps = [self.order_bump] + [plan.order_bump for plan in self.plans]
         deliveries = [p.delivery for p in self.plans] + [self.default_delivery]
         for bump in bumps:
@@ -259,7 +290,7 @@ class FlowDefinition(_Model):
         for step in self.upsells:
             found.update(step.media_ids)
             deliveries.append(step.delivery)
-        for down in self.downsells:
+        for down in self.all_downsells():
             found.update(down.media_ids)
             if down.custom_offer:
                 deliveries.append(down.custom_offer.delivery)
@@ -267,6 +298,13 @@ class FlowDefinition(_Model):
             if delivery:
                 found.update(delivery.media_ids)
         return found
+
+    def all_downsells(self) -> list[DownsellStep]:
+        return [*self.downsells, *(self.downsells_no_pix or [])]
+
+    def downsell_steps(self, sequence: str) -> list[DownsellStep]:
+        """``sequence``: "pix" (generated a PIX, did not pay) or "no_pix" (never generated one)."""
+        return self.downsells if sequence == "pix" else (self.downsells_no_pix or [])
 
     def plan(self, plan_id: str) -> Plan | None:
         return next((p for p in self.plans if p.id == plan_id), None)

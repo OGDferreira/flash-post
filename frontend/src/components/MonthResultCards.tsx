@@ -104,11 +104,11 @@ function Card({
 }
 
 /**
- * Faturado / a pagar aos colaboradores / lucro do mês / lucro de hoje, each with
+ * Faturado hoje / a pagar aos colaboradores / lucro do mês / lucro de hoje, each with
  * an indicator against the all-time daily average. Rendered as dashboard metric
  * cards, so it drops into any `dashboard-metrics` grid.
  */
-export function MonthResultCards() {
+export function MonthResultCards({ hideCollaboratorDue = false }: { hideCollaboratorDue?: boolean } = {}) {
   const month = useFinanceMonth();
   if (month.isError) return null; // owner-only figures: hide quietly otherwise
   const data = month.data;
@@ -125,33 +125,34 @@ export function MonthResultCards() {
     <>
       <Card
         color="text-accent"
-        detail={
-          data
-            ? `Sharkbot ${money(data.sharkbot_gross)} · FlashBot ${money(data.flashbot_gross)}` +
-              (data.sharkbot_sales_without_amount ? ` · ${data.sharkbot_sales_without_amount} venda(s) sem valor` : "")
-            : "Somando Sharkbot e FlashBot"
-        }
+        detail={data ? `${data.today.sale_count} venda(s) hoje · Sharkbot e FlashBot` : "Somando Sharkbot e FlashBot"}
         icon={<CircleDollarSign size={16} />}
         loading={loading}
-        title={`Faturado em ${monthName}`}
-        trend={data && <MonthTrend data={data} field="gross_revenue" />}
-        value={money(data?.gross_revenue)}
+        title="Faturado hoje"
+        trend={
+          showTrend && data && history ? (
+            <TrendBadge average={Number(history.gross_revenue)} averageLabel={`${money(history.gross_revenue)}/dia`} current={Number(data.today.gross_revenue)} />
+          ) : undefined
+        }
+        value={money(data?.today.gross_revenue)}
         valueColor="text-fg"
       />
-      <Card
-        color="text-warning"
-        detail={
-          data
-            ? `Custo da equipe no mês ${money(data.collaborator_earnings)} = já pago ${money(data.collaborator_paid)} + a pagar ${money(data.collaborator_due)}`
-            : "Ganhos do mês menos o que já foi pago"
-        }
-        icon={<HandCoins size={16} />}
-        loading={loading}
-        title="A pagar aos colaboradores"
-        trend={data && <MonthTrend data={data} field="collaborator_earnings" inverse />}
-        value={money(data?.collaborator_due)}
-        valueColor="text-warning"
-      />
+      {!hideCollaboratorDue && (
+        <Card
+          color="text-warning"
+          detail={
+            data
+              ? `Custo da equipe no mês ${money(data.collaborator_earnings)} = já pago ${money(data.collaborator_paid)} + a pagar ${money(data.collaborator_due)}`
+              : "Ganhos do mês menos o que já foi pago"
+          }
+          icon={<HandCoins size={16} />}
+          loading={loading}
+          title="A pagar aos colaboradores"
+          trend={data && <MonthTrend data={data} field="collaborator_earnings" inverse />}
+          value={money(data?.collaborator_due)}
+          valueColor="text-warning"
+        />
+      )}
       <Card
         color={profit < 0 ? "text-danger" : "text-success"}
         detail={

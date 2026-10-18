@@ -7,11 +7,13 @@ import { ConversionOverview } from "@/features/bots/ConversionOverview";
 import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
 import { BotsListPanel } from "@/features/bots/BotsListPanel";
 import { FlowsPanel } from "@/features/bots/FlowsPanel";
+import { RemarketingPanel } from "@/features/bots/remarketing/RemarketingPanel";
 import { SharedFlowsPanel } from "@/features/partners/SharedTemplates";
 
 const tabs = [
   { id: "bots", label: "Meus bots" },
   { id: "flows", label: "Meus funis" },
+  { id: "remarketing", label: "Remarketing" },
   { id: "shared", label: "Funis compartilhados" },
   { id: "sales", label: "Vendas" },
 ] as const;
@@ -22,6 +24,7 @@ export function BotsPage() {
   const [tab, setTab] = useState<Tab>("bots");
   // The flow editor has its own header and section navigation; give it the whole screen.
   const [editing, setEditing] = useState(false);
+  const [remarketingFlow, setRemarketingFlow] = useState<string | null>(null);
   const [period, setPeriod] = useState<MetricsPeriod>({ period: "30d", start: todayInput(), end: todayInput() });
   return (
     <div className="mx-auto w-full max-w-[1500px] space-y-4">
@@ -55,7 +58,17 @@ export function BotsPage() {
         </>
       )}
       {tab === "bots" && <BotsListPanel period={period} />}
-      {tab === "flows" && <FlowsPanel onEditingChange={setEditing} period={period} />}
+      {tab === "flows" && (
+        <FlowsPanel
+          onEditingChange={setEditing}
+          onRemarketing={(flowId) => {
+            setRemarketingFlow(flowId);
+            setTab("remarketing");
+          }}
+          period={period}
+        />
+      )}
+      {tab === "remarketing" && <RemarketingPanel flowId={remarketingFlow} onEditingChange={setEditing} onFlowChange={setRemarketingFlow} />}
       {tab === "shared" && <SharedFlowsPanel />}
       {tab === "sales" && <BotSalesPanel />}
     </div>

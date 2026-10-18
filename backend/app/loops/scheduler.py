@@ -307,6 +307,32 @@ async def _refresh_loop_schedule(db: AsyncSession, loop: InstagramLoop, now: dat
     loop.next_run_at = max(min(upcoming), now) if upcoming else None
 
 
+async def reschedule_loop_accounts(db: AsyncSession, loop: InstagramLoop, now: datetime) -> int:
+    """Apply a new interval to every account of the loop right away.
+
+    Each account's next publication was drawn with the interval in force when
+    it last published; after an edit it is drawn again from the new interval
+    (counted from that last publication, never earlier than now), so a shorter
+    or longer interval takes effect on the next post of every account instead
+    of one cycle later. Accounts waiting on the daily limit, the Instagram cap
+    or a manual review keep their wait.
+    """
+    states = (
+        await db.scalars(
+            select(InstagramLoopAccountState).where(InstagramLoopAccountState.loop_id == loop.id)
+        )
+    ).all()
+    changed = 0
+    for state in states:
+        if state.blocked_reason in (BLOCKED_DAILY_LIMIT, BLOCKED_INSTAGRAM_CAP, BLOCKED_NEEDS_REVIEW):
+            continue
+        if state.last_published_at is None or state.next_run_at is None:
+            continue
+        state.next_run_at = max(now, as_utc(state.last_published_at) + random_interval(loop))
+        changed += 1
+    return changed
+
+
 async def enqueue_loop_publications_now(
     db: AsyncSession,
     loop: InstagramLoop,
