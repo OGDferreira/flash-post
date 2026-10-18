@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Activity, CalendarDays, CircleDollarSign, Crown, Receipt, TrendingUp, Zap } from "lucide-react";
+import { Activity, CalendarDays, CircleDollarSign, Receipt, TrendingUp, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Avatar } from "@/components/Avatar";
 import { PeriodFilter, isPeriodReady, periodParams, type MetricsPeriod } from "@/features/analytics/period";
 import { apiRequest } from "@/services/api";
+import { ActivityLog, NextAward, PartnersRanking } from "./HomePanels";
 
 export type StatLine = { leads: number; sales: number; buyers: number; revenue: number; conversion: number; ticket: number };
 export type BotStats = {
@@ -14,16 +14,6 @@ export type BotStats = {
   series: (StatLine & { date: string })[];
   flows: Record<string, StatLine>;
   bots: Record<string, StatLine>;
-};
-
-type RankingMember = {
-  position: number;
-  name: string;
-  nickname: string;
-  avatar_url: string | null;
-  is_chief: boolean;
-  is_me: boolean;
-  has_sales: boolean;
 };
 
 const money = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -35,19 +25,6 @@ export function useBotStats(period: MetricsPeriod) {
   return useQuery({
     queryKey: ["bots", "stats", periodParams(period)],
     queryFn: () => apiRequest<BotStats>(`/api/bots/stats?${new URLSearchParams(periodParams(period))}`),
-    enabled: isPeriodReady(period),
-    placeholderData: (previous) => previous,
-    staleTime: 30_000,
-  });
-}
-
-function usePartnersRanking(period: MetricsPeriod) {
-  return useQuery({
-    queryKey: ["bots", "partners-ranking", periodParams(period)],
-    queryFn: () =>
-      apiRequest<{ period_label: string; members: RankingMember[] }>(
-        `/api/bots/partners-ranking?${new URLSearchParams(periodParams(period))}`,
-      ),
     enabled: isPeriodReady(period),
     placeholderData: (previous) => previous,
     staleTime: 30_000,
@@ -99,62 +76,7 @@ function Gauge({ percent }: { percent: number }) {
   );
 }
 
-const medal = ["text-warning", "text-[#c0c7d4]", "text-[#d08a4a]"];
-
-/** Positions only: the API never sends how much each partner billed. */
-function PartnersRanking({ period }: { period: MetricsPeriod }) {
-  const ranking = usePartnersRanking(period);
-  const members = ranking.data?.members ?? [];
-  return (
-    <section className="dashboard-card rounded-2xl p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-inset text-warning"><Crown size={16} /></span>
-          <div>
-            <h3 className="text-sm font-semibold text-fg">Ranking dos sócios</h3>
-            <p className="text-[10px] uppercase tracking-[0.14em] text-muted">Corrida de faturamento</p>
-          </div>
-        </div>
-        <span className="text-[11px] text-muted">{ranking.data?.period_label} · valores ficam ocultos</span>
-      </div>
-      {ranking.isLoading ? (
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {[0, 1, 2].map((key) => <div className="skeleton h-14" key={key} />)}
-        </div>
-      ) : members.length <= 1 ? (
-        <p className="rounded-xl bg-surface-inset px-3 py-4 text-center text-xs text-muted">
-          Quando você tiver sócios, a posição de cada um aparece aqui (sem mostrar quanto cada um faturou).
-        </p>
-      ) : (
-        <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {members.map((member) => (
-            <li
-              className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${member.is_me ? "border-accent/60 bg-brand-soft/40" : "border-line-soft bg-surface-inset"}`}
-              key={`${member.position}-${member.nickname}`}
-            >
-              <span className={`w-6 shrink-0 text-center text-sm font-bold ${medal[member.position - 1] ?? "text-muted"}`}>
-                {member.position <= 3 ? <Crown className="mx-auto" size={16} /> : `#${member.position}`}
-              </span>
-              <Avatar className="size-9" name={member.name || member.nickname} src={member.avatar_url} />
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-1.5">
-                  <span className={`truncate text-sm font-semibold ${member.position === 1 ? "text-warning" : "text-fg"}`}>@{member.nickname}</span>
-                  <span className="shrink-0 rounded bg-well px-1 text-[10px] font-bold text-muted">#{member.position}</span>
-                </span>
-                <span className="block truncate text-[10px] uppercase tracking-wider text-muted">
-                  {member.is_me ? "Você" : member.is_chief ? "Dono da operação" : "Sócio"}
-                  {!member.has_sales && " · sem vendas no período"}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
-  );
-}
-
-/** FlashBot home: SharkBot-style KPI cards, daily revenue chart and the partners' ranking. */
+/** FlashBot home: SharkBot-style KPI cards, daily revenue chart, lead log, next award and the partners' ranking. */
 export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod; onPeriod: (value: MetricsPeriod) => void }) {
   const stats = useBotStats(period);
   const t = stats.data?.totals;
@@ -271,7 +193,11 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
         </div>
       </div>
 
-      <PartnersRanking period={period} />
+      <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+        <ActivityLog />
+        <NextAward />
+        <PartnersRanking period={period} />
+      </div>
     </section>
   );
 }
