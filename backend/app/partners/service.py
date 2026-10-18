@@ -5,6 +5,11 @@
   a new proposal only applies after a new acceptance (future sales only).
 * Templates are copied into the partner's own workspace: the copy has its own
   media files, accounts, queue and metrics, and never touches the original.
+* A loop or funnel is shared with every partner (``shared_with`` None) or only
+  with the partners listed in ``shared_with``.
+* A shared loop reaches the partner as a *linked* copy: it follows the chief's
+  loop (same media and schedule) and starts with no accounts, so it only posts
+  once the partner adds their own accounts to it.
 """
 
 import asyncio
@@ -13,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -22,6 +27,7 @@ from app.models import (
     InstagramLoop,
     InstagramLoopMedia,
     InstagramMedia,
+    InstagramPublicationJob,
     PushSubscription,
     TgFlow,
     TgMedia,
@@ -69,6 +75,29 @@ async def partner_link(db: AsyncSession, user_id: uuid.UUID) -> Affiliation | No
 
 def accepted(link: Affiliation | None) -> bool:
     return link is not None and link.accepted_at is not None and link.accepted_percent is not None
+
+
+def shares_with(item: InstagramLoop | TgFlow, user_id: uuid.UUID) -> bool:
+    """Whether a chief's loop or funnel is offered to this partner."""
+    if not item.shared:
+        return False
+    return item.shared_with is None or str(user_id) in {str(target) for target in item.shared_with}
+
+
+def merge_targets(current: list | None, extra: list | None) -> list | None:
+    """Targets after adding ``extra`` (None means every partner and always wins)."""
+    if current is None or extra is None:
+        return None
+    return sorted({str(target) for target in [*current, *extra]})
+
+
+async def partner_ids(db: AsyncSession, chief_id: uuid.UUID) -> set[str]:
+    return {
+        str(value)
+        for value in await db.scalars(
+            select(Affiliation.affiliate_user_id).where(Affiliation.chief_user_id == chief_id, Affiliation.status == "ACTIVE")
+        )
+    }
 
 
 def pending_acceptance(link: Affiliation) -> bool:
@@ -158,6 +187,8 @@ async def shared_funnel_access(db: AsyncSession, flow: TgFlow, workspace_id: uui
         return None
     link = await partner_link(db, workspace.owner_id)
     if not accepted(link) or link.chief_user_id != flow_workspace.owner_id:
+        return None
+    if not shares_with(flow, workspace.owner_id):
         return None
     return link
 
@@ -308,6 +339,162 @@ async def clone_loop(db: AsyncSession, source: InstagramLoop, workspace_id: uuid
     await db.flush()
     await _copy_objects(pairs)
     return clone
+
+
+# ------------------------------------------------------------------ linked loops
+
+_PENDING_JOBS = ("waiting_for_media", "queued")
+
+
+async def _drop_pending_jobs(db: AsyncSession, loop_id: uuid.UUID, media_ids: list[uuid.UUID] | None = None) -> None:
+    query = delete(InstagramPublicationJob).where(
+        InstagramPublicationJob.loop_id == loop_id, InstagramPublicationJob.status.in_(_PENDING_JOBS)
+    )
+    if media_ids is not None:
+        query = query.where(InstagramPublicationJob.media_id.in_(media_ids))
+    await db.execute(query)
+
+
+async def pause_linked_loop(db: AsyncSession, loop: InstagramLoop) -> None:
+    """The chief stopped sharing (or the partnership ended): the copy stops posting."""
+    if loop.status != "paused":
+        loop.status = "paused"
+        loop.next_run_at = None
+        await _drop_pending_jobs(db, loop.id)
+
+
+async def sync_linked_loop(db: AsyncSession, source: InstagramLoop, copy: InstagramLoop) -> None:
+    """Make the partner's linked copy match the chief's loop: settings and media.
+    New media are copied (locked) into the partner's workspace; removed ones leave the playlist."""
+    copy.name = source.name[:120]
+    copy.interval_min_minutes = source.interval_min_minutes
+    copy.interval_max_minutes = source.interval_max_minutes
+    copy.daily_limit_per_account = source.daily_limit_per_account
+    copy.post_type = source.post_type
+    copy.repeat_media = source.repeat_media
+    wanted = {
+        media.id: media
+        for media in await db.scalars(
+            select(InstagramMedia)
+            .join(InstagramLoopMedia, InstagramLoopMedia.media_id == InstagramMedia.id)
+            .where(InstagramLoopMedia.loop_id == source.id, InstagramMedia.workspace_id == source.workspace_id)
+        )
+    }
+    have = list(
+        await db.scalars(
+            select(InstagramMedia)
+            .join(InstagramLoopMedia, InstagramLoopMedia.media_id == InstagramMedia.id)
+            .where(InstagramLoopMedia.loop_id == copy.id, InstagramMedia.workspace_id == copy.workspace_id)
+        )
+    )
+    present = {media.template_media_id for media in have}
+    gone = [media.id for media in have if media.template_media_id not in wanted]
+    if gone:
+        await _drop_pending_jobs(db, copy.id, gone)
+        await db.execute(
+            delete(InstagramLoopMedia).where(InstagramLoopMedia.loop_id == copy.id, InstagramLoopMedia.media_id.in_(gone))
+        )
+    pairs = []
+    for media in wanted.values():
+        if media.id in present:
+            continue
+        new_id = uuid.uuid4()
+        path = _copied_path(copy.workspace_id, new_id, media.storage_path)
+        pairs.append((media.storage_path, path))
+        db.add(
+            InstagramMedia(
+                id=new_id, workspace_id=copy.workspace_id, storage_path=path, filename=media.filename,
+                mime_type=media.mime_type, media_type=media.media_type, size_bytes=media.size_bytes,
+                caption=media.caption, locked=True, template_media_id=media.id,
+                created_at=media.created_at,  # same playlist order as the chief's loop
+            )
+        )
+        db.add(InstagramLoopMedia(loop_id=copy.id, media_id=new_id))
+    await db.flush()
+    await _copy_objects(pairs)
+
+
+async def ensure_linked_loop(db: AsyncSession, source: InstagramLoop, workspace_id: uuid.UUID) -> InstagramLoop:
+    """The partner's linked copy of a shared loop, created on first need with zero accounts.
+    It is active from the start: with no accounts it posts nothing until the partner adds one."""
+    copy = await db.scalar(
+        select(InstagramLoop).where(
+            InstagramLoop.workspace_id == workspace_id,
+            InstagramLoop.template_loop_id == source.id,
+            InstagramLoop.linked.is_(True),
+        )
+    )
+    if copy is None:
+        copy = InstagramLoop(
+            workspace_id=workspace_id, name=source.name[:120],
+            interval_min_minutes=source.interval_min_minutes, interval_max_minutes=source.interval_max_minutes,
+            daily_limit_per_account=source.daily_limit_per_account, post_type=source.post_type,
+            repeat_media=source.repeat_media, auto_folder_ids=[], status="active", next_run_at=None,
+            template_loop_id=source.id, linked=True,
+        )
+        db.add(copy)
+        await db.flush()
+    await sync_linked_loop(db, source, copy)
+    return copy
+
+
+async def sync_partner_loops(db: AsyncSession, link: Affiliation) -> list[InstagramLoop]:
+    """Every loop the chief shares with this partner exists as a linked copy and is up to date;
+    copies of loops no longer shared with them are paused. The caller commits."""
+    partner_ws = await owner_workspace(db, link.affiliate_user_id)
+    if partner_ws is None:
+        return []
+    chief_ws = await owner_workspace(db, link.chief_user_id) if accepted(link) else None
+    sources = (
+        [
+            loop
+            for loop in await db.scalars(
+                select(InstagramLoop).where(InstagramLoop.workspace_id == chief_ws.id, InstagramLoop.shared.is_(True))
+            )
+            if shares_with(loop, link.affiliate_user_id)
+        ]
+        if chief_ws is not None
+        else []
+    )
+    copies = [await ensure_linked_loop(db, source, partner_ws.id) for source in sources]
+    kept = {copy.id for copy in copies}
+    for orphan in await db.scalars(
+        select(InstagramLoop).where(InstagramLoop.workspace_id == partner_ws.id, InstagramLoop.linked.is_(True))
+    ):
+        if orphan.id not in kept:
+            await pause_linked_loop(db, orphan)
+    return copies
+
+
+async def linked_loop_available(db: AsyncSession, loop: InstagramLoop) -> bool:
+    """A linked copy whose chief still shares the original with this partner."""
+    if not loop.linked or loop.template_loop_id is None:
+        return False
+    source = await db.get(InstagramLoop, loop.template_loop_id)
+    workspace = await db.get(Workspace, loop.workspace_id)
+    if source is None or workspace is None:
+        return False
+    link = await partner_link(db, workspace.owner_id)
+    chief_ws = await owner_workspace(db, link.chief_user_id) if accepted(link) else None
+    return chief_ws is not None and source.workspace_id == chief_ws.id and shares_with(source, workspace.owner_id)
+
+
+async def sync_all_shared_loops(db: AsyncSession) -> int:
+    """Periodic job: provision and refresh every partner's linked loops; pause the ones that
+    lost access (partnership ended). One partner failing never blocks the others."""
+    synced = 0
+    for link in list(await db.scalars(select(Affiliation).where(Affiliation.status == "ACTIVE"))):
+        try:
+            synced += len(await sync_partner_loops(db, link))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.exception("Shared loop sync failed for a partner")
+    for loop in list(await db.scalars(select(InstagramLoop).where(InstagramLoop.linked.is_(True), InstagramLoop.status == "active"))):
+        if not await linked_loop_available(db, loop):
+            await pause_linked_loop(db, loop)
+    await db.commit()
+    return synced
 
 
 def _remap(value, ids: dict[str, str]):

@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { FlashBotLogo } from "@/components/FlashBotLogo";
 import { todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { ConversionOverview } from "@/features/bots/ConversionOverview";
 
@@ -28,7 +29,10 @@ export function BotsPage() {
         <>
           <header>
             <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Vendas</p>
-            <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">FlashBot</h1>
+            <h1 className="mt-2 flex items-center gap-2.5 text-2xl font-semibold text-fg sm:text-3xl">
+              <FlashBotLogo className="size-8 shrink-0 sm:size-9" />
+              FlashBot
+            </h1>
             <p className="mt-2 text-sm text-muted">
               Seus robôs de venda no Telegram: conecte, monte o funil de cada um e acompanhe as vendas no Pix em tempo real.
             </p>

@@ -46,11 +46,13 @@ class TgFlow(Base):
     definition: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Who it is shared with: None = every partner, else a list of partner user ids.
+    shared_with: Mapped[list | None] = mapped_column(JSON)
     template_flow_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="SET NULL")
     )
     customized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # A funnel shared with partners always goes out together with a loop.
+    # Loop that goes out together with the shared funnel (optional).
     shared_loop_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("instagram_loops.id", ondelete="SET NULL")
     )

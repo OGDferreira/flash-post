@@ -113,12 +113,37 @@ export function useUseTemplate(kind: "loops" | "flows") {
   });
 }
 
+export type ShareInput = {
+  id: string;
+  shared: boolean;
+  /** null = every partner. */
+  partner_ids?: string[] | null;
+  /** Funnels only: the loop that goes out together (optional). */
+  loop_id?: string | null;
+};
+
 export function useShareToggle(kind: "loops" | "flows") {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, shared, loop_id }: { id: string; shared: boolean; loop_id?: string }) =>
-      apiRequest(`/api/partners/${kind}/${id}/share`, { method: "POST", body: { shared, loop_id } }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: kind === "flows" ? ["bots", "flows"] : ["loops"] }),
+    mutationFn: ({ id, shared, partner_ids = null, loop_id = null }: ShareInput) =>
+      apiRequest(`/api/partners/${kind}/${id}/share`, { method: "POST", body: { shared, partner_ids, loop_id } }),
+    onSuccess: () => {
+      // sharing a funnel can share its loop too
+      void queryClient.invalidateQueries({ queryKey: ["bots", "flows"] });
+      void queryClient.invalidateQueries({ queryKey: ["loops"] });
+    },
+  });
+}
+
+export type PartnerOption = { id: string; name: string; nickname: string };
+
+/** Chief: their active partners, to pick who receives a funnel or a loop. */
+export function useMyPartners(enabled = true) {
+  return useQuery({
+    queryKey: ["partners", "mine"],
+    queryFn: () => apiRequest<{ partners: PartnerOption[] }>("/api/partners/mine"),
+    enabled,
+    staleTime: 60_000,
   });
 }
 

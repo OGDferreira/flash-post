@@ -75,6 +75,10 @@ class InstagramLoop(Base):
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # A chief's loop offered to their partners, and the template a copy came from.
     shared: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=text("false"))
+    # Who it is shared with: None = every partner, else a list of partner user ids.
+    shared_with: Mapped[list | None] = mapped_column(JSON)
+    # A partner's copy that follows the chief's loop (media and schedule); only accounts are the partner's.
+    linked: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=text("false"))
     template_loop_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("instagram_loops.id", ondelete="SET NULL")
     )
@@ -124,6 +128,8 @@ class InstagramMedia(Base):
     caption: Mapped[str | None] = mapped_column(String(2200))
     # copied from a chief's shared loop: posts normally, but the partner never sees it
     locked: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=text("false"))
+    # the chief's media this copy came from (lets a linked loop follow the original)
+    template_media_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

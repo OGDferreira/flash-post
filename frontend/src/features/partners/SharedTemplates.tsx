@@ -1,13 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
-import { Check, CopyPlus, Share2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, CopyPlus, Infinity as InfinityIcon, Pause, Play, Share2, UserPlus } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import type { Flow } from "@/features/bots/types";
+import type { InstagramLoop, LoopAccount } from "@/pages/loops/loopShared";
 import { ApiError, apiRequest } from "@/services/api";
-import { useChiefLabel, useShareToggle, useSharedTemplates, useUseTemplate } from "./api";
+import { type PartnerOption, useChiefLabel, useMyPartners, useShareToggle, useSharedTemplates, useUseTemplate } from "./api";
 
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : "Não foi possível concluir a ação.");
 
@@ -20,81 +24,316 @@ function AcceptFirst() {
   );
 }
 
-/** Chief: offer a loop to partners as a template (copied with zero accounts). */
-export function ShareLoopButton({ loop }: { loop: { id: string; name: string; shared?: boolean; from_template?: boolean } }) {
-  const toggle = useShareToggle("loops");
-  if (loop.from_template) return null;
+/** "Só seu", "Compartilhado com todos os sócios" or "Compartilhado com Ana, Bia". */
+function shareLabel(item: { shared?: boolean; shared_with?: string[] | null }, partners: PartnerOption[]) {
+  if (!item.shared) return "Só seu";
+  if (!item.shared_with) return "Compartilhado com todos os sócios";
+  const names = item.shared_with.map((id) => partners.find((partner) => partner.id === id)?.name.split(/\s+/)[0] ?? "sócio");
+  return `Compartilhado com ${names.join(", ")}`;
+}
+
+type Shareable = { id: string; name: string; shared?: boolean; shared_with?: string[] | null; shared_loop_id?: string | null };
+
+/** Chief: choose who receives a funnel or a loop (everyone or specific partners) and, for funnels, a loop to go with it. */
+function ShareDialog({ item, kind, loops, onClose }: {
+  item: Shareable | null;
+  kind: "loops" | "flows";
+  loops?: { id: string; name: string }[];
+  onClose: () => void;
+}) {
+  const partners = useMyPartners(item !== null);
+  const toggle = useShareToggle(kind);
+  const [mode, setMode] = useState<"all" | "some">("all");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [loopId, setLoopId] = useState("");
+
+  useEffect(() => {
+    if (!item) return;
+    setMode(item.shared && item.shared_with ? "some" : "all");
+    setPicked(new Set(item.shared && item.shared_with ? item.shared_with : []));
+    setLoopId(item.shared ? item.shared_loop_id ?? "" : "");
+    toggle.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id]);
+
+  if (!item) return null;
+  const list = partners.data?.partners ?? [];
+  const flip = (id: string) =>
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const share = () =>
+    toggle.mutate(
+      {
+        id: item.id,
+        shared: true,
+        partner_ids: mode === "all" ? null : [...picked],
+        loop_id: kind === "flows" ? loopId || null : null,
+      },
+      { onSuccess: onClose },
+    );
+  const stop = () => toggle.mutate({ id: item.id, shared: false }, { onSuccess: onClose });
+
   return (
-    <button
-      aria-label={loop.shared ? `Parar de compartilhar ${loop.name}` : `Compartilhar ${loop.name} com sócios`}
-      aria-pressed={Boolean(loop.shared)}
-      className={`grid size-9 place-items-center rounded-lg border hover:bg-surface-raised disabled:opacity-50 ${
-        loop.shared ? "border-brand text-accent" : "border-line text-fg-2"
-      }`}
-      disabled={toggle.isPending}
-      onClick={() => toggle.mutate({ id: loop.id, shared: !loop.shared })}
-      title={loop.shared ? "Compartilhado com sócios (clique para parar)" : "Compartilhar com sócios"}
-      type="button"
+    <Modal
+      busy={toggle.isPending}
+      description={
+        kind === "flows"
+          ? "O sócio roda o funil no robô dele sem ver nem copiar textos, mídias ou ofertas."
+          : "O sócio recebe o loop pronto em “Loops compartilhados”: posta as mesmas mídias, mas só depois que ele conectar as contas dele."
+      }
+      footer={
+        <div className="flex flex-wrap justify-end gap-2">
+          {item.shared && (
+            <Button disabled={toggle.isPending} onClick={stop} variant="danger">
+              Parar de compartilhar
+            </Button>
+          )}
+          <Button disabled={toggle.isPending || (mode === "some" && picked.size === 0)} onClick={share} variant="primary">
+            <Share2 size={14} /> {item.shared ? "Salvar" : "Compartilhar"}
+          </Button>
+        </div>
+      }
+      onClose={onClose}
+      open
+      title={`Compartilhar “${item.name}”`}
     >
-      <Share2 size={15} />
-    </button>
+      <div className="space-y-4">
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-fg">Com quem</legend>
+          <label className="flex items-center gap-2 text-sm text-fg-2">
+            <input checked={mode === "all"} name="share-mode" onChange={() => setMode("all")} type="radio" />
+            Todos os sócios (inclusive os que entrarem depois)
+          </label>
+          <label className="flex items-center gap-2 text-sm text-fg-2">
+            <input checked={mode === "some"} name="share-mode" onChange={() => setMode("some")} type="radio" />
+            Sócios específicos
+          </label>
+          {mode === "some" && (
+            <div className="ml-6 space-y-1.5">
+              {partners.isLoading && <LoadingState label="Carregando sócios" />}
+              {partners.data && list.length === 0 && <p className="text-xs text-muted">Você ainda não tem sócios ativos.</p>}
+              {list.map((partner) => (
+                <label className="flex items-center gap-2 text-sm text-fg" key={partner.id}>
+                  <input checked={picked.has(partner.id)} onChange={() => flip(partner.id)} type="checkbox" />
+                  {partner.name}
+                  {partner.nickname && <span className="text-xs text-muted">@{partner.nickname}</span>}
+                </label>
+              ))}
+            </div>
+          )}
+        </fieldset>
+        {kind === "flows" && (
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium text-fg">Compartilhar um loop junto (opcional)</span>
+            <select className="field !min-h-10 text-sm" onChange={(event) => setLoopId(event.target.value)} value={loopId}>
+              <option value="">Sem loop</option>
+              {(loops ?? []).map((loop) => (
+                <option key={loop.id} value={loop.id}>{loop.name}</option>
+              ))}
+            </select>
+            <span className="block text-xs text-muted">
+              O loop vai para os mesmos sócios e aparece pronto para eles, sem contas: começa a postar quando eles conectarem as
+              contas deles.
+            </span>
+          </label>
+        )}
+        {toggle.error && <ErrorState message={errorText(toggle.error)} />}
+      </div>
+    </Modal>
   );
 }
 
-/** Partner: the chief's shared loops, copied into the partner's own operation. */
-export function SharedLoopsSection() {
+/** Chief: share a loop with every partner or with specific ones. */
+export function ShareLoopButton({ loop }: { loop: InstagramLoop }) {
+  const [open, setOpen] = useState(false);
+  const partners = useMyPartners();
+  if (loop.from_template || loop.linked) return null;
+  const label = shareLabel(loop, partners.data?.partners ?? []);
+  return (
+    <>
+      <button
+        aria-label={`Compartilhar ${loop.name} com sócios`}
+        aria-pressed={Boolean(loop.shared)}
+        className={`grid size-9 place-items-center rounded-lg border hover:bg-surface-raised ${
+          loop.shared ? "border-brand text-accent" : "border-line text-fg-2"
+        }`}
+        onClick={() => setOpen(true)}
+        title={loop.shared ? `${label} (clique para mudar)` : "Compartilhar com sócios"}
+        type="button"
+      >
+        <Share2 size={15} />
+      </button>
+      <ShareDialog item={open ? loop : null} kind="loops" onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
+/** Partner: the area with the loops the chief shared. Each one posts the chief's media and
+ *  only starts once the partner adds their own accounts to it. */
+export function SharedLoopsSection({ loops, accounts }: { loops: InstagramLoop[]; accounts: LoopAccount[] }) {
   const chief = useChiefLabel();
+  const queryClient = useQueryClient();
   const shared = useSharedTemplates();
-  const use = useUseTemplate("loops");
-  const data = shared.data;
-  if (!data?.available || data.loops.length === 0) return null;
+  const [editing, setEditing] = useState<InstagramLoop | null>(null);
+  const linked = loops.filter((loop) => loop.linked);
+  const sharedCount = shared.data?.loops.length ?? 0;
+  const availableCount = linked.filter((loop) => loop.linked_available).length;
+  // Opening the area creates the partner's copies on the server; refresh the list once they exist.
+  useEffect(() => {
+    if (sharedCount > availableCount) void queryClient.invalidateQueries({ queryKey: ["loops"] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shared.dataUpdatedAt]);
+  const status = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      apiRequest(`/api/loops/${id}/status`, { method: "PATCH", body: { enabled } }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
+  });
+  if (!shared.data?.available || (linked.length === 0 && sharedCount === 0)) return null;
   return (
     <section className="glass-panel space-y-3 p-4">
       <div>
-        <h3 className="text-base font-semibold text-fg">Loops compartilhados por {chief}</h3>
+        <h3 className="flex items-center gap-2 text-base font-semibold text-fg">
+          <InfinityIcon className="text-accent" size={17} /> Loops compartilhados por {chief}
+        </h3>
         <p className="mt-1 text-xs text-muted">
-          Ao usar, o loop é copiado para a sua operação com as mesmas configurações e mídias, sem contas. Sua fila, posts e
-          métricas são só seus, e o original de {chief} não muda.
+          Já vêm prontos: postam as mesmas mídias e seguem os mesmos horários dos loops de {chief}. Eles começam sem nenhuma
+          conta e só postam depois que você conectar as suas. Fila, posts e métricas são só seus.
         </p>
       </div>
-      {!data.accepted && <AcceptFirst />}
-      {use.error && <ErrorState message={errorText(use.error)} />}
-      <div className="grid gap-2 sm:grid-cols-2">
-        {data.loops.map((loop) => (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-line-soft bg-surface-inset p-3" key={loop.id}>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-fg">{loop.name}</p>
+      {!shared.data.accepted && <AcceptFirst />}
+      {status.error && <ErrorState message={errorText(status.error)} />}
+      {linked.length === 0 ? (
+        <LoadingState label="Preparando os loops compartilhados" />
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {linked.map((loop) => (
+            <div className="space-y-2 rounded-xl border border-line-soft bg-surface-inset p-3" key={loop.id}>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 truncate text-sm font-medium text-fg">{loop.name}</p>
+                {!loop.linked_available ? (
+                  <Badge tone="warning">Parou de ser compartilhado</Badge>
+                ) : loop.accounts.length === 0 ? (
+                  <Badge tone="warning">Sem contas</Badge>
+                ) : loop.status === "active" ? (
+                  <Badge tone="success">Postando</Badge>
+                ) : (
+                  <Badge>Pausado</Badge>
+                )}
+              </div>
               <p className="text-[11px] text-muted">
                 {loop.media_count} mídia(s) · a cada {loop.interval_min_minutes}–{loop.interval_max_minutes} min · até{" "}
                 {loop.daily_limit_per_account}/dia por conta
               </p>
+              <p className="text-xs text-fg-2">
+                {loop.accounts.length === 0
+                  ? "Nenhuma conta conectada neste loop ainda."
+                  : loop.accounts.map((account) => `@${account.username}`).join(", ")}
+              </p>
+              {loop.linked_available && (
+                <div className="flex flex-wrap gap-2">
+                  <Button disabled={!shared.data!.accepted} onClick={() => setEditing(loop)} size="sm" variant="primary">
+                    <UserPlus size={14} /> {loop.accounts.length === 0 ? "Conectar contas" : "Trocar contas"}
+                  </Button>
+                  <Button
+                    disabled={status.isPending}
+                    onClick={() => status.mutate({ id: loop.id, enabled: loop.status !== "active" })}
+                    size="sm"
+                  >
+                    {loop.status === "active" ? <Pause size={14} /> : <Play size={14} />}
+                    {loop.status === "active" ? "Pausar" : "Ativar"}
+                  </Button>
+                </div>
+              )}
             </div>
-            <Button disabled={!data.accepted || use.isPending} onClick={() => use.mutate(loop.id)} size="sm" variant="primary">
-              {loop.in_use ? <Check size={14} /> : <CopyPlus size={14} />} {loop.in_use ? "Usar de novo" : "Usar"}
-            </Button>
-          </div>
-        ))}
-      </div>
-      {use.data && <p className="text-xs text-success">“{use.data.name}” foi criado na sua lista, pausado. Adicione suas contas e ative.</p>}
+          ))}
+        </div>
+      )}
+      <LoopAccountsDialog accounts={accounts} loop={editing} onClose={() => setEditing(null)} />
     </section>
   );
 }
 
-/** FlashBot tab: partners pick the chief's shared funnels; owners choose what to share. */
+/** Partner: pick which of their own accounts post a shared loop. */
+function LoopAccountsDialog({ loop, accounts, onClose }: { loop: InstagramLoop | null; accounts: LoopAccount[]; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setPicked(new Set(loop?.accounts.map((account) => account.id) ?? []));
+  }, [loop]);
+  const save = useMutation({
+    mutationFn: () => apiRequest(`/api/loops/${loop!.id}/accounts`, { method: "PUT", body: { account_ids: [...picked] } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["loops"] });
+      onClose();
+    },
+  });
+  if (!loop) return null;
+  const usable = accounts.filter((account) => account.status === "connected");
+  return (
+    <Modal
+      busy={save.isPending}
+      description="Só as contas que você marcar postam este loop. As mídias e os horários continuam vindo do seu sócio."
+      footer={
+        <Button disabled={save.isPending} onClick={() => save.mutate()} variant="primary">
+          Salvar contas
+        </Button>
+      }
+      onClose={onClose}
+      open
+      title={`Contas de “${loop.name}”`}
+    >
+      <div className="space-y-2">
+        {usable.length === 0 ? (
+          <p className="text-sm text-muted">
+            Você ainda não tem contas do Instagram conectadas.{" "}
+            <Link className="text-accent underline" to="/feature/accounts">Conecte uma conta</Link> e volte aqui.
+          </p>
+        ) : (
+          usable.map((account) => (
+            <label className="flex items-center gap-2 text-sm text-fg" key={account.id}>
+              <input
+                checked={picked.has(account.id)}
+                onChange={() =>
+                  setPicked((current) => {
+                    const next = new Set(current);
+                    if (next.has(account.id)) next.delete(account.id);
+                    else next.add(account.id);
+                    return next;
+                  })
+                }
+                type="checkbox"
+              />
+              @{account.username}
+            </label>
+          ))
+        )}
+        {save.error && <ErrorState message={errorText(save.error)} />}
+      </div>
+    </Modal>
+  );
+}
+
+/** FlashBot tab: partners pick the chief's shared funnels; owners choose what to share and with whom. */
 export function SharedFlowsPanel() {
   const chief = useChiefLabel();
   const shared = useSharedTemplates();
   const use = useUseTemplate("flows");
-  const toggle = useShareToggle("flows");
+  const isOwner = shared.data !== undefined && !shared.data.available;
+  const partners = useMyPartners(isOwner);
+  const [sharing, setSharing] = useState<Flow | null>(null);
   const own = useQuery({
     queryKey: ["bots", "flows"],
     queryFn: () => apiRequest<{ flows: Flow[] }>("/api/bots/flows/list"),
-    enabled: shared.data !== undefined && !shared.data.available,
+    enabled: isOwner,
   });
   const loops = useQuery({
     queryKey: ["loops"],
-    queryFn: () => apiRequest<{ loops: { id: string; name: string }[] }>("/api/loops"),
-    enabled: shared.data !== undefined && !shared.data.available,
+    queryFn: () => apiRequest<{ loops: InstagramLoop[] }>("/api/loops"),
+    enabled: isOwner,
   });
   if (shared.isLoading) return <LoadingState label="Carregando funis compartilhados" />;
   if (shared.error) return <ErrorState message={errorText(shared.error)} onRetry={() => void shared.refetch()} />;
@@ -104,20 +343,20 @@ export function SharedFlowsPanel() {
     return (
       <div className="space-y-3">
         <p className="text-sm text-muted">
-          Funis de {chief} prontos para rodar no seu robô. Cada funil vem com um loop: ao usar, o loop é copiado para a sua
-          operação (sem contas, você adiciona as suas). Depois, escolha o funil no seu robô em “Meus bots”. O conteúdo do funil
-          é de {chief} e fica protegido; leads, vendas e métricas são seus.
+          Funis de {chief} prontos para rodar no seu robô. Quando o funil vem com um loop, ele já aparece em Loops, na área
+          “Loops compartilhados”, sem contas: conecte as suas e ele começa a postar. Depois, escolha o funil no seu robô em
+          “Meus bots”. O conteúdo do funil é de {chief} e fica protegido; leads, vendas e métricas são seus.
         </p>
         {!data.accepted && <AcceptFirst />}
         {use.error && <ErrorState message={errorText(use.error)} />}
         {use.data && (
           <p className="text-xs text-success">
-            Pronto! {use.data.loop ? `O loop “${use.data.loop.name}” está em Loops (pausado, sem contas). ` : ""}
+            Pronto! {use.data.loop ? `O loop “${use.data.loop.name}” está em Loops compartilhados (conecte suas contas nele). ` : ""}
             Agora vá em “Meus bots” e escolha “{use.data.name}” no seu robô, junto com o seu grupo de entrega.
           </p>
         )}
         {data.flows.length === 0 ? (
-          <EmptyState message={`${chief} ainda não compartilhou nenhum funil.`} />
+          <EmptyState message={`${chief} ainda não compartilhou nenhum funil com você.`} />
         ) : (
           <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
             {data.flows.map((flow) => (
@@ -126,9 +365,12 @@ export function SharedFlowsPanel() {
                   <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
                   {flow.in_use && <Badge tone="success">No seu robô</Badge>}
                 </div>
-                <p className="text-xs text-muted">Loop junto: {flow.loop_name ?? "—"}{flow.loop_in_use ? " · já copiado" : ""}</p>
+                <p className="text-xs text-muted">
+                  {flow.loop_name ? `Loop junto: ${flow.loop_name}${flow.loop_in_use ? " · já está nos seus loops" : ""}` : "Sem loop junto"}
+                </p>
                 <Button disabled={!data.accepted || use.isPending} onClick={() => use.mutate(flow.id)} size="sm" variant="primary">
-                  <CopyPlus size={14} /> {flow.loop_in_use ? "Usar de novo" : "Usar funil + loop"}
+                  {flow.loop_in_use || !flow.loop_name ? <Check size={14} /> : <CopyPlus size={14} />}{" "}
+                  {flow.loop_name ? (flow.loop_in_use ? "Usar funil" : "Usar funil + loop") : "Usar funil"}
                 </Button>
               </Card>
             ))}
@@ -139,45 +381,40 @@ export function SharedFlowsPanel() {
   }
 
   const flows = (own.data?.flows ?? []).filter((flow) => !flow.from_template);
-  const myLoops = loops.data?.loops ?? [];
+  const myLoops = (loops.data?.loops ?? []).filter((loop) => !loop.linked && !loop.from_template);
+  const partnerList = partners.data?.partners ?? [];
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        Compartilhe um funil junto com um loop. O sócio roda o funil no robô dele sem ver nem copiar textos, mídias ou
-        ofertas, e recebe o loop sem contas. Só as vendas por funis seus geram a sua comissão.
+        Clique em um funil para compartilhar com todos os sócios ou só com quem você escolher, e, se quiser, mande um loop
+        junto para o sócio receber tudo pronto. O sócio roda o funil sem ver o conteúdo e recebe o loop sem contas. Só as
+        vendas por funis seus geram a sua comissão.
       </p>
-      {toggle.error && <ErrorState message={errorText(toggle.error)} />}
       {own.isLoading && <LoadingState label="Carregando funis" />}
       {own.data && flows.length === 0 && <EmptyState message="Crie um funil em “Meus funis” para poder compartilhar." />}
       <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
-        {flows.map((flow) => (
-          <div className="space-y-2 rounded-xl border border-line-soft bg-surface-inset p-3" key={flow.id}>
-            <div className="flex items-center justify-between gap-2">
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-fg">{flow.name}</span>
-                <span className="text-[11px] text-muted">{flow.shared ? "Compartilhado com seus sócios" : "Só seu"}</span>
-              </span>
-              {flow.shared && (
-                <Button disabled={toggle.isPending} onClick={() => toggle.mutate({ id: flow.id, shared: false })} size="sm">
-                  Parar
-                </Button>
-              )}
-            </div>
-            <select
-              aria-label={`Loop que vai junto com ${flow.name}`}
-              className="field !min-h-9 text-xs"
-              disabled={toggle.isPending}
-              onChange={(event) => event.target.value && toggle.mutate({ id: flow.id, shared: true, loop_id: event.target.value })}
-              value={flow.shared ? flow.shared_loop_id ?? "" : ""}
+        {flows.map((flow) => {
+          const loopName = flow.shared ? myLoops.find((loop) => loop.id === flow.shared_loop_id)?.name : undefined;
+          return (
+            <button
+              className={`space-y-1 rounded-xl border bg-surface-inset p-3 text-left hover:bg-surface-raised ${
+                flow.shared ? "border-brand" : "border-line-soft"
+              }`}
+              key={flow.id}
+              onClick={() => setSharing(flow)}
+              type="button"
             >
-              <option value="">{flow.shared ? "Trocar o loop…" : "Compartilhar com o loop…"}</option>
-              {myLoops.map((loop) => (
-                <option key={loop.id} value={loop.id}>{loop.name}</option>
-              ))}
-            </select>
-          </div>
-        ))}
+              <span className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-sm font-medium text-fg">{flow.name}</span>
+                <Share2 className={flow.shared ? "text-accent" : "text-muted"} size={14} />
+              </span>
+              <span className="block text-[11px] text-muted">{shareLabel(flow, partnerList)}</span>
+              {flow.shared && <span className="block text-[11px] text-muted">{loopName ? `Com o loop “${loopName}”` : "Sem loop junto"}</span>}
+            </button>
+          );
+        })}
       </div>
+      <ShareDialog item={sharing} kind="flows" loops={myLoops} onClose={() => setSharing(null)} />
     </div>
   );
 }

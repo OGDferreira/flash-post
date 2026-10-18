@@ -32,6 +32,7 @@ from app.loops.scheduler import (
     record_publication_confirmed,
 )
 from app.core.security import WorkspaceRole
+from app.partners.service import linked_loop_available
 from app.schemas.loops import (
     InstagramAccountDailyProgress,
     InstagramAlertsResponse,
@@ -49,6 +50,18 @@ from app.schemas.loops import (
 )
 
 router = APIRouter(prefix="/api/loops", tags=["Instagram loops"])
+LINKED_LOOP_LOCKED = (
+    "Este loop é compartilhado pelo seu sócio: mídias e horários vêm do loop dele. "
+    "Aqui você só escolhe as suas contas."
+)
+
+
+def _reject_linked(loop: InstagramLoop) -> None:
+    """A partner's linked copy follows the chief's loop; only its accounts and status change here."""
+    if loop.linked:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LINKED_LOOP_LOCKED)
+
+
 def _utc_datetime(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
@@ -141,7 +154,14 @@ async def _loop_response(
         id=loop.id,
         name=loop.name,
         shared=bool(loop.shared),
+        shared_with=(
+            [uuid.UUID(str(item)) for item in loop.shared_with]
+            if loop.shared and loop.shared_with is not None
+            else None
+        ),
         from_template=loop.template_loop_id is not None,
+        linked=loop.linked,
+        linked_available=await linked_loop_available(db, loop) if loop.linked else False,
         auto_folder_ids=[uuid.UUID(str(item)) for item in (loop.auto_folder_ids or [])],
         interval_min_minutes=loop.interval_min_minutes,
         interval_max_minutes=loop.interval_max_minutes,
@@ -819,6 +839,7 @@ async def clone_loop(
     )
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    _reject_linked(source)
 
     now = utc_now()
     clone_suffix = " (cópia)"
@@ -880,6 +901,7 @@ async def update_loop(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    _reject_linked(loop)
     previous_account_ids = set(
         (
             await db.scalars(
@@ -1020,6 +1042,11 @@ async def update_loop_status(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    if payload.enabled and loop.linked and not await linked_loop_available(db, loop):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Seu sócio parou de compartilhar este loop, então ele não pode ser ativado.",
+        )
     restarting = payload.enabled and loop.status != "active"
     loop.status = "active" if payload.enabled else "paused"
     now = utc_now()
@@ -1084,6 +1111,7 @@ async def remove_loop_media(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    _reject_linked(loop)
     loop_media = await db.get(InstagramLoopMedia, (loop.id, media_id))
     if loop_media is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop media not found.")
@@ -1132,6 +1160,11 @@ async def delete_loop(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    if loop.linked and await linked_loop_available(db, loop):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este loop é compartilhado pelo seu sócio e só sai daqui quando ele parar de compartilhar. Você pode pausá-lo.",
+        )
     active_publication = await db.scalar(
         select(InstagramPublicationJob.id)
         .where(

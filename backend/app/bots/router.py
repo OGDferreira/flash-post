@@ -25,7 +25,7 @@ from app.core.config import get_settings
 from app.core.crypto import encrypt_value
 from app.core.database import get_session_factory
 from app.models import TgBot, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
-from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access
+from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access, shares_with
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.bots.stats import conversion_stats
 from app.core.time import utc_now
@@ -105,6 +105,7 @@ def _flow_out(flow: TgFlow, bots: int = 0, protected: bool = False) -> dict:
         "bots": bots,
         "updated_at": flow.updated_at.isoformat() if flow.updated_at else None,
         "shared": bool(flow.shared),
+        "shared_with": [str(t) for t in flow.shared_with] if flow.shared and flow.shared_with is not None else None,
         "shared_loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
         "from_template": flow.template_flow_id is not None,
     }
@@ -353,6 +354,7 @@ async def list_flows(access: OwnerAccess, db: DbSession) -> dict:
                 for f in await db.scalars(
                     select(TgFlow).where(TgFlow.workspace_id == chief_workspace.id, TgFlow.shared.is_(True)).order_by(TgFlow.name)
                 )
+                if shares_with(f, access.workspace.owner_id)
             ]
     received = {f.id for f in flows if await _is_received_copy(db, f)}
     return {"flows": [_flow_out(f, int(usage.get(f.id, 0)), f.id in received) for f in flows], "shared_flows": shared}
