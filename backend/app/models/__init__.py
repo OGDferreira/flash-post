@@ -47,6 +47,7 @@ from app.models.push import (
 from app.models.workspace import Workspace, WorkspaceMember
 from app.models.telegram_bot import (
     TgBot,
+    TgCampaign,
     TgFlow,
     TgGroup,
     TgJob,
@@ -60,6 +61,7 @@ from app.models.telegram_bot import (
 __all__ = [
     "AppNotification",
     "TgBot",
+    "TgCampaign",
     "TgFlow",
     "TgGroup",
     "TgJob",

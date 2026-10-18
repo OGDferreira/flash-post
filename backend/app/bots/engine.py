@@ -175,7 +175,7 @@ async def send_media_message(
     reply_markup: dict | None = None,
     spoiler: bool = False,
     protect: bool = False,
-) -> None:
+) -> dict:
     if kind not in _SEND:  # a "photo/video" block follows the uploaded file
         kind = "video" if media.kind == "video" else "photo"
     method, field = _SEND[kind]
@@ -190,12 +190,13 @@ async def send_media_message(
         protect=protect,
     )
     _remember_file_id(bot, media, message, field)
+    return message
 
 
 async def send_album(
     db: AsyncSession, tg: TelegramClient, bot: TgBot, chat_id: int, medias: list[TgMedia],
     caption: str | None, spoiler: bool = False, protect: bool = False,
-) -> None:
+) -> list:
     items, files = [], {}
     for index, media in enumerate(medias):
         source = await _source(bot, media)
@@ -210,8 +211,10 @@ async def send_album(
             item.update({"caption": caption, "parse_mode": "HTML"})
         items.append(item)
     messages = await tg.send_media_group(chat_id, items, files, protect=protect)
-    for media, message in zip(medias, messages if isinstance(messages, list) else []):
+    messages = messages if isinstance(messages, list) else []
+    for media, message in zip(medias, messages):
         _remember_file_id(bot, media, message, "video" if media.kind == "video" else "photo")
+    return messages
 
 
 async def send_medias(
@@ -324,8 +327,8 @@ async def start_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDe
         # Microsecond offset keeps the offer after the last block.
         run += timedelta(microseconds=len(flow.welcome) + 1)
         await schedule(db, bot, "send_offer", run, f"offer:{lead.id}:{nonce}", lead)
-    if "no_pix" in (flow.downsell_audience or []):
-        await schedule_downsells(db, bot, lead, flow)
+    if flow.downsells_no_pix:
+        await schedule_downsells(db, bot, lead, flow, "no_pix")
 
 
 def _extra_rows(flow: FlowDefinition) -> list[list[dict]]:
@@ -348,6 +351,8 @@ def offer_keyboard(flow: FlowDefinition) -> dict | None:
         rows = [[button(flow.offer.cta_label, flow.offer.cta_style, callback_data="plans")]]
     else:
         rows = plans_keyboard(flow)["inline_keyboard"]
+    if flow.previews.enabled and flow.previews.media_ids:
+        rows.append([button(flow.previews.label, flow.previews.style, callback_data="prev")])
     rows += _extra_rows(flow)
     return {"inline_keyboard": rows} if rows else None
 
@@ -374,16 +379,66 @@ async def send_plans(tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDef
         await tg.send_message(lead.chat_id, render(flow.offer.plans_text, lead, bot=bot) or "👇", plans_keyboard(flow))
 
 
+# ---------------------------------------------------------------- previews
+
+
+def duration_text(seconds: int) -> str:
+    if seconds % 3600 == 0:
+        hours = seconds // 3600
+        return f"{hours} hora" if hours == 1 else f"{hours} horas"
+    if seconds % 60 == 0:
+        minutes = seconds // 60
+        return f"{minutes} minuto" if minutes == 1 else f"{minutes} minutos"
+    return f"{seconds} segundos"
+
+
+async def _previews_open(db: AsyncSession, lead: TgLead) -> bool:
+    return bool(await db.scalar(
+        select(TgJob.id).where(TgJob.lead_id == lead.id, TgJob.kind == "delete_messages", TgJob.status == "pending").limit(1)
+    ))
+
+
+async def send_previews(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
+    """Send the preview media (protected, no forwarding) and schedule their deletion."""
+    previews = flow.previews
+    medias = await _media_rows(db, bot, previews.media_ids)
+    if not medias:
+        return
+    caption = render(previews.text, lead, bot=bot, extra={"{tempo}": duration_text(previews.delete_after_seconds)}) or None
+    sent: list[dict] = []
+    if len(medias) > 1 and all(m.kind != "audio" for m in medias):
+        sent += await send_album(db, tg, bot, lead.chat_id, medias, caption if caption and len(caption) <= 1024 else None,
+                                 spoiler=previews.spoiler, protect=True)
+        if caption and len(caption) > 1024:
+            sent.append(await tg.send_message(lead.chat_id, caption, protect=True))
+    else:
+        for position, media in enumerate(medias):
+            text = caption if position == 0 and caption and len(caption) <= 1024 else None
+            sent.append(await send_media_message(
+                db, tg, bot, lead.chat_id, "voice" if media.kind == "audio" else media.kind, media, text,
+                spoiler=previews.spoiler, protect=True,
+            ))
+    ids = [int(m["message_id"]) for m in sent if isinstance(m, dict) and m.get("message_id")]
+    if ids:
+        await schedule(
+            db, bot, "delete_messages", utcnow() + timedelta(seconds=previews.delete_after_seconds),
+            f"prevdel:{lead.id}:{secrets.token_hex(6)}", lead, {"chat_id": lead.chat_id, "message_ids": ids},
+        )
+
+
 # ---------------------------------------------------------------- order bump, downsell, upsell
 
 
 async def send_bump_question(
     db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, plan: Plan, bump: OrderBump,
+    answers: tuple[str, str] | None = None,
 ) -> None:
+    """``answers``: callback data of the yes/no buttons (default: the flow plan's ``bump:y|n:<id>``)."""
+    yes, no = answers or (f"bump:y:{plan.id}", f"bump:n:{plan.id}")
     text = render(bump.text, lead, plan.name, plan.price, bot, {"{bump}": bump.name, "{bump_valor}": brl(bump.price)})
     keyboard = {"inline_keyboard": [
-        [button(f"{bump.accept_label} (+{brl(bump.price)})", "success", callback_data=f"bump:y:{plan.id}")],
-        [button(bump.decline_label, callback_data=f"bump:n:{plan.id}")],
+        [button(f"{bump.accept_label} (+{brl(bump.price)})", "success", callback_data=yes)],
+        [button(bump.decline_label, callback_data=no)],
     ]}
     await send_media_then_text(db, tg, bot, lead.chat_id, bump.media_ids, False, text, keyboard)
 
@@ -396,12 +451,20 @@ def discounted(price: Decimal, step: DownsellStep) -> Decimal:
     return max(value.quantize(Decimal("0.01")), Decimal("1.00"))  # SmokePay minimum
 
 
-async def schedule_downsells(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
-    """Queue the whole sequence once per lead; each step re-checks that the lead still has not paid."""
+# Each downsell sequence: job kind, job key prefix, button prefix and offer id letter.
+DOWNSELL = {
+    "pix": ("send_downsell", "downsell", "dplan", "d"),
+    "no_pix": ("send_downsell_np", "downsellnp", "nplan", "n"),
+}
+
+
+async def schedule_downsells(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition, sequence: str = "pix") -> None:
+    """Queue the whole sequence once per lead; each step re-checks that the lead still qualifies."""
+    kind, key, _, _ = DOWNSELL[sequence]
     run = utcnow()
-    for index, step in enumerate(flow.downsells):
+    for index, step in enumerate(flow.downsell_steps(sequence)):
         run += timedelta(minutes=step.delay_minutes)
-        await schedule(db, bot, "send_downsell", run, f"downsell:{lead.id}:{index}", lead, {"index": index})
+        await schedule(db, bot, kind, run, f"{key}:{lead.id}:{index}", lead, {"index": index})
 
 
 async def _has_paid(db: AsyncSession, lead: TgLead) -> bool:
@@ -412,23 +475,26 @@ def custom_offer_plan(index: int, offer: CustomOffer) -> Plan:
     return Plan(id=f"ds{index}", name=offer.name, price=offer.price, duration_days=offer.duration_days, delivery=offer.delivery)
 
 
-async def send_downsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int) -> None:
-    if not 0 <= index < len(flow.downsells) or await _has_paid(db, lead):
+async def send_downsell(
+    db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, sequence: str = "pix",
+) -> None:
+    steps = flow.downsell_steps(sequence)
+    if not 0 <= index < len(steps) or await _has_paid(db, lead):
         return
-    audience = flow.downsell_audience or []
-    if "pix" not in audience and await db.scalar(select(TgOrder.id).where(TgOrder.lead_id == lead.id).limit(1)):
-        return  # aimed only at leads who never generated a PIX
-    step = flow.downsells[index]
+    if sequence == "no_pix" and await db.scalar(select(TgOrder.id).where(TgOrder.lead_id == lead.id).limit(1)):
+        return  # generated a PIX meanwhile: the "Pix gerado" sequence takes over
+    prefix = DOWNSELL[sequence][2]
+    step = steps[index]
     if step.custom_offer:
         offer = step.custom_offer
-        rows = [[button(f"🔥 {offer.name} · {brl(offer.price)}", step.button_style, callback_data=f"dplan:{index}:@")]]
+        rows = [[button(f"🔥 {offer.name} · {brl(offer.price)}", step.button_style, callback_data=f"{prefix}:{index}:@")]]
     else:
         plans = [p for p in flow.plans if not step.plan_ids or p.id in step.plan_ids]
         if not plans:
             return
         rows = [
             [button(f"🔥 {p.name} por {brl(discounted(p.price, step))} (antes {brl(p.price)})", step.button_style,
-                    callback_data=f"dplan:{index}:{p.id}")]
+                    callback_data=f"{prefix}:{index}:{p.id}")]
             for p in plans
         ]
     off = f"{step.discount_value.normalize():f}%" if step.discount_type == "percent" else brl(step.discount_value)
@@ -477,7 +543,7 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
     if lead is not None and lead.blocked_bot:
         return
     tg = telegram(bot)
-    if job.kind in ("send_block", "send_offer", "send_downsell", "send_upsell"):
+    if job.kind in ("send_block", "send_offer", "send_downsell", "send_downsell_np", "send_upsell"):
         flow = await load_flow(db, bot)
         if flow is None or lead is None:
             return
@@ -488,7 +554,9 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
         elif job.kind == "send_offer":
             await send_offer(db, tg, bot, lead, flow)
         elif job.kind == "send_downsell":
-            await send_downsell(db, tg, bot, lead, flow, index)
+            await send_downsell(db, tg, bot, lead, flow, index, "pix")
+        elif job.kind == "send_downsell_np":
+            await send_downsell(db, tg, bot, lead, flow, index, "no_pix")
         else:
             await send_upsell(db, tg, bot, lead, flow, index, str(job.payload.get("chain", "")))
     elif job.kind == "create_pix":
@@ -502,6 +570,8 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
         await expire_order(db, tg, bot, uuid.UUID(job.payload["order_id"]))
     elif job.kind == "end_subscription":
         await end_subscription(db, tg, bot, uuid.UUID(job.payload["subscription_id"]))
+    elif job.kind == "delete_messages":
+        await tg.delete_messages(int(job.payload["chat_id"]), [int(i) for i in job.payload.get("message_ids") or []])
 
 
 async def run_due_jobs(db: AsyncSession, limit: int = 50, lead_id: uuid.UUID | None = None) -> int:
@@ -541,7 +611,8 @@ async def follow_lead_jobs(db: AsyncSession, lead_id: uuid.UUID, horizon_seconds
         await run_due_jobs(db, lead_id=lead_id)
         next_at = await db.scalar(
             select(TgJob.run_at)
-            .where(TgJob.lead_id == lead_id, TgJob.status == "pending")
+            # Preview deletions are not worth holding the update open; the worker tick runs them.
+            .where(TgJob.lead_id == lead_id, TgJob.status == "pending", TgJob.kind != "delete_messages")
             .order_by(TgJob.run_at)
             .limit(1)
         )
@@ -641,6 +712,20 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict, flow: Flow
         await tg.answer_callback(query["id"])
         await send_plans(tg, bot, lead, flow)
         return None
+    if data == "prev":
+        if not (flow.previews.enabled and flow.previews.media_ids):
+            await tg.answer_callback(query["id"], "As prévias não estão disponíveis agora.")
+            return None
+        if await _previews_open(db, lead):
+            await tg.answer_callback(query["id"], "Suas prévias já estão abertas 👀")
+            return None
+        await tg.answer_callback(query["id"])
+        await send_previews(db, tg, bot, lead, flow)
+        return lead.id
+    if data.startswith(("rmk:", "rmkb:")):
+        from app.bots.campaigns import handle_campaign_tap
+
+        return await handle_campaign_tap(db, tg, bot, lead, flow, query["id"], data)
     if data.startswith("plan:"):
         plan = flow.plan(data[5:])
         bump = flow.bump_for(plan) if plan is not None else None
@@ -657,7 +742,7 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict, flow: Flow
         await tg.answer_callback(query["id"])
         await schedule_upsell(db, bot, lead, flow, index + 1, parts[2])
         return lead.id
-    if data.startswith(("plan:", "bump:", "dplan:", "up:")):
+    if data.startswith(("plan:", "bump:", "dplan:", "nplan:", "up:")):
         resolved = resolve_offer(flow, data)
         if isinstance(resolved, str):
             await tg.answer_callback(query["id"], resolved)
@@ -705,20 +790,26 @@ def resolve_offer(flow: FlowDefinition, data: str) -> tuple[Plan, dict] | str:
         return plan, {"bump": flow.bump_for(plan) if answer == "y" else None}
     parts = data.split(":", 2)
     index = int(parts[1]) if len(parts) == 3 and parts[1].isdigit() else -1
-    if data.startswith("dplan:"):
-        step = flow.downsells[index] if 0 <= index < len(flow.downsells) else None
+    if data.startswith(("dplan:", "nplan:")):
+        sequence = "pix" if data.startswith("dplan:") else "no_pix"
+        letter = DOWNSELL[sequence][3]
+        steps = flow.downsell_steps(sequence)
+        if sequence == "pix" and not steps and flow.downsells_no_pix:
+            # buttons sent before the split, when a "no_pix"-only sequence still used "dplan"
+            sequence, letter, steps = "no_pix", DOWNSELL["no_pix"][3], flow.downsells_no_pix
+        step = steps[index] if 0 <= index < len(steps) else None
         if step is None:
             return gone
         if parts[2] == "@":
             if not step.custom_offer:
                 return gone
-            return custom_offer_plan(index, step.custom_offer), {"kind": "downsell", "offer_id": f"ds{index}", "retry": data}
+            return custom_offer_plan(index, step.custom_offer), {"kind": "downsell", "offer_id": f"{'ds' if sequence == 'pix' else 'dn'}{index}", "retry": data}
         plan = flow.plan(parts[2])
         if plan is None:
             return gone
         return (
             plan.model_copy(update={"price": discounted(plan.price, step)}),
-            {"kind": "downsell", "offer_id": f"{plan.id}-d{index}", "retry": data},
+            {"kind": "downsell", "offer_id": f"{plan.id}-{letter}{index}", "retry": data},
         )
     if data.startswith("up:") and 0 <= index < len(flow.upsells):
         return upsell_plan(index, flow.upsells[index]), {
@@ -832,8 +923,11 @@ async def create_order(
                 order.partner_net = charge.net_amount - fee
         order.pix_copy_paste = charge.copy_paste
         await schedule(db, bot, "expire_order", order.expires_at, f"expire:{order.id}", lead, {"order_id": str(order.id)})
-        if first_pix and kind == "plan" and "pix" in (flow.downsell_audience or []):
-            await schedule_downsells(db, bot, lead, flow)
+        if first_pix:
+            # Generated a PIX: the "Pix não gerado" sequence stops, the "Pix gerado" one starts.
+            await cancel_lead_jobs(db, lead, ("send_downsell_np",))
+            if kind in ("plan", "downsell") and flow.downsells:
+                await schedule_downsells(db, bot, lead, flow, "pix")
         await db.commit()
         qr = charge.qr_code_base64
     else:
@@ -934,7 +1028,7 @@ async def approve_order(
         return True
     lead.stage = "paid"
     await db.execute(update(TgJob).where(TgJob.idempotency_key == f"expire:{order.id}").values(status="cancelled"))
-    await cancel_lead_jobs(db, lead, ("send_downsell",))
+    await cancel_lead_jobs(db, lead, ("send_downsell", "send_downsell_np"))
     tg = telegram(bot)
     flow = await load_flow(db, bot)
     plan, bump, info = order_parts(order)
@@ -1130,7 +1224,7 @@ async def notify_owners(db: AsyncSession, bot: TgBot, title: str, body: str, tag
             return
         keys = await get_vapid_keys(db)
         async with http.client(15.0) as session:
-            await push_to(db, subscriptions, {"title": title, "body": body, "url": "/bots", "tag": tag}, keys, session, tag[:32])
+            await push_to(db, subscriptions, {"title": title, "body": body, "url": "/bots", "tag": tag, "brand": "flashbot"}, keys, session, tag[:32])
         await db.commit()
     except Exception:
         logger.exception("Bot push notification failed")

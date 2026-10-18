@@ -91,7 +91,16 @@ async def test_invite_signup_requires_owner_approval_and_keeps_owner_settings(
     )
     assert again.status_code == 404
 
-    # Blocked until the owner approves.
+    # Blocked until the Super Admin approves the account...
+    blocked = await _login(client, "novo.colab@example.com", "safe-collaborator-password")
+    assert blocked.status_code == 403
+    assert "administrador" in blocked.json()["detail"]
+    new_user = await db_session.scalar(select(User).where(User.email == "novo.colab@example.com"))
+    assert new_user.is_approved is False
+    new_user.is_approved = True
+    await db_session.commit()
+
+    # ...and until the owner approves the access.
     blocked = await _login(client, "novo.colab@example.com", "safe-collaborator-password")
     assert blocked.status_code == 403
     assert "chefe" in blocked.json()["detail"]

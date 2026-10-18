@@ -228,8 +228,8 @@ async def register_with_invite(
         password_hash=hash_password(payload.password),
         is_active=True,
         is_verified=True,
-        # The owner is who releases access (membership INVITED -> ACTIVE).
-        is_approved=True,
+        # Two releases: the owner (membership INVITED -> ACTIVE) and the Super Admin.
+        is_approved=False,
     )
     db.add(user)
     try:
@@ -251,7 +251,7 @@ async def register_with_invite(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="E-mail ou apelido já em uso.") from None
-    return MessageResponse(message="Cadastro enviado. Aguarde a aprovação do chefe.")
+    return MessageResponse(message="Cadastro enviado. Aguarde a aprovação do chefe e do administrador.")
 
 
 @router.post(

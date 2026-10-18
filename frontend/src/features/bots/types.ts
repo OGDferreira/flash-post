@@ -92,6 +92,21 @@ export type DownsellStep = {
   button_style: ButtonStyle;
 };
 
+export type Previews = {
+  enabled: boolean;
+  label: string;
+  style: ButtonStyle;
+  text?: string | null;
+  media_ids: string[];
+  spoiler: boolean;
+  /** Seconds until the preview messages delete themselves (5 s to 48 h). */
+  delete_after_seconds: number;
+};
+
+export function emptyPreviews(): Previews {
+  return { enabled: false, label: "👀 Ver prévias", style: "primary", text: "👀 Prévias liberadas! Elas somem em {tempo}.", media_ids: [], spoiler: false, delete_after_seconds: 60 };
+}
+
 export type FlowDefinition = {
   version: 1;
   age_gate: { enabled: boolean; text: string; button: string };
@@ -110,9 +125,14 @@ export type FlowDefinition = {
   default_delivery?: Delivery | null;
   order_bump?: OrderBump | null;
   upsells: UpsellStep[];
-  downsell_trigger: "pix" | "start";
-  downsell_audience: ("no_pix" | "pix")[];
+  previews?: Previews;
+  /** Legacy single sequence settings; the server folds them into the two lists below. */
+  downsell_trigger?: "pix" | "start";
+  downsell_audience?: ("no_pix" | "pix")[] | null;
+  /** Generated a PIX and did not pay. */
   downsells: DownsellStep[];
+  /** Started and never generated a PIX. */
+  downsells_no_pix?: DownsellStep[] | null;
   support_username?: string | null;
 };
 
@@ -124,6 +144,8 @@ export type Flow = {
   bots: number;
   updated_at: string | null;
   shared?: boolean;
+  /** null = every partner; otherwise the partner user ids it is shared with. */
+  shared_with?: string[] | null;
   shared_loop_id?: string | null;
   from_template?: boolean;
   /** Copy received from a chief: runs in the bot, but its content is never sent here. */
@@ -211,5 +233,48 @@ export function emptyBump(): OrderBump {
     accept_label: "✅ Sim, quero!",
     decline_label: "Não, obrigado",
     delivery: emptyDelivery("pack"),
+  };
+}
+
+// ---------------------------------------------------------------- remarketing
+
+export type CampaignTarget = "all" | "not_bought" | "bought" | "pix_generated" | "vip_expired" | "group_members";
+export type CampaignPeriod = "total" | "today" | "yesterday" | "7d" | "30d" | "custom";
+
+export type CampaignMessage = { text: string; media_ids: string[]; spoiler: boolean; buttons: LinkButton[] };
+export type CampaignPlan = { name: string; price: string; duration_days: number | null; delivery: Delivery | null; button_style: ButtonStyle };
+
+export type CampaignDefinition = {
+  audience: { target: CampaignTarget; period: CampaignPeriod; start?: string | null; end?: string | null };
+  messages: CampaignMessage[];
+  offer: { plans: CampaignPlan[]; order_bump: OrderBump | null; redirect: LinkButton | null };
+};
+
+export type Campaign = {
+  id: string;
+  flow_id: string;
+  flow_name: string;
+  name: string;
+  status: "draft" | "scheduled" | "sending" | "finished" | "paused";
+  definition: CampaignDefinition;
+  scheduled_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  total: number;
+  sent: number;
+  failed: number;
+  blocked: number;
+  already_blocked: number;
+  runs: number;
+  sales: number;
+  revenue: string;
+  created_at: string | null;
+};
+
+export function emptyCampaignDefinition(): CampaignDefinition {
+  return {
+    audience: { target: "not_bought", period: "total", start: null, end: null },
+    messages: [{ text: "", media_ids: [], spoiler: false, buttons: [] }],
+    offer: { plans: [], order_bump: null, redirect: null },
   };
 }

@@ -1,7 +1,6 @@
 import {
   BarChart3,
   Blocks,
-  Bot,
   Bug,
   ChartNoAxesCombined,
   CircleDollarSign,
@@ -27,6 +26,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { FlashBotGlyph } from "@/components/FlashBotLogo";
+
+// The FlashBot brand mark stands in for a lucide icon in the menus.
+const FlashBotIcon = FlashBotGlyph as unknown as LucideIcon;
+
 export type NavItem = { label: string; to: string; icon: LucideIcon };
 export type NavGroup = { id: string; title: string; icon: LucideIcon; items: NavItem[] };
 
@@ -35,6 +39,7 @@ export const adminLinks: NavItem[] = [
   { label: "Usuários", to: "/admin/users", icon: Users },
   { label: "Workspaces", to: "/admin/workspaces", icon: Blocks },
   { label: "Operações", to: "/admin/operations", icon: BarChart3 },
+  { label: "Saques dos sócios", to: "/admin/partner-wallets", icon: Wallet },
   { label: "Funis", to: "/admin/flows", icon: GitBranch },
   { label: "Premiações", to: "/admin/awards", icon: Trophy },
   { label: "Notificações", to: "/admin/notifications", icon: BellRing },
@@ -43,7 +48,7 @@ export const adminLinks: NavItem[] = [
 
 /** Six direct shortcuts, in this exact order (sidebar top and phone bottom bar). */
 export const directLinks: NavItem[] = [
-  { label: "FlashBot", to: "/feature/bots", icon: Bot },
+  { label: "FlashBot", to: "/feature/bots", icon: FlashBotIcon },
   { label: "Painel", to: "/dashboard", icon: Home },
   { label: "Contas", to: "/feature/accounts", icon: Users },
   { label: "Loops", to: "/feature/loops", icon: InfinityIcon },
@@ -71,7 +76,7 @@ const ownerGroups: NavGroup[] = [
       { label: "Loops", to: "/feature/loops", icon: InfinityIcon },
       { label: "Feed", to: "/feature/feed", icon: Clapperboard },
       { label: "Automações", to: "/feature/automations", icon: MessageSquareText },
-      { label: "FlashBot", to: "/feature/bots", icon: Bot },
+      { label: "FlashBot", to: "/feature/bots", icon: FlashBotIcon },
     ],
   },
   {

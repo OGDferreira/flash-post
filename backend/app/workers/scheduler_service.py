@@ -16,6 +16,8 @@ _POSTGRES_ADVISORY_LOCK_KEY = 731904281
 _GOALS_ADVISORY_LOCK_KEY = 731904282
 _INSIGHTS_ADVISORY_LOCK_KEY = 731904283
 _BOTS_ADVISORY_LOCK_KEY = 731904284
+_SHARED_LOOPS_ADVISORY_LOCK_KEY = 731904285
+SHARED_LOOPS_SYNC_MINUTES = 10
 _BOT_JOBS_INTERVAL_SECONDS = 5
 _BOT_RECONCILE_EVERY_TICKS = 12  # about once a minute
 _bot_ticks = 0
@@ -112,10 +114,13 @@ async def _run_goals_tick_with_database_lock() -> None:
 
 async def _run_bots_once() -> None:
     global _bot_ticks
+    from app.bots.campaigns import run_campaigns
     from app.bots.engine import reconcile_pending_orders, run_due_jobs
 
     async with get_session_factory()() as db:
         await run_due_jobs(db)
+    async with get_session_factory()() as db:
+        await run_campaigns(db)
     _bot_ticks += 1
     if _bot_ticks % _BOT_RECONCILE_EVERY_TICKS == 0:
         async with get_session_factory()() as db:
@@ -145,6 +150,38 @@ async def _run_bots_tick_with_database_lock() -> None:
                 )
     except Exception as exc:
         logger.error("Bot tick failed (%s); it will retry.", type(exc).__name__)
+
+
+async def _sync_shared_loops_once() -> None:
+    from app.partners.service import sync_all_shared_loops
+
+    async with get_session_factory()() as db:
+        await sync_all_shared_loops(db)
+
+
+async def _run_shared_loops_sync_with_database_lock() -> None:
+    """Partners' linked loops follow the chief's loop (new media, schedule, unsharing)."""
+    engine = get_engine()
+    try:
+        if engine.dialect.name != "postgresql":
+            await _sync_shared_loops_once()
+            return
+        async with engine.connect() as connection:
+            acquired = await connection.scalar(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                {"lock_key": _SHARED_LOOPS_ADVISORY_LOCK_KEY},
+            )
+            if not acquired:
+                return
+            try:
+                await _sync_shared_loops_once()
+            finally:
+                await connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": _SHARED_LOOPS_ADVISORY_LOCK_KEY},
+                )
+    except Exception as exc:
+        logger.error("Shared loops sync failed (%s); it will retry.", type(exc).__name__)
 
 
 async def _run_tick_with_database_lock() -> None:
@@ -230,5 +267,15 @@ def create_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         max_instances=1,
         misfire_grace_time=30,
+    )
+    scheduler.add_job(
+        _run_shared_loops_sync_with_database_lock,
+        trigger="interval",
+        minutes=SHARED_LOOPS_SYNC_MINUTES,
+        id="flashpost-shared-loops",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=300,
     )
     return scheduler

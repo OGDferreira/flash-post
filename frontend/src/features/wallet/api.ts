@@ -29,6 +29,8 @@ export type GoalItem = { amount: number; prize: string; reached: boolean; curren
 
 export type Wallet = {
   is_main_account: boolean;
+  /** Partners only see billing, net balance and what was paid out; the Super Admin withdraws. */
+  is_partner?: boolean;
   shop_ref: string | null;
   balance_source: "smokepay" | "estimate";
   month_revenue: number;
@@ -48,6 +50,15 @@ export type Wallet = {
 export const brl = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 export const compact = (value: number) =>
   value >= 1_000_000 ? `${value / 1_000_000}M` : value >= 1000 ? `${value / 1000}k` : String(value);
+
+/** Award title: the revenue needed, e.g. "R$ 10 mil", "R$ 1 milhão", "R$ 5 milhões". */
+export const awardTitle = (amount: number) =>
+  amount >= 1_000_000
+    ? `R$ ${(amount / 1_000_000).toLocaleString("pt-BR")} ${amount === 1_000_000 ? "milhão" : "milhões"}`
+    : `R$ ${(amount / 1000).toLocaleString("pt-BR")} mil`;
+
+/** An award only unlocks once its revenue goal is reached; the next goal stays locked too. */
+export const awardUnlocked = (goal: Pick<GoalItem, "reached">) => goal.reached;
 
 export function useWalletSummary(enabled: boolean) {
   return useQuery({
@@ -91,7 +102,7 @@ export function useGoals(enabled = true) {
   });
 }
 
-export type AwardItem = { amount: number; prize: string; image_url: string | null };
+export type AwardItem = { amount: number; prize: string; image_url: string | null; custom: boolean };
 
 export function useAwards() {
   const queryClient = useQueryClient();
@@ -105,6 +116,43 @@ export function useAwards() {
     }),
     remove: useMutation({
       mutationFn: (amount: number) => apiRequest(`/api/admin/awards/${amount}/image`, { method: "DELETE" }),
+      onSuccess: refresh,
+    }),
+  };
+}
+
+export type PartnerWallet = {
+  user_id: string;
+  name: string;
+  email: string;
+  chief: string | null;
+  shop_ref: string;
+  month_revenue: number;
+  earned: number;
+  available: number;
+  withdrawable: number;
+  withdraw_fee: number;
+  withdrawn: number;
+  pending: number;
+  balance_source: "smokepay" | "estimate";
+  withdrawals: Withdrawal[];
+};
+
+/** Super Admin: every partner's balance, payouts and withdrawal history. */
+export function usePartnerWallets() {
+  const queryClient = useQueryClient();
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["admin", "partner-wallets"] });
+  return {
+    list: useQuery({
+      queryKey: ["admin", "partner-wallets"],
+      queryFn: () => apiRequest<{ items: PartnerWallet[]; min_withdrawal: number }>("/api/admin/partner-wallets"),
+      staleTime: 15_000,
+      refetchInterval: (query) =>
+        query.state.data?.items.some((item) => item.withdrawals.some((w) => w.status === "PROCESSING")) ? 5_000 : false,
+    }),
+    withdraw: useMutation({
+      mutationFn: ({ userId, ...body }: { userId: string; amount: string; pix_key_type: string; pix_key: string; note?: string }) =>
+        apiRequest<Withdrawal>(`/api/admin/partner-wallets/${userId}/withdrawals`, { method: "POST", body }),
       onSuccess: refresh,
     }),
   };

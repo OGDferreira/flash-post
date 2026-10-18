@@ -14,20 +14,20 @@ from typing import Annotated, Any
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import case, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
+from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
 from app.bots import engine, portable, smokepay
 from app.bots.flow_schema import FlowDefinition, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import encrypt_value
 from app.core.database import get_session_factory
-from app.models import TgBot, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
-from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access
+from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
+from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access, shares_with
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
-from app.bots.stats import conversion_stats
+from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
 from app.core.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -105,6 +105,7 @@ def _flow_out(flow: TgFlow, bots: int = 0, protected: bool = False) -> dict:
         "bots": bots,
         "updated_at": flow.updated_at.isoformat() if flow.updated_at else None,
         "shared": bool(flow.shared),
+        "shared_with": [str(t) for t in flow.shared_with] if flow.shared and flow.shared_with is not None else None,
         "shared_loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
         "from_template": flow.template_flow_id is not None,
     }
@@ -353,6 +354,7 @@ async def list_flows(access: OwnerAccess, db: DbSession) -> dict:
                 for f in await db.scalars(
                     select(TgFlow).where(TgFlow.workspace_id == chief_workspace.id, TgFlow.shared.is_(True)).order_by(TgFlow.name)
                 )
+                if shares_with(f, access.workspace.owner_id)
             ]
     received = {f.id for f in flows if await _is_received_copy(db, f)}
     return {"flows": [_flow_out(f, int(usage.get(f.id, 0)), f.id in received) for f in flows], "shared_flows": shared}
@@ -414,6 +416,25 @@ async def bot_stats(
 ) -> dict:
     start, end = period_bounds(period, start_date, end_date, utc_now())
     data = await conversion_stats(db, access.workspace.id, start, end)
+    data["period_label"] = period_label(start, end)
+    return data
+
+
+@router.get("/activity")
+async def bot_activity(access: OwnerAccess, db: DbSession, limit: int = Query(30, ge=1, le=100)) -> dict:
+    """Live log of the operation: new leads, Pix generated and approved sales."""
+    return {"items": await recent_activity(db, access.workspace.id, limit)}
+
+
+@router.get("/partners-ranking")
+async def partners_ranking(
+    access: OwnerAccess, user: AuthenticatedUser, db: DbSession, period: AnalyticsPeriod = "30d",
+    start_date: date | None = None, end_date: date | None = None,
+) -> dict:
+    """Revenue ranking of the chief and their partners. Only positions go out:
+    nobody sees how much another member billed (not even the chief)."""
+    start, end = period_bounds(period, start_date, end_date, utc_now())
+    data = await partners_ranking_of(db, user.id, start, end)
     data["period_label"] = period_label(start, end)
     return data
 
@@ -509,6 +530,7 @@ async def delete_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) ->
     # Explicit unlink: the FK's SET NULL is not enforced on every backend (e.g. SQLite).
     for model in (TgBot, TgLead, TgOrder):
         await db.execute(update(model).where(model.flow_id == flow.id).values(flow_id=None))
+    await db.execute(delete(TgCampaign).where(TgCampaign.flow_id == flow.id))
     await db.delete(flow)
     await db.commit()
 

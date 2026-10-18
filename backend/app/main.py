@@ -20,6 +20,7 @@ from app.analytics.bots import router as bot_performance_router
 from app.analytics.media import router as publication_insights_router
 from app.analytics.router import router as analytics_router
 from app.auth.router import router as auth_router
+from app.bots.campaigns import router as bot_campaigns_router
 from app.bots.router import router as bots_router
 from app.core.database import dispose_engine, get_session_factory
 from app.diagnostics.router import router as diagnostics_router
@@ -43,7 +44,7 @@ from app.shark.router import router as shark_router
 from app.smokepay.router import router as smokepay_router
 from app.affiliates.router import router as affiliates_router
 from app.partners.router import router as partners_router
-from app.wallet.router import router as wallet_router
+from app.wallet.router import admin_router as partner_wallets_router, router as wallet_router
 from app.extensions.router import router as extensions_router
 from app.support.router import router as support_router
 from app.workers.scheduler_service import create_scheduler
@@ -147,6 +148,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     )
     application.include_router(health_router)
     application.include_router(auth_router)
+    application.include_router(bot_campaigns_router)  # before /api/bots/{bot_id}
     application.include_router(bots_router)
     application.include_router(admin_notifications_router)
     application.include_router(admin_router)
@@ -171,6 +173,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(affiliates_router)
     application.include_router(partners_router)
     application.include_router(wallet_router)
+    application.include_router(partner_wallets_router)
     application.include_router(extensions_router)
     application.include_router(support_router)
 

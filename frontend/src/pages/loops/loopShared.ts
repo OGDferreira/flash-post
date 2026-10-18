@@ -40,7 +40,11 @@ export type InstagramLoop = {
   repeat_media: boolean;
   status: "active" | "paused";
   shared?: boolean;
+  shared_with?: string[] | null;
   from_template?: boolean;
+  /** Follows a loop the chief shares: media and schedule are the chief's, accounts are the partner's. */
+  linked?: boolean;
+  linked_available?: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
   auto_folder_ids?: string[];
@@ -126,6 +130,8 @@ export type LoopForm = {
   account_ids: string[];
   auto_folder_ids: string[];
   media_ids: string[];
+  /** Captions edited in the form, by media id (only the ones changed). */
+  media_captions: Record<string, string>;
 };
 
 export const emptyForm: LoopForm = {
@@ -138,6 +144,7 @@ export const emptyForm: LoopForm = {
   account_ids: [],
   auto_folder_ids: [],
   media_ids: [],
+  media_captions: {},
 };
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;

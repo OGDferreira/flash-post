@@ -3,7 +3,8 @@ import { Bell, Handshake, Info } from "lucide-react";
 import { ErrorState } from "@/components/PageState";
 import { Button } from "@/components/ui/Button";
 import { ApiError } from "@/services/api";
-import { brl, useAcceptCommission, useChiefLabel, useMarkNoticesRead, useNotices, usePartnerMe, type Sale, type SaleTotals } from "./api";
+import { useWallet } from "@/features/wallet/api";
+import { brl, useAcceptCommission, useMarkNoticesRead, useNotices, usePartnerMe, type Sale, type SaleTotals } from "./api";
 
 const percent = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
@@ -33,7 +34,7 @@ export function TotalsGrid({ totals, commissionLabel = "Comissão do sócio", ne
   );
 }
 
-export function SalesTable({ sales }: { sales: Sale[] }) {
+export function SalesTable({ sales, showCommission = true }: { sales: Sale[]; showCommission?: boolean }) {
   if (sales.length === 0) return <p className="text-xs text-muted">Nenhuma venda paga no período.</p>;
   return (
     <div className="overflow-x-auto rounded-xl border border-line-soft">
@@ -43,7 +44,7 @@ export function SalesTable({ sales }: { sales: Sale[] }) {
             <th className="px-3 py-2 font-medium">Venda</th>
             <th className="px-2 py-2 text-right font-medium">Bruto</th>
             <th className="px-2 py-2 text-right font-medium">Taxa</th>
-            <th className="px-2 py-2 text-right font-medium">Comissão</th>
+            {showCommission && <th className="px-2 py-2 text-right font-medium">Comissão</th>}
             <th className="px-3 py-2 text-right font-medium">Líquido</th>
           </tr>
         </thead>
@@ -54,12 +55,12 @@ export function SalesTable({ sales }: { sales: Sale[] }) {
                 {sale.offer_name}
                 <span className="block text-[10px] text-muted">
                   {sale.paid_at ? new Date(sale.paid_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : ""}
-                  {sale.percent !== null && ` · ${percent(sale.percent)}`}
+                  {showCommission && sale.percent !== null && ` · ${percent(sale.percent)}`}
                 </span>
               </td>
               <td className="px-2 py-2 text-right text-fg">{brl(sale.gross)}</td>
               <td className="px-2 py-2 text-right text-muted">{brl(sale.fee)}</td>
-              <td className="px-2 py-2 text-right text-fg">{brl(sale.commission)}</td>
+              {showCommission && <td className="px-2 py-2 text-right text-fg">{brl(sale.commission)}</td>}
               <td className="px-3 py-2 text-right font-semibold text-success">{brl(sale.net)}</td>
             </tr>
           ))}
@@ -69,11 +70,30 @@ export function SalesTable({ sales }: { sales: Sale[] }) {
   );
 }
 
-/** Dashboard card for partners: accept the commission, see revenue and the split of each sale. */
+/** Partners only see what they billed, the net free to withdraw and what was already paid out. */
+function PartnerBalance({ totals }: { totals: SaleTotals | null }) {
+  const wallet = useWallet();
+  const items: [string, string, string?][] = [
+    ["Faturado", brl(totals?.gross ?? 0)],
+    ["Líquido para saque", wallet.data ? brl(wallet.data.available) : "—", "text-success"],
+    ["Já sacado", wallet.data ? brl(wallet.data.withdrawn) : "—"],
+  ];
+  return (
+    <dl className="grid grid-cols-3 gap-2">
+      {items.map(([title, value, tone]) => (
+        <div className="min-w-0 rounded-xl border border-line-soft bg-surface-inset px-3 py-2" key={title}>
+          <dt className="truncate text-[11px] text-muted" title={title}>{title}</dt>
+          <dd className={`mt-1 text-base font-semibold ${tone ?? "text-fg"}`}>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Dashboard card for partners: accept the commission, see what they billed and their balance. */
 export function PartnerPanel() {
   const me = usePartnerMe();
   const accept = useAcceptCommission();
-  const chief = useChiefLabel();
   const data = me.data;
   if (!data?.partnership) return null;
   const p = data.partnership;
@@ -103,8 +123,8 @@ export function PartnerPanel() {
         </div>
       )}
       {accept.error && <ErrorState message={accept.error instanceof ApiError ? accept.error.message : "Não foi possível aceitar."} />}
-      {data.totals && <TotalsGrid commissionLabel={`Comissão de ${chief}`} totals={data.totals} />}
-      <SalesTable sales={data.sales.slice(0, 8)} />
+      <PartnerBalance totals={data.totals} />
+      <SalesTable sales={data.sales.slice(0, 8)} showCommission={false} />
       <p className="flex gap-2 text-[11px] leading-5 text-muted">
         <Info className="mt-0.5 shrink-0" size={13} />
         {data.basis} Sua subconta na SmokePay é criada automaticamente na primeira cobrança

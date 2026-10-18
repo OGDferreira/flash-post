@@ -30,8 +30,10 @@ from app.loops.scheduler import (
     loop_media_pool,
     next_media_index,
     record_publication_confirmed,
+    reschedule_loop_accounts,
 )
 from app.core.security import WorkspaceRole
+from app.partners.service import linked_loop_available
 from app.schemas.loops import (
     InstagramAccountDailyProgress,
     InstagramAlertsResponse,
@@ -49,6 +51,18 @@ from app.schemas.loops import (
 )
 
 router = APIRouter(prefix="/api/loops", tags=["Instagram loops"])
+LINKED_LOOP_LOCKED = (
+    "Este loop é compartilhado pelo seu sócio: mídias e horários vêm do loop dele. "
+    "Aqui você só escolhe as suas contas."
+)
+
+
+def _reject_linked(loop: InstagramLoop) -> None:
+    """A partner's linked copy follows the chief's loop; only its accounts and status change here."""
+    if loop.linked:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LINKED_LOOP_LOCKED)
+
+
 def _utc_datetime(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
@@ -141,7 +155,14 @@ async def _loop_response(
         id=loop.id,
         name=loop.name,
         shared=bool(loop.shared),
+        shared_with=(
+            [uuid.UUID(str(item)) for item in loop.shared_with]
+            if loop.shared and loop.shared_with is not None
+            else None
+        ),
         from_template=loop.template_loop_id is not None,
+        linked=loop.linked,
+        linked_available=await linked_loop_available(db, loop) if loop.linked else False,
         auto_folder_ids=[uuid.UUID(str(item)) for item in (loop.auto_folder_ids or [])],
         interval_min_minutes=loop.interval_min_minutes,
         interval_max_minutes=loop.interval_max_minutes,
@@ -638,9 +659,33 @@ async def _validate_selected_accounts(
     workspace_id: uuid.UUID,
     account_ids: list[uuid.UUID],
     db: DbSession,
+    editing: bool = False,
 ) -> list[InstagramAccount]:
+    """Eligible accounts among ``account_ids``.
+
+    When editing, an account of this workspace that dropped out of "connected"
+    while the form was open (a publishing error flips it back and forth) is
+    skipped instead of rejecting the whole save; ids from another workspace are
+    always refused.
+    """
+    if account_ids:
+        known = set(
+            (
+                await db.scalars(
+                    select(InstagramAccount.id).where(
+                        InstagramAccount.workspace_id == workspace_id,
+                        InstagramAccount.id.in_(account_ids),
+                    )
+                )
+            ).all()
+        )
+        if known != set(account_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Select only connected Instagram accounts with unexpired tokens.",
+            )
     accounts = await _workspace_accounts(workspace_id, db, account_ids)
-    if len(accounts) != len(account_ids):
+    if not editing and len(accounts) != len(account_ids):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Select only connected Instagram accounts with unexpired tokens.",
@@ -648,11 +693,29 @@ async def _validate_selected_accounts(
     return accounts
 
 
+async def _kept_unavailable_accounts(
+    loop: InstagramLoop,
+    previous_account_ids: set[uuid.UUID],
+    selected: list[InstagramAccount],
+    db: DbSession,
+) -> list[uuid.UUID]:
+    """Accounts of the loop the form never showed (not connected right now).
+
+    The edit form lists only eligible accounts, so it cannot have unchecked
+    these; dropping them on save would silently take an account out of the loop
+    because of a temporary error.
+    """
+    eligible = {account.id for account in await _workspace_accounts(loop.workspace_id, db)}
+    chosen = {account.id for account in selected}
+    return [item for item in previous_account_ids if item not in eligible and item not in chosen]
+
+
 async def _selected_with_folders(
     workspace_id: uuid.UUID,
     account_ids: list[uuid.UUID],
     folder_ids: list[uuid.UUID],
     db: DbSession,
+    editing: bool = False,
 ) -> tuple[list[InstagramAccount], list[str]]:
     """Chosen accounts plus every connected account of the watched folders."""
     from app.instagram.folder_automation import folder_accounts
@@ -673,7 +736,7 @@ async def _selected_with_folders(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Uma ou mais pastas não pertencem a este workspace.",
         )
-    accounts = await _validate_selected_accounts(workspace_id, account_ids, db)
+    accounts = await _validate_selected_accounts(workspace_id, account_ids, db, editing)
     known = {account.id for account in accounts}
     extra = [
         account
@@ -742,9 +805,12 @@ def _save_loop_accounts(
     loop: InstagramLoop,
     accounts: list[InstagramAccount],
     db: DbSession,
+    kept_account_ids: list[uuid.UUID] = (),
 ) -> None:
     for account in accounts:
         db.add(InstagramLoopAccount(loop_id=loop.id, account_id=account.id))
+    for account_id in kept_account_ids:
+        db.add(InstagramLoopAccount(loop_id=loop.id, account_id=account_id))
 
 
 def _save_loop_media(
@@ -754,6 +820,27 @@ def _save_loop_media(
 ) -> None:
     for item in media:
         db.add(InstagramLoopMedia(loop_id=loop.id, media_id=item.id))
+
+
+async def _save_media_captions(
+    loop: InstagramLoop,
+    captions: dict[uuid.UUID, str | None],
+    db: DbSession,
+) -> None:
+    """Update the post caption of media in this loop (other media are ignored)."""
+    in_loop = (
+        await db.scalars(
+            select(InstagramMedia)
+            .join(InstagramLoopMedia, InstagramLoopMedia.media_id == InstagramMedia.id)
+            .where(
+                InstagramLoopMedia.loop_id == loop.id,
+                InstagramMedia.workspace_id == loop.workspace_id,
+                InstagramMedia.id.in_(list(captions)),
+            )
+        )
+    ).all()
+    for item in in_loop:
+        item.caption = captions[item.id]
 
 
 @router.post(
@@ -794,6 +881,8 @@ async def create_loop(
     _save_loop_accounts(loop, accounts, db)
     _save_loop_media(loop, media, db)
     await db.flush()
+    if payload.media_captions:
+        await _save_media_captions(loop, payload.media_captions, db)
     await enqueue_loop_publications_now(db, loop, accounts, now=now)
     await db.commit()
     await db.refresh(loop)
@@ -819,6 +908,7 @@ async def clone_loop(
     )
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    _reject_linked(source)
 
     now = utc_now()
     clone_suffix = " (cópia)"
@@ -880,6 +970,7 @@ async def update_loop(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    _reject_linked(loop)
     previous_account_ids = set(
         (
             await db.scalars(
@@ -890,9 +981,10 @@ async def update_loop(
         ).all()
     )
     accounts, auto_folders = await _selected_with_folders(
-        access.workspace.id, payload.account_ids, payload.auto_folder_ids, db
+        access.workspace.id, payload.account_ids, payload.auto_folder_ids, db, editing=True
     )
     loop.auto_folder_ids = auto_folders
+    kept_account_ids = await _kept_unavailable_accounts(loop, previous_account_ids, accounts, db)
     media = (
         await _validate_selected_media(
             access.workspace.id,
@@ -906,6 +998,10 @@ async def update_loop(
     )
     loop.name = payload.name
     now = utc_now()
+    interval_changed = (loop.interval_min_minutes, loop.interval_max_minutes) != (
+        payload.interval_min_minutes,
+        payload.interval_max_minutes,
+    )
     loop.interval_min_minutes = payload.interval_min_minutes
     loop.interval_max_minutes = payload.interval_max_minutes
     loop.daily_limit_per_account = payload.daily_limit_per_account
@@ -916,8 +1012,8 @@ async def update_loop(
             InstagramLoopAccount.loop_id == loop.id
         )
     )
-    _save_loop_accounts(loop, accounts, db)
-    selected_account_ids = [account.id for account in accounts]
+    _save_loop_accounts(loop, accounts, db, kept_account_ids)
+    selected_account_ids = [account.id for account in accounts] + kept_account_ids
     if media is not None:
         await db.execute(
             InstagramLoopMedia.__table__.delete().where(
@@ -925,6 +1021,8 @@ async def update_loop(
             )
         )
         _save_loop_media(loop, media, db)
+    if payload.media_captions:
+        await _save_media_captions(loop, payload.media_captions, db)
     await db.flush()
     # Jobs that have not started carry no progress: drop the ones for removed
     # accounts and, when the playlist changed, the rest too so each account is
@@ -936,6 +1034,9 @@ async def update_loop(
     if media is None:
         pending = pending.where(InstagramPublicationJob.account_id.not_in(selected_account_ids))
     await db.execute(pending)
+    if interval_changed:
+        await reschedule_loop_accounts(db, loop, now)
+        await db.flush()
     if loop.status == "active":
         await enqueue_loop_publications_now(db, loop, accounts, now=now)
     await db.commit()
@@ -976,16 +1077,18 @@ async def update_loop_accounts(
         access.workspace.id,
         payload.account_ids,
         db,
+        editing=True,
     )
+    kept_account_ids = await _kept_unavailable_accounts(loop, previous_account_ids, accounts, db)
     await db.execute(
         InstagramLoopAccount.__table__.delete().where(
             InstagramLoopAccount.loop_id == loop.id
         )
     )
-    _save_loop_accounts(loop, accounts, db)
+    _save_loop_accounts(loop, accounts, db, kept_account_ids)
     await db.flush()
 
-    selected_account_ids = [account.id for account in accounts]
+    selected_account_ids = [account.id for account in accounts] + kept_account_ids
     await db.execute(
         InstagramPublicationJob.__table__.delete().where(
             InstagramPublicationJob.loop_id == loop.id,
@@ -1020,6 +1123,11 @@ async def update_loop_status(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    if payload.enabled and loop.linked and not await linked_loop_available(db, loop):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Seu sócio parou de compartilhar este loop, então ele não pode ser ativado.",
+        )
     restarting = payload.enabled and loop.status != "active"
     loop.status = "active" if payload.enabled else "paused"
     now = utc_now()
@@ -1084,6 +1192,7 @@ async def remove_loop_media(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    _reject_linked(loop)
     loop_media = await db.get(InstagramLoopMedia, (loop.id, media_id))
     if loop_media is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop media not found.")
@@ -1132,6 +1241,11 @@ async def delete_loop(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
+    if loop.linked and await linked_loop_available(db, loop):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este loop é compartilhado pelo seu sócio e só sai daqui quando ele parar de compartilhar. Você pode pausá-lo.",
+        )
     active_publication = await db.scalar(
         select(InstagramPublicationJob.id)
         .where(

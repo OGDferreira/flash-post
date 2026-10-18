@@ -6,6 +6,7 @@ const SHELL_ASSETS = [
   "/flashpost-logo.png",
   "/flashpost-icon-192.png",
   "/flashpost-icon-512.png",
+  "/flashbot-logo.png",
   "/favicon.ico",
   "/sounds/venda.mp3",
 ];
@@ -80,6 +81,8 @@ self.addEventListener("push", (event) => {
   }
   const title = typeof data.title === "string" && data.title ? data.title : "FlashPost";
   const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/dashboard";
+  // FlashBot (sales robot) notices carry the FlashBot logo; everything else is FlashPost.
+  const icon = data.brand === "flashbot" ? "/flashbot-logo.png" : "/flashpost-icon-192.png";
   // Tell any open FlashPost window right away, so its numbers refresh without waiting.
   const tellWindows = self.clients
     .matchAll({ type: "window", includeUncontrolled: true })
@@ -87,8 +90,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     Promise.all([tellWindows.catch(() => undefined), self.registration.showNotification(title, {
       body: typeof data.body === "string" ? data.body : "",
-      icon: "/flashpost-icon-192.png",
-      badge: "/flashpost-icon-192.png",
+      icon,
+      badge: icon,
       tag: typeof data.tag === "string" ? data.tag : undefined,
       renotify: false,
       lang: "pt-BR",
