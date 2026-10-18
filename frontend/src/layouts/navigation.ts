@@ -39,6 +39,7 @@ export const adminLinks: NavItem[] = [
   { label: "Usuários", to: "/admin/users", icon: Users },
   { label: "Workspaces", to: "/admin/workspaces", icon: Blocks },
   { label: "Operações", to: "/admin/operations", icon: BarChart3 },
+  { label: "Saques dos sócios", to: "/admin/partner-wallets", icon: Wallet },
   { label: "Funis", to: "/admin/flows", icon: GitBranch },
   { label: "Premiações", to: "/admin/awards", icon: Trophy },
   { label: "Notificações", to: "/admin/notifications", icon: BellRing },

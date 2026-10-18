@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Search, Trash2 } from "lucide-react";
+import { Ban, Check, LockOpen, Search, Trash2 } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest, type AdminUser, type Page } from "@/services/api";
@@ -26,6 +26,21 @@ export function AdminUsersPage() {
       void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
     },
   });
+  const setAccess = useMutation({
+    mutationFn: ({ userId, blocked }: { userId: string; blocked: boolean }) =>
+      apiRequest<AdminUser>(`/api/admin/users/${userId}/access`, { method: "PATCH", body: { blocked } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+    },
+  });
+  const setRole = useMutation({
+    mutationFn: ({ userId, platformRole }: { userId: string; platformRole: string }) =>
+      apiRequest<AdminUser>(`/api/admin/users/${userId}/role`, { method: "PATCH", body: { platform_role: platformRole } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+    },
+  });
+  const actionError = [approveUser.error, setAccess.error, setRole.error].find(Boolean);
   const deleteUser = useMutation({
     mutationFn: (userId: string) =>
       apiRequest<void>(`/api/admin/users/${userId}`, { method: "DELETE" }),
@@ -83,12 +98,12 @@ export function AdminUsersPage() {
         <EmptyState message="Nenhum usuário encontrado." />
       ) : (
         <>
-          {approveUser.error && (
+          {actionError && (
             <ErrorState
               message={
-                approveUser.error instanceof Error
-                  ? approveUser.error.message
-                  : "Não foi possível aprovar o usuário."
+                actionError instanceof Error
+                  ? actionError.message
+                  : "Não foi possível atualizar o usuário."
               }
             />
           )}
@@ -123,9 +138,30 @@ export function AdminUsersPage() {
                         <p className="mt-1 text-xs text-muted">{user.email}</p>
                       </td>
                       <td className="px-4 py-4 text-fg-2">
-                        {user.role}
+                        <select
+                          aria-label={`Função de ${user.full_name}`}
+                          className="h-8 rounded-lg border border-line bg-surface px-2 text-xs text-fg outline-none focus:border-brand disabled:opacity-60"
+                          disabled={setRole.isPending}
+                          onChange={async (event) => {
+                            const platformRole = event.target.value;
+                            const label = platformRole === "SUPER_ADMIN" ? "Super Admin" : "Usuário";
+                            if (await confirmAction(`Alterar a função de ${user.full_name} para ${label}?`)) {
+                              setRole.mutate({ userId: user.id, platformRole });
+                            }
+                          }}
+                          value={user.platform_role ?? (user.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "USER")}
+                        >
+                          <option value="USER">{roleLabel(user.role)}</option>
+                          <option value="SUPER_ADMIN">Super Admin</option>
+                        </select>
                         <span className="mt-1 block text-xs text-muted">
-                          {user.hierarchy === "chief" ? "Chefe" : user.hierarchy === "partner" ? `Sócio de ${user.chief_name ?? "—"}` : "Independente"}
+                          {user.hierarchy === "chief"
+                            ? "Chefe"
+                            : user.hierarchy === "partner"
+                              ? `Sócio de ${user.chief_name ?? "—"}`
+                              : user.role === "COLLABORATOR"
+                                ? `Colaborador de ${user.workspace_name ?? "—"}`
+                                : "Independente"}
                           {user.invited_by_name && ` · convidado por ${user.invited_by_name}`}
                         </span>
                       </td>
@@ -139,7 +175,7 @@ export function AdminUsersPage() {
                                 : "border-danger/30 bg-danger-soft text-danger"
                           }`}
                         >
-                          {user.status === "PENDING_APPROVAL" ? "Aguardando aprovação" : user.status}
+                          {user.status === "PENDING_APPROVAL" ? "Aguardando aprovação" : user.status === "ACTIVE" ? "Ativo" : "Bloqueado"}
                         </span>
                       </td>
                       <td className="px-4 py-4 text-muted">
@@ -166,6 +202,37 @@ export function AdminUsersPage() {
                             >
                               Aprovar acesso
                             </button>
+                          )}
+                          {user.role !== "SUPER_ADMIN" && (
+                            user.status === "BLOCKED" ? (
+                              <button
+                                className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs text-fg-2 hover:bg-surface-raised disabled:opacity-50"
+                                disabled={setAccess.isPending}
+                                onClick={() => setAccess.mutate({ userId: user.id, blocked: false })}
+                                type="button"
+                              >
+                                <LockOpen size={13} />
+                                Desbloquear
+                              </button>
+                            ) : (
+                              <button
+                                className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-warning/30 px-2.5 text-xs text-warning hover:bg-warning-soft disabled:opacity-50"
+                                disabled={setAccess.isPending}
+                                onClick={async () => {
+                                  if (
+                                    await confirmAction(
+                                      `Bloquear o acesso de ${user.full_name}? Ele sai da conta, não consegue entrar e os loops das operações dele param de postar até você desbloquear.`,
+                                    )
+                                  ) {
+                                    setAccess.mutate({ userId: user.id, blocked: true });
+                                  }
+                                }}
+                                type="button"
+                              >
+                                <Ban size={13} />
+                                Bloquear
+                              </button>
+                            )
                           )}
                           {user.role !== "SUPER_ADMIN" && (
                             <button
@@ -245,6 +312,10 @@ export function Pagination({
       </div>
     </div>
   );
+}
+
+function roleLabel(role: string) {
+  return role === "OWNER" ? "Dono" : role === "COLLABORATOR" ? "Colaborador" : "Usuário";
 }
 
 export function formatDate(value: string) {

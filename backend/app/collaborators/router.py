@@ -466,6 +466,8 @@ async def create_collaborator(
         full_name=payload.full_name,
         is_active=True,
         is_verified=True,
+        # Every new account waits for the Super Admin, collaborators included.
+        is_approved=False,
     )
     db.add(user)
     await db.flush()

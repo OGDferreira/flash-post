@@ -36,6 +36,8 @@ from app.models import (
     InstagramLoopMedia,
     InstagramMedia,
     InstagramPublicationJob,
+    User,
+    Workspace,
 )
 
 ACTIVE_JOB_STATUSES = ("waiting_for_media", "queued", "publishing")
@@ -347,6 +349,15 @@ async def enqueue_loop_publications_now(
     return created
 
 
+def workspaces_allowed_to_post():
+    """Workspaces whose owner is approved and not blocked by the Super Admin."""
+    return (
+        select(Workspace.id)
+        .join(User, User.id == Workspace.owner_id)
+        .where(User.is_active.is_(True), User.is_approved.is_(True))
+    )
+
+
 async def enqueue_due_loop_publications(
     db: AsyncSession,
     now: datetime | None = None,
@@ -356,7 +367,10 @@ async def enqueue_due_loop_publications(
     loops = (
         await db.scalars(
             select(InstagramLoop)
-            .where(InstagramLoop.status == "active")
+            .where(
+                InstagramLoop.status == "active",
+                InstagramLoop.workspace_id.in_(workspaces_allowed_to_post()),
+            )
             .order_by(InstagramLoop.id)
             .with_for_update(skip_locked=True)
         )

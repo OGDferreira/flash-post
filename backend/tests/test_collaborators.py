@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import encrypt_value
@@ -105,6 +105,16 @@ async def test_owner_manages_collaborator_goals_and_records_monthly_payout(
     assert Decimal(refreshed.json()["collaborators"][0]["paid_month"]) == Decimal("37.50")
     assert Decimal(refreshed.json()["collaborators"][0]["due_month"]) == Decimal("0.00")
 
+    # A collaborator the owner creates still waits for the Super Admin.
+    pending = await client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": await _csrf(client)},
+        json={"email": "collaborator.created@example.com", "password": "safe-collaborator-password"},
+    )
+    assert pending.status_code == 403
+    assert "administrador" in pending.json()["detail"]
+    await db_session.execute(update(User).where(User.id == user.id).values(is_approved=True))
+    await db_session.commit()
     await _login(
         client,
         "collaborator.created@example.com",
@@ -242,6 +252,10 @@ async def test_owner_selects_paid_work_days_and_deletes_collaborator(
         collaborator["user_id"] != item["user_id"]
         for collaborator in ranking.json()["collaborators"]
     )
+    await db_session.execute(
+        update(User).where(User.email == "calendar.collaborator@example.com").values(is_approved=True)
+    )
+    await db_session.commit()
     await _login(
         client,
         "calendar.collaborator@example.com",

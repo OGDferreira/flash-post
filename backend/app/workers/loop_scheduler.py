@@ -35,6 +35,7 @@ from app.loops.scheduler import (
     enqueue_due_loop_publications,
     record_publication_confirmed,
     record_publication_given_up,
+    workspaces_allowed_to_post,
 )
 from app.core.redaction import redact_secrets
 
@@ -457,6 +458,8 @@ async def process_one_queued_publication() -> bool:
                     InstagramPublicationJob.next_retry_at.is_(None),
                     InstagramPublicationJob.next_retry_at <= datetime.now(timezone.utc),
                 ),
+                # A blocked owner's queue waits until the Super Admin unblocks them.
+                InstagramPublicationJob.workspace_id.in_(workspaces_allowed_to_post()),
             )
             .order_by(
                 InstagramPublicationJob.scheduled_for,
@@ -840,6 +843,7 @@ async def run_loop_scheduler_tick() -> int:
                             InstagramPublicationJob.next_retry_at
                             <= datetime.now(timezone.utc),
                         ),
+                        InstagramPublicationJob.workspace_id.in_(workspaces_allowed_to_post()),
                     )
                 )
             ) or 0

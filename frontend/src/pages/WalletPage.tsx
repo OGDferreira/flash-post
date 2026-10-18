@@ -26,8 +26,26 @@ const statusInfo = {
   FAILED: { label: "Falhou", tone: "text-danger", Icon: XCircle },
 } as const;
 
-function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolean; onClose: () => void }) {
+type WithdrawBody = { amount: string; pix_key_type: string; pix_key: string };
+export type WithdrawSender = {
+  mutate: (body: WithdrawBody, options: { onSuccess: () => void }) => void;
+  error: unknown;
+  isPending: boolean;
+};
+
+function OwnWithdrawModal(props: { wallet: Wallet; open: boolean; onClose: () => void }) {
   const { request } = useWalletMutations();
+  return <WithdrawModal {...props} request={request} />;
+}
+
+/** Pix withdrawal form; the Super Admin reuses it to pay out a partner's subaccount. */
+export function WithdrawModal({ wallet, open, onClose, request, title = "Solicitar saque — SmokePay" }: {
+  wallet: Pick<Wallet, "available" | "withdrawable" | "withdraw_fee" | "min_withdrawal" | "is_main_account">;
+  open: boolean;
+  onClose: () => void;
+  request: WithdrawSender;
+  title?: string;
+}) {
   const [amount, setAmount] = useState("");
   const [keyType, setKeyType] = useState("cpf");
   const [pixKey, setPixKey] = useState("");
@@ -48,7 +66,7 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
       description={`Saldo disponível: ${brl(wallet.available)}`}
       onClose={onClose}
       open={open}
-      title="Solicitar saque — SmokePay"
+      title={title}
     >
       <form className="space-y-4" onSubmit={submit}>
         {main && (
@@ -99,7 +117,7 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
           <div className="flex justify-between"><dt className="text-muted">Taxa de saque (SmokePay)</dt><dd className="font-semibold text-warning">+ {brl(wallet.withdraw_fee ?? 0)}</dd></div>
           <div className="flex justify-between border-t border-line-soft pt-1"><dt className="text-muted">Sai do seu saldo</dt><dd className="font-semibold text-fg">{brl((value > 0 ? value : 0) + (wallet.withdraw_fee ?? 0))}</dd></div>
         </dl>
-        {request.error && <p className="text-xs text-danger" role="alert">{errorText(request.error)}</p>}
+        {Boolean(request.error) && <p className="text-xs text-danger" role="alert">{errorText(request.error)}</p>}
         <button className="btn-primary w-full" disabled={!valid || request.isPending} type="submit">
           {request.isPending ? "Enviando…" : "Confirmar saque"}
         </button>
@@ -109,7 +127,7 @@ function WithdrawModal({ wallet, open, onClose }: { wallet: Wallet; open: boolea
   );
 }
 
-function History({ items }: { items: Withdrawal[] }) {
+export function WithdrawalHistory({ items }: { items: Withdrawal[] }) {
   if (items.length === 0) return <p className="text-xs text-muted">Nenhum saque ainda.</p>;
   return (
     <ul className="divide-y divide-[color:var(--color-line-soft)]">
@@ -145,13 +163,20 @@ export function WalletPage() {
   if (wallet.error) return <ErrorState message={errorText(wallet.error)} onRetry={() => void wallet.refetch()} />;
   const data = wallet.data!;
   const fee = data.withdraw_fee ?? 0;
-  const cards: [string, string, string?, string?][] = [
-    ["Faturamento do mês", brl(data.month_revenue)],
-    ["Disponível para sacar", brl(data.available), "text-success", `Taxa por saque ${brl(fee)} · saque até ${brl(data.withdrawable ?? data.available)}`],
-    ["Processando", brl(data.pending), "text-warning"],
-    ["Já sacado", brl(data.withdrawn)],
-  ];
-  if ((data.commission_paid ?? 0) > 0) cards.push([`Comissão paga a ${chief}`, brl(data.commission_paid ?? 0), "text-danger", "Já descontada do seu saldo"]);
+  const partner = Boolean(data.is_partner);
+  const cards: [string, string, string?, string?][] = partner
+    ? [
+        ["Faturamento do mês", brl(data.month_revenue)],
+        ["Líquido disponível para saque", brl(data.available), "text-success"],
+        ["Já sacado", brl(data.withdrawn)],
+      ]
+    : [
+        ["Faturamento do mês", brl(data.month_revenue)],
+        ["Disponível para sacar", brl(data.available), "text-success", `Taxa por saque ${brl(fee)} · saque até ${brl(data.withdrawable ?? data.available)}`],
+        ["Processando", brl(data.pending), "text-warning"],
+        ["Já sacado", brl(data.withdrawn)],
+      ];
+  if (!partner && (data.commission_paid ?? 0) > 0) cards.push([`Comissão paga a ${chief}`, brl(data.commission_paid ?? 0), "text-danger", "Já descontada do seu saldo"]);
   if (data.commissions_received > 0) cards.push(["Comissões recebidas dos sócios", brl(data.commissions_received), "text-success"]);
   return (
     <div className="mx-auto max-w-[1100px] space-y-4">
@@ -161,14 +186,20 @@ export function WalletPage() {
           <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
             <WalletIcon className="text-accent" size={26} /> Carteira
           </h1>
-          <p className="mt-1 text-sm text-muted">Seu faturamento, o que tem para sacar, o que já sacou e suas metas.</p>
+          <p className="mt-1 text-sm text-muted">
+            {partner
+              ? "Seu faturamento, o líquido disponível para saque e o que já foi sacado. Os saques são feitos pelo administrador da plataforma."
+              : "Seu faturamento, o que tem para sacar, o que já sacou e suas metas."}
+          </p>
         </div>
-        <button className="btn-primary" disabled={data.available <= 0} onClick={() => setOpen(true)} type="button">
-          <ArrowDownToLine size={16} /> Sacar
-        </button>
+        {!partner && (
+          <button className="btn-primary" disabled={data.available <= 0} onClick={() => setOpen(true)} type="button">
+            <ArrowDownToLine size={16} /> Sacar
+          </button>
+        )}
       </header>
 
-      <dl className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <dl className={`grid grid-cols-2 gap-2 ${partner ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
         {cards.map(([title, value, tone, hint]) => (
           <div className="glass-panel min-w-0 px-4 py-3" key={title}>
             <dt className="truncate text-[11px] text-muted">{title}</dt>
@@ -177,11 +208,11 @@ export function WalletPage() {
           </div>
         ))}
       </dl>
-      <p className="text-[11px] text-muted">
+      {!partner && <p className="text-[11px] text-muted">
         {data.balance_source === "smokepay" ? "Saldo lido agora da SmokePay" : "Saldo estimado (SmokePay indisponível)"}
         {data.shop_ref ? ` · subconta ${data.shop_ref}` : " · carteira principal"}. Ganho total no FlashBot (já sem taxas e comissões): {brl(data.earned)}
         {data.commissions_received > 0 && ` · inclui ${brl(data.commissions_received)} de comissões dos sócios`}.
-      </p>
+      </p>}
 
       <section className="glass-panel space-y-3 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -196,12 +227,14 @@ export function WalletPage() {
         <AwardsCarousel goals={data.goal.goals} revenue={data.month_revenue} />
       </section>
 
-      <section className="glass-panel space-y-2 p-4">
-        <h3 className="text-base font-semibold text-fg">Histórico de saques</h3>
-        {data.withdrawals.length === 0 ? <EmptyState message="Nenhum saque ainda." /> : <History items={data.withdrawals} />}
-      </section>
+      {!partner && (
+        <section className="glass-panel space-y-2 p-4">
+          <h3 className="text-base font-semibold text-fg">Histórico de saques</h3>
+          {data.withdrawals.length === 0 ? <EmptyState message="Nenhum saque ainda." /> : <WithdrawalHistory items={data.withdrawals} />}
+        </section>
+      )}
 
-      <WithdrawModal onClose={() => setOpen(false)} open={open} wallet={data} />
+      {!partner && <OwnWithdrawModal onClose={() => setOpen(false)} open={open} wallet={data} />}
     </div>
   );
 }
