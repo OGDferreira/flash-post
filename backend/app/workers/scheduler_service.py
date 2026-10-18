@@ -114,10 +114,13 @@ async def _run_goals_tick_with_database_lock() -> None:
 
 async def _run_bots_once() -> None:
     global _bot_ticks
+    from app.bots.campaigns import run_campaigns
     from app.bots.engine import reconcile_pending_orders, run_due_jobs
 
     async with get_session_factory()() as db:
         await run_due_jobs(db)
+    async with get_session_factory()() as db:
+        await run_campaigns(db)
     _bot_ticks += 1
     if _bot_ticks % _BOT_RECONCILE_EVERY_TICKS == 0:
         async with get_session_factory()() as db:

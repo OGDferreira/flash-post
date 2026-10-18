@@ -299,3 +299,45 @@ class TgUpdateSeen(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class TgCampaign(Base):
+    """A remarketing broadcast of one funnel: sent to that funnel's leads through their own bots.
+
+    ``definition`` (audience, message variants, offer) is validated by
+    ``app.bots.campaigns.CampaignDefinition``. Sending walks the audience in lead id
+    order; ``cursor_lead_id`` is the last lead handled so a restart never repeats one.
+    """
+
+    __tablename__ = "tg_campaigns"
+    __table_args__ = (
+        Index("ix_tg_campaigns_workspace_flow", "workspace_id", "flow_id"),
+        Index("ix_tg_campaigns_status_scheduled", "status", "scheduled_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = _workspace_fk()
+    flow_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    definition: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # draft -> scheduled -> sending -> finished | paused
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft", server_default="draft")
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cursor_lead_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    sent: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    blocked: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Leads of the audience that had already blocked the bot when the send started.
+    already_blocked: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    runs: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

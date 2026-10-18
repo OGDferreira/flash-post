@@ -83,6 +83,9 @@ class FakeApis:
             result: object = True
             if method.startswith("send"):
                 result = {"message_id": self.message_id, "photo": [{"file_id": "small"}, {"file_id": "PHOTO_FILE_ID"}]}
+            if method == "sendMediaGroup":
+                self.message_id += 1
+                result = [{"message_id": self.message_id - 1}, {"message_id": self.message_id}]
             return httpx.Response(200, json={"ok": True, "result": result})
         if "/api/pix/create" in url:
             body = json.loads(request.content)
