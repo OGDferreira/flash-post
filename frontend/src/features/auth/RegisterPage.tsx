@@ -52,6 +52,21 @@ export function RegisterPage() {
       invite_code: (searchParams.get("invite") ?? "").slice(0, 40),
     },
   });
+  // A link with ?terms= carries the commission the chief offers (signed by the server).
+  const inviteTerms = (searchParams.get("terms") ?? "").slice(0, 300);
+  const inviteCode = form.watch("invite_code")?.trim() ?? "";
+  const linkCode = (searchParams.get("invite") ?? "").trim();
+  const preview = useQuery({
+    queryKey: ["invite-preview", linkCode, inviteTerms],
+    queryFn: () =>
+      apiRequest<{ chief_name: string; percent: string | null }>(
+        `/api/affiliates/invite/preview?${new URLSearchParams({ code: linkCode, terms: inviteTerms })}`,
+      ),
+    enabled: Boolean(linkCode && inviteTerms),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const offer = preview.data?.percent && inviteCode.toUpperCase() === linkCode.toUpperCase() ? preview.data : null;
   const nicknameInput = form.register("nickname");
   const nickname = form.watch("nickname");
   const normalizedNickname = normalizePublicNickname(nickname);
@@ -80,6 +95,7 @@ export function RegisterPage() {
         body: {
           ...values,
           invite_code: values.invite_code?.trim() || undefined,
+          invite_terms: offer ? inviteTerms : undefined,
           nickname: normalizePublicNickname(values.nickname),
         },
       }),
@@ -221,6 +237,13 @@ export function RegisterPage() {
                 Ao usar o código você passa a ser filiado de quem convidou. Essa pessoa vê as métricas da sua operação,
                 mas não tem acesso às suas contas nem à sua senha.
               </p>
+              {offer && (
+                <div className="mt-2 rounded-xl border border-brand/40 bg-brand-soft p-3 text-xs text-fg-2">
+                  <strong className="text-fg">Comissão de {Number(offer.percent).toLocaleString("pt-BR")}% para {offer.chief_name}.</strong>{" "}
+                  Nas vendas feitas com os funis compartilhados por {offer.chief_name}, essa porcentagem é separada automaticamente
+                  pela SmokePay. Ao criar a conta você concorda com essa comissão. Mudanças futuras só valem se você aceitar.
+                </div>
+              )}
             </div>
 
             {apiError && (

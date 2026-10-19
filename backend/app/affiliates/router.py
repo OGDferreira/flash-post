@@ -8,7 +8,11 @@ Rules enforced here (never only in the UI):
 * the participation is a reference calculation. FlashPost makes no payouts.
 """
 
+import base64
+import hashlib
+import hmac
 import secrets
+import time
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -129,10 +133,56 @@ async def link_affiliate(db: AsyncSession, code: str, affiliate: User) -> Affili
     return link
 
 
+# --------------------------------------------------------------- invite terms
+_TERMS_TTL_SECONDS = 30 * 24 * 3600
+
+
+def _terms_key() -> bytes:
+    secret = get_settings().session_secret
+    if secret is None:
+        raise HTTPException(status_code=503, detail="Servidor sem chave de assinatura.")
+    return hashlib.sha256(b"invite-terms:" + secret.get_secret_value().encode()).digest()
+
+
+def make_invite_terms(chief_id: UUID, percent: Decimal) -> str:
+    """Signed "this chief offers X%": the invitee cannot change it in the URL."""
+    payload = f"{chief_id.hex}.{percent.quantize(Decimal('0.01'))}.{int(time.time()) + _TERMS_TTL_SECONDS}"
+    signature = hmac.new(_terms_key(), payload.encode(), hashlib.sha256).hexdigest()[:20]
+    return base64.urlsafe_b64encode(f"{payload}.{signature}".encode()).decode().rstrip("=")
+
+
+def read_invite_terms(token: str) -> tuple[UUID, Decimal] | None:
+    """(chief id, percent) for a valid, unexpired token; None otherwise."""
+    try:
+        raw = base64.urlsafe_b64decode(token.strip() + "=" * (-len(token.strip()) % 4)).decode()
+        chief_hex, whole, cents, expires, signature = raw.split(".")
+        percent = f"{whole}.{cents}"
+        payload = f"{chief_hex}.{percent}.{expires}"
+        expected = hmac.new(_terms_key(), payload.encode(), hashlib.sha256).hexdigest()[:20]
+        if not hmac.compare_digest(expected, signature) or int(expires) < time.time():
+            return None
+        value = Decimal(percent)
+        if not Decimal("0") <= value <= Decimal("100"):
+            return None
+        return UUID(chief_hex), value
+    except Exception:
+        return None
+
+
 # --------------------------------------------------------------- schemas
 class InviteResponse(BaseModel):
     code: str
     invite_url: str
+    percent: Decimal | None = None
+
+
+class InviteLinkRequest(BaseModel):
+    percent: Decimal = Field(ge=0, le=90, decimal_places=2)
+
+
+class InvitePreview(BaseModel):
+    chief_name: str
+    percent: Decimal | None
 
 
 class JoinRequest(BaseModel):
@@ -221,9 +271,31 @@ async def rotate_invite(access: OwnerAccess, user: AuthenticatedUser, db: DbSess
     return _invite(code)
 
 
-def _invite(code: str) -> InviteResponse:
+def _invite(code: str, terms: str | None = None, percent: Decimal | None = None) -> InviteResponse:
     base = get_settings().public_base_url.rstrip("/")
-    return InviteResponse(code=code, invite_url=f"{base}/register?invite={code}")
+    url = f"{base}/register?invite={code}" + (f"&terms={terms}" if terms else "")
+    return InviteResponse(code=code, invite_url=url, percent=percent)
+
+
+@router.post("/invite/link", response_model=InviteResponse, dependencies=[Depends(require_csrf)])
+async def invite_link_with_percent(
+    payload: InviteLinkRequest, access: OwnerAccess, user: AuthenticatedUser, db: DbSession
+) -> InviteResponse:
+    """Invite link that already carries the commission: whoever signs up through it
+    agrees to that percent on the sign-up screen, so no separate acceptance is asked."""
+    code = await ensure_invite_code(db, user)
+    await db.commit()
+    percent = payload.percent.quantize(Decimal("0.01"))
+    return _invite(code, make_invite_terms(user.id, percent), percent)
+
+
+@router.get("/invite/preview", response_model=InvitePreview)
+async def invite_preview(code: str, db: DbSession, terms: str | None = None) -> InvitePreview:
+    """Public: what the sign-up screen shows before the person creates the account."""
+    chief = await find_chief(db, code)
+    parsed = read_invite_terms(terms) if terms else None
+    percent = parsed[1] if parsed and parsed[0] == chief.id else None
+    return InvitePreview(chief_name=chief.full_name, percent=percent)
 
 
 @router.post("/join", response_model=MyChiefResponse, dependencies=[Depends(require_csrf)])
