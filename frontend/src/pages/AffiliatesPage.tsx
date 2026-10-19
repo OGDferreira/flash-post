@@ -242,32 +242,46 @@ function DetailModal({ id, period, onClose, initialAccounts = "all" }: {
       onClose={onClose}
       open={Boolean(id)}
       title={data ? data.full_name : "Filiado"}
+      wide
     >
       {detail.isLoading && <LoadingState label="Carregando filiado" />}
       {detail.error && <ErrorState message={errorText(detail.error)} onRetry={() => void detail.refetch()} />}
       {data && (
         <div className="space-y-4">
-          <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {[
-              ["Faturamento (Shark + Flash)", money(data.total_revenue ?? data.revenue)],
-              ["Hoje", money(data.today_revenue ?? "0")],
-              ["Ticket médio", data.total_ticket ? money(data.total_ticket) : "—"],
-              ["Leads", formatNumber(allLeads)],
-              ["PIX gerados", formatNumber(data.pix_generated + (data.bot_pix ?? 0))],
-              ["Vendas pagas", formatNumber(sales)],
-              ["Lead → venda", allLeads ? `${((100 * sales) / allLeads).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—"],
-              ["Sacado", money(data.withdrawn ?? "0")],
-              ["Saldo na conta", money(data.balance ?? "0")],
-              [`Participação SharkBot (${percent(data.participation_percent)}%)`, money(data.participation_amount)],
-              ["Comissão recebida (FlashBot)", money(data.commission_received)],
-              ["Leads SharkBot · FlashBot", `${formatNumber(data.leads)} · ${formatNumber(data.bot_leads ?? 0)}`],
-            ].map(([title, value]) => (
-              <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={title}>
-                <dt className="text-[11px] text-muted">{title}</dt>
-                <dd className="mt-1 text-base font-semibold text-fg">{value}</dd>
-              </div>
-            ))}
-          </dl>
+          {(
+            [
+              ["Faturamento", [
+                ["Total (Shark + Flash)", money(data.total_revenue ?? data.revenue), "text-success"],
+                ["Hoje", money(data.today_revenue ?? "0")],
+                ["Ticket médio", data.total_ticket ? money(data.total_ticket) : "—"],
+                ["Vendas pagas", formatNumber(sales)],
+              ]],
+              ["Funil", [
+                ["Leads", formatNumber(allLeads)],
+                ["Shark · Flash", `${formatNumber(data.leads)} · ${formatNumber(data.bot_leads ?? 0)}`],
+                ["PIX gerados", formatNumber(data.pix_generated + (data.bot_pix ?? 0))],
+                ["Lead → venda", allLeads ? `${((100 * sales) / allLeads).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—"],
+              ]],
+              ["Dinheiro", [
+                ["Saldo na conta", money(data.balance ?? "0"), "text-success"],
+                ["Sacado", money(data.withdrawn ?? "0")],
+                ["Comissão recebida", money(data.commission_received)],
+                [`Participação Shark (${percent(data.participation_percent)}%)`, money(data.participation_amount)],
+              ]],
+            ] as [string, [string, string, string?][]][]
+          ).map(([group, items]) => (
+            <section key={group}>
+              <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">{group}</h4>
+              <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {items.map(([title, value, tone]) => (
+                  <div className="min-w-0 rounded-xl border border-line-soft bg-surface-inset px-3 py-2.5" key={title}>
+                    <dt className="text-[11px] leading-tight text-muted">{title}</dt>
+                    <dd className={`mt-1 truncate text-base font-semibold sm:text-lg ${tone ?? "text-fg"}`} title={value}>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ))}
           {data.purchases_without_amount > 0 && (
             <p className="text-xs text-warning">{data.purchases_without_amount} compra(s) paga(s) chegaram sem valor e não entram na receita.</p>
           )}

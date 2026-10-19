@@ -1,4 +1,4 @@
-const CACHE_NAME = "flashpost-shell-v31";
+const CACHE_NAME = "flashpost-shell-v32";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -81,7 +81,7 @@ self.addEventListener("push", (event) => {
   }
   const title = typeof data.title === "string" && data.title ? data.title : "FlashPost";
   const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/dashboard";
-  // Sales and commissions carry the dark FlashBot logo, other FlashBot notices the regular one;
+  // Sales and commissions carry the galaxy FlashBot logo, other FlashBot notices the regular one;
   // everything else is FlashPost.
   const icon =
     data.brand === "flashbot-dark" ? "/flashbot-logo-dark.png" : data.brand === "flashbot" ? "/flashbot-logo.png" : "/flashpost-icon-192.png";
@@ -93,7 +93,8 @@ self.addEventListener("push", (event) => {
     Promise.all([tellWindows.catch(() => undefined), self.registration.showNotification(title, {
       body: typeof data.body === "string" ? data.body : "",
       icon,
-      badge: icon,
+      // Android paints the badge as a one-color silhouette: give sales the plain F shape.
+      badge: data.brand === "flashbot-dark" ? "/flashbot-badge.png" : icon,
       tag: typeof data.tag === "string" ? data.tag : undefined,
       renotify: false,
       lang: "pt-BR",

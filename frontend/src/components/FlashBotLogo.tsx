@@ -1,4 +1,6 @@
-import { forwardRef, useId, type SVGProps } from "react";
+import { forwardRef, useId, useSyncExternalStore, type SVGProps } from "react";
+
+import { getFlashBotLogo, subscribeAppearance } from "@/lib/appearance";
 
 /** The FlashBot "F" whose stem ends in a lightning bolt (same path as the brand files). */
 const MARK = "M24 9H51L48 17H32.4L30.8 23H45.5L42.6 31H31.5L16 57L21.5 37H15.5Z";
@@ -6,6 +8,11 @@ const MARK = "M24 9H51L48 17H32.4L30.8 23H45.5L42.6 31H31.5L16 57L21.5 37H15.5Z"
 /** FlashBot app icon: rounded blue gradient square with the white bolt-F. FlashPost keeps its own BrandLogo. */
 export function FlashBotLogo({ className = "size-9" }: { className?: string }) {
   const id = `fb-logo-${useId().replace(/:/g, "")}`;
+  // Profile > Aparência lets each user pick the clean logo or the textured galaxy one.
+  const style = useSyncExternalStore(subscribeAppearance, getFlashBotLogo);
+  if (style === "galaxy") {
+    return <img alt="" aria-hidden="true" className={`${className} rounded-[22%] object-cover`} draggable={false} src="/flashbot-logo-galaxy.png" />;
+  }
   return (
     <svg aria-hidden="true" className={className} viewBox="0 0 64 64">
       <defs>

@@ -1,6 +1,8 @@
 /** User appearance: main color and motion. Stored per browser, applied on <html>. */
 const ACCENT_KEY = "flashpost-accent";
 const MOTION_KEY = "flashpost-motion";
+const GALAXY_KEY = "flashpost-galaxy";
+const LOGO_KEY = "flashpost-flashbot-logo";
 
 export const accentPresets = [
   { name: "Azul", hex: "#536dfe" },
@@ -63,7 +65,8 @@ const VARS = ["--brand-c", "--brand-strong-c", "--grad-a", "--grad-b", "--brand-
 /** Derives the whole palette from one hue; keeps contrast for bright hues. */
 export function applyAccent(hex: string | null, theme: "dark" | "light") {
   const style = document.documentElement.style;
-  if (!hex || hex.toLowerCase() === DEFAULT_ACCENT) {
+  // The galaxy theme brings its own neon palette (see index.css); a custom color would fight it.
+  if (!hex || hex.toLowerCase() === DEFAULT_ACCENT || document.documentElement.dataset.galaxy !== undefined) {
     VARS.forEach((name) => style.removeProperty(name));
     return;
   }
@@ -99,9 +102,42 @@ export function setMotionOff(off: boolean) {
   else delete document.documentElement.dataset.motion;
 }
 
+// ------------------------------------------------------------------ galaxy theme + FlashBot logo
+export type FlashBotLogoStyle = "clean" | "galaxy";
+const listeners = new Set<() => void>();
+const notify = () => listeners.forEach((listener) => listener());
+/** For useSyncExternalStore: re-render logos and the appearance card when a choice changes. */
+export function subscribeAppearance(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function getGalaxy(): boolean {
+  return read(GALAXY_KEY) === "on";
+}
+/** Deep-space dark theme (neon cyan/violet/magenta). Only shows on the dark theme. */
+export function setGalaxy(on: boolean, theme: "dark" | "light") {
+  write(GALAXY_KEY, on ? "on" : null);
+  if (on) document.documentElement.dataset.galaxy = "";
+  else delete document.documentElement.dataset.galaxy;
+  applyAccent(read(ACCENT_KEY), theme);
+  notify();
+}
+
+export function getFlashBotLogo(): FlashBotLogoStyle {
+  return read(LOGO_KEY) === "galaxy" ? "galaxy" : "clean";
+}
+export function setFlashBotLogo(style: FlashBotLogoStyle) {
+  write(LOGO_KEY, style === "galaxy" ? "galaxy" : null);
+  notify();
+}
+
 /** Run once before the first render. */
 export function initAppearance() {
   if (getMotionOff()) document.documentElement.dataset.motion = "off";
+  if (getGalaxy()) document.documentElement.dataset.galaxy = "";
   const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
   applyAccent(read(ACCENT_KEY), theme);
 }
