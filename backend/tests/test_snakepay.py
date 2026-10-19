@@ -28,7 +28,7 @@ def snake(apis, monkeypatch):
     monkeypatch.setattr(settings, "snakepay_api_key", SecretStr("sk_live_test"))
     monkeypatch.setattr(settings, "snakepay_webhook_secret", SecretStr(SECRET))
     monkeypatch.setattr(settings, "snakepay_base_url", "https://snake.test/api/public/v1")
-    state = {"fail": False, "status": "pending", "charges": {}}
+    state = {"fail": False, "status": "pending", "charges": {}, "uuid_only": False}
     smoke = apis.handler
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -43,6 +43,8 @@ def snake(apis, monkeypatch):
             apis.calls.append(("snake.create", body))
             if state["fail"]:
                 return httpx.Response(422, json={"error": "payer.document is required"})
+            if state["uuid_only"] and any(item["recipient_id"].startswith("snakepay_") for item in body.get("split", [])):
+                return httpx.Response(400, json={"error": "Dados inválidos (confira o ShopID dos recebedores)"})
             cents = round(body["amount"] * 100)
             net = snakepay.expected_net(Decimal(str(body["amount"])))
             split = [
@@ -262,3 +264,38 @@ async def test_smokepay_fee_shows_the_real_average(client, db_session, owner) ->
     _, workspace = owner
     await _paid(db_session, workspace)  # 19.90 with R$ 1,00 fee
     assert await _smokepay_fee_text(db_session) == "≈ 5,0% por venda (média das últimas vendas) · saque R$ 3,00"
+
+
+PLATFORM = "snakepay_6fde14d647ba4acbb45855490d22f435"
+PARTNER_SHOP = "snakepay_0123456789abcdef0123456789abcdef"
+
+
+@pytest.mark.anyio
+async def test_platform_shop_id_never_goes_in_the_split_and_other_format_is_retried(
+    client, db_session, owner, super_admin, snake, apis
+) -> None:
+    chief, chief_ws = owner
+    chief.platform_role = "SUPER_ADMIN"  # the platform owner, whose key charges the sales
+    chief_ws.snakepay_recipient_id = PLATFORM
+    await db_session.commit()
+    partner, partner_ws, _ = await _partner(db_session, owner, accepted=True)
+    await _enable(client)
+
+    headers = await _as(client, "socio@example.com")
+    # a partner cannot paste the platform's ShopID as their own
+    wrong = await client.put("/api/payment-gateways", headers=headers, json={"gateway": "snakepay", "snakepay_recipient_id": PLATFORM})
+    assert wrong.status_code == 422 and "plataforma" in wrong.json()["detail"]
+    ok = await client.put("/api/payment-gateways", headers=headers, json={"gateway": "snakepay", "snakepay_recipient_id": PARTNER_SHOP})
+    assert ok.status_code == 200
+
+    # SnakePay wants the dashed UUID: the first try (snakepay_…) gets a 400, the retry goes through
+    snake["uuid_only"] = True
+    bot, _ = await _setup(client, headers)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    tries = apis.methods("snake.create")
+    assert len(tries) == 2 and not apis.methods("pix.create")
+    assert tries[-1]["split"] == [{"recipient_id": "01234567-89ab-cdef-0123-456789abcdef", "percentage": 100.0}]
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.gateway == "snakepay" and order.partner_net == Decimal("19.05")

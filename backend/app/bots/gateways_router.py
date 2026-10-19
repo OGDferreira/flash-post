@@ -110,6 +110,13 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
             status_code=422,
             detail="ShopID inválido. Copie o \"Seu ShopID\" em SnakePay → Split da conta (começa com snakepay_).",
         )
+    if recipient is not None and user.platform_role != "SUPER_ADMIN" and any(
+        gateways.same_recipient(recipient, own) for own in await gateways.platform_recipients(db)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Esse é o ShopID da conta da plataforma. Cole o ShopID da SUA conta SnakePay (Split da conta → Seu ShopID).",
+        )
     if payload.gateway == "snakepay":
         if not await gateways.snakepay_available(db):
             raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")

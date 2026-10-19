@@ -976,12 +976,28 @@ async def _charge_with_snakepay(db: AsyncSession, bot: TgBot, order: TgOrder, ro
     if plan is None:
         return False
     try:
-        charge = await snakepay.create_charge(
-            amount=amount, external_reference=f"{ORDER_PREFIX}{order.id}", split=plan.split or None
-        )
+        try:
+            charge = await snakepay.create_charge(
+                amount=amount, external_reference=f"{ORDER_PREFIX}{order.id}", split=plan.split or None
+            )
+        except snakepay.SnakepayError as first:
+            # A 400 creates no charge, so one retry is safe: the API may want the ShopID in
+            # the other spelling (snakepay_<hex> vs dashed UUID).
+            if first.status != 400 or not plan.split:
+                raise
+            logger.warning("SnakePay refused the split (%s); retrying with the other ShopID format.", first)
+            plan.split = [{**item, "recipient_id": snakepay.alternate_recipient(item["recipient_id"])} for item in plan.split]
+            charge = await snakepay.create_charge(
+                amount=amount, external_reference=f"{ORDER_PREFIX}{order.id}", split=plan.split
+            )
+            plan.seller_recipient = snakepay.alternate_recipient(plan.seller_recipient) if plan.seller_recipient else None
+            plan.chief_recipient = snakepay.alternate_recipient(plan.chief_recipient) if plan.chief_recipient else None
     except snakepay.SnakepayError as exc:
         # The sale must not be lost: SmokePay charges this order instead.
-        logger.warning("SnakePay charge failed (%s); falling back to SmokePay.", exc)
+        logger.warning(
+            "SnakePay charge failed (%s) for workspace %s with %d split recipient(s); falling back to SmokePay.",
+            exc, bot.workspace_id, len(plan.split),
+        )
         bot.last_error = f"SnakePay: {exc}"[:500]
         return False
     gateways.apply_snake_charge(order, route, plan, charge)

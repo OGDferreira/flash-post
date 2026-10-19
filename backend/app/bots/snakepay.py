@@ -153,6 +153,16 @@ async def get_charge(charge_id: str) -> SnakeCharge:
     return _charge(body.get("charge") if isinstance(body.get("charge"), dict) else body)
 
 
+def alternate_recipient(value: str) -> str:
+    """The other spelling of a ShopID: ``snakepay_<32 hex>`` <-> dashed UUID."""
+    value = value.strip()
+    if value.lower().startswith("snakepay_"):
+        h = value[9:].lower()
+        return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}" if len(h) == 32 else value
+    bare = value.replace("-", "").lower()
+    return f"snakepay_{bare}" if len(bare) == 32 else value
+
+
 def verify_signature(raw_body: bytes, header: str | None) -> bool:
     """``X-SnakePay-Signature: sha256=<hex HMAC-SHA256(raw body, webhook secret)>``."""
     secret = get_settings().snakepay_webhook_secret
