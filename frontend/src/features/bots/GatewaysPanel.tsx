@@ -165,21 +165,21 @@ export function GatewaysPanel() {
         {picked === "snakepay" && (
           <div className="mt-4 rounded-xl border border-line-soft bg-surface-inset p-3">
             <label className="block text-sm font-medium text-fg" htmlFor="snakepay-recipient">
-              ID do recebedor SnakePay {data.needs_recipient ? "" : "(opcional para a conta principal)"}
+              Seu ShopID da SnakePay {data.needs_recipient ? "" : "(opcional para a conta principal)"}
             </label>
             <input
               autoComplete="off"
               className="field mt-2 font-mono text-xs"
               id="snakepay-recipient"
               onChange={(event) => setRecipient(event.target.value)}
-              placeholder="ex.: 3f2a9c1e-7b4d-4e2a-9c1e-7b4d4e2a9c1e"
+              placeholder="ex.: snakepay_6fde14d647ba4acbb45855490d22f435"
               spellCheck={false}
               value={recipient}
             />
             <p className="mt-2 text-[11px] leading-5 text-muted">
-              Na SnakePay, abra <b className="text-fg-2">Conta → Split</b> e copie o identificador da sua conta. Cada venda cai na conta da plataforma e
+              Na SnakePay, abra <b className="text-fg-2">Split da conta</b> e copie o <b className="text-fg-2">Seu ShopID</b>. Cada venda cai na conta da plataforma e
               a SnakePay repassa na hora a sua parte para essa conta (taxa da SnakePay: 3% + R$ 0,25 por venda). Se você é sócio, quem te convidou
-              também precisa cadastrar o ID dele; até lá, suas vendas seguem pela SmokePay.
+              também precisa cadastrar o ShopID dele; até lá, suas vendas seguem pela SmokePay.
             </p>
           </div>
         )}

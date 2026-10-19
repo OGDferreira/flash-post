@@ -5,12 +5,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, SuperAdminUser, require_csrf
 from app.bots import gateways, snakepay
 from app.core.config import get_settings
-from app.models import SystemSetting, TgFlow
+from app.models import SystemSetting, TgFlow, TgOrder
 
 router = APIRouter(prefix="/api/payment-gateways", tags=["Payment gateways"])
 
@@ -35,6 +35,28 @@ def _smokepay_configured() -> bool:
     return bool(key and key.get_secret_value().strip())
 
 
+def _brl(value) -> str:
+    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+async def _smokepay_fee_text(db) -> str:
+    """SmokePay's fee depends on the account's contract: show the average it really charged
+    on the platform's latest paid sales, plus the withdrawal fee."""
+    recent = (
+        select(TgOrder.amount, TgOrder.gateway_fee)
+        .where(TgOrder.gateway == "smokepay", TgOrder.status == "paid", TgOrder.gateway_fee.is_not(None), TgOrder.amount > 0)
+        .order_by(TgOrder.paid_at.desc())
+        .limit(100)
+        .subquery()
+    )
+    total, fees = (await db.execute(select(func.sum(recent.c.amount), func.sum(recent.c.gateway_fee)))).one()
+    withdraw = f"saque {_brl(get_settings().smokepay_withdraw_fee)}"
+    if not total or fees is None:
+        return f"Taxa por venda conforme seu contrato SmokePay · {withdraw}"
+    percent = f"{float(fees) * 100 / float(total):.1f}".replace(".", ",")
+    return f"≈ {percent}% por venda (média das últimas vendas) · {withdraw}"
+
+
 async def _state(db, user, workspace) -> dict:
     admin = user.platform_role == "SUPER_ADMIN"
     enabled = await gateways.snakepay_enabled(db)
@@ -53,11 +75,11 @@ async def _state(db, user, workspace) -> dict:
         "gateways": [
             {
                 "id": "smokepay", "name": "SmokePay", "available": _smokepay_configured(),
-                "fee": "Taxa da SmokePay", "description": "Pix com subconta própria e saque pelo FlashPost.",
+                "fee": await _smokepay_fee_text(db), "description": "Pix com subconta própria e saque pelo FlashPost.",
             },
             {
                 "id": "snakepay", "name": "SnakePay", "available": snakepay.configured() and enabled,
-                "fee": "3% + R$ 0,25 por venda",
+                "fee": "3% + R$ 0,25 por venda · saque pela SnakePay",
                 "description": "Pix com repasse automático (split) para a sua conta SnakePay.",
             },
         ],
@@ -86,13 +108,13 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
     if recipient is not None and not gateways.valid_recipient(recipient):
         raise HTTPException(
             status_code=422,
-            detail="ID do recebedor inválido. Copie o identificador em SnakePay → Conta → Split (formato 8-4-4-4-12).",
+            detail="ShopID inválido. Copie o \"Seu ShopID\" em SnakePay → Split da conta (começa com snakepay_).",
         )
     if payload.gateway == "snakepay":
         if not await gateways.snakepay_available(db):
             raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
         if user.platform_role != "SUPER_ADMIN" and recipient is None:
-            raise HTTPException(status_code=422, detail="Cole o ID do recebedor da sua conta SnakePay para receber suas vendas.")
+            raise HTTPException(status_code=422, detail="Cole o seu ShopID da SnakePay para receber suas vendas.")
     workspace.payment_gateway = payload.gateway
     workspace.snakepay_recipient_id = recipient
     if payload.apply_to_all:
@@ -114,7 +136,7 @@ async def flow_gateway(
         if not await gateways.snakepay_available(db):
             raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
         if user.platform_role != "SUPER_ADMIN" and not workspace.snakepay_recipient_id:
-            raise HTTPException(status_code=422, detail="Cadastre o ID do recebedor SnakePay antes de usar a SnakePay num fluxo.")
+            raise HTTPException(status_code=422, detail="Cadastre o seu ShopID da SnakePay antes de usar a SnakePay num fluxo.")
     flow.payment_gateway = payload.gateway
     await db.commit()
     return await _state(db, user, workspace)

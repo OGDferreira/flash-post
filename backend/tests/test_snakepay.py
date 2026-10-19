@@ -107,6 +107,8 @@ async def test_partner_sale_splits_to_the_partner_account_and_webhook_approves_o
     headers = await _as(client, "socio@example.com")
     state = (await client.get("/api/payment-gateways")).json()
     assert [g["id"] for g in state["gateways"] if g["available"]] == ["smokepay", "snakepay"]
+    fees = {g["id"]: g["fee"] for g in state["gateways"]}
+    assert fees["snakepay"].startswith("3% + R$ 0,25") and "saque R$ 3,00" in fees["smokepay"]
     assert "admin" not in state  # the webhook URL and key status are for the Super Admin only
     missing = await client.put("/api/payment-gateways", headers=headers, json={"gateway": "snakepay"})
     assert missing.status_code == 422
@@ -245,3 +247,18 @@ async def test_gateway_per_funnel_or_for_all(client, db_session, owner, super_ad
 
     other_flow = await client.put("/api/payment-gateways/flows/00000000-0000-0000-0000-000000000000", headers=headers, json={"gateway": None})
     assert other_flow.status_code == 404
+
+
+def test_recipient_accepts_the_snakepay_shop_id() -> None:
+    assert gateways.valid_recipient("snakepay_6fde14d647ba4acbb45855490d22f435")
+    assert not gateways.valid_recipient("snakepay_xyz")
+
+
+@pytest.mark.anyio
+async def test_smokepay_fee_shows_the_real_average(client, db_session, owner) -> None:
+    from app.bots.gateways_router import _smokepay_fee_text
+    from tests.test_wallet import _paid
+
+    _, workspace = owner
+    await _paid(db_session, workspace)  # 19.90 with R$ 1,00 fee
+    assert await _smokepay_fee_text(db_session) == "≈ 5,0% por venda (média das últimas vendas) · saque R$ 3,00"
