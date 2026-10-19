@@ -220,7 +220,7 @@ async def test_goals_and_award_photos(client, db_session, owner, super_admin, mo
 
 
 @pytest.mark.anyio
-async def test_only_super_admin_sees_and_withdraws_partner_balances(client, db_session, owner, super_admin, smoke) -> None:
+async def test_partner_withdraws_alone_and_super_admin_sees_partner_balances(client, db_session, owner, super_admin, smoke) -> None:
     chief, _chief_ws = owner
     partner, partner_ws = await _make_owner(db_session, "socio")
     db_session.add(Affiliation(chief_user_id=chief.id, affiliate_user_id=partner.id, participation_percent=Decimal("30"),
@@ -236,8 +236,6 @@ async def test_only_super_admin_sees_and_withdraws_partner_balances(client, db_s
     wallet = (await client.get("/api/wallet")).json()
     assert wallet["is_partner"] is True and wallet["available"] == 39.69 and wallet["month_revenue"] == 59.7
     assert "commission_paid" not in wallet and wallet["withdrawals"] == []
-    refused = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "20", **PIX})
-    assert refused.status_code == 403
     assert (await client.get("/api/admin/partner-wallets")).status_code == 403
 
     admin_headers = await _as(client, "superadmin@example.com", "super admin password")
@@ -253,10 +251,14 @@ async def test_only_super_admin_sees_and_withdraws_partner_balances(client, db_s
     missing = await client.post(f"/api/admin/partner-wallets/{chief.id}/withdrawals", headers=admin_headers, json={"amount": "10", **PIX})
     assert missing.status_code == 404
 
-    # the partner now sees what was withdrawn, still without the history
-    await _as(client, "socio@example.com")
+    # the partner sees what was withdrawn, with the history, and withdraws the rest alone
+    headers = await _as(client, "socio@example.com")
     wallet = (await client.get("/api/wallet")).json()
-    assert wallet["withdrawn"] == 30.0 and wallet["withdrawals"] == []
+    assert wallet["withdrawn"] == 30.0 and wallet["withdrawals"][0]["status"] == "PAID"
+    smoke.shops[ref] = 20.0  # new sales arrived
+    own = await client.post("/api/wallet/withdrawals", headers=headers, json={"amount": "10", **PIX})
+    assert own.status_code == 201, own.text
+    assert smoke.calls[-1][1] == f"/api/shops/{ref}/withdraw"  # always the partner's own subaccount
 
 
 @pytest.mark.anyio

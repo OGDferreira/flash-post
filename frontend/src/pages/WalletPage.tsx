@@ -167,7 +167,8 @@ export function WalletPage() {
   const cards: [string, string, string?, string?][] = partner
     ? [
         ["Faturamento do mês", brl(data.month_revenue)],
-        ["Líquido disponível para saque", brl(data.available), "text-success"],
+        ["Líquido disponível para saque", brl(data.available), "text-success", `Taxa por saque ${brl(fee)} · saque até ${brl(data.withdrawable ?? data.available)}`],
+        ["Processando", brl(data.pending), "text-warning"],
         ["Já sacado", brl(data.withdrawn)],
       ]
     : [
@@ -194,18 +195,16 @@ export function WalletPage() {
           </h1>
           <p className="mt-1 text-sm text-muted">
             {partner
-              ? "Seu faturamento, o líquido disponível para saque e o que já foi sacado. Os saques são feitos pelo administrador da plataforma."
+              ? "Seu faturamento, o líquido disponível para saque e o que já foi sacado. O saque cai na sua chave Pix."
               : "Seu faturamento, o que tem para sacar, o que já sacou e suas metas."}
           </p>
         </div>
-        {!partner && (
-          <button className="btn-primary" disabled={data.available <= 0} onClick={() => setOpen(true)} type="button">
-            <ArrowDownToLine size={16} /> Sacar
-          </button>
-        )}
+        <button className="btn-primary" disabled={data.available <= 0} onClick={() => setOpen(true)} type="button">
+          <ArrowDownToLine size={16} /> Sacar
+        </button>
       </header>
 
-      <dl className={`grid grid-cols-2 gap-2 ${partner ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
+      <dl className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         {cards.map(([title, value, tone, hint]) => (
           <div className="glass-panel min-w-0 px-4 py-3" key={title}>
             <dt className="truncate text-[11px] text-muted">{title}</dt>
@@ -233,14 +232,12 @@ export function WalletPage() {
         <AwardsCarousel goals={data.goal.goals} revenue={data.month_revenue} />
       </section>
 
-      {!partner && (
-        <section className="glass-panel space-y-2 p-4">
-          <h3 className="text-base font-semibold text-fg">Histórico de saques</h3>
-          {data.withdrawals.length === 0 ? <EmptyState message="Nenhum saque ainda." /> : <WithdrawalHistory items={data.withdrawals} />}
-        </section>
-      )}
+      <section className="glass-panel space-y-2 p-4">
+        <h3 className="text-base font-semibold text-fg">Histórico de saques</h3>
+        {data.withdrawals.length === 0 ? <EmptyState message="Nenhum saque ainda." /> : <WithdrawalHistory items={data.withdrawals} />}
+      </section>
 
-      {!partner && <OwnWithdrawModal onClose={() => setOpen(false)} open={open} wallet={data} />}
+      <OwnWithdrawModal onClose={() => setOpen(false)} open={open} wallet={data} />
     </div>
   );
 }
