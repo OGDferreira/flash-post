@@ -1,12 +1,11 @@
-const CACHE_NAME = "flashpost-shell-v32";
+const CACHE_NAME = "flashpost-shell-v33";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
-  "/flashpost-logo.png",
-  "/flashpost-icon-192.png",
-  "/flashpost-icon-512.png",
-  "/flashbot-logo.png",
+  "/brand/icon-192.png",
+  "/brand/icon-512.png",
+  "/brand/badge-96.png",
   "/favicon.ico",
   "/sounds/venda.mp3",
 ];
@@ -81,10 +80,8 @@ self.addEventListener("push", (event) => {
   }
   const title = typeof data.title === "string" && data.title ? data.title : "FlashPost";
   const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/dashboard";
-  // Sales and commissions carry the galaxy FlashBot logo, other FlashBot notices the regular one;
-  // everything else is FlashPost.
-  const icon =
-    data.brand === "flashbot-dark" ? "/flashbot-logo-dark.png" : data.brand === "flashbot" ? "/flashbot-logo.png" : "/flashpost-icon-192.png";
+  // FlashPost and FlashBot share one logo: every notice carries it.
+  const icon = "/brand/icon-192.png";
   // Tell any open FlashPost window right away, so its numbers refresh without waiting.
   const tellWindows = self.clients
     .matchAll({ type: "window", includeUncontrolled: true })
@@ -93,8 +90,8 @@ self.addEventListener("push", (event) => {
     Promise.all([tellWindows.catch(() => undefined), self.registration.showNotification(title, {
       body: typeof data.body === "string" ? data.body : "",
       icon,
-      // Android paints the badge as a one-color silhouette: give sales the plain F shape.
-      badge: data.brand === "flashbot-dark" ? "/flashbot-badge.png" : icon,
+      // Android paints the badge (status bar) as a one-color silhouette: the bare F mark.
+      badge: "/brand/badge-96.png",
       tag: typeof data.tag === "string" ? data.tag : undefined,
       renotify: false,
       lang: "pt-BR",
