@@ -299,7 +299,7 @@ async def test_lost_publish_response_is_reconciled_without_publishing_twice(
 
     publish_calls = 0
 
-    async def flaky_publish(_account, _media, _token, _storage, before_publish=None):
+    async def flaky_publish(_account, _media, _token, _storage, before_publish=None, **_kwargs):
         nonlocal publish_calls
         publish_calls += 1
         await before_publish("container-777")

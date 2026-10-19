@@ -154,6 +154,34 @@ export function LoopsPage() {
       void queryClient.invalidateQueries({ queryKey: ["instagram-media"] });
     },
   });
+  const [coverError, setCoverError] = useState<string | null>(null);
+  const uploadCover = useMutation({
+    // target: null = the cover of every video, else the id of one video
+    mutationFn: ({ file }: { file: File; target: string | null }) =>
+      apiRequest<InstagramMedia>(
+        `/api/media?${new URLSearchParams({ filename: file.name, purpose: "cover" })}`,
+        { method: "POST", headers: { "Content-Type": file.type }, body: file },
+      ),
+    onSuccess: (uploaded, { target }) => {
+      setForm((current) =>
+        target === null
+          ? { ...current, cover_media_id: uploaded.id }
+          : { ...current, media_covers: { ...current.media_covers, [target]: uploaded.id } },
+      );
+      void queryClient.invalidateQueries({ queryKey: ["instagram-media"] });
+    },
+  });
+  function pickCover(files: FileList | null, target: string | null) {
+    const file = files?.[0];
+    setCoverError(null);
+    if (!file) return;
+    if (file.type !== "image/jpeg" || file.size > MAX_UPLOAD_BYTES) {
+      setCoverError("A capa precisa ser uma imagem JPEG de até 50 MB.");
+      return;
+    }
+    uploadCover.mutate({ file, target });
+  }
+  const showsCover = form.post_type !== "images";
   const visibleLoops = useMemo(
     () =>
       // A partner's linked copies live in the "Loops compartilhados" area, not in this list.
@@ -175,6 +203,7 @@ export function LoopsPage() {
     apiErrorMessage(deleteLoop.error, "Não foi possível remover o loop."),
     apiErrorMessage(removeLoopMedia.error, "Não foi possível remover a mídia deste loop."),
     apiErrorMessage(uploadMedia.error, "Não foi possível enviar a mídia."),
+    apiErrorMessage(uploadCover.error, "Não foi possível enviar a capa."),
   ].find(Boolean);
 
   async function uploadFiles(files: File[]) {
@@ -219,6 +248,11 @@ export function LoopsPage() {
       media_ids: loop.media_ids,
       auto_folder_ids: loop.auto_folder_ids ?? [],
       media_captions: {},
+      caption_mode: loop.caption_mode ?? "per_media",
+      caption: loop.caption ?? "",
+      cover_mode: loop.cover_mode ?? "auto",
+      cover_media_id: loop.cover_media_id ?? null,
+      media_covers: {},
       account_ids: loop.accounts
         .filter((account) =>
           loops.data?.available_accounts.some((available) => available.id === account.id),
@@ -571,6 +605,92 @@ export function LoopsPage() {
               </div>
             )}
           </fieldset>
+          {loops.data.can_configure && (
+            <section className="space-y-3 rounded-lg border border-line bg-surface-inset p-3">
+              <h4 className="text-sm font-medium text-fg-2">Legenda e capa dos posts</h4>
+              <fieldset className="space-y-2">
+                <legend className="mb-1 text-xs text-muted">Legenda</legend>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    ["per_media", "Uma legenda por vídeo"],
+                    ["all", "Mesma legenda para todos"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      className={`min-h-9 rounded-lg border px-3 py-1.5 text-xs ${
+                        form.caption_mode === value
+                          ? "border-brand bg-brand-soft text-accent"
+                          : "border-line text-muted hover:bg-surface-raised"
+                      }`}
+                      key={value}
+                      type="button"
+                      onClick={() => setForm((current) => ({ ...current, caption_mode: value }))}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {form.caption_mode === "all" ? (
+                  <textarea
+                    aria-label="Legenda de todos os posts"
+                    className="min-h-20 w-full rounded-lg border border-line bg-surface-inset px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+                    maxLength={2200}
+                    placeholder="Esta legenda vai em todos os posts do loop"
+                    value={form.caption}
+                    onChange={(event) => setForm((current) => ({ ...current, caption: event.target.value }))}
+                  />
+                ) : (
+                  <p className="text-xs text-muted">Cada vídeo usa a legenda escrita nele, na lista abaixo.</p>
+                )}
+              </fieldset>
+              {showsCover && (
+                <fieldset className="space-y-2">
+                  <legend className="mb-1 text-xs text-muted">Capa dos Reels</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      ["auto", "Automática"],
+                      ["all", "Uma capa para todos"],
+                      ["per_media", "Uma capa por vídeo"],
+                    ] as const).map(([value, label]) => (
+                      <button
+                        className={`min-h-9 rounded-lg border px-3 py-1.5 text-xs ${
+                          form.cover_mode === value
+                            ? "border-brand bg-brand-soft text-accent"
+                            : "border-line text-muted hover:bg-surface-raised"
+                        }`}
+                        key={value}
+                        type="button"
+                        onClick={() => setForm((current) => ({ ...current, cover_mode: value }))}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {form.cover_mode === "auto" && (
+                    <p className="text-xs text-muted">O Instagram escolhe um quadro do vídeo como capa.</p>
+                  )}
+                  {form.cover_mode === "all" && (
+                    <CoverPicker
+                      coverId={form.cover_media_id}
+                      disabled={uploadCover.isPending}
+                      label="Imagem de capa de todos os vídeos"
+                      onPick={(files) => pickCover(files, null)}
+                      onClear={() => setForm((current) => ({ ...current, cover_media_id: null }))}
+                    />
+                  )}
+                  {form.cover_mode === "all" && !form.cover_media_id && (
+                    <p className="text-xs text-warning">Envie a imagem JPEG da capa para salvar.</p>
+                  )}
+                  {form.cover_mode === "per_media" && (
+                    <p className="text-xs text-muted">
+                      Escolha a capa de cada vídeo na lista abaixo. Vídeo sem capa usa a automática.
+                    </p>
+                  )}
+                  {uploadCover.isPending && <p className="text-xs text-accent">Enviando capa...</p>}
+                  {coverError && <p className="text-xs text-danger" role="alert">{coverError}</p>}
+                </fieldset>
+              )}
+            </section>
+          )}
           <section className="space-y-2 rounded-lg border border-line bg-surface-inset p-3">
             <h4 className="flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-fg-2">
               <span>Mídias do loop ({form.media_ids.length})</span>
@@ -642,7 +762,7 @@ export function LoopsPage() {
                       )}
                       <span className="flex min-w-0 flex-1 flex-col gap-1">
                         <span className="truncate">{item?.filename ?? "Arquivo indisponível"}</span>
-                        {loops.data.can_configure && item && (
+                        {loops.data.can_configure && item && form.caption_mode === "per_media" && (
                           <input
                             aria-label={`Legenda de ${item.filename}`}
                             className="min-h-9 w-full rounded border border-line bg-surface-inset px-2 text-xs text-fg outline-none focus:border-brand"
@@ -656,6 +776,26 @@ export function LoopsPage() {
                             }}
                             placeholder="Legenda do post (opcional)"
                             value={form.media_captions[mediaId] ?? item.caption ?? ""}
+                          />
+                        )}
+                        {loops.data.can_configure && item && !item.locked && showsCover &&
+                          form.cover_mode === "per_media" && item.media_type === "video" && (
+                          <CoverPicker
+                            compact
+                            coverId={
+                              mediaId in form.media_covers
+                                ? form.media_covers[mediaId]
+                                : (item.cover_media_id ?? null)
+                            }
+                            disabled={uploadCover.isPending}
+                            label={`Capa de ${item.filename}`}
+                            onPick={(files) => pickCover(files, mediaId)}
+                            onClear={() =>
+                              setForm((current) => ({
+                                ...current,
+                                media_covers: { ...current.media_covers, [mediaId]: null },
+                              }))
+                            }
                           />
                         )}
                       </span>
@@ -862,6 +1002,8 @@ export function LoopsPage() {
               (form.account_ids.length === 0 && form.auto_folder_ids.length === 0) ||
               form.interval_min_minutes < 1 ||
               form.interval_max_minutes < form.interval_min_minutes ||
+              (showsCover && form.cover_mode === "all" && !form.cover_media_id) ||
+              uploadCover.isPending ||
               !Number.isInteger(form.daily_limit_per_account) ||
               form.daily_limit_per_account < 1 ||
               form.daily_limit_per_account > 100
@@ -1058,6 +1200,66 @@ export function LoopsPage() {
       )}
         </div>
       )}
+    </div>
+  );
+}
+
+function CoverPicker({
+  coverId,
+  label,
+  disabled,
+  compact = false,
+  onPick,
+  onClear,
+}: {
+  coverId: string | null;
+  label: string;
+  disabled: boolean;
+  compact?: boolean;
+  onPick: (files: FileList | null) => void;
+  onClear: () => void;
+}) {
+  const size = compact ? "h-12 w-9" : "h-24 w-[54px]";
+  return (
+    <div className="flex items-center gap-3">
+      {coverId ? (
+        <img
+          alt={label}
+          className={`${size} shrink-0 rounded border border-line object-cover`}
+          src={`/api/media/${coverId}/preview`}
+        />
+      ) : (
+        <span
+          className={`${size} flex shrink-0 items-center justify-center rounded border border-dashed border-line text-muted`}
+        >
+          <ImageIcon size={compact ? 14 : 18} />
+        </span>
+      )}
+      <span className="flex flex-wrap items-center gap-2 text-xs">
+        <label
+          className={`cursor-pointer rounded border border-line px-2 py-1 text-fg-2 hover:bg-surface-raised ${
+            disabled ? "pointer-events-none opacity-50" : ""
+          }`}
+        >
+          {coverId ? "Trocar capa" : "Escolher capa (JPEG)"}
+          <input
+            aria-label={label}
+            accept="image/jpeg"
+            className="sr-only"
+            disabled={disabled}
+            type="file"
+            onChange={(event) => {
+              onPick(event.currentTarget.files);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+        {coverId && (
+          <button className="text-danger hover:text-white" type="button" onClick={onClear}>
+            Remover capa
+          </button>
+        )}
+      </span>
     </div>
   );
 }

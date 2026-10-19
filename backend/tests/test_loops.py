@@ -1463,3 +1463,101 @@ async def test_changing_the_interval_reschedules_every_account_right_away(
         assert timedelta(minutes=20) <= wait <= timedelta(minutes=25)
     state = await db_session.get(InstagramLoopAccountState, (loop_id, ids[2]))
     assert abs(state.next_run_at.replace(tzinfo=timezone.utc) - midnight) < timedelta(seconds=1)
+
+
+@pytest.mark.anyio
+async def test_loop_saves_one_caption_and_reels_covers_used_on_publish(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+) -> None:
+    from app.workers.loop_scheduler import _post_caption_and_cover
+
+    _user, workspace = owner
+    account = _active_account(workspace.id, "cover_account")
+
+    def _file(name: str, kind: str, **extra) -> InstagramMedia:
+        return InstagramMedia(
+            workspace_id=workspace.id,
+            storage_path=f"{workspace.id}/cover/{name}",
+            filename=name,
+            mime_type="video/mp4" if kind == "video" else "image/jpeg",
+            media_type=kind,
+            size_bytes=100,
+            **extra,
+        )
+
+    first = _file("1.mp4", "video", caption="own caption")
+    second = _file("2.mp4", "video")
+    shared_cover = _file("all.jpg", "image", is_cover=True)
+    own_cover = _file("own.jpg", "image", is_cover=True)
+    db_session.add_all([account, first, second, shared_cover, own_cover])
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+    base = {
+        "name": "Reels com capa",
+        "interval_min_minutes": 20,
+        "interval_max_minutes": 40,
+        "post_type": "reels",
+        "account_ids": [str(account.id)],
+        "media_ids": [str(first.id), str(second.id)],
+    }
+
+    # A cover image cannot be put in the playlist as a post.
+    response = await client.post(
+        "/api/loops",
+        headers={"X-CSRF-Token": token},
+        json={**base, "media_ids": [str(first.id), str(shared_cover.id)]},
+    )
+    assert response.status_code == 422, response.text
+
+    response = await client.post(
+        "/api/loops",
+        headers={"X-CSRF-Token": token},
+        json={
+            **base,
+            "caption_mode": "all",
+            "caption": "  Legenda de todos  ",
+            "cover_mode": "all",
+            "cover_media_id": str(shared_cover.id),
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert (body["caption_mode"], body["caption"]) == ("all", "Legenda de todos")
+    assert (body["cover_mode"], body["cover_media_id"]) == ("all", str(shared_cover.id))
+    loop = await db_session.get(InstagramLoop, uuid.UUID(body["id"]))
+    await db_session.refresh(loop)
+    for video in (first, second):
+        caption, cover = await _post_caption_and_cover(db_session, loop, video)
+        assert caption == "Legenda de todos"
+        assert cover is not None and cover.id == shared_cover.id
+
+    # One cover per video: the second has none and Instagram picks a frame.
+    response = await client.put(
+        f"/api/loops/{loop.id}",
+        headers={"X-CSRF-Token": token},
+        json={
+            **base,
+            "caption_mode": "per_media",
+            "cover_mode": "per_media",
+            "media_covers": {str(first.id): str(own_cover.id)},
+        },
+    )
+    assert response.status_code == 200, response.text
+    await db_session.refresh(loop)
+    await db_session.refresh(first)
+    assert first.cover_media_id == own_cover.id
+    caption, cover = await _post_caption_and_cover(db_session, loop, first)
+    assert caption is None and cover is not None and cover.id == own_cover.id
+    caption, cover = await _post_caption_and_cover(db_session, loop, second)
+    assert caption is None and cover is None
+
+    # "Uma capa para todos" needs the image.
+    response = await client.put(
+        f"/api/loops/{loop.id}",
+        headers={"X-CSRF-Token": token},
+        json={**base, "cover_mode": "all"},
+    )
+    assert response.status_code == 422

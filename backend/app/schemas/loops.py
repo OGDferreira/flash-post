@@ -20,6 +20,19 @@ class InstagramLoopCreateRequest(BaseModel):
     media_ids: list[UUID] | None = None
     # Edited post captions of media in this loop (update only); empty clears it.
     media_captions: Annotated[dict[UUID, str | None], Field(max_length=1000)] | None = None
+    # per_media: each video keeps its own caption; all: ``caption`` goes on every post.
+    caption_mode: Literal["per_media", "all"] = "per_media"
+    caption: Annotated[str, Field(max_length=2200)] | None = None
+    # Reels cover: auto (Instagram picks), all (``cover_media_id`` on every video)
+    # or per_media (``media_covers``: video id -> cover image id, None clears it).
+    cover_mode: Literal["auto", "all", "per_media"] = "auto"
+    cover_media_id: UUID | None = None
+    media_covers: Annotated[dict[UUID, UUID | None], Field(max_length=1000)] | None = None
+
+    @field_validator("caption")
+    @classmethod
+    def clean_caption(cls, value: str | None) -> str | None:
+        return (value or "").strip() or None
 
     @field_validator("media_captions")
     @classmethod
@@ -63,6 +76,12 @@ class InstagramLoopCreateRequest(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def cover_chosen(self) -> "InstagramLoopCreateRequest":
+        if self.cover_mode == "all" and self.cover_media_id is None and self.post_type != "images":
+            raise ValueError("Escolha a imagem de capa usada em todos os vídeos.")
+        return self
+
+    @model_validator(mode="after")
     def valid_interval(self) -> "InstagramLoopCreateRequest":
         if self.interval_max_minutes < self.interval_min_minutes:
             raise ValueError(
@@ -89,6 +108,10 @@ class InstagramLoopResponse(BaseModel):
     daily_limit_per_account: int = 100
     post_type: Literal["reels", "images", "both"]
     repeat_media: bool
+    caption_mode: Literal["per_media", "all"] = "per_media"
+    caption: str | None = None
+    cover_mode: Literal["auto", "all", "per_media"] = "auto"
+    cover_media_id: UUID | None = None
     status: Literal["active", "paused"]
     shared: bool = False
     shared_with: list[UUID] | None = None

@@ -169,6 +169,10 @@ async def _loop_response(
         daily_limit_per_account=loop.daily_limit_per_account,
         post_type=loop.post_type,
         repeat_media=loop.repeat_media,
+        caption_mode=loop.caption_mode or "per_media",
+        caption=loop.caption,
+        cover_mode=loop.cover_mode or "auto",
+        cover_media_id=loop.cover_media_id,
         status=loop.status,
         next_run_at=_utc_datetime(loop.next_run_at) if loop.next_run_at else None,
         last_run_at=_utc_datetime(loop.last_run_at) if loop.last_run_at else None,
@@ -758,6 +762,7 @@ async def _validate_selected_media(
     query = select(InstagramMedia).where(
         InstagramMedia.workspace_id == workspace_id,
         InstagramMedia.id.in_(media_ids),
+        InstagramMedia.is_cover.is_(False),
     )
     if post_type == "reels":
         query = query.where(InstagramMedia.media_type == "video")
@@ -843,6 +848,60 @@ async def _save_media_captions(
         item.caption = captions[item.id]
 
 
+async def _workspace_covers(
+    workspace_id: uuid.UUID, cover_ids: set[uuid.UUID], db: DbSession
+) -> set[uuid.UUID]:
+    """The cover images among ``cover_ids`` that are JPEGs of this workspace."""
+    if not cover_ids:
+        return set()
+    found = set(
+        (
+            await db.scalars(
+                select(InstagramMedia.id).where(
+                    InstagramMedia.workspace_id == workspace_id,
+                    InstagramMedia.id.in_(cover_ids),
+                    InstagramMedia.media_type == "image",
+                )
+            )
+        ).all()
+    )
+    if found != cover_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A capa precisa ser uma imagem JPEG enviada a este workspace.",
+        )
+    return found
+
+
+async def _apply_post_settings(
+    loop: InstagramLoop, payload: InstagramLoopCreateRequest, db: DbSession
+) -> None:
+    """Caption and Reels cover choices of the loop, plus each video's own cover."""
+    covers = {payload.cover_media_id} if payload.cover_media_id else set()
+    covers |= {cover for cover in (payload.media_covers or {}).values() if cover}
+    await _workspace_covers(loop.workspace_id, covers, db)
+    loop.caption_mode = payload.caption_mode
+    loop.caption = payload.caption
+    loop.cover_mode = payload.cover_mode
+    loop.cover_media_id = payload.cover_media_id
+    if not payload.media_covers:
+        return
+    await db.flush()
+    in_loop = (
+        await db.scalars(
+            select(InstagramMedia)
+            .join(InstagramLoopMedia, InstagramLoopMedia.media_id == InstagramMedia.id)
+            .where(
+                InstagramLoopMedia.loop_id == loop.id,
+                InstagramMedia.workspace_id == loop.workspace_id,
+                InstagramMedia.id.in_(list(payload.media_covers)),
+            )
+        )
+    ).all()
+    for item in in_loop:
+        item.cover_media_id = payload.media_covers[item.id]
+
+
 @router.post(
     "",
     response_model=InstagramLoopResponse,
@@ -883,6 +942,7 @@ async def create_loop(
     await db.flush()
     if payload.media_captions:
         await _save_media_captions(loop, payload.media_captions, db)
+    await _apply_post_settings(loop, payload, db)
     await enqueue_loop_publications_now(db, loop, accounts, now=now)
     await db.commit()
     await db.refresh(loop)
@@ -921,6 +981,10 @@ async def clone_loop(
         daily_limit_per_account=source.daily_limit_per_account,
         post_type=source.post_type,
         repeat_media=True,
+        caption_mode=source.caption_mode,
+        caption=source.caption,
+        cover_mode=source.cover_mode,
+        cover_media_id=source.cover_media_id,
         status="paused",
         next_run_at=None,
     )
@@ -1023,6 +1087,7 @@ async def update_loop(
         _save_loop_media(loop, media, db)
     if payload.media_captions:
         await _save_media_captions(loop, payload.media_captions, db)
+    await _apply_post_settings(loop, payload, db)
     await db.flush()
     # Jobs that have not started carry no progress: drop the ones for removed
     # accounts and, when the playlist changed, the rest too so each account is
