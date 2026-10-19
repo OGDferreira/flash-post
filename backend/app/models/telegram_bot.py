@@ -87,6 +87,8 @@ class TgBot(Base):
     # Group/channel this bot delivers to when it runs a funnel shared by the chief
     # (the chief's own group would not accept invites from the partner's bot).
     delivery_group_chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    # Channel/group where the bot is admin; files are uploaded there once and reused by file_id.
+    cache_chat_id: Mapped[int | None] = mapped_column(BigInteger)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )

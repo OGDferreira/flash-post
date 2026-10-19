@@ -60,6 +60,7 @@ class FakeApis:
         self.pix_amount = 19.90
         self.get_me_status = 200
         self.message_id = 0
+        self.member_status = "administrator"
 
     def methods(self, name: str) -> list[dict]:
         return [body for method, body in self.calls if method == name]
@@ -77,6 +78,8 @@ class FakeApis:
                 if self.get_me_status != 200:
                     return httpx.Response(401, json={"ok": False, "error_code": 401, "description": "Unauthorized"})
                 return httpx.Response(200, json={"ok": True, "result": {"id": 987, "is_bot": True, "username": "ana_vip_bot", "first_name": "Ana VIP"}})
+            if method == "getChatMember":
+                return httpx.Response(200, json={"ok": True, "result": {"status": self.member_status, "user": {"id": 987}}})
             if method == "createChatInviteLink":
                 return httpx.Response(200, json={"ok": True, "result": {"invite_link": "https://t.me/+invite123"}})
             self.message_id += 1
@@ -428,6 +431,56 @@ async def test_media_blocks_upload_once_then_reuse_file_id(client, db_session, o
 
     in_use = await client.delete(f"/api/bots/media/{media_id}", headers=headers)
     assert in_use.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_media_cache_chat_requires_admin_and_holds_the_uploads(client, db_session, owner, apis, monkeypatch) -> None:
+    from app.instagram.storage import SupabaseStorage
+
+    async def fake_upload(self, path, content, content_type):
+        return None
+
+    async def fake_bytes(media):
+        return b"\xff\xd8\xffjpeg"
+
+    monkeypatch.setattr(SupabaseStorage, "from_settings", classmethod(lambda cls: cls("https://x.supabase.co", "k")))
+    monkeypatch.setattr(SupabaseStorage, "upload", fake_upload)
+    monkeypatch.setattr(engine, "load_media_bytes", fake_bytes)
+    headers = await _login(client)
+    uploaded = await client.post(
+        "/api/bots/media?filename=foto.jpg", headers={**headers, "content-type": "image/jpeg"}, content=b"\xff\xd8\xff" + b"0" * 100,
+    )
+    media_id = uploaded.json()["id"]
+    bot, _ = await _setup(client, headers, _flow(welcome=[{"type": "photo", "media_ids": [media_id], "text": "Oi"}]))
+
+    unknown = await client.patch(f"/api/bots/{bot['id']}", headers=headers, json={"cache_chat_id": GROUP_ID})
+    assert unknown.status_code == 422
+    await _admin_in_group(client, db_session, bot["id"])
+    apis.member_status = "member"
+    not_admin = await client.patch(f"/api/bots/{bot['id']}", headers=headers, json={"cache_chat_id": GROUP_ID})
+    assert not_admin.status_code == 422 and "admin" in not_admin.json()["detail"]
+    apis.member_status = "administrator"
+    saved = await client.patch(f"/api/bots/{bot['id']}", headers=headers, json={"cache_chat_id": GROUP_ID})
+    assert saved.status_code == 200 and saved.json()["cache_chat_id"] == GROUP_ID
+
+    # The warm-up job uploads the funnel's files to the cache chat, silently.
+    await engine.run_due_jobs(db_session)
+    cached = apis.methods("sendPhoto")
+    assert len(cached) == 1 and cached[0]["chat_id"] == str(GROUP_ID) and cached[0]["multipart"] is True
+    assert cached[0]["disable_notification"] == "true"
+    media = await db_session.get(TgMedia, uuid.UUID(media_id))
+    await db_session.refresh(media)
+    assert media.file_ids[bot["id"]] == "PHOTO_FILE_ID"
+
+    # The lead gets the file by id: no new upload.
+    await _send(client, db_session, bot["id"], _start())
+    to_lead = apis.methods("sendPhoto")[-1]
+    assert to_lead["chat_id"] == 555 and to_lead["photo"] == "PHOTO_FILE_ID"
+
+    check = await client.post(f"/api/bots/{bot['id']}/cache/check", headers=headers)
+    assert check.status_code == 200 and check.json() == {"ok": True, "cached": 1, "total": 1}
+    cleared = await client.patch(f"/api/bots/{bot['id']}", headers=headers, json={"clear_cache_chat": True})
+    assert cleared.json()["cache_chat_id"] is None
 
 
 @pytest.mark.anyio

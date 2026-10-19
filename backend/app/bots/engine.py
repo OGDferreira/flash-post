@@ -148,11 +148,60 @@ async def _media_rows(db: AsyncSession, bot: TgBot, ids: list[uuid.UUID]) -> lis
     return [rows[i] for i in ids if i in rows]
 
 
-async def _source(bot: TgBot, media: TgMedia) -> str | InputFile:
+def _cache_kind(media: TgMedia) -> str:
+    return {"video": "video", "audio": "voice"}.get(media.kind, "photo")
+
+
+async def store_in_cache(tg: TelegramClient, bot: TgBot, media: TgMedia) -> str | None:
+    """Upload the file to the bot's cache channel/group (a CDN-like backup) and keep
+    Telegram's file_id, so leads always get the file by id instead of a fresh upload."""
+    if not bot.cache_chat_id:
+        return None
+    method, field = _SEND[_cache_kind(media)]
+    file = InputFile(media.file_name, await load_media_bytes(media), media.content_type)
+    try:
+        message = await tg.send_media(method, field, int(bot.cache_chat_id), file, silent=True)
+    except TelegramError as exc:  # lost admin rights or the chat is gone: upload straight to the lead
+        logger.warning("Media cache upload failed for bot %s: %s", bot.id, exc)
+        return None
+    _remember_file_id(bot, media, message, field)
+    return (media.file_ids or {}).get(str(bot.id))
+
+
+async def _source(tg: TelegramClient, bot: TgBot, media: TgMedia, kind: str | None = None) -> str | InputFile:
     cached = (media.file_ids or {}).get(str(bot.id))
     if cached:
         return cached
+    # The cache only holds the default kind of each file (a video note needs its own upload).
+    if kind in (None, _cache_kind(media)):
+        file_id = await store_in_cache(tg, bot, media)
+        if file_id:
+            return file_id
     return InputFile(media.file_name, await load_media_bytes(media), media.content_type)
+
+
+def _forget_file_id(bot: TgBot, media: TgMedia) -> None:
+    media.file_ids = {k: v for k, v in (media.file_ids or {}).items() if k != str(bot.id)}
+
+
+def _stale_file(exc: TelegramError) -> bool:
+    text = exc.description.lower()
+    return exc.status == 400 and ("file" in text or "wrong remote" in text)
+
+
+async def warm_cache(db: AsyncSession, tg: TelegramClient, bot: TgBot) -> int:
+    """Put every file of the bot's funnel in the cache chat ahead of the first lead."""
+    flow = await load_flow(db, bot)
+    if flow is None or not bot.cache_chat_id:
+        return 0
+    stored = 0
+    for media in await _media_rows(db, bot, sorted(flow.media_ids(), key=str)):
+        if (media.file_ids or {}).get(str(bot.id)):
+            continue
+        if await store_in_cache(tg, bot, media):
+            stored += 1
+            await db.commit()
+    return stored
 
 
 def _remember_file_id(bot: TgBot, media: TgMedia, message: dict, field: str) -> None:
@@ -179,16 +228,27 @@ async def send_media_message(
     if kind not in _SEND:  # a "photo/video" block follows the uploaded file
         kind = "video" if media.kind == "video" else "photo"
     method, field = _SEND[kind]
-    message = await tg.send_media(
-        method,
-        field,
-        chat_id,
-        await _source(bot, media),
-        caption=caption,
-        reply_markup=reply_markup,
-        spoiler=spoiler and kind in ("photo", "video"),
-        protect=protect,
-    )
+
+    async def send(source: str | InputFile) -> dict:
+        return await tg.send_media(
+            method,
+            field,
+            chat_id,
+            source,
+            caption=caption,
+            reply_markup=reply_markup,
+            spoiler=spoiler and kind in ("photo", "video"),
+            protect=protect,
+        )
+
+    source = await _source(tg, bot, media, kind)
+    try:
+        message = await send(source)
+    except TelegramError as exc:
+        if isinstance(source, InputFile) or not _stale_file(exc):
+            raise
+        _forget_file_id(bot, media)  # the cached id went bad: upload again
+        message = await send(await _source(tg, bot, media, kind))
     _remember_file_id(bot, media, message, field)
     return message
 
@@ -199,8 +259,8 @@ async def send_album(
 ) -> list:
     items, files = [], {}
     for index, media in enumerate(medias):
-        source = await _source(bot, media)
         kind = "video" if media.kind == "video" else "photo"
+        source = await _source(tg, bot, media, kind)
         if isinstance(source, InputFile):
             files[f"file{index}"] = source
             source = f"attach://file{index}"
@@ -570,6 +630,8 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
         await expire_order(db, tg, bot, uuid.UUID(job.payload["order_id"]))
     elif job.kind == "end_subscription":
         await end_subscription(db, tg, bot, uuid.UUID(job.payload["subscription_id"]))
+    elif job.kind == "warm_cache":
+        await warm_cache(db, tg, bot)
     elif job.kind == "delete_messages":
         await tg.delete_messages(int(job.payload["chat_id"]), [int(i) for i in job.payload.get("message_ids") or []])
 
@@ -828,6 +890,8 @@ async def _handle_membership(db: AsyncSession, bot: TgBot, event: dict) -> None:
     if status in ("left", "kicked"):
         if group is not None:
             await db.delete(group)
+        if bot.cache_chat_id == chat["id"]:
+            bot.cache_chat_id = None
         return
     if group is None:
         group = TgGroup(workspace_id=bot.workspace_id, bot_id=bot.id, chat_id=chat["id"], title="", chat_type=chat["type"])
