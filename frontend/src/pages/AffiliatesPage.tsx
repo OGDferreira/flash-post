@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Handshake, Info, RefreshCw, Trash2 } from "lucide-react";
+import { BarChart3, Handshake, Info, RefreshCw, Trash2 } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { CopyField } from "@/components/ui/CopyField";
@@ -43,6 +43,7 @@ type Row = {
   pending_acceptance: boolean;
   bot_revenue: string;
   bot_sales: number;
+  bot_leads?: number;
   commission_received: string;
 };
 
@@ -151,7 +152,22 @@ function PercentEditor({ row, period }: { row: Row; period: MetricsPeriod }) {
   );
 }
 
-function DetailModal({ id, period, onClose }: { id: string | null; period: MetricsPeriod; onClose: () => void }) {
+type AccountFilter = "all" | "connected" | "disconnected";
+const accountStatus: Record<string, string> = {
+  connected: "conectada",
+  error: "desconectada (erro de autorização)",
+  expired: "desconectada (token expirado)",
+  disconnected: "desconectada",
+  manual: "desconectada manualmente",
+};
+
+function DetailModal({ id, period, onClose, initialAccounts = "all" }: {
+  id: string | null;
+  period: MetricsPeriod;
+  onClose: () => void;
+  initialAccounts?: AccountFilter;
+}) {
+  const [accountFilter, setAccountFilter] = useState<AccountFilter>(initialAccounts);
   const detail = useQuery({
     queryKey: ["affiliates", "detail", id, periodParams(period)],
     queryFn: () => apiRequest<Detail>(`/api/affiliates/${id}?${new URLSearchParams(periodParams(period))}`),
@@ -190,30 +206,69 @@ function DetailModal({ id, period, onClose }: { id: string | null; period: Metri
           {data.purchases_without_amount > 0 && (
             <p className="text-xs text-warning">{data.purchases_without_amount} compra(s) paga(s) chegaram sem valor e não entram na receita.</p>
           )}
-          <div>
-            <h4 className="text-sm font-medium text-fg">Contas do Instagram ({data.accounts.length})</h4>
-            {data.accounts.length === 0 ? (
-              <p className="mt-2 text-xs text-muted">Nenhuma conta conectada.</p>
-            ) : (
-              <ul className="mt-2 divide-y divide-[color:var(--color-line-soft)] rounded-xl border border-line-soft">
-                {data.accounts.map((account) => (
-                  <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs" key={account.account_id}>
-                    <span className="text-fg">@{account.username}</span>
-                    <span className="text-muted">
-                      {account.status === "connected" ? "conectada" : account.status} · {formatNumber(account.published_posts)} publicações ·{" "}
-                      {account.video_views_lifetime === null ? "views indisponíveis" : `${formatNumber(account.video_views_lifetime)} views acumuladas`}
-                      {account.follower_count !== null && ` · ${formatNumber(account.follower_count)} seguidores`}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <AccountsList accounts={data.accounts} filter={accountFilter} onFilter={setAccountFilter} />
           {id && <PartnerOperations id={id} period={period} />}
           <p className="rounded-xl border border-line-soft bg-surface-inset p-3 text-[11px] leading-5 text-muted">{data.criteria.participation}</p>
         </div>
       )}
     </Modal>
+  );
+}
+
+function AccountsList({ accounts, filter, onFilter }: {
+  accounts: Detail["accounts"];
+  filter: AccountFilter;
+  onFilter: (filter: AccountFilter) => void;
+}) {
+  const connected = accounts.filter((account) => account.status === "connected");
+  const disconnected = accounts.filter((account) => account.status !== "connected");
+  const shown = filter === "connected" ? connected : filter === "disconnected" ? disconnected : accounts;
+  const chips: [AccountFilter, string, number][] = [
+    ["all", "Todas", accounts.length],
+    ["connected", "Conectadas", connected.length],
+    ["disconnected", "Desconectadas", disconnected.length],
+  ];
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-sm font-medium text-fg">Contas do Instagram</h4>
+        <div className="flex gap-1 rounded-full bg-well p-1" role="tablist">
+          {chips.map(([key, label, count]) => (
+            <button
+              aria-selected={filter === key}
+              className={`rounded-full px-3 py-1 text-[11px] font-medium ${filter === key ? (key === "disconnected" ? "bg-danger text-white" : "bg-brand text-white") : "text-muted"}`}
+              key={key}
+              onClick={() => onFilter(key)}
+              role="tab"
+              type="button"
+            >
+              {label} ({count})
+            </button>
+          ))}
+        </div>
+      </div>
+      {shown.length === 0 ? (
+        <p className="mt-2 text-xs text-muted">
+          {filter === "disconnected" ? "Nenhuma conta desconectada." : filter === "connected" ? "Nenhuma conta conectada." : "Nenhuma conta."}
+        </p>
+      ) : (
+        <ul className="mt-2 max-h-72 divide-y divide-[color:var(--color-line-soft)] overflow-y-auto rounded-xl border border-line-soft">
+          {shown.map((account) => (
+            <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs" key={account.account_id}>
+              <span className="flex items-center gap-2 text-fg">
+                <span className={`size-2 rounded-full ${account.status === "connected" ? "bg-success" : "bg-danger"}`} />
+                @{account.username}
+              </span>
+              <span className="text-muted">
+                {accountStatus[account.status] ?? account.status} · {formatNumber(account.published_posts)} publicações ·{" "}
+                {account.video_views_lifetime === null ? "views indisponíveis" : `${formatNumber(account.video_views_lifetime)} views`}
+                {account.follower_count !== null && ` · ${formatNumber(account.follower_count)} seguidores`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -269,7 +324,8 @@ function PartnerOperations({ id, period }: { id: string; period: MetricsPeriod }
 export function AffiliatesPage() {
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState<MetricsPeriod>({ period: "30d", start: todayInput(), end: todayInput() });
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [open, setOpen] = useState<{ id: string; accounts: AccountFilter } | null>(null);
+  const [only, setOnly] = useState<string>("");
   const list = useQuery({
     queryKey: ["affiliates", "list", periodParams(period)],
     queryFn: () => apiRequest<Listing>(`/api/affiliates?${new URLSearchParams(periodParams(period))}`),
@@ -282,6 +338,7 @@ export function AffiliatesPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["affiliates"] }),
   });
   const data = list.data;
+  const rows = data ? (only ? data.rows.filter((row) => row.id === only) : data.rows) : [];
 
   return (
     <div className="mx-auto max-w-[1200px] space-y-4">
@@ -325,12 +382,38 @@ export function AffiliatesPage() {
               {data.basis} Período: {data.period_label} (fuso {data.time_zone}).
             </p>
           </section>
+          {data.rows.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                aria-label="Filtrar sócio"
+                className="field !w-auto min-w-[220px]"
+                onChange={(event) => setOnly(event.target.value)}
+                value={only}
+              >
+                <option value="">Todos os sócios ({data.rows.length})</option>
+                {data.rows.map((row) => (
+                  <option key={row.id} value={row.id}>{row.full_name}</option>
+                ))}
+              </select>
+              {only && (
+                <button className="btn-primary !min-h-10" onClick={() => setOpen({ id: only, accounts: "all" })} type="button">
+                  <BarChart3 size={15} /> Abrir painel do sócio
+                </button>
+              )}
+            </div>
+          )}
           {data.rows.length === 0 ? (
             <EmptyState message="Você ainda não tem sócios. Compartilhe seu código ou link de cadastro." />
           ) : (
             <div className="glass-panel overflow-x-auto">
-              <table className="w-full min-w-[1120px] text-left text-xs">
+              <table className="w-full min-w-[1200px] text-left text-xs">
                 <thead className="text-muted">
+                  <tr className="text-[10px] uppercase tracking-wider">
+                    <th colSpan={3} />
+                    <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={3}>SharkBot</th>
+                    <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={2}>FlashBot</th>
+                    <th colSpan={4} />
+                  </tr>
                   <tr className="border-b border-line-soft">
                     <th className="px-4 py-3 font-medium">Sócio</th>
                     <th className="px-2 py-3 text-right font-medium">Contas</th>
@@ -338,7 +421,8 @@ export function AffiliatesPage() {
                     <th className="px-2 py-3 text-right font-medium">Leads</th>
                     <th className="px-2 py-3 text-right font-medium">Compras</th>
                     <th className="px-2 py-3 text-right font-medium">Receita</th>
-                    <th className="px-2 py-3 text-right font-medium">FlashBot</th>
+                    <th className="px-2 py-3 text-right font-medium">Leads</th>
+                    <th className="px-2 py-3 text-right font-medium">Vendas</th>
                     <th className="px-2 py-3 text-right font-medium">Comissão recebida</th>
                     <th className="px-2 py-3 font-medium">Compartilhados</th>
                     <th className="px-2 py-3 text-right font-medium">Comissão (%)</th>
@@ -346,20 +430,42 @@ export function AffiliatesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.rows.map((row) => (
+                  {rows.map((row) => (
                     <tr className="border-b border-line-soft last:border-0" key={row.id}>
                       <td className="px-4 py-3">
-                        <button className="text-left text-fg hover:text-white" onClick={() => setOpenId(row.id)} type="button">
+                        <button className="text-left text-fg hover:text-white" onClick={() => setOpen({ id: row.id, accounts: "all" })} type="button">
                           <span className="block font-medium">{row.full_name}</span>
                           <span className="text-[10px] text-muted">{row.nickname}</span>
                         </button>
+                        <button
+                          className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-accent"
+                          onClick={() => setOpen({ id: row.id, accounts: "all" })}
+                          type="button"
+                        >
+                          <BarChart3 size={11} /> Abrir painel
+                        </button>
                       </td>
-                      <td className="px-2 py-3 text-right text-fg">{row.accounts_connected}/{row.accounts_total}</td>
+                      <td className="px-2 py-3 text-right">
+                        <button
+                          className="text-right"
+                          onClick={() => setOpen({ id: row.id, accounts: "connected" })}
+                          title="Ver as contas do sócio"
+                          type="button"
+                        >
+                          <span className="block font-semibold text-success hover:underline">{row.accounts_connected} conectadas</span>
+                        </button>
+                        {row.accounts_total - row.accounts_connected > 0 && (
+                          <button className="block w-full text-right" onClick={() => setOpen({ id: row.id, accounts: "disconnected" })} type="button">
+                            <span className="text-[10px] text-danger hover:underline">{row.accounts_total - row.accounts_connected} desconectadas</span>
+                          </button>
+                        )}
+                      </td>
                       <td className="px-2 py-3 text-right text-fg">{formatNumber(row.published_posts)}</td>
                       <td className="px-2 py-3 text-right text-fg">{formatNumber(row.leads)}</td>
                       <td className="px-2 py-3 text-right text-fg">{formatNumber(row.purchases)}</td>
                       <td className="px-2 py-3 text-right font-semibold text-success">{money(row.revenue)}</td>
-                      <td className="px-2 py-3 text-right text-fg">{money(row.bot_revenue)}<span className="block text-[10px] text-muted">{row.bot_sales} venda(s)</span></td>
+                      <td className="px-2 py-3 text-right text-fg">{formatNumber(row.bot_leads ?? 0)}</td>
+                      <td className="px-2 py-3 text-right text-fg">{money(row.bot_revenue)}<span className="block text-[10px] text-muted">{row.bot_sales} {row.bot_sales === 1 ? "venda" : "vendas"}</span></td>
                       <td className="px-2 py-3 text-right font-semibold text-fg">{money(row.commission_received)}</td>
                       <td className="px-2 py-3">
                         <PartnerSharesCell affiliationId={row.id} name={row.full_name} userId={row.user_id} />
@@ -393,7 +499,13 @@ export function AffiliatesPage() {
           )}
         </>
       )}
-      <DetailModal id={openId} onClose={() => setOpenId(null)} period={period} />
+      <DetailModal
+        id={open?.id ?? null}
+        initialAccounts={open?.accounts ?? "all"}
+        key={open ? `${open.id}-${open.accounts}` : "closed"}
+        onClose={() => setOpen(null)}
+        period={period}
+      />
     </div>
   );
 }

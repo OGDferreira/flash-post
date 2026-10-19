@@ -28,6 +28,7 @@ from app.models import (
     InstagramAccount,
     InstagramMediaInsight,
     InstagramPublicationJob,
+    TgLead,
     TgOrder,
     User,
     Workspace,
@@ -173,6 +174,7 @@ class AffiliateRow(BaseModel):
     pending_acceptance: bool = True
     bot_revenue: Decimal = Decimal("0.00")
     bot_sales: int = 0
+    bot_leads: int = 0
     commission_received: Decimal = Decimal("0.00")
 
 
@@ -360,7 +362,13 @@ async def _bot_numbers(db: AsyncSession, workspace_id, chief_user_id, start, end
             )
         )
     ).one()
+    leads = await db.scalar(
+        select(func.count(TgLead.id)).where(
+            TgLead.workspace_id == workspace_id, TgLead.created_at >= start, TgLead.created_at < end
+        )
+    )
     return {
+        "bot_leads": int(leads or 0),
         "bot_sales": int(row[0]),
         "bot_revenue": Decimal(row[1] or 0).quantize(Decimal("0.01")),
         "commission_received": Decimal(row[2] or 0).quantize(Decimal("0.01")),
