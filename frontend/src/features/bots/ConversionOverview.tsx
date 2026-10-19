@@ -10,12 +10,13 @@ import { ActivityLog, NextAward, PartnersRanking } from "./HomePanels";
 export type StatLine = { leads: number; sales: number; buyers: number; revenue: number; conversion: number; ticket: number };
 export type BotStats = {
   period_label: string;
-  totals: StatLine & { pix_generated?: number };
-  series: (StatLine & { date: string })[];
+  totals: StatLine & { pix_generated?: number; commission?: number };
+  series: (StatLine & { date: string; commission?: number })[];
   flows: Record<string, StatLine>;
   bots: Record<string, StatLine>;
 };
 
+const COMMISSION_COLOR = "#34d399";
 const money = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const count = (value: number) => value.toLocaleString("pt-BR");
 const weekday = (iso: string) =>
@@ -106,6 +107,7 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
     label: (stats.data?.series.length ?? 0) <= 7 ? weekday(day.date) : `${day.date.slice(8, 10)}/${day.date.slice(5, 7)}`,
   }));
   const recent = series.slice(-7);
+  const showCommission = (t?.commission ?? 0) > 0;
   const peak = Math.max(1, ...recent.map((day) => day.leads));
 
   return (
@@ -175,8 +177,13 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
               <p className="text-[10px] uppercase tracking-[0.14em] text-muted">{stats.data?.period_label ?? ""}</p>
             </div>
           </div>
-          <p className="mb-1 flex items-center gap-1.5 text-[11px] text-muted">
-            <span className="size-2 rounded-full bg-accent" /> Faturamento por dia
+          <p className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+            <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-accent" /> Faturamento por dia</span>
+            {showCommission && (
+              <span className="flex items-center gap-1.5">
+                <span className="h-0.5 w-3 rounded-full" style={{ background: COMMISSION_COLOR }} /> Comissão dos sócios
+              </span>
+            )}
           </p>
           <div className="min-h-[240px] flex-1">
             <ResponsiveContainer height="100%" minHeight={240} width="100%">
@@ -199,7 +206,8 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
                 />
                 <Tooltip
                   contentStyle={{ background: "var(--nm-bg)", border: "1px solid var(--color-line)", borderRadius: 12, fontSize: 12 }}
-                  formatter={(value, _name, item) => {
+                  formatter={(value, name, item) => {
+                    if (name === "commission") return [money(Number(value ?? 0)), "Comissão"];
                     const sales = Number(item?.payload?.sales ?? 0);
                     return [`${money(Number(value ?? 0))} · ${count(sales)} ${sales === 1 ? "venda" : "vendas"}`, "Faturamento"];
                   }}
@@ -209,6 +217,9 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
                   }}
                 />
                 <Area dataKey="revenue" fill="url(#revenueFill)" stroke="var(--grad-a)" strokeWidth={2.5} type="monotone" />
+                {showCommission && (
+                  <Area dataKey="commission" fill="none" stroke={COMMISSION_COLOR} strokeDasharray="5 4" strokeWidth={2} type="monotone" />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           </div>

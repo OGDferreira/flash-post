@@ -148,6 +148,8 @@ async def test_commission_needs_acceptance_and_split_goes_into_the_charge(client
 
     # chief: sees the partner's numbers and operation, never the bot token
     chief_headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    stats = (await client.get("/api/bots/stats", params={"period": "today"})).json()
+    assert stats["totals"]["commission"] == 5.67 and sum(p["commission"] for p in stats["series"]) == 5.67
     row = (await client.get("/api/affiliates")).json()["rows"][0]
     assert row["commission_received"] == "5.67" and row["bot_sales"] == 1 and row["pending_acceptance"] is False
     ops = await client.get(f"/api/partners/{link.id}/operations")
