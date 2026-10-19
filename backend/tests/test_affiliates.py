@@ -310,3 +310,4 @@ async def test_partner_row_adds_flashbot_to_revenue_and_shows_withdrawn_and_bala
     assert Decimal(row["withdrawn"]) == Decimal("5.00")
     assert Decimal(row["balance"]) == Decimal("13.90")  # FlashBot net 18.90 minus the withdrawal
     assert Decimal(listing["totals_revenue"]) == Decimal("119.90")
+    assert row["bot_leads"] == 1 and row["bot_pix"] == 1

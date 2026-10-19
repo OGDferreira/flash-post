@@ -44,6 +44,7 @@ type Row = {
   bot_revenue: string;
   bot_sales: number;
   bot_leads?: number;
+  bot_pix?: number;
   commission_received: string;
   total_revenue?: string;
   total_sales?: number;
@@ -233,6 +234,8 @@ function DetailModal({ id, period, onClose, initialAccounts = "all" }: {
     enabled: Boolean(id),
   });
   const data = detail.data;
+  const allLeads = data ? data.leads + (data.bot_leads ?? 0) : 0;
+  const sales = data ? (data.total_sales ?? data.purchases) : 0;
   return (
     <Modal
       description="Métricas agregadas da operação do filiado no período selecionado."
@@ -246,15 +249,18 @@ function DetailModal({ id, period, onClose, initialAccounts = "all" }: {
         <div className="space-y-4">
           <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {[
-              ["Receita aprovada", money(data.revenue)],
-              [`Participação (${percent(data.participation_percent)}%)`, money(data.participation_amount)],
-              ["Ticket médio", money(data.average_ticket)],
-              ["Leads", formatNumber(data.leads)],
-              ["PIX gerados", formatNumber(data.pix_generated)],
-              ["Compras pagas", formatNumber(data.purchases)],
-              ["PIX pago ÷ gerado", formatPercent(data.pix_to_paid_rate)],
-              ["Lead → compra", formatPercent(data.lead_to_purchase_rate)],
-              ["Leads por compra", data.leads_per_purchase === null ? "—" : data.leads_per_purchase.toLocaleString("pt-BR")],
+              ["Faturamento (Shark + Flash)", money(data.total_revenue ?? data.revenue)],
+              ["Hoje", money(data.today_revenue ?? "0")],
+              ["Ticket médio", data.total_ticket ? money(data.total_ticket) : "—"],
+              ["Leads", formatNumber(allLeads)],
+              ["PIX gerados", formatNumber(data.pix_generated + (data.bot_pix ?? 0))],
+              ["Vendas pagas", formatNumber(sales)],
+              ["Lead → venda", allLeads ? `${((100 * sales) / allLeads).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—"],
+              ["Sacado", money(data.withdrawn ?? "0")],
+              ["Saldo na conta", money(data.balance ?? "0")],
+              [`Participação SharkBot (${percent(data.participation_percent)}%)`, money(data.participation_amount)],
+              ["Comissão recebida (FlashBot)", money(data.commission_received)],
+              ["Leads SharkBot · FlashBot", `${formatNumber(data.leads)} · ${formatNumber(data.bot_leads ?? 0)}`],
             ].map(([title, value]) => (
               <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={title}>
                 <dt className="text-[11px] text-muted">{title}</dt>
