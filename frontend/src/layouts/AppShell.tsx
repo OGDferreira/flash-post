@@ -13,6 +13,7 @@ import {
   LogOut,
   Pin,
   PinOff,
+  Settings,
   Moon,
   Sun,
   Share,
@@ -638,6 +639,9 @@ export function AppShell() {
                 </section>
               )}
             </div>
+            <Link aria-label="Configurações" className="app-header-btn max-sm:!hidden" title="Configurações" to="/configuracoes">
+              <Settings size={16} />
+            </Link>
             <button
               aria-label={theme === "light" ? "Ativar modo escuro" : "Ativar modo claro"}
               className="app-header-btn"

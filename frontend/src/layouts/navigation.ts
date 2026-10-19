@@ -16,6 +16,7 @@ import {
   MessageSquareText,
   Puzzle,
   Send,
+  Settings,
   Settings2,
   Trophy,
   Users,
@@ -111,6 +112,12 @@ const ownerGroups: NavGroup[] = [
     ],
   },
   {
+    id: "configuracoes",
+    title: "Configurações",
+    icon: Settings,
+    items: [{ label: "Configurações", to: "/configuracoes", icon: Settings }],
+  },
+  {
     id: "suporte",
     title: "Suporte",
     icon: LifeBuoy,
@@ -133,6 +140,7 @@ const collaboratorRoutes = new Set([
   "/feature/extensions",
   "/feature/support",
   "/feature/contacts",
+  "/configuracoes",
 ]);
 
 

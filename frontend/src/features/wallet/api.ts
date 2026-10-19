@@ -10,6 +10,7 @@ export type Withdrawal = {
   note: string | null;
   pix_key_type: string | null;
   pix_key: string | null;
+  e2e_id?: string | null;
   owner: string | null;
   created_at: string | null;
   processed_at: string | null;

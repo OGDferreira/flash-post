@@ -1,12 +1,64 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowDownToLine, Info } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { brl, usePartnerWallets, type PartnerWallet } from "@/features/wallet/api";
 import { WithdrawModal, WithdrawalHistory } from "@/pages/WalletPage";
-import { ApiError } from "@/services/api";
+import { ApiError, apiRequest } from "@/services/api";
 
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : "Não foi possível carregar.");
+
+type GatewayPayout = {
+  id: string; amount: number; fee: number | null; status: string; pix_key_type: string | null; pix_key: string | null;
+  e2e_id: string | null; failure_reason: string | null; processed_at: string | null;
+};
+
+/** What SmokePay itself recorded for the partner's payouts: status, destination and Pix receipt. */
+function GatewayCheck({ userId }: { userId: string }) {
+  const [open, setOpen] = useState(false);
+  const query = useQuery({
+    queryKey: ["admin", "partner-wallets", userId, "gateway"],
+    queryFn: () => apiRequest<{ items: GatewayPayout[] }>(`/api/admin/partner-wallets/${userId}/gateway-withdrawals`),
+    enabled: open,
+  });
+  if (!open) {
+    return (
+      <button className="btn-secondary btn-sm" onClick={() => setOpen(true)} type="button">
+        Conferir na SmokePay
+      </button>
+    );
+  }
+  if (query.isLoading) return <p className="text-xs text-muted">Consultando a SmokePay…</p>;
+  if (query.error) return <p className="text-xs text-danger">{errorText(query.error)}</p>;
+  const items = query.data?.items ?? [];
+  return (
+    <div className="rounded-xl border border-line-soft p-3 text-xs">
+      <p className="mb-2 font-semibold text-fg">Registro da SmokePay</p>
+      {items.length === 0 ? (
+        <p className="text-muted">A SmokePay não tem saques desta subconta.</p>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((payout) => (
+            <li className="rounded-lg bg-surface-inset p-2" key={payout.id}>
+              <p className="flex flex-wrap justify-between gap-2 font-semibold text-fg">
+                <span>{brl(payout.amount)}{payout.fee != null && ` + taxa ${brl(payout.fee)}`}</span>
+                <span className={payout.status === "completed" ? "text-success" : payout.status === "failed" ? "text-danger" : "text-warning"}>
+                  {payout.status === "completed" ? "Enviado" : payout.status === "failed" ? "Falhou" : "Processando"}
+                </span>
+              </p>
+              <p className="mt-1 break-all text-muted">Chave ({payout.pix_key_type ?? "?"}): <b className="text-fg-2">{payout.pix_key ?? "—"}</b></p>
+              <p className="break-all text-muted">Comprovante (E2E): <b className="text-fg-2">{payout.e2e_id ?? "ainda não informado"}</b></p>
+              {payout.failure_reason && <p className="text-danger">Motivo: {payout.failure_reason}</p>}
+              {payout.processed_at && <p className="text-muted">Processado em {new Date(payout.processed_at).toLocaleString("pt-BR")}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-[11px] text-muted">Com o comprovante E2E o banco de quem recebe consegue localizar o Pix.</p>
+    </div>
+  );
+}
 
 /** Super Admin only: each partner's balance, what was paid out and the withdrawal history. */
 export function AdminPartnerWalletsPage() {
@@ -72,7 +124,12 @@ export function AdminPartnerWalletsPage() {
               >
                 {openHistory === item.user_id ? "Esconder histórico" : `Histórico de saques (${item.withdrawals.length})`}
               </button>
-              {openHistory === item.user_id && <WithdrawalHistory items={item.withdrawals} />}
+              {openHistory === item.user_id && (
+                <>
+                  <WithdrawalHistory items={item.withdrawals} />
+                  <GatewayCheck userId={item.user_id} />
+                </>
+              )}
             </section>
           ))}
         </div>

@@ -1063,7 +1063,7 @@ html[data-theme="light"] :is(.bg-brand, .bg-brand-strong, .bg-danger, .bg-succes
   --nm-sd: transparent;
   --nm-track: rgb(255 255 255 / 0.08);
   --glass-fill: rgb(22 28 48 / 0.74);
-  --glass-fill-solid: rgb(20 26 44 / 0.86);
+  --glass-fill-solid: rgb(20 26 44 / 0.97);
   --glass-edge: rgb(255 255 255 / 0.14);
   --glass-hi: inset 0 1px 0 rgb(255 255 255 / 0.12);
   --nm-raised: 0 10px 34px rgb(0 0 0 / 0.38), var(--glass-hi);
@@ -1081,7 +1081,7 @@ html[data-theme="light"] {
   --nm-bg: #e9eefc;
   --nm-track: rgb(40 60 130 / 0.12);
   --glass-fill: rgb(255 255 255 / 0.7);
-  --glass-fill-solid: rgb(255 255 255 / 0.82);
+  --glass-fill-solid: rgb(255 255 255 / 0.96);
   --glass-edge: rgb(255 255 255 / 0.85);
   --glass-hi: inset 0 1px 0 rgb(255 255 255 / 0.9);
   --nm-raised: 0 10px 34px rgb(40 60 130 / 0.16), var(--glass-hi);
@@ -1189,8 +1189,8 @@ html[data-theme="light"] .bg-surface-raised { background: rgb(255 255 255 / 0.55
 }
 
 @media (min-width: 768px) {
-  :root { --glass-fill: rgb(255 255 255 / 0.07); --glass-fill-solid: rgb(24 30 52 / 0.8); }
-  html[data-theme="light"] { --glass-fill: rgb(255 255 255 / 0.58); --glass-fill-solid: rgb(255 255 255 / 0.85); }
+  :root { --glass-fill: rgb(255 255 255 / 0.07); --glass-fill-solid: rgb(24 30 52 / 0.95); }
+  html[data-theme="light"] { --glass-fill: rgb(255 255 255 / 0.58); --glass-fill-solid: rgb(255 255 255 / 0.95); }
 }
 
 /* Compact metric cards on desktop (no wide side-to-side bars). */
@@ -1358,7 +1358,7 @@ html[data-galaxy]:not([data-theme="light"]) {
   --accent: #7dd3fc;
   --tx-accent: #7dd3fc;
   --glass-fill: rgb(14 12 34 / 0.62);
-  --glass-fill-solid: rgb(14 12 32 / 0.9);
+  --glass-fill-solid: rgb(14 12 32 / 0.97);
   --glass-edge: rgb(167 139 250 / 0.22);
   --color-line: rgb(167 139 250 / 0.22);
   --color-line-soft: rgb(167 139 250 / 0.12);

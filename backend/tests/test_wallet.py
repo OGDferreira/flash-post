@@ -35,6 +35,11 @@ class FakeSmokePay:
             ref = parts[2]
             if ref not in self.shops:
                 return httpx.Response(404, json={"error": "Subconta nao encontrada"})
+            if parts[3] == "withdrawals":
+                return httpx.Response(200, json={"success": True, "withdrawals": [
+                    {"id": "w-shop-1", "amount": 30, "fee": 2.0, "status": "completed", "pix_key_type": "cpf",
+                     "pix_key": "52998224725", "gateway_e2eid": "E18236120202610191644s5G3Q9N", "failure_reason": None},
+                ]})
             if parts[3] == "balance":
                 return httpx.Response(200, json={"success": True, "wallet_balance": self.shops[ref]})
             if parts[3] == "withdraw":
@@ -50,7 +55,9 @@ class FakeSmokePay:
             return httpx.Response(200, json={"success": True, "withdrawal_id": "w-main-1", "amount": body["amount"],
                                              "fee": 1.5, "status": self.main_status, "new_balance": self.main})
         if path == "/api/withdrawals":
-            return httpx.Response(200, json={"success": True, "withdrawals": [{"id": "w-main-1", "amount": 30, "status": "completed"}]})
+            return httpx.Response(200, json={"success": True, "withdrawals": [
+                {"id": "w-main-1", "amount": 30, "status": "completed", "gateway_e2eid": "E00000000202610191644MAIN"},
+            ]})
         raise AssertionError(f"unexpected {request.method} {path}")
 
 
@@ -162,6 +169,7 @@ async def test_main_account_withdraws_and_reconciles(client, db_session, owner, 
     assert smoke.calls[-1][1] == "/api/withdrawals"
     wallet = (await client.get("/api/wallet")).json()  # reconcile: SmokePay says completed
     assert wallet["withdrawals"][0]["status"] == "PAID" and wallet["withdrawn"] == 30.0
+    assert wallet["withdrawals"][0]["e2e_id"] == "E00000000202610191644MAIN"  # Pix receipt kept
     summary = (await client.get("/api/wallet/summary")).json()
     assert summary["available"] is True and summary["target"] == 10000.0
     await db_session.commit()
@@ -247,6 +255,9 @@ async def test_partner_withdraws_alone_and_super_admin_sees_partner_balances(cli
     assert smoke.calls[-1][1] == f"/api/shops/{ref}/withdraw" and smoke.calls[-1][2]["sub_shop_id"] == str(partner.id)
     item = (await client.get("/api/admin/partner-wallets")).json()["items"][0]
     assert item["withdrawn"] == 30.0 and item["withdrawals"][0]["status"] == "PAID"
+    # what SmokePay itself recorded: destination key and Pix receipt
+    remote = (await client.get(f"/api/admin/partner-wallets/{partner.id}/gateway-withdrawals")).json()["items"][0]
+    assert remote["pix_key"] == "52998224725" and remote["e2e_id"].startswith("E1823") and remote["status"] == "completed"
     # an independent user is not a partner: nothing to withdraw on their behalf
     missing = await client.post(f"/api/admin/partner-wallets/{chief.id}/withdrawals", headers=admin_headers, json={"amount": "10", **PIX})
     assert missing.status_code == 404
