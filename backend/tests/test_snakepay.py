@@ -245,3 +245,8 @@ async def test_gateway_per_funnel_or_for_all(client, db_session, owner, super_ad
 
     other_flow = await client.put("/api/payment-gateways/flows/00000000-0000-0000-0000-000000000000", headers=headers, json={"gateway": None})
     assert other_flow.status_code == 404
+
+
+def test_recipient_accepts_the_snakepay_shop_id() -> None:
+    assert gateways.valid_recipient("snakepay_6fde14d647ba4acbb45855490d22f435")
+    assert not gateways.valid_recipient("snakepay_xyz")

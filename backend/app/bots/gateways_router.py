@@ -86,13 +86,13 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
     if recipient is not None and not gateways.valid_recipient(recipient):
         raise HTTPException(
             status_code=422,
-            detail="ID do recebedor inválido. Copie o identificador em SnakePay → Conta → Split (formato 8-4-4-4-12).",
+            detail="ShopID inválido. Copie o \"Seu ShopID\" em SnakePay → Split da conta (começa com snakepay_).",
         )
     if payload.gateway == "snakepay":
         if not await gateways.snakepay_available(db):
             raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
         if user.platform_role != "SUPER_ADMIN" and recipient is None:
-            raise HTTPException(status_code=422, detail="Cole o ID do recebedor da sua conta SnakePay para receber suas vendas.")
+            raise HTTPException(status_code=422, detail="Cole o seu ShopID da SnakePay para receber suas vendas.")
     workspace.payment_gateway = payload.gateway
     workspace.snakepay_recipient_id = recipient
     if payload.apply_to_all:
@@ -114,7 +114,7 @@ async def flow_gateway(
         if not await gateways.snakepay_available(db):
             raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
         if user.platform_role != "SUPER_ADMIN" and not workspace.snakepay_recipient_id:
-            raise HTTPException(status_code=422, detail="Cadastre o ID do recebedor SnakePay antes de usar a SnakePay num fluxo.")
+            raise HTTPException(status_code=422, detail="Cadastre o seu ShopID da SnakePay antes de usar a SnakePay num fluxo.")
     flow.payment_gateway = payload.gateway
     await db.commit()
     return await _state(db, user, workspace)

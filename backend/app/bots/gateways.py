@@ -26,7 +26,10 @@ from app.partners.service import BillingRoute, owner_workspace
 
 SNAKEPAY_ENABLED_KEY = "snakepay_enabled"
 GATEWAYS = ("smokepay", "snakepay")
-RECIPIENT_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+# The ShopID shown in SnakePay → Conta → Split ("snakepay_" + 32 hex); the docs' UUID form is accepted too.
+RECIPIENT_RE = re.compile(
+    r"^(snakepay_[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+)
 HUNDRED = Decimal("100")
 
 
