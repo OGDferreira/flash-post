@@ -33,14 +33,7 @@ export function AdminUsersPage() {
       void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
     },
   });
-  const setRole = useMutation({
-    mutationFn: ({ userId, platformRole }: { userId: string; platformRole: string }) =>
-      apiRequest<AdminUser>(`/api/admin/users/${userId}/role`, { method: "PATCH", body: { platform_role: platformRole } }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
-    },
-  });
-  const actionError = [approveUser.error, setAccess.error, setRole.error].find(Boolean);
+  const actionError = [approveUser.error, setAccess.error].find(Boolean);
   const deleteUser = useMutation({
     mutationFn: (userId: string) =>
       apiRequest<void>(`/api/admin/users/${userId}`, { method: "DELETE" }),
@@ -138,22 +131,7 @@ export function AdminUsersPage() {
                         <p className="mt-1 text-xs text-muted">{user.email}</p>
                       </td>
                       <td className="px-4 py-4 text-fg-2">
-                        <select
-                          aria-label={`Função de ${user.full_name}`}
-                          className="h-8 rounded-lg border border-line bg-surface px-2 text-xs text-fg outline-none focus:border-brand disabled:opacity-60"
-                          disabled={setRole.isPending}
-                          onChange={async (event) => {
-                            const platformRole = event.target.value;
-                            const label = platformRole === "SUPER_ADMIN" ? "Super Admin" : "Usuário";
-                            if (await confirmAction(`Alterar a função de ${user.full_name} para ${label}?`)) {
-                              setRole.mutate({ userId: user.id, platformRole });
-                            }
-                          }}
-                          value={user.platform_role ?? (user.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "USER")}
-                        >
-                          <option value="USER">{roleLabel(user.role)}</option>
-                          <option value="SUPER_ADMIN">Super Admin</option>
-                        </select>
+                        <span className="block text-fg">{roleLabel(user.role)}</span>
                         <span className="mt-1 block text-xs text-muted">
                           {user.hierarchy === "chief"
                             ? "Chefe"
@@ -315,7 +293,7 @@ export function Pagination({
 }
 
 function roleLabel(role: string) {
-  return role === "OWNER" ? "Dono" : role === "COLLABORATOR" ? "Colaborador" : "Usuário";
+  return role === "SUPER_ADMIN" ? "Super Admin" : role === "OWNER" ? "Dono" : role === "COLLABORATOR" ? "Colaborador" : "Usuário";
 }
 
 export function formatDate(value: string) {

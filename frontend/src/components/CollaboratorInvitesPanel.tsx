@@ -5,6 +5,7 @@ import { Check, Copy, Link2, UserCheck, UserX } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 
@@ -49,6 +50,8 @@ function brl(value: string) {
 }
 
 export function CollaboratorInvitesPanel({ pending }: { pending: PendingCollaborator[] }) {
+  // Only the Super Admin releases new sign-ups; the chief can still refuse one.
+  const isSuperAdmin = useAuth().user?.role === "SUPER_ADMIN";
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Settings | null>(null);
@@ -136,7 +139,7 @@ export function CollaboratorInvitesPanel({ pending }: { pending: PendingCollabor
       {pending.length > 0 && (
         <div>
           <h3 className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-warning">
-            Aguardando sua aprovação ({pending.length})
+            {isSuperAdmin ? "Aguardando sua aprovação" : "Aguardando liberação do administrador"} ({pending.length})
           </h3>
           <ul className="space-y-2">
             {pending.map((item) => (
@@ -149,10 +152,12 @@ export function CollaboratorInvitesPanel({ pending }: { pending: PendingCollabor
                     {item.email} · {brl(item.rate_per_connection)} por conta · meta {item.daily_connection_goal}/dia, {item.monthly_connection_goal}/mês
                   </p>
                 </div>
-                <Button disabled={approve.isPending} onClick={() => approve.mutate(item.member_id)} size="sm" variant="primary">
-                  <UserCheck size={15} />
-                  Aprovar
-                </Button>
+                {isSuperAdmin && (
+                  <Button disabled={approve.isPending} onClick={() => approve.mutate(item.member_id)} size="sm" variant="primary">
+                    <UserCheck size={15} />
+                    Aprovar
+                  </Button>
+                )}
                 <Button
                   disabled={reject.isPending}
                   onClick={async () => {
