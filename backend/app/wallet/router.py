@@ -149,14 +149,19 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
 
 async def month_revenue(db, workspace_id: uuid.UUID) -> Decimal:
     """Gross revenue (SharkBot + FlashBot) since the 1st of the current month, Brazil time."""
+    return (await month_revenue_by_bot(db, workspace_id))[0]
+
+
+async def month_revenue_by_bot(db, workspace_id: uuid.UUID) -> tuple[Decimal, Decimal, Decimal]:
+    """(total, SharkBot, FlashBot) gross since the 1st of the current month, Brazil time."""
     from app.finance.router import _revenue_between
 
     now = utc_now()
     month_start = (
         now.astimezone(BRAZIL_TIME_ZONE).replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     )
-    gross, *_ = await _revenue_between(db, workspace_id, month_start, now)
-    return _money(gross)
+    gross, _net, _sales, _no_amount, flash = await _revenue_between(db, workspace_id, month_start, now)
+    return _money(gross), _money(gross) - _money(flash), _money(flash)
 
 
 def goal_progress(revenue: Decimal) -> dict:
@@ -338,7 +343,7 @@ async def _history(db, workspace_id: uuid.UUID, limit: int = 50) -> list[dict]:
 async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
     workspace = await _workspace_for(db, user)
     shop = _shop_for(user, workspace)
-    revenue = await month_revenue(db, workspace.id)
+    revenue, shark_revenue, flash_revenue = await month_revenue_by_bot(db, workspace.id)
     numbers = await _wallet_numbers(db, user, workspace, shop)
     is_partner = await _is_partner(db, user)
     if is_partner:
@@ -348,6 +353,8 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "is_partner": is_partner,
         "shop_ref": shop,
         "month_revenue": float(revenue),
+        "month_shark_revenue": float(shark_revenue),
+        "month_flash_revenue": float(flash_revenue),
         "goal": _goals_out(revenue, await award_image_urls(db)),
         **numbers,
         "min_withdrawal": float(MIN_WITHDRAWAL),

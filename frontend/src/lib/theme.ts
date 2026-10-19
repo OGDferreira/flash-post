@@ -15,6 +15,8 @@ export function applyTheme(theme: Theme, animate = false) {
   }
   root.dataset.theme = theme;
   applyAccent(getAccent(), theme);
+  // Other screens (e.g. Aparência turning on the galaxy theme) may switch it; the header follows.
+  window.dispatchEvent(new CustomEvent("flashpost:theme", { detail: theme }));
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute("content", theme === "light" ? "#e9eefc" : "#05070f");

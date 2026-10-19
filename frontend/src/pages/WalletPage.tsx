@@ -176,6 +176,10 @@ export function WalletPage() {
         ["Processando", brl(data.pending), "text-warning"],
         ["Já sacado", brl(data.withdrawn)],
       ];
+  // Only split by bot when SharkBot also sells; otherwise the month total already says it all.
+  if ((data.month_shark_revenue ?? 0) > 0) {
+    cards.splice(1, 0, ["Vendas SharkBot (mês)", brl(data.month_shark_revenue ?? 0)], ["Vendas FlashBot (mês)", brl(data.month_flash_revenue ?? 0)]);
+  }
   if (!partner && (data.commission_paid ?? 0) > 0) cards.push([`Comissão paga a ${chief}`, brl(data.commission_paid ?? 0), "text-danger", "Já descontada do seu saldo"]);
   if (data.commissions_received > 0) cards.push(["Comissões recebidas dos sócios", brl(data.commissions_received), "text-success"]);
   return (

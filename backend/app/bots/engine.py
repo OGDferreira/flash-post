@@ -1066,14 +1066,14 @@ async def notify_sale(db: AsyncSession, bot: TgBot, order: TgOrder) -> None:
             # Short, like the gateways' own alerts: "Nova venda!" / "Você recebeu R$ 7,70".
             await notify_user(
                 db, workspace.owner_id, "sale", "⚡ Nova venda!",
-                f"Você recebeu {brl(net if net is not None else order.amount)}", "/feature/bots",
+                f"Você recebeu {brl(net if net is not None else order.amount)} 🤑", "/feature/bots",
             )
         if order.split_chief_user_id and order.split_amount:
             seller = await db.get(User, workspace.owner_id) if workspace else None
             first = (seller.full_name.split() or ["sócio"])[0] if seller else "sócio"
             await notify_user(
                 db, order.split_chief_user_id, "commission", "💰 Comissão recebida!",
-                f"Você recebeu {brl(order.split_amount)} da venda de {first}", "/carteira",
+                f"Você recebeu {brl(order.split_amount)} 🤑 da venda de {first}", "/carteira",
             )
         await db.commit()
     except Exception:

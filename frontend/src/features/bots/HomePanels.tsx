@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, CircleDollarSign, Crown, EyeOff, Lock, QrCode, Trophy, UserPlus, Activity } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Avatar } from "@/components/Avatar";
 import { isPeriodReady, periodParams, type MetricsPeriod } from "@/features/analytics/period";
@@ -118,13 +118,38 @@ export function NextAward() {
   const [index, setIndex] = useState<number | null>(null);
   const shown = index ?? currentIndex;
   const goal = list[shown];
+  const go = (next: number) => setIndex(Math.max(0, Math.min(list.length - 1, next)));
+  const stage = useRef<HTMLDivElement>(null);
+  const wheel = useRef({ last: 0, shown, count: list.length });
+  wheel.current.shown = shown;
+  wheel.current.count = list.length;
+  // Native listener so the wheel turns the cards instead of scrolling the page; one card per
+  // gesture, since a trackpad fires dozens of events per swipe.
+  useEffect(() => {
+    const element = stage.current;
+    if (!element) return;
+    const onWheel = (event: WheelEvent) => {
+      const state = wheel.current;
+      if (state.count < 2) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      const next = state.shown + (delta > 0 ? 1 : -1);
+      if (next < 0 || next >= state.count) return; // at the ends the page scrolls as usual
+      event.preventDefault();
+      const now = Date.now();
+      if (Math.abs(delta) < 4 || now - state.last < 400) return;
+      state.last = now;
+      setIndex(next);
+    };
+    element.addEventListener("wheel", onWheel, { passive: false });
+    return () => element.removeEventListener("wheel", onWheel);
+  }, [Boolean(goal)]);
   return (
     <section className="dashboard-card flex flex-col rounded-2xl p-4">
       <PanelHeader icon={<Trophy size={16} />} subtitle="Conquiste novas placas" title="Premiações">
         {list.length > 1 && (
           <div className="flex gap-1">
-            <button aria-label="Premiação anterior" className="grid size-7 place-items-center rounded-full bg-surface-inset text-muted disabled:opacity-30" disabled={shown === 0} onClick={() => setIndex(shown - 1)} type="button"><ChevronLeft size={15} /></button>
-            <button aria-label="Próxima premiação" className="grid size-7 place-items-center rounded-full bg-surface-inset text-muted disabled:opacity-30" disabled={shown === list.length - 1} onClick={() => setIndex(shown + 1)} type="button"><ChevronRight size={15} /></button>
+            <button aria-label="Premiação anterior" className="grid size-7 place-items-center rounded-full bg-surface-inset text-muted disabled:opacity-30" disabled={shown === 0} onClick={() => go(shown - 1)} type="button"><ChevronLeft size={15} /></button>
+            <button aria-label="Próxima premiação" className="grid size-7 place-items-center rounded-full bg-surface-inset text-muted disabled:opacity-30" disabled={shown === list.length - 1} onClick={() => go(shown + 1)} type="button"><ChevronRight size={15} /></button>
           </div>
         )}
       </PanelHeader>
@@ -133,18 +158,24 @@ export function NextAward() {
           <p className="rounded-xl bg-surface-inset px-3 py-6 text-center text-xs text-muted">As premiações aparecem quando sua operação começar a faturar.</p>
         )
       ) : (
-        <div className="relative flex flex-1 items-center justify-center py-1">
+        <div className="relative flex flex-1 items-center justify-center py-1" ref={stage}>
           {[shown - 1, shown + 1].map((side) => {
             const neighbour = list[side];
-            if (!neighbour?.image_url) return null;
+            if (!neighbour) return null;
             return (
-              <img
-                alt=""
-                aria-hidden="true"
-                className={`absolute top-1/2 hidden h-[78%] -translate-y-1/2 rounded-xl object-cover opacity-25 sm:block ${neighbour.reached ? "" : "grayscale"} ${side < shown ? "left-0 -rotate-3" : "right-0 rotate-3"}`}
+              <button
+                aria-label={`Ver premiação de ${brl(neighbour.amount)}`}
+                className={`absolute top-1/2 z-20 hidden h-[78%] w-[34%] -translate-y-1/2 overflow-hidden rounded-xl opacity-30 transition hover:opacity-60 sm:block ${side < shown ? "left-0 -rotate-3" : "right-0 rotate-3"}`}
                 key={side}
-                src={neighbour.image_url}
-              />
+                onClick={() => go(side)}
+                type="button"
+              >
+                {neighbour.image_url ? (
+                  <img alt="" className={`h-full w-full object-cover ${neighbour.reached ? "" : "grayscale"}`} src={neighbour.image_url} />
+                ) : (
+                  <span className="grid h-full place-items-center bg-well"><Trophy className="text-warning" size={32} /></span>
+                )}
+              </button>
             );
           })}
           <article className={`group relative z-10 w-[220px] overflow-hidden rounded-2xl border ${goal.reached ? "border-success/60" : goal.current ? "border-accent/60" : "border-line-soft"}`}>

@@ -259,6 +259,10 @@ async def billing_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid
 # ------------------------------------------------------------------ notices
 
 
+# Money notices: shown with the dark FlashBot logo on the phone.
+SALE_KINDS = ("sale", "commission")
+
+
 async def notify_user(
     db: AsyncSession, user_id: uuid.UUID, kind: str, title: str, body: str, url: str | None = None
 ) -> None:
@@ -273,7 +277,7 @@ async def notify_user(
         if subscriptions:
             keys = await get_vapid_keys(db)
             async with http.client(15.0) as session:
-                await push_to(db, subscriptions, {"title": title, "body": body, "url": url or "/", "tag": kind}, keys, session, kind[:32])
+                await push_to(db, subscriptions, {"title": title, "body": body, "url": url or "/", "tag": kind, **({"brand": "flashbot-dark"} if kind in SALE_KINDS else {})}, keys, session, kind[:32])
     except Exception:
         logger.exception("Partner push notification failed")
 

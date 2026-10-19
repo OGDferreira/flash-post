@@ -23,14 +23,17 @@ export function TotalsGrid({ totals, commissionLabel = "Comissão do sócio", ne
     [netLabel, brl(totals.net), "text-success"],
   ];
   return (
-    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-      {items.map(([title, value, tone]) => (
-        <div className="min-w-0 rounded-xl border border-line-soft bg-surface-inset px-3 py-2" key={title}>
-          <dt className="truncate text-[11px] text-muted" title={title}>{title}</dt>
-          <dd className={`mt-1 text-base font-semibold ${tone ?? "text-fg"}`}>{value}</dd>
-        </div>
-      ))}
-    </dl>
+    // Sized by its own width (container query), so it also fits inside modals and side panels.
+    <div className="@container">
+      <dl className="grid grid-cols-2 gap-2 @lg:grid-cols-3 @5xl:grid-cols-6">
+        {items.map(([title, value, tone]) => (
+          <div className="min-w-0 rounded-xl border border-line-soft bg-surface-inset px-3 py-2.5" key={title}>
+            <dt className="text-[11px] leading-tight text-muted">{title}</dt>
+            <dd className={`mt-1 truncate text-base font-semibold ${tone ?? "text-fg"}`} title={value}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 

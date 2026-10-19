@@ -64,6 +64,11 @@ export function AppShell() {
   const { user } = useAuth();
   const location = useLocation();
   const [theme, setTheme] = useState<Theme>(getTheme);
+  useEffect(() => {
+    const follow = () => setTheme(getTheme());
+    window.addEventListener("flashpost:theme", follow);
+    return () => window.removeEventListener("flashpost:theme", follow);
+  }, []);
   const [pinned, setPinned] = useState(() => {
     try {
       return localStorage.getItem("flashpost-sidebar-pinned") === "1";
@@ -618,9 +623,8 @@ export function AppShell() {
               aria-label={theme === "light" ? "Ativar modo escuro" : "Ativar modo claro"}
               className="app-header-btn"
               onClick={() => {
-                const next: Theme = theme === "light" ? "dark" : "light";
+                const next: Theme = getTheme() === "light" ? "dark" : "light";
                 applyTheme(next, true);
-                setTheme(next);
               }}
               title={theme === "light" ? "Modo escuro" : "Modo claro"}
               type="button"
