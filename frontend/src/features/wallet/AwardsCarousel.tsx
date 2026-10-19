@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Lock, Trophy } from "lucide-react";
 
 import { awardTitle, awardUnlocked, brl, compact, type GoalItem } from "@/features/wallet/api";
@@ -7,20 +7,59 @@ import { awardTitle, awardUnlocked, brl, compact, type GoalItem } from "@/featur
 export function AwardsCarousel({ goals, revenue }: { goals: GoalItem[]; revenue: number }) {
   const track = useRef<HTMLDivElement>(null);
   const scroll = (direction: number) => track.current?.scrollBy({ left: direction * 260, behavior: "smooth" });
+  // Mouse drag with a little momentum (fingers already scroll natively); snapping is paused
+  // while dragging and comes back on release, so the row settles smoothly on a card.
+  const drag = useRef<{ x: number; left: number; lastX: number; lastT: number; v: number; moved: boolean } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const onPointerDown = (event: React.PointerEvent) => {
+    if (event.pointerType !== "mouse" || !track.current) return;
+    drag.current = { x: event.clientX, left: track.current.scrollLeft, lastX: event.clientX, lastT: performance.now(), v: 0, moved: false };
+  };
+  const onPointerMove = (event: React.PointerEvent) => {
+    const state = drag.current;
+    if (!state || !track.current) return;
+    const dx = event.clientX - state.x;
+    if (!state.moved && Math.abs(dx) > 5) {
+      state.moved = true;
+      setDragging(true);
+      track.current.setPointerCapture(event.pointerId);
+    }
+    if (!state.moved) return;
+    const now = performance.now();
+    state.v = (event.clientX - state.lastX) / Math.max(1, now - state.lastT);
+    state.lastX = event.clientX;
+    state.lastT = now;
+    track.current.scrollLeft = state.left - dx;
+  };
+  const onPointerUp = () => {
+    const state = drag.current;
+    drag.current = null;
+    if (!state?.moved || !track.current) return;
+    setDragging(false);
+    track.current.scrollBy({ left: -state.v * 220, behavior: "smooth" });
+  };
   return (
     <div className="relative">
-      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 [scrollbar-width:none]" ref={track}>
+      <div
+        className={`flex gap-3 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:none] ${dragging ? "cursor-grabbing select-none [scroll-behavior:auto]" : "cursor-grab snap-x snap-mandatory"}`}
+        onPointerCancel={onPointerUp}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        ref={track}
+      >
         {goals.map((goal) => {
           const locked = !awardUnlocked(goal);
           const percent = Math.min(100, (revenue / goal.amount) * 100);
           return (
             <article
-              className={`group relative w-[220px] shrink-0 snap-start overflow-hidden rounded-2xl border bg-surface-inset ${goal.current ? "border-accent/60" : goal.reached ? "border-success/50" : "border-line-soft"}`}
+              className={`group relative w-[220px] shrink-0 snap-start overflow-hidden rounded-2xl border bg-surface-inset transition-transform duration-300 ease-out hover:-translate-y-1 ${goal.current ? "border-accent/60" : goal.reached ? "border-success/50" : "border-line-soft"}`}
               key={goal.amount}
             >
               <div className="relative aspect-[4/5] overflow-hidden bg-well">
                 {goal.image_url ? (
                   <img
+                    draggable={false}
                     alt={awardTitle(goal.amount)}
                     className={`h-full w-full object-cover transition-[filter,transform] duration-700 ease-out ${
                       locked
