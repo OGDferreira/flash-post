@@ -206,6 +206,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                     ? cacheInfo[bot.id] ?? "Configurado. As mídias do fluxo ficam salvas nesse chat e são reenviadas pelo ID do Telegram."
                     : "Crie um canal ou grupo, adicione o robô como admin e escolha aqui. Ele vira o backup das mídias e deixa o envio instantâneo."}
                 </span>
+                <LinkGroup botId={bot.id} onLinked={() => void groups.refetch()} />
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => update.mutate({ id: bot.id, body: { is_active: !bot.is_active } })}>
@@ -308,5 +309,55 @@ export function ConnectBotModal({
         {connect.error && <ErrorState message={errorText(connect.error, "Não foi possível conectar.")} />}
       </div>
     </Modal>
+  );
+}
+
+
+/** A group/channel the bot joined before it was connected here never shows up by itself
+ * (Telegram only tells about new joins): post anything there, or type its @ / link / ID. */
+function LinkGroup({ botId, onLinked }: { botId: string; onLinked: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [chat, setChat] = useState("");
+  const link = useMutation({
+    mutationFn: () => apiRequest<BotGroup>(`/api/bots/${botId}/groups/link`, { method: "POST", body: { chat: chat.trim() } }),
+    onSuccess: () => {
+      setChat("");
+      setOpen(false);
+      onLinked();
+    },
+  });
+  if (!open) {
+    return (
+      <button className="justify-self-start text-[11px] font-medium text-accent hover:underline" onClick={() => setOpen(true)} type="button">
+        Seu grupo ou canal não aparece na lista?
+      </button>
+    );
+  }
+  return (
+    <div className="grid gap-2 rounded-xl border border-line-soft bg-surface-inset p-3 text-[11px] leading-5 text-muted">
+      <p>
+        Se o robô já estava no grupo antes de ser conectado aqui, o Telegram não avisa. Envie qualquer mensagem no grupo (ou publique algo no canal) e
+        atualize a página, ou informe abaixo o @, o link t.me/… ou o ID do grupo/canal.
+      </p>
+      <form
+        className="flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (chat.trim()) link.mutate();
+        }}
+      >
+        <input
+          aria-label="@, link ou ID do grupo ou canal"
+          className="field min-w-0 flex-1 text-xs"
+          onChange={(event) => setChat(event.target.value)}
+          placeholder="@meucanal, t.me/meucanal ou -100…"
+          value={chat}
+        />
+        <Button disabled={!chat.trim() || link.isPending} size="sm" type="submit">
+          {link.isPending ? "Buscando…" : "Adicionar"}
+        </Button>
+      </form>
+      {link.error && <p className="text-danger">{link.error instanceof ApiError ? link.error.message : "Não foi possível adicionar."}</p>}
+    </div>
   );
 }

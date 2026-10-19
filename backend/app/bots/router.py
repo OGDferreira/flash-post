@@ -3,6 +3,7 @@
 import hmac
 import json
 import logging
+import re
 import secrets
 import time
 import uuid
@@ -371,6 +372,48 @@ async def delete_bot(bot_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> N
     await db.commit()
 
 
+class ChatLink(BaseModel):
+    chat: str = Field(min_length=2, max_length=200)
+
+
+def _chat_ref(value: str) -> int | str | None:
+    """@canal, t.me/canal or the numeric id (-100…). Private invite links carry no id."""
+    value = value.strip()
+    match = re.fullmatch(r"(?:https?://)?(?:t\.me|telegram\.me)/([A-Za-z0-9_]{4,64})/?", value)
+    if match:
+        return "@" + match.group(1)
+    if re.fullmatch(r"@?[A-Za-z][A-Za-z0-9_]{3,63}", value):
+        return value if value.startswith("@") else "@" + value
+    if re.fullmatch(r"-?\d{5,20}", value):
+        return int(value)
+    return None
+
+
+@router.post("/{bot_id}/groups/link", dependencies=csrf)
+async def link_group(bot_id: uuid.UUID, payload: ChatLink, access: OwnerAccess, db: DbSession) -> dict:
+    """Add a group/channel the bot joined before it was connected here (Telegram never told us)."""
+    bot = await _owned(db, TgBot, bot_id, access)
+    ref = _chat_ref(payload.chat)
+    if ref is None:
+        raise HTTPException(status_code=422, detail="Use o @ do canal/grupo, o link t.me/… ou o ID numérico (-100…).")
+    try:
+        chat = await engine.telegram(bot).get_chat(ref)
+    except TelegramError as exc:
+        raise HTTPException(
+            status_code=422, detail="O robô não encontrou esse grupo ou canal. Confira se ele foi adicionado lá como admin."
+        ) from exc
+    group = await engine.remember_chat(db, bot, chat, refresh=True)
+    if group is None:
+        raise HTTPException(status_code=422, detail="O robô não é membro desse grupo ou canal. Adicione-o como admin e tente de novo.")
+    # channel posts only reach bots whose webhook asks for them (older connections did not)
+    try:
+        await engine.telegram(bot).set_webhook(_telegram_webhook_url(bot), bot.webhook_secret)
+    except TelegramError:
+        pass
+    await db.commit()
+    return {"chat_id": group.chat_id, "title": group.title, "type": group.chat_type, "can_invite": group.can_invite, "bot": bot.username}
+
+
 @router.get("/groups/list")
 async def list_groups(access: OwnerAccess, db: DbSession) -> dict:
     rows = await db.execute(
@@ -645,9 +688,13 @@ async def upload_media(
     from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type in ("video/quicktime", "video/x-m4v"):
+        # iPhone .MOV: the same ISO container as MP4; saved and sent to Telegram as MP4
+        content_type = "video/mp4"
+        filename = PurePosixPath(filename.replace("\\", "/")).stem + ".mp4"
     kind_limit = MEDIA_TYPES.get(content_type)
     if kind_limit is None:
-        raise HTTPException(status_code=415, detail="Envie JPG, PNG, WEBP, MP4, OGG, MP3 ou M4A.")
+        raise HTTPException(status_code=415, detail="Envie JPG, PNG, WEBP, MP4, MOV, OGG, MP3 ou M4A.")
     kind, limit = kind_limit
     chunks, size = [], 0
     async for chunk in request.stream():

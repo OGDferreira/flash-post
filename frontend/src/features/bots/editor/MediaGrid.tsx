@@ -7,10 +7,27 @@ import { ApiError, apiRequest } from "@/services/api";
 import type { BotMedia } from "../types";
 
 const ACCEPT: Record<BotMedia["kind"], string> = {
-  photo: "image/jpeg,image/png,image/webp",
-  video: "video/mp4",
-  audio: "audio/ogg,audio/mpeg,audio/mp4",
+  photo: "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp",
+  // iPhone videos come as .MOV: same container as MP4, so they go up as MP4
+  video: "video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v",
+  audio: "audio/ogg,audio/mpeg,audio/mp4,.ogg,.oga,.opus,.mp3,.m4a",
 };
+
+const TYPE_BY_EXTENSION: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
+  mp4: "video/mp4", mov: "video/mp4", m4v: "video/mp4",
+  ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg", mp3: "audio/mpeg", m4a: "audio/mp4",
+};
+
+/** The type the server expects. Windows often reports no type at all, and iPhone .MOV
+ * (QuickTime) is sent as MP4 with an .mp4 name so Telegram plays it as a video. */
+function normalizeUpload(file: File): File {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const quicktime = ["mov", "m4v", "qt"].includes(extension) || file.type === "video/quicktime" || file.type === "video/x-m4v";
+  if (quicktime) return new File([file], file.name.replace(/\.(mov|m4v|qt)$/i, "") + ".mp4", { type: "video/mp4" });
+  if (!file.type && TYPE_BY_EXTENSION[extension]) return new File([file], file.name, { type: TYPE_BY_EXTENSION[extension] });
+  return file;
+}
 
 export function useBotMedia() {
   return useQuery({
@@ -79,7 +96,8 @@ export function MediaGrid({
   const upload = useMutation({
     mutationFn: async (files: File[]) => {
       const created: BotMedia[] = [];
-      for (const file of files) {
+      for (const original of files) {
+        const file = normalizeUpload(original);
         created.push(
           await apiRequest<BotMedia>(`/api/bots/media?filename=${encodeURIComponent(file.name)}`, { method: "POST", body: file }),
         );

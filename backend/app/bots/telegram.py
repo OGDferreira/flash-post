@@ -90,7 +90,7 @@ class TelegramClient:
             {
                 "url": url,
                 "secret_token": secret_token,
-                "allowed_updates": ["message", "callback_query", "my_chat_member"],
+                "allowed_updates": ["message", "callback_query", "my_chat_member", "channel_post"],
                 "drop_pending_updates": False,
             },
         )
@@ -171,6 +171,9 @@ class TelegramClient:
             pass
 
     # --- groups ---
+    async def get_chat(self, chat_id: int | str) -> dict:
+        return await self.call("getChat", {"chat_id": chat_id})
+
     async def get_chat_member(self, chat_id: int, user_id: int) -> dict:
         return await self.call("getChatMember", {"chat_id": chat_id, "user_id": user_id})
 
