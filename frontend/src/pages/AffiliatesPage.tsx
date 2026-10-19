@@ -45,6 +45,12 @@ type Row = {
   bot_sales: number;
   bot_leads?: number;
   commission_received: string;
+  total_revenue?: string;
+  total_sales?: number;
+  total_ticket?: string | null;
+  today_revenue?: string;
+  withdrawn?: string;
+  balance?: string;
 };
 
 type Listing = {
@@ -421,7 +427,7 @@ export function AffiliatesPage() {
                 ["Sócios", formatNumber(data.rows.length)],
                 ["Vendas FlashBot dos sócios", money(data.rows.reduce((sum, row) => sum + Number(row.bot_revenue), 0).toFixed(2))],
                 ["Comissão recebida", money(data.rows.reduce((sum, row) => sum + Number(row.commission_received), 0).toFixed(2))],
-                ["Receita SharkBot", money(data.totals_revenue)],
+                ["Faturamento total (Shark + Flash)", money(data.totals_revenue)],
                 ["Participação SharkBot (referência)", money(data.totals_participation)],
               ].map(([title, value]) => (
                 <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={title}>
@@ -465,12 +471,13 @@ export function AffiliatesPage() {
             <EmptyState message="Você ainda não tem sócios. Clique em “Adicionar sócio” para gerar o link de convite." />
           ) : (
             <div className="glass-panel overflow-x-auto">
-              <table className="w-full min-w-[1060px] text-left text-xs">
+              <table className="w-full min-w-[1420px] text-left text-xs">
                 <thead className="text-muted">
                   <tr className="text-[10px] uppercase tracking-wider">
                     <th colSpan={3} />
                     <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={3}>SharkBot</th>
                     <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={2}>FlashBot</th>
+                    <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={5}>Faturamento e carteira</th>
                     <th colSpan={4} />
                   </tr>
                   <tr className="border-b border-line-soft">
@@ -482,6 +489,11 @@ export function AffiliatesPage() {
                     <th className="px-2 py-3 text-right font-medium">Receita</th>
                     <th className="px-2 py-3 text-right font-medium">Leads</th>
                     <th className="px-2 py-3 text-right font-medium">Vendas</th>
+                    <th className="px-2 py-3 text-right font-medium">Total</th>
+                    <th className="px-2 py-3 text-right font-medium">Hoje</th>
+                    <th className="px-2 py-3 text-right font-medium">Ticket médio</th>
+                    <th className="px-2 py-3 text-right font-medium">Sacado</th>
+                    <th className="px-2 py-3 text-right font-medium">Saldo na conta</th>
                     <th className="px-2 py-3 text-right font-medium">Comissão recebida</th>
                     <th className="px-2 py-3 font-medium">Compartilhados</th>
                     <th className="px-2 py-3 text-right font-medium">Comissão (%)</th>
@@ -525,6 +537,11 @@ export function AffiliatesPage() {
                       <td className="px-2 py-3 text-right font-semibold text-success">{money(row.revenue)}</td>
                       <td className="px-2 py-3 text-right text-fg">{formatNumber(row.bot_leads ?? 0)}</td>
                       <td className="px-2 py-3 text-right text-fg">{money(row.bot_revenue)}<span className="block text-[10px] text-muted">{row.bot_sales} {row.bot_sales === 1 ? "venda" : "vendas"}</span></td>
+                      <td className="px-2 py-3 text-right font-semibold text-success">{money(row.total_revenue ?? "0")}<span className="block text-[10px] font-normal text-muted">{row.total_sales ?? 0} {row.total_sales === 1 ? "venda" : "vendas"}</span></td>
+                      <td className="px-2 py-3 text-right text-fg">{money(row.today_revenue ?? "0")}</td>
+                      <td className="px-2 py-3 text-right text-fg">{row.total_ticket ? money(row.total_ticket) : "—"}</td>
+                      <td className="px-2 py-3 text-right text-fg">{money(row.withdrawn ?? "0")}</td>
+                      <td className="px-2 py-3 text-right font-semibold text-fg">{money(row.balance ?? "0")}</td>
                       <td className="px-2 py-3 text-right font-semibold text-fg">{money(row.commission_received)}</td>
                       <td className="px-2 py-3">
                         <PartnerSharesCell affiliationId={row.id} name={row.full_name} userId={row.user_id} />

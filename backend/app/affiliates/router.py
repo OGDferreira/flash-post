@@ -13,7 +13,7 @@ import hashlib
 import hmac
 import secrets
 import time
-from datetime import date
+from datetime import date, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
 from app.core.config import get_settings
-from app.core.time import APP_TIME_ZONE_NAME, utc_now
+from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, utc_now
 from app.models import (
     Affiliation,
     InstagramAccount,
@@ -226,6 +226,13 @@ class AffiliateRow(BaseModel):
     bot_sales: int = 0
     bot_leads: int = 0
     commission_received: Decimal = Decimal("0.00")
+    # SharkBot + FlashBot together, so a sale in either bot shows up.
+    total_revenue: Decimal = Decimal("0.00")
+    total_sales: int = 0
+    total_ticket: Decimal | None = None
+    today_revenue: Decimal = Decimal("0.00")
+    withdrawn: Decimal = Decimal("0.00")
+    balance: Decimal = Decimal("0.00")
 
 
 class AffiliatesResponse(BaseModel):
@@ -413,7 +420,31 @@ async def _row_for(db: AsyncSession, link: Affiliation, user: User, start, end) 
         accepted_percent=link.accepted_percent,
         pending_acceptance=pending_acceptance(link),
         **(await _bot_numbers(db, workspace.id if workspace else None, link.chief_user_id, start, end)),
+        **(await _money_numbers(db, user, workspace.id if workspace else None, start, end)),
     )
+
+
+async def _money_numbers(db: AsyncSession, user: User, workspace_id, start, end) -> dict:
+    """Combined revenue (period and today, Brazil time), what was withdrawn and what is left."""
+    if workspace_id is None:
+        return {}
+    from app.finance.router import _revenue_between
+    from app.wallet.router import balances
+
+    gross, _net, sales, _no_amount, _bot = await _revenue_between(db, workspace_id, start, end)
+    now = utc_now()
+    today_start = now.astimezone(BRAZIL_TIME_ZONE).replace(hour=0, minute=0, second=0, microsecond=0)
+    today, *_ = await _revenue_between(db, workspace_id, today_start.astimezone(timezone.utc), now)
+    wallet = await balances(db, user, workspace_id)
+    gross = Decimal(gross or 0).quantize(Decimal("0.01"))
+    return {
+        "total_revenue": gross,
+        "total_sales": int(sales),
+        "total_ticket": (gross / sales).quantize(Decimal("0.01")) if sales else None,
+        "today_revenue": Decimal(today or 0).quantize(Decimal("0.01")),
+        "withdrawn": wallet["withdrawn"],
+        "balance": wallet["available"],
+    }
 
 
 async def _bot_numbers(db: AsyncSession, workspace_id, chief_user_id, start, end) -> dict:
@@ -471,7 +502,7 @@ async def list_affiliates(
         period_label=period_label(start, end),
         time_zone=APP_TIME_ZONE_NAME,
         basis=PARTICIPATION_BASIS,
-        totals_revenue=sum((row.revenue for row in rows), Decimal("0.00")),
+        totals_revenue=sum((row.total_revenue for row in rows), Decimal("0.00")),
         totals_participation=sum((row.participation_amount for row in rows), Decimal("0.00")),
         rows=rows,
     )
