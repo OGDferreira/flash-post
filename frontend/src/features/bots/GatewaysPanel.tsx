@@ -21,30 +21,12 @@ type GatewayState = {
 const KEY = ["payment-gateways"];
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : "Não foi possível salvar. Tente de novo.");
 
-/** Brand marks drawn here (no third-party files): SmokePay's smoke wave, SnakePay's snake S. */
+/** Official gateway symbols on a dark tile (the SmokePay mark is white, so it needs it in light mode too). */
 export function GatewayLogo({ id, className = "size-12" }: { id: GatewayId; className?: string }) {
-  if (id === "snakepay") {
-    return (
-      <svg aria-hidden="true" className={className} viewBox="0 0 48 48">
-        <rect fill="#0c120c" height="48" rx="12" width="48" />
-        <rect fill="none" height="46" rx="11" stroke="#7cf05c" strokeOpacity=".35" width="46" x="1" y="1" />
-        <path d="M33 13c-3-2.4-9.5-3-13 0s-1.5 7.5 3 9 9.5 3 8 8-9.5 5-13.5 2" fill="none" stroke="#7cf05c" strokeLinecap="round" strokeWidth="4.5" />
-        <circle cx="32.6" cy="12.6" fill="#0c120c" r="1.1" />
-      </svg>
-    );
-  }
   return (
-    <svg aria-hidden="true" className={className} viewBox="0 0 48 48">
-      <defs>
-        <linearGradient id="smoke-g" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0" stopColor="#3b82f6" />
-          <stop offset="1" stopColor="#14b8a6" />
-        </linearGradient>
-      </defs>
-      <rect fill="url(#smoke-g)" height="48" rx="12" width="48" />
-      <path d="M12 30c4-6 8 2 12-4s8 2 12-4" fill="none" stroke="#fff" strokeLinecap="round" strokeWidth="3.5" />
-      <path d="M14 20c3-4 6 1 9-3" fill="none" opacity=".6" stroke="#fff" strokeLinecap="round" strokeWidth="3" />
-    </svg>
+    <span className={`grid shrink-0 place-items-center rounded-xl border border-white/10 bg-[#0d1017] p-1.5 ${className}`}>
+      <img alt="" className="h-full w-full object-contain" draggable={false} src={`/gateways/${id}.png`} />
+    </span>
   );
 }
 
