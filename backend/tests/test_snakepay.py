@@ -149,25 +149,31 @@ async def test_partner_sale_splits_to_the_partner_account_and_webhook_approves_o
 
 
 @pytest.mark.anyio
-async def test_shared_funnel_needs_the_chief_account_then_splits_the_commission(
+async def test_shared_funnel_follows_the_chief_gateway_and_splits_the_commission(
     client, db_session, owner, super_admin, snake, apis
 ) -> None:
     chief, chief_ws = owner
     partner, partner_ws, _ = await _partner(db_session, owner, accepted=True)
     await _enable(client)
     flow_id = await _chief_shares_funnel(client, db_session, chief_ws)
+    # the chief picks SnakePay; the partner's own operation stays on SmokePay, with no ShopID
+    chief_headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.put("/api/payment-gateways", headers=chief_headers, json={"gateway": "snakepay", "snakepay_recipient_id": CHIEF})).status_code == 200
     headers = await _as(client, "socio@example.com")
-    await client.put("/api/payment-gateways", headers=headers, json={"gateway": "snakepay", "snakepay_recipient_id": SELLER})
     bot = (await client.post("/api/bots", headers=headers, json={"token": TOKEN, "flow_id": flow_id})).json()
     await _send(client, db_session, bot["id"], _start())
 
-    # the chief has no SnakePay account yet: the sale goes through SmokePay with the usual split
+    # without the partner's ShopID SnakePay could not pay the partner's share: SmokePay charges it
     await _send(client, db_session, bot["id"], _tap("plan:vip"))
     assert apis.methods("pix.create") and not apis.methods("snake.create")
+    state = (await client.get("/api/payment-gateways")).json()
+    assert state["current"] == "smokepay" and [f["gateway"] for f in state["shared_flows"]] == ["snakepay"]
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.get("/api/payment-gateways")).json()["partners_without_shop_id"] == [partner.full_name]
 
-    chief_headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
-    await client.put("/api/payment-gateways", headers=chief_headers, json={"gateway": "smokepay", "snakepay_recipient_id": CHIEF})
-    await _as(client, "socio@example.com")
+    # the partner adds the ShopID but keeps SmokePay for their own funnels: the shared one still follows the chief
+    headers = await _as(client, "socio@example.com")
+    assert (await client.put("/api/payment-gateways", headers=headers, json={"gateway": "smokepay", "snakepay_recipient_id": SELLER})).status_code == 200
     await db_session.commit()
     for order in await db_session.scalars(select(TgOrder)):
         order.status = "expired"  # a new Pix instead of reusing the pending one
@@ -179,6 +185,8 @@ async def test_shared_funnel_needs_the_chief_account_then_splits_the_commission(
     order = await db_session.scalar(select(TgOrder).where(TgOrder.gateway == "snakepay"))
     # net 19.05: chief 30% = 5.71, partner 70% = 13.33 (each rounded down)
     assert order.split_chief_user_id == chief.id and order.split_amount == Decimal("5.71") and order.partner_net == Decimal("13.33")
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.get("/api/payment-gateways")).json()["partners_without_shop_id"] == []
 
 
 @pytest.mark.anyio
