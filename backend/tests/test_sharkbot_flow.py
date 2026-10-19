@@ -312,7 +312,7 @@ async def test_approved_sharkbot_sale_notifies_the_owner_once(
         assert (await client.post(path, json=payload)).status_code == 200
     notices = list(await db_session.scalars(select(AppNotification).where(AppNotification.user_id == owner[0].id)))
     assert len(notices) == 1  # pending Pix and the re-delivery do not notify
-    assert notices[0].kind == "sale" and notices[0].title == "Nova venda!"
+    assert notices[0].kind == "sale" and notices[0].title == "🦈 Nova venda - Shark Bot!"
     assert notices[0].body == "Você recebeu R$ 97,00 🤑"
 
     # an old approval re-sent by SharkBot (history backfill) stays silent

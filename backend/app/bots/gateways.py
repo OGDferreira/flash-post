@@ -21,7 +21,7 @@ from decimal import ROUND_UP, Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots import snakepay
-from app.models import SystemSetting, User, Workspace
+from app.models import SystemSetting, TgFlow, User, Workspace
 from app.partners.service import BillingRoute, owner_workspace
 
 SNAKEPAY_ENABLED_KEY = "snakepay_enabled"
@@ -54,9 +54,18 @@ class SnakePlan:
     chief_percent: Decimal = Decimal("0")
 
 
-async def snakepay_plan(db: AsyncSession, workspace: Workspace, route: BillingRoute, amount: Decimal) -> SnakePlan | None:
+def gateway_for(workspace: Workspace, flow: TgFlow | None) -> str:
+    """The funnel's own choice (only for the operation's own funnels), else the default."""
+    if flow is not None and flow.workspace_id == workspace.id and flow.payment_gateway in GATEWAYS:
+        return flow.payment_gateway
+    return workspace.payment_gateway if workspace.payment_gateway in GATEWAYS else "smokepay"
+
+
+async def snakepay_plan(
+    db: AsyncSession, workspace: Workspace, route: BillingRoute, amount: Decimal, flow: TgFlow | None = None
+) -> SnakePlan | None:
     """The SnakePay plan for this sale, or None to charge with SmokePay instead."""
-    if workspace.payment_gateway != "snakepay" or not await snakepay_available(db):
+    if gateway_for(workspace, flow) != "snakepay" or not await snakepay_available(db):
         return None
     owner = await db.get(User, workspace.owner_id)
     if owner is None:

@@ -377,7 +377,7 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "goal": _goals_out(revenue, await award_image_urls(db)),
         **numbers,
         "min_withdrawal": float(MIN_WITHDRAWAL),
-        "withdrawals": [] if is_partner else await _history(db, workspace.id),
+        "withdrawals": await _history(db, workspace.id),
     }
 
 
@@ -402,9 +402,9 @@ def _gateway_message(exc: smokepay.SmokepayError) -> tuple[int, str]:
 
 @router.post("/withdrawals", status_code=201, dependencies=[Depends(require_csrf)])
 async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser, db: DbSession) -> dict:
+    # Partners withdraw their own subaccount too (owner's decision, 2026-10-19); the
+    # Super Admin still sees every payout in "Saques dos sócios".
     workspace = await _workspace_for(db, user)
-    if await _is_partner(db, user):
-        raise HTTPException(status_code=403, detail="Os saques dos sócios são feitos pelo administrador da plataforma.")
     return await _withdraw(db, user, workspace, _shop_for(user, workspace), payload)
 
 

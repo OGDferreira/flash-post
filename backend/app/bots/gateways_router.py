@@ -1,13 +1,16 @@
 """FlashBot > Gateways: each operation picks the PIX gateway of its bots; the Super Admin
 turns SnakePay on once its key and webhook secret are set on the server."""
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select, update
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, SuperAdminUser, require_csrf
 from app.bots import gateways, snakepay
 from app.core.config import get_settings
-from app.models import SystemSetting
+from app.models import SystemSetting, TgFlow
 
 router = APIRouter(prefix="/api/payment-gateways", tags=["Payment gateways"])
 
@@ -15,6 +18,12 @@ router = APIRouter(prefix="/api/payment-gateways", tags=["Payment gateways"])
 class GatewayChoice(BaseModel):
     gateway: str = Field(pattern="^(smokepay|snakepay)$")
     snakepay_recipient_id: str | None = Field(default=None, max_length=64)
+    # True: every funnel follows this gateway (clears the per-funnel choices).
+    apply_to_all: bool = False
+
+
+class FlowGateway(BaseModel):
+    gateway: str | None = Field(default=None, pattern="^(smokepay|snakepay)$")  # None = operation default
 
 
 class SnakepaySwitch(BaseModel):
@@ -33,6 +42,12 @@ async def _state(db, user, workspace) -> dict:
         "current": workspace.payment_gateway if workspace.payment_gateway in gateways.GATEWAYS else "smokepay",
         "snakepay_recipient_id": workspace.snakepay_recipient_id,
         "is_admin": admin,
+        "flows": [
+            {"id": str(flow.id), "name": flow.name, "gateway": flow.payment_gateway}
+            for flow in await db.scalars(
+                select(TgFlow).where(TgFlow.workspace_id == workspace.id).order_by(TgFlow.name, TgFlow.id)
+            )
+        ],
         # The platform's own sales need no recipient: everything stays in its account.
         "needs_recipient": not admin,
         "gateways": [
@@ -80,6 +95,27 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
             raise HTTPException(status_code=422, detail="Cole o ID do recebedor da sua conta SnakePay para receber suas vendas.")
     workspace.payment_gateway = payload.gateway
     workspace.snakepay_recipient_id = recipient
+    if payload.apply_to_all:
+        await db.execute(update(TgFlow).where(TgFlow.workspace_id == workspace.id).values(payment_gateway=None))
+    await db.commit()
+    return await _state(db, user, workspace)
+
+
+@router.put("/flows/{flow_id}", dependencies=[Depends(require_csrf)])
+async def flow_gateway(
+    flow_id: uuid.UUID, payload: FlowGateway, access: OwnerAccess, user: AuthenticatedUser, db: DbSession
+) -> dict:
+    """One funnel uses a gateway other than the operation's default."""
+    workspace = access.workspace
+    flow = await db.scalar(select(TgFlow).where(TgFlow.id == flow_id, TgFlow.workspace_id == workspace.id))
+    if flow is None:
+        raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
+    if payload.gateway == "snakepay":
+        if not await gateways.snakepay_available(db):
+            raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
+        if user.platform_role != "SUPER_ADMIN" and not workspace.snakepay_recipient_id:
+            raise HTTPException(status_code=422, detail="Cadastre o ID do recebedor SnakePay antes de usar a SnakePay num fluxo.")
+    flow.payment_gateway = payload.gateway
     await db.commit()
     return await _state(db, user, workspace)
 

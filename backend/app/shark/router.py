@@ -212,10 +212,10 @@ async def _notify_shark_sales(db, workspace: Workspace, sales: list, now: dateti
             amount = f"R$ {sale.amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if sale.amount else None
             # Same short notice as any sale; plan and bot stay in the sales screen.
             body = f"Você recebeu {amount} 🤑" if amount else "Pagamento aprovado 🤑"
-            await notify_user(db, workspace.owner_id, "sale", "Nova venda!", body, "/dashboard")
+            await notify_user(db, workspace.owner_id, "sale", "🦈 Nova venda - Shark Bot!", body, "/dashboard")
         if len(fresh) > _NOTIFY_MAX_PER_DELIVERY:
             extra = len(fresh) - _NOTIFY_MAX_PER_DELIVERY
-            await notify_user(db, workspace.owner_id, "sale", "Novas vendas!", f"Mais {extra} venda(s) aprovada(s).", "/dashboard")
+            await notify_user(db, workspace.owner_id, "sale", "🦈 Novas vendas - Shark Bot!", f"Mais {extra} venda(s) aprovada(s).", "/dashboard")
         await db.commit()
     except Exception as exc:  # a notice must never fail the webhook
         await db.rollback()

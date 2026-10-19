@@ -31,15 +31,16 @@ import { FlashBotGlyph } from "@/components/FlashBotLogo";
 // The FlashBot brand mark stands in for a lucide icon in the menus.
 const FlashBotIcon = FlashBotGlyph as unknown as LucideIcon;
 
-export type NavItem = { label: string; to: string; icon: LucideIcon };
+export type NavItem = { label: string; to: string; icon: LucideIcon; short?: string };
 export type NavGroup = { id: string; title: string; icon: LucideIcon; items: NavItem[] };
 
 export const adminLinks: NavItem[] = [
-  { label: "Visão geral", to: "/admin", icon: Home },
+  { label: "Visão geral", short: "Início", to: "/admin", icon: Home },
   { label: "Usuários", to: "/admin/users", icon: Users },
-  { label: "Workspaces", to: "/admin/workspaces", icon: Blocks },
+  { label: "Saques dos sócios", short: "Saques", to: "/admin/partner-wallets", icon: Wallet },
+  { label: "Gateways de pagamento", short: "Gateways", to: "/feature/bots?tab=gateways", icon: CircleDollarSign },
   { label: "Operações", to: "/admin/operations", icon: BarChart3 },
-  { label: "Saques dos sócios", to: "/admin/partner-wallets", icon: Wallet },
+  { label: "Workspaces", to: "/admin/workspaces", icon: Blocks },
   { label: "Funis", to: "/admin/flows", icon: GitBranch },
   { label: "Premiações", to: "/admin/awards", icon: Trophy },
   { label: "Notificações", to: "/admin/notifications", icon: BellRing },
