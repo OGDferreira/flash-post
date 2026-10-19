@@ -933,7 +933,10 @@ async def create_order(
         ).order_by(TgOrder.created_at.desc())
     )
     first_pix = order is None and not await db.scalar(select(TgOrder.id).where(TgOrder.lead_id == lead.id).limit(1))
+    timings: dict[str, float] = {}
+    mark = time.perf_counter()
     if order is None:
+        await tg.send_chat_action(lead.chat_id, "upload_photo")  # the lead sees activity while the gateway answers
         route = await billing_route(db, bot.workspace_id, bot.flow_id)
         if not route.allowed:  # a shared funnel that is no longer available to this bot
             await tg.send_message(lead.chat_id, "Esta oferta não está disponível no momento.")
@@ -955,6 +958,8 @@ async def create_order(
         order.split_chief_user_id = route.chief_user_id
         order.split_percent = route.percent
         qr: str | None = None
+        timings["prepare"] = time.perf_counter() - mark
+        mark = time.perf_counter()
         if not await _charge_with_snakepay(db, bot, order, route, amount):
             try:
                 charge = await smokepay.create_pix(
@@ -989,6 +994,8 @@ async def create_order(
                     order.partner_net = charge.net_amount - fee
             order.pix_copy_paste = charge.copy_paste
             qr = charge.qr_code_base64
+        timings["gateway"] = time.perf_counter() - mark
+        mark = time.perf_counter()
         await schedule(db, bot, "expire_order", order.expires_at, f"expire:{order.id}", lead, {"order_id": str(order.id)})
         if first_pix:
             # Generated a PIX: the "Pix não gerado" sequence stops, the "Pix gerado" one starts.
@@ -996,6 +1003,8 @@ async def create_order(
             if kind in ("plan", "downsell") and flow.downsells:
                 await schedule_downsells(db, bot, lead, flow, "pix")
         await db.commit()
+        timings["save"] = time.perf_counter() - mark
+        mark = time.perf_counter()
     else:
         qr = None
     lead.stage = "pix"
@@ -1013,17 +1022,27 @@ async def create_order(
         keyboard["inline_keyboard"].append([button("💬 Suporte", url=f"https://t.me/{flow.support_username}")])
     body = (caption + "\n\n" if caption else "") + f"<code>{html.escape(code)}</code>"
     png = pix_qr_png(code, qr)
-    if png:
-        try:
-            if len(body) <= 1024:  # QR, text, code and buttons in one message
-                await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), body, keyboard)
-                return order
-            await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), caption)
-            body = f"<code>{html.escape(code)}</code>"
-        except TelegramError:
-            pass
-    await tg.send_message(lead.chat_id, body, keyboard)
-    return order
+    try:
+        if png:
+            try:
+                if len(body) <= 1024:  # QR, text, code and buttons in one message
+                    await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), body, keyboard)
+                    return order
+                await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), caption)
+                body = f"<code>{html.escape(code)}</code>"
+            except TelegramError:
+                pass
+        await tg.send_message(lead.chat_id, body, keyboard)
+        return order
+    finally:
+        timings["telegram"] = time.perf_counter() - mark
+        logger.info("pix steps: %s", " ".join(f"{k}={v * 1000:.0f}ms" for k, v in timings.items()))
+
+
+# Workspaces whose SnakePay split was just refused (bad ShopID): SmokePay charges their
+# sales for a while instead of paying for one more refused call on every Pix.
+SNAKEPAY_PAUSE_SECONDS = 600
+_snakepay_paused: dict[uuid.UUID, float] = {}
 
 
 async def _charge_with_snakepay(db: AsyncSession, bot: TgBot, order: TgOrder, route, amount: Decimal) -> bool:
@@ -1039,6 +1058,9 @@ async def _charge_with_snakepay(db: AsyncSession, bot: TgBot, order: TgOrder, ro
     plan = await gateways.snakepay_plan(db, workspace, route, amount, flow)
     if plan is None:
         return False
+    paused = _snakepay_paused.get(bot.workspace_id, 0.0)
+    if paused > time.monotonic():
+        return False  # refused a moment ago: go straight to SmokePay instead of waiting on a new refusal
     try:
         try:
             charge = await snakepay.create_charge(
@@ -1063,7 +1085,10 @@ async def _charge_with_snakepay(db: AsyncSession, bot: TgBot, order: TgOrder, ro
             exc, bot.workspace_id, len(plan.split),
         )
         bot.last_error = f"SnakePay: {exc}"[:500]
+        if exc.status == 400:  # bad ShopID/split: the next sales would be refused the same way
+            _snakepay_paused[bot.workspace_id] = time.monotonic() + SNAKEPAY_PAUSE_SECONDS
         return False
+    _snakepay_paused.pop(bot.workspace_id, None)
     gateways.apply_snake_charge(order, route, plan, charge)
     return True
 
@@ -1351,3 +1376,8 @@ async def notify_owners(db: AsyncSession, bot: TgBot, title: str, body: str, tag
         await db.commit()
     except Exception:
         logger.exception("Bot push notification failed")
+
+
+def resume_snakepay() -> None:
+    """Gateway settings changed: try SnakePay again on the next sale."""
+    _snakepay_paused.clear()

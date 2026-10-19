@@ -28,7 +28,7 @@ def snake(apis, monkeypatch):
     monkeypatch.setattr(settings, "snakepay_api_key", SecretStr("sk_live_test"))
     monkeypatch.setattr(settings, "snakepay_webhook_secret", SecretStr(SECRET))
     monkeypatch.setattr(settings, "snakepay_base_url", "https://snake.test/api/public/v1")
-    state = {"fail": False, "status": "pending", "charges": {}, "uuid_only": False}
+    state = {"fail": False, "refuse": False, "status": "pending", "charges": {}, "uuid_only": False}
     smoke = apis.handler
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -43,6 +43,8 @@ def snake(apis, monkeypatch):
             apis.calls.append(("snake.create", body))
             if state["fail"]:
                 return httpx.Response(422, json={"error": "payer.document is required"})
+            if state["refuse"]:
+                return httpx.Response(400, json={"error": "Dados inválidos (confira o ShopID dos recebedores)"})
             if state["uuid_only"] and any(item["recipient_id"].startswith("snakepay_") for item in body.get("split", [])):
                 return httpx.Response(400, json={"error": "Dados inválidos (confira o ShopID dos recebedores)"})
             cents = round(body["amount"] * 100)
@@ -208,6 +210,41 @@ async def test_snakepay_refusal_falls_back_to_smokepay_and_check_button_asks_sna
     await engine.check_order(db_session, snake_order)
     await db_session.refresh(snake_order)
     assert snake_order.status == "paid" and apis.methods("snake.get")
+
+
+@pytest.mark.anyio
+async def test_refused_shop_id_pauses_snakepay_until_the_settings_change(
+    client, db_session, owner, super_admin, snake, apis
+) -> None:
+    from app.bots import engine
+
+    engine.resume_snakepay()
+    await _enable(client)
+    partner, partner_ws, _ = await _partner(db_session, owner, accepted=True)
+    headers = await _as(client, "socio@example.com")
+    await client.put("/api/payment-gateways", headers=headers, json={"gateway": "snakepay", "snakepay_recipient_id": SELLER})
+    bot, _ = await _setup(client, headers)
+    await _send(client, db_session, bot["id"], _start())
+    snake["refuse"] = True
+
+    async def new_pix() -> None:
+        await db_session.commit()
+        for order in await db_session.scalars(select(TgOrder)):
+            order.status = "expired"
+        await db_session.commit()
+        await _send(client, db_session, bot["id"], _tap("plan:vip"))
+
+    await new_pix()
+    tries = len(apis.methods("snake.create"))
+    assert tries == 2 and len(apis.methods("pix.create")) == 1  # both ShopID spellings refused, SmokePay sold
+    await new_pix()
+    assert len(apis.methods("snake.create")) == tries and len(apis.methods("pix.create")) == 2  # straight to SmokePay
+
+    # saving the gateway settings (a corrected ShopID) gives SnakePay a fresh try at once
+    snake["refuse"] = False
+    await client.put("/api/payment-gateways", headers=headers, json={"gateway": "snakepay", "snakepay_recipient_id": SELLER})
+    await new_pix()
+    assert len(apis.methods("snake.create")) == tries + 1 and len(apis.methods("pix.create")) == 2
 
 
 @pytest.mark.anyio
