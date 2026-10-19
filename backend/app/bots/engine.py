@@ -725,6 +725,13 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
     if "my_chat_member" in update_data:
         await _handle_membership(db, bot, update_data["my_chat_member"])
         return None
+    if "channel_post" in update_data:
+        await remember_chat(db, bot, (update_data["channel_post"] or {}).get("chat") or {})
+        return None
+    chat_type = ((update_data.get("message") or {}).get("chat") or {}).get("type")
+    if chat_type in ("group", "supergroup"):
+        await remember_chat(db, bot, update_data["message"]["chat"])
+        return None
     flow = await load_flow(db, bot)
     if "message" in update_data:
         message = update_data["message"]
@@ -878,6 +885,23 @@ def resolve_offer(flow: FlowDefinition, data: str) -> tuple[Plan, dict] | str:
             "kind": "upsell", "offer_id": f"up{index}", "step": index, "chain": parts[2], "retry": data,
         }
     return gone
+
+
+async def remember_chat(db: AsyncSession, bot: TgBot, chat: dict, *, refresh: bool = False) -> TgGroup | None:
+    """Telegram has no "chats this bot is in" call: a group or channel is only known when the
+    bot is added (my_chat_member). A bot added before it was connected here is learned from any
+    message posted there, or when the owner types the @/ID (``refresh``)."""
+    if chat.get("type") not in ("group", "supergroup", "channel") or "id" not in chat:
+        return None
+    group = await db.scalar(select(TgGroup).where(TgGroup.bot_id == bot.id, TgGroup.chat_id == chat["id"]))
+    if group is not None and not refresh:
+        return group
+    try:
+        member = await telegram(bot).get_chat_member(chat["id"], bot.tg_bot_id)
+    except TelegramError:
+        return group
+    await _handle_membership(db, bot, {"chat": chat, "new_chat_member": member})
+    return await db.scalar(select(TgGroup).where(TgGroup.bot_id == bot.id, TgGroup.chat_id == chat["id"]))
 
 
 async def _handle_membership(db: AsyncSession, bot: TgBot, event: dict) -> None:

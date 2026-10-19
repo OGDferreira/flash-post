@@ -78,6 +78,10 @@ class FakeApis:
                 if self.get_me_status != 200:
                     return httpx.Response(401, json={"ok": False, "error_code": 401, "description": "Unauthorized"})
                 return httpx.Response(200, json={"ok": True, "result": {"id": 987, "is_bot": True, "username": "ana_vip_bot", "first_name": "Ana VIP"}})
+            if method == "getChat":
+                if body.get("chat_id") == "@canal_cache":
+                    return httpx.Response(200, json={"ok": True, "result": {"id": -1009990001, "type": "channel", "title": "Cache da Ana"}})
+                return httpx.Response(400, json={"ok": False, "error_code": 400, "description": "Bad Request: chat not found"})
             if method == "getChatMember":
                 return httpx.Response(200, json={"ok": True, "result": {"status": self.member_status, "user": {"id": 987}}})
             if method == "createChatInviteLink":
@@ -417,6 +421,14 @@ async def test_media_blocks_upload_once_then_reuse_file_id(client, db_session, o
     media_id = uploaded.json()["id"]
     wrong = await client.post("/api/bots/media?filename=x.jpg", headers={**headers, "content-type": "image/jpeg"}, content=b"not a jpeg")
     assert wrong.status_code == 415
+    # an iPhone .MOV (QuickTime) is kept as an MP4 video
+    mov = await client.post(
+        "/api/bots/media?filename=IMG_0370.MOV",
+        headers={**headers, "content-type": "video/quicktime"},
+        content=b"\x00\x00\x00\x14ftypqt  " + b"0" * 100,
+    )
+    assert mov.status_code == 201, mov.text
+    assert mov.json()["kind"] == "video" and mov.json()["file_name"] == "IMG_0370.mp4" and mov.json()["content_type"] == "video/mp4"
 
     bot, _ = await _setup(client, headers, _flow(welcome=[{"type": "photo", "media_ids": [media_id], "text": "Oi {nome}", "spoiler": True}]))
     await _send(client, db_session, bot["id"], _start())
@@ -515,3 +527,32 @@ def test_signature_window_and_format() -> None:
 def test_brl_formatting() -> None:
     assert engine.brl(Decimal("19.9")) == "R$ 19,90"
     assert engine.brl(Decimal("1234.5")) == "R$ 1.234,50"
+
+
+@pytest.mark.anyio
+async def test_groups_the_bot_joined_before_connecting_are_learned(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers)
+    assert "channel_post" in apis.methods("setWebhook")[0]["allowed_updates"]
+
+    # any message in a group, or a post in a channel, makes the bot learn it (Telegram never sent my_chat_member)
+    group_message = {"message": {"message_id": 5, "date": 0, "chat": {"id": GROUP_ID, "type": "supergroup", "title": "VIP da Ana"},
+                                 "from": {"id": 42, "first_name": "Ana"}, "text": "oi"}}
+    assert (await _send(client, db_session, bot["id"], group_message)).status_code == 200
+    channel_post = {"channel_post": {"message_id": 6, "date": 0, "chat": {"id": -1001112223334, "type": "channel", "title": "Backup"}, "text": "x"}}
+    assert (await _send(client, db_session, bot["id"], channel_post)).status_code == 200
+    groups = (await client.get("/api/bots/groups/list")).json()["groups"]
+    assert {(g["title"], g["type"]) for g in groups} == {("VIP da Ana", "supergroup"), ("Backup", "channel")}
+    assert len(apis.methods("getChatMember")) == 2
+    await _send(client, db_session, bot["id"], {**group_message, "message": {**group_message["message"], "message_id": 7}})
+    assert len(apis.methods("getChatMember")) == 2  # already known: no new lookup
+
+    # or the owner types the @, the t.me link or the id
+    linked = await client.post(f"/api/bots/{bot['id']}/groups/link", headers=headers, json={"chat": "https://t.me/canal_cache"})
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["title"] == "Cache da Ana" and linked.json()["type"] == "channel"
+    assert (await client.post(f"/api/bots/{bot['id']}/groups/link", headers=headers, json={"chat": "@naoexiste"})).status_code == 422
+    assert (await client.post(f"/api/bots/{bot['id']}/groups/link", headers=headers, json={"chat": "lixo !!"})).status_code == 422
+    apis.member_status = "left"
+    gone = await client.post(f"/api/bots/{bot['id']}/groups/link", headers=headers, json={"chat": "@canal_cache"})
+    assert gone.status_code == 422
