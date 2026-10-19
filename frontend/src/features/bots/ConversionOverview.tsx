@@ -180,7 +180,10 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
                 />
                 <Tooltip
                   contentStyle={{ background: "var(--nm-bg)", border: "1px solid var(--color-line)", borderRadius: 12, fontSize: 12 }}
-                  formatter={(value) => [money(Number(value ?? 0)), "Faturamento"]}
+                  formatter={(value, _name, item) => {
+                    const sales = Number(item?.payload?.sales ?? 0);
+                    return [`${money(Number(value ?? 0))} · ${count(sales)} ${sales === 1 ? "venda" : "vendas"}`, "Faturamento"];
+                  }}
                   labelFormatter={(_, payload) => {
                     const date = payload?.[0]?.payload?.date as string | undefined;
                     return date ? `${date.slice(8, 10)}/${date.slice(5, 7)}` : "";
