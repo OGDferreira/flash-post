@@ -417,6 +417,22 @@ async def bot_stats(
     start, end = period_bounds(period, start_date, end_date, utc_now())
     data = await conversion_stats(db, access.workspace.id, start, end)
     data["period_label"] = period_label(start, end)
+    # Commission received from partners' sales, per day (Brazil time), for the chart's second line.
+    from app.core.time import BRAZIL_TIME_ZONE
+
+    per_day: dict[str, Decimal] = {}
+    for paid_at, amount in await db.execute(
+        select(TgOrder.paid_at, TgOrder.split_amount).where(
+            TgOrder.split_chief_user_id == access.workspace.owner_id, TgOrder.status == "paid",
+            TgOrder.split_amount.is_not(None), TgOrder.paid_at >= start, TgOrder.paid_at < end,
+        )
+    ):
+        moment = paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc)
+        day = moment.astimezone(BRAZIL_TIME_ZONE).date().isoformat()
+        per_day[day] = per_day.get(day, Decimal("0")) + Decimal(amount)
+    for point in data.get("series", []):
+        point["commission"] = float(per_day.get(point["date"], Decimal("0")))
+    data["totals"]["commission"] = float(sum(per_day.values(), Decimal("0")))
     return data
 
 

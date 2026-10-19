@@ -118,7 +118,14 @@ export function NextAward() {
   const [index, setIndex] = useState<number | null>(null);
   const shown = index ?? currentIndex;
   const goal = list[shown];
-  const go = (next: number) => setIndex(Math.max(0, Math.min(list.length - 1, next)));
+  // Which side the new card slides in from (keyed animation in index.css).
+  const [enter, setEnter] = useState<"left" | "right" | null>(null);
+  const go = (next: number) => {
+    const target = Math.max(0, Math.min(list.length - 1, next));
+    if (target === shown) return;
+    setEnter(target > shown ? "right" : "left");
+    setIndex(target);
+  };
   const stage = useRef<HTMLDivElement>(null);
   const wheel = useRef({ last: 0, shown, count: list.length });
   wheel.current.shown = shown;
@@ -138,25 +145,52 @@ export function NextAward() {
       const now = Date.now();
       if (Math.abs(delta) < 4 || now - state.last < 400) return;
       state.last = now;
+      setEnter(next > state.shown ? "right" : "left");
       setIndex(next);
     };
     element.addEventListener("wheel", onWheel, { passive: false });
     return () => element.removeEventListener("wheel", onWheel);
   }, [Boolean(goal)]);
-  // Drag / swipe sideways (finger or mouse) to the next or previous card.
-  const drag = useRef<{ x: number; y: number; id: number } | null>(null);
+  // Drag / swipe sideways (finger or mouse): the card follows the pointer, tilts a little and,
+  // past a threshold or with a quick flick, gives way to the next one.
+  const drag = useRef<{ x: number; y: number; id: number; t: number; horizontal: boolean | null } | null>(null);
   const swipedAt = useRef(0); // a swipe that ends over a side card must not also "click" it
+  const [offset, setOffset] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const onPointerDown = (event: React.PointerEvent) => {
-    drag.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    drag.current = { x: event.clientX, y: event.clientY, id: event.pointerId, t: performance.now(), horizontal: null };
+  };
+  const onPointerMove = (event: React.PointerEvent) => {
+    const start = drag.current;
+    if (!start || start.id !== event.pointerId) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (start.horizontal === null && Math.hypot(dx, dy) > 6) {
+      start.horizontal = Math.abs(dx) > Math.abs(dy);
+      if (start.horizontal) {
+        (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+        setDragging(true);
+      }
+    }
+    if (!start.horizontal) return;
+    const atEdge = (dx > 0 && shown === 0) || (dx < 0 && shown === list.length - 1);
+    setOffset(atEdge ? dx * 0.3 : dx); // rubber band at the ends
   };
   const onPointerUp = (event: React.PointerEvent) => {
     const start = drag.current;
     drag.current = null;
-    if (!start || start.id !== event.pointerId) return;
+    setDragging(false);
+    setOffset(0);
+    if (!start || start.id !== event.pointerId || !start.horizontal) return;
     const dx = event.clientX - start.x;
-    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(event.clientY - start.y)) return;
+    const speed = Math.abs(dx) / Math.max(1, performance.now() - start.t); // px per ms
+    if (Math.abs(dx) < 70 && !(speed > 0.5 && Math.abs(dx) > 25)) return;
     swipedAt.current = Date.now();
     go(shown + (dx < 0 ? 1 : -1));
+  };
+  const cardStyle: React.CSSProperties = {
+    transform: `translateX(${offset}px) rotate(${offset / 28}deg)`,
+    transition: dragging ? "none" : "transform 520ms cubic-bezier(0.22, 1, 0.36, 1)",
   };
   return (
     <section className="dashboard-card flex flex-col rounded-2xl p-4">
@@ -173,15 +207,20 @@ export function NextAward() {
           <p className="rounded-xl bg-surface-inset px-3 py-6 text-center text-xs text-muted">As premiações aparecem quando sua operação começar a faturar.</p>
         )
       ) : (
-        <div className="relative flex flex-1 touch-pan-y select-none items-center justify-center py-1" onPointerCancel={() => (drag.current = null)} onPointerDown={onPointerDown} onPointerUp={onPointerUp} ref={stage}>
+        <div className="relative flex flex-1 touch-pan-y select-none items-center justify-center py-1" onPointerCancel={() => { drag.current = null; setDragging(false); setOffset(0); }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} ref={stage}>
           {[shown - 1, shown + 1].map((side) => {
             const neighbour = list[side];
             if (!neighbour) return null;
             return (
               <button
                 aria-label={`Ver premiação de ${brl(neighbour.amount)}`}
-                className={`absolute top-1/2 z-20 hidden h-[78%] w-[34%] -translate-y-1/2 overflow-hidden rounded-xl opacity-30 transition hover:opacity-60 sm:block ${side < shown ? "left-0 -rotate-3" : "right-0 rotate-3"}`}
-                key={side}
+                className={`absolute top-1/2 z-20 hidden h-[78%] w-[34%] -translate-y-1/2 overflow-hidden rounded-xl transition-[opacity,transform] duration-500 ease-out hover:opacity-60 sm:block ${side < shown ? "left-0 -rotate-3" : "right-0 rotate-3"}`}
+                key={`${side}-${shown}`}
+                style={{
+                  // the card being revealed by the drag comes forward
+                  opacity: Math.min(0.75, 0.3 + Math.max(0, side < shown ? offset : -offset) / 300),
+                  translate: `${offset * 0.25}px 0`,
+                }}
                 onClick={() => Date.now() - swipedAt.current > 400 && go(side)}
                 type="button"
               >
@@ -193,7 +232,11 @@ export function NextAward() {
               </button>
             );
           })}
-          <article className={`group relative z-10 w-[220px] overflow-hidden rounded-2xl border ${goal.reached ? "border-success/60" : goal.current ? "border-accent/60" : "border-line-soft"}`}>
+          <article
+            className={`group relative z-10 w-[220px] cursor-grab overflow-hidden rounded-2xl border shadow-2xl active:cursor-grabbing ${enter ? `award-enter-${enter}` : ""} ${goal.reached ? "border-success/60" : goal.current ? "border-accent/60" : "border-line-soft"}`}
+            key={goal.amount}
+            style={cardStyle}
+          >
             <div className="relative aspect-[4/5] overflow-hidden bg-well">
               {goal.image_url ? (
                 <img

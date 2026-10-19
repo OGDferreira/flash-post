@@ -18,6 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from decimal import ROUND_UP, Decimal
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots import snakepay
@@ -57,6 +58,26 @@ class SnakePlan:
     chief_percent: Decimal = Decimal("0")
 
 
+def same_recipient(a: str, b: str) -> bool:
+    """``snakepay_<32 hex>`` and the dashed UUID are the same account."""
+    def bare(value: str) -> str:
+        value = value.strip().lower()
+        return value.removeprefix("snakepay_").replace("-", "")
+
+    return bool(a and b) and bare(a) == bare(b)
+
+
+async def platform_recipients(db: AsyncSession) -> list[str]:
+    """ShopIDs saved by Super Admin operations: the account that owns the API key. SnakePay
+    refuses a split to the charging account itself, and its money already lands there."""
+    rows = await db.scalars(
+        select(Workspace.snakepay_recipient_id)
+        .join(User, User.id == Workspace.owner_id)
+        .where(User.platform_role == "SUPER_ADMIN", Workspace.snakepay_recipient_id.is_not(None))
+    )
+    return [row for row in rows if row]
+
+
 def gateway_for(workspace: Workspace, flow: TgFlow | None) -> str:
     """The funnel's own choice (only for the operation's own funnels), else the default."""
     if flow is not None and flow.workspace_id == workspace.id and flow.payment_gateway in GATEWAYS:
@@ -78,6 +99,9 @@ async def snakepay_plan(
     recipient = (workspace.snakepay_recipient_id or "").strip()
     if not valid_recipient(recipient):
         return None
+    platform = await platform_recipients(db)
+    if any(same_recipient(recipient, own) for own in platform):
+        return None  # a seller cannot use the platform's own ShopID: keep SmokePay
     net = snakepay.expected_net(amount)
     if net <= 0:
         return None
@@ -96,10 +120,12 @@ async def snakepay_plan(
         chief = await db.get(User, route.chief_user_id)
         if chief is None:
             return None
-        if chief.platform_role != "SUPER_ADMIN":  # a Super Admin's commission stays in the platform account
-            chief_workspace = await owner_workspace(db, chief.id)
-            chief_recipient = (chief_workspace.snakepay_recipient_id or "").strip() if chief_workspace else ""
-            if not valid_recipient(chief_recipient) or chief_recipient.lower() == recipient.lower():
+        chief_workspace = None if chief.platform_role == "SUPER_ADMIN" else await owner_workspace(db, chief.id)
+        chief_recipient = (chief_workspace.snakepay_recipient_id or "").strip() if chief_workspace else ""
+        if chief_workspace is not None and any(same_recipient(chief_recipient, own) for own in platform):
+            chief_workspace = None  # the chief's ShopID is the platform account: the commission stays there
+        if chief_workspace is not None:  # a Super Admin's commission stays in the platform account
+            if not valid_recipient(chief_recipient) or same_recipient(chief_recipient, recipient):
                 return None  # the chief could not receive the commission: keep SmokePay
             plan.chief_recipient = chief_recipient
             plan.split.append({"recipient_id": chief_recipient, "percentage": float(chief_percent)})
