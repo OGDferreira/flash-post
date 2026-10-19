@@ -49,6 +49,9 @@ export function WithdrawModal({ wallet, open, onClose, request, title = "Solicit
   const [amount, setAmount] = useState("");
   const [keyType, setKeyType] = useState("cpf");
   const [pixKey, setPixKey] = useState("");
+  // Two steps: fill in, then review the destination and confirm (a Pix cannot be undone).
+  const [reviewing, setReviewing] = useState(false);
+  const [checked, setChecked] = useState(false);
   const value = Number(amount.replace(/\./g, "").replace(",", "."));
   const main = wallet.is_main_account;
   const valid =
@@ -56,18 +59,60 @@ export function WithdrawModal({ wallet, open, onClose, request, title = "Solicit
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (!reviewing) {
+      setReviewing(true);
+      setChecked(false);
+      return;
+    }
+    if (!checked) return;
     request.mutate(
       { amount: value.toFixed(2), pix_key_type: keyType, pix_key: pixKey.trim() },
-      { onSuccess: () => { setAmount(""); setPixKey(""); onClose(); } },
+      { onSuccess: () => { setAmount(""); setPixKey(""); setReviewing(false); onClose(); } },
     );
   }
+  const close = () => {
+    setReviewing(false);
+    onClose();
+  };
+  const keyLabel = keyTypes.find((item) => item.value === keyType)?.label ?? keyType;
+  const fee = wallet.withdraw_fee ?? 0;
   return (
     <Modal
       description={`Saldo disponível: ${brl(wallet.available)}`}
-      onClose={onClose}
+      onClose={close}
       open={open}
-      title={title}
+      title={reviewing ? "Confira antes de enviar" : title}
     >
+      {reviewing ? (
+        <form className="space-y-4" onSubmit={submit}>
+          <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-warning">O Pix vai para esta chave</p>
+            <p className="mt-2 text-xs text-muted">Tipo: <b className="text-fg">{keyLabel}</b></p>
+            <p className="mt-1 break-all font-mono text-lg font-semibold text-fg">{pixKey.trim()}</p>
+            <p className="mt-2 text-[11px] text-muted">
+              Confira número por número. Um Pix enviado não pode ser cancelado; se a chave estiver errada, o dinheiro vai para quem for dono dela.
+            </p>
+          </div>
+          <dl className="space-y-1 rounded-xl border border-line-soft bg-surface-inset p-3 text-sm">
+            <div className="flex justify-between"><dt className="text-muted">Valor que cai no Pix</dt><dd className="font-semibold text-success">{brl(value)}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted">Taxa de saque (SmokePay)</dt><dd className="font-semibold text-warning">+ {brl(fee)}</dd></div>
+            <div className="flex justify-between border-t border-line-soft pt-1"><dt className="text-muted">Sai do saldo</dt><dd className="font-semibold text-fg">{brl(value + fee)}</dd></div>
+          </dl>
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
+            <input checked={checked} className="mt-0.5 size-5 shrink-0 accent-[var(--brand-c)]" onChange={(event) => setChecked(event.target.checked)} type="checkbox" />
+            Conferi: a chave Pix e o valor estão corretos e a conta é de quem vai receber.
+          </label>
+          {Boolean(request.error) && <p className="text-xs text-danger" role="alert">{errorText(request.error)}</p>}
+          <div className="grid grid-cols-2 gap-2">
+            <button className="btn-secondary" disabled={request.isPending} onClick={() => setReviewing(false)} type="button">
+              Voltar e corrigir
+            </button>
+            <button className="btn-primary" disabled={!checked || request.isPending} type="submit">
+              {request.isPending ? "Enviando…" : "Confirmar e enviar"}
+            </button>
+          </div>
+        </form>
+      ) : (
       <form className="space-y-4" onSubmit={submit}>
         {main && (
           <p className="rounded-xl border border-line-soft bg-surface-inset p-3 text-xs text-muted">
@@ -119,10 +164,11 @@ export function WithdrawModal({ wallet, open, onClose, request, title = "Solicit
         </dl>
         {Boolean(request.error) && <p className="text-xs text-danger" role="alert">{errorText(request.error)}</p>}
         <button className="btn-primary w-full" disabled={!valid || request.isPending} type="submit">
-          {request.isPending ? "Enviando…" : "Confirmar saque"}
+          Revisar saque
         </button>
-        <p className="text-center text-[11px] text-muted">O Pix é enviado na hora pela SmokePay. Um saque a cada 5 minutos.</p>
+        <p className="text-center text-[11px] text-muted">Na próxima tela você confere a chave Pix antes de enviar. Um saque a cada 5 minutos.</p>
       </form>
+      )}
     </Modal>
   );
 }

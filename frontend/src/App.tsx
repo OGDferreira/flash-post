@@ -32,6 +32,7 @@ const ErrorLogsPage = lazyPage(() => import("@/pages/ErrorLogsPage"), "ErrorLogs
 const EmailsPage = lazyPage(() => import("@/pages/EmailsPage"), "EmailsPage");
 const IntegrationsPage = lazyPage(() => import("@/pages/IntegrationsPage"), "IntegrationsPage");
 const ProfilePage = lazyPage(() => import("@/pages/ProfilePage"), "ProfilePage");
+const SettingsPage = lazyPage(() => import("@/pages/SettingsPage"), "SettingsPage");
 const ProfileFoldersPage = lazyPage(() => import("@/pages/ProfileFoldersPage"), "ProfileFoldersPage");
 const MetaAppsPage = lazyPage(() => import("@/pages/MetaAppsPage"), "MetaAppsPage");
 const CollaboratorsPage = lazyPage(() => import("@/pages/CollaboratorsPage"), "CollaboratorsPage");
@@ -72,6 +73,7 @@ export default function App() {
                 <Route element={<AppShell />}>
                   <Route path="/dashboard" element={<WorkspaceDashboard />} />
                   <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/configuracoes" element={<SettingsPage />} />
                   <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
                   <Route path="/feature/loops" element={<LoopsPage />} />
                   <Route path="/feature/error-logs" element={<ErrorLogsPage />} />
@@ -97,7 +99,7 @@ export default function App() {
                     <Route path="/feature/notifications" element={<NotificationsPage />} />
                     <Route path="/feature/ranking" element={<RankingPage />} />
                     <Route path="/feature/meta-apps" element={<MetaAppsPage />} />
-                    <Route path="/feature/settings" element={<Navigate replace to="/feature/meta-apps" />} />
+                    <Route path="/feature/settings" element={<Navigate replace to="/configuracoes" />} />
                     <Route path="/feature/integrations" element={<IntegrationsPage />} />
                     <Route
                       path="/feature/finance"
