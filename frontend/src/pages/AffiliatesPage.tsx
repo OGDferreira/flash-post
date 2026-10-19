@@ -9,7 +9,6 @@ import { Modal } from "@/components/ui/Modal";
 import {
   PeriodFilter,
   formatNumber,
-  formatPercent,
   isPeriodReady,
   moneyFormat,
   periodParams,
