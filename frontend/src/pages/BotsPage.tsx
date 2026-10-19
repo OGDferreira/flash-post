@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bot, CalendarDays, CreditCard, GitBranch, Megaphone, Receipt, Share2 } from "lucide-react";
+import { Bot, CalendarDays, CreditCard, GitBranch, LayoutDashboard, Megaphone, Receipt, Share2 } from "lucide-react";
 
 import { FlashBotLogo } from "@/components/FlashBotLogo";
 import { PeriodFilter, todayInput, type MetricsPeriod } from "@/features/analytics/period";
@@ -14,10 +14,11 @@ import { RemarketingPanel } from "@/features/bots/remarketing/RemarketingPanel";
 import { SharedFlowsPanel } from "@/features/partners/SharedTemplates";
 
 const tabs = [
+  { id: "home", label: "Painel", short: "Painel", Icon: LayoutDashboard },
   { id: "bots", label: "Meus bots", short: "Robôs", Icon: Bot },
   { id: "flows", label: "Meus funis", short: "Funis", Icon: GitBranch },
-  { id: "remarketing", label: "Remarketing", short: "Remarketing", Icon: Megaphone },
-  { id: "shared", label: "Funis compartilhados", short: "Compartilhados", Icon: Share2 },
+  { id: "remarketing", label: "Remarketing", short: "Remarket.", Icon: Megaphone },
+  { id: "shared", label: "Funis compartilhados", short: "Compart.", Icon: Share2 },
   { id: "sales", label: "Vendas", short: "Vendas", Icon: Receipt },
   { id: "gateways", label: "Gateways", short: "Gateways", Icon: CreditCard },
 ] as const;
@@ -56,9 +57,9 @@ function TabBar({ tab, onChoose }: { tab: Tab; onChoose: (tab: Tab) => void }) {
       {createPortal(
         <nav
           aria-label="Seções do FlashBot no celular"
-          className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+92px)] z-30 lg:hidden"
+          className="fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-30 lg:hidden"
         >
-          <div className="grid grid-cols-6 gap-0.5 rounded-2xl border border-line bg-[var(--nm-bg)]/95 p-1 shadow-2xl backdrop-blur" role="tablist">
+          <div className="grid grid-cols-7 gap-0.5 rounded-2xl border border-line bg-[var(--nm-bg)]/95 p-1 shadow-2xl backdrop-blur" role="tablist">
             {buttons(false)}
           </div>
         </nav>,
@@ -69,7 +70,7 @@ function TabBar({ tab, onChoose }: { tab: Tab; onChoose: (tab: Tab) => void }) {
 }
 
 export function BotsPage() {
-  const [tab, setTab] = useState<Tab>("bots");
+  const [tab, setTab] = useState<Tab>("home");
   // The flow editor has its own header and section navigation; give it the whole screen.
   const [editing, setEditing] = useState(false);
   const [remarketingFlow, setRemarketingFlow] = useState<string | null>(null);
@@ -101,9 +102,9 @@ export function BotsPage() {
             </p>
           </header>
           <TabBar onChoose={choose} tab={tab} />
-          {/* Each tab is its own screen: the dashboard belongs to "Meus bots" only. */}
-          {tab === "bots" && <ConversionOverview onPeriod={setPeriod} period={period} />}
-          {tab === "flows" && (
+          {/* Each tab is its own screen: the dashboard lives in "Painel", the robots in "Meus bots". */}
+          {tab === "home" && <ConversionOverview onPeriod={setPeriod} period={period} />}
+          {(tab === "flows" || tab === "bots") && (
             <div className="dashboard-card flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3">
               <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
                 <CalendarDays size={14} /> Período

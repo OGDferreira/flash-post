@@ -13,6 +13,7 @@ type GatewayState = {
   snakepay_recipient_id: string | null;
   is_admin: boolean;
   needs_recipient: boolean;
+  flows: { id: string; name: string; gateway: GatewayId | null }[];
   gateways: Gateway[];
   admin?: { snakepay_key_set: boolean; snakepay_secret_set: boolean; snakepay_enabled: boolean; snakepay_webhook_url: string };
 };
@@ -52,18 +53,25 @@ export function GatewaysPanel() {
   const state = useQuery({ queryKey: KEY, queryFn: () => apiRequest<GatewayState>("/api/payment-gateways") });
   const [picked, setPicked] = useState<GatewayId>("smokepay");
   const [recipient, setRecipient] = useState("");
+  const [scope, setScope] = useState<"all" | "flows">("all");
   useEffect(() => {
     if (!state.data) return;
     setPicked(state.data.current);
     setRecipient(state.data.snakepay_recipient_id ?? "");
+    if (state.data.flows.some((flow) => flow.gateway)) setScope("flows");
   }, [state.data]);
 
   const save = useMutation({
     mutationFn: () =>
       apiRequest<GatewayState>("/api/payment-gateways", {
         method: "PUT",
-        body: { gateway: picked, snakepay_recipient_id: recipient.trim() || null },
+        body: { gateway: picked, snakepay_recipient_id: recipient.trim() || null, apply_to_all: scope === "all" },
       }),
+    onSuccess: (data) => queryClient.setQueryData(KEY, data),
+  });
+  const perFlow = useMutation({
+    mutationFn: ({ id, gateway }: { id: string; gateway: GatewayId | null }) =>
+      apiRequest<GatewayState>(`/api/payment-gateways/flows/${id}`, { method: "PUT", body: { gateway } }),
     onSuccess: (data) => queryClient.setQueryData(KEY, data),
   });
   const release = useMutation({
@@ -74,11 +82,54 @@ export function GatewaysPanel() {
   if (state.isLoading) return <LoadingState label="Carregando gateways" />;
   if (state.error || !state.data) return <ErrorState message={errorText(state.error)} onRetry={() => void state.refetch()} />;
   const data = state.data;
-  const dirty = picked !== data.current || (recipient.trim() || null) !== (data.snakepay_recipient_id ?? null);
+  const overrides = data.flows.some((flow) => flow.gateway);
+  const dirty =
+    picked !== data.current ||
+    (recipient.trim() || null) !== (data.snakepay_recipient_id ?? null) ||
+    (scope === "all" && overrides);
+  const adminCard = data.admin && (
+        <div className="glass-panel p-4 sm:p-5">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="text-accent" size={18} />
+            <h2 className="text-base font-semibold text-fg">Integração SnakePay (administrador)</h2>
+          </div>
+          <ul className="mt-3 space-y-1.5 text-xs">
+            {[
+              ["Chave da API (SNAKEPAY_API_KEY no Render)", data.admin.snakepay_key_set],
+              ["Segredo do webhook (SNAKEPAY_WEBHOOK_SECRET no Render)", data.admin.snakepay_secret_set],
+            ].map(([label, ok]) => (
+              <li className="flex items-center gap-2" key={String(label)}>
+                {ok ? <Check className="text-success" size={14} /> : <CircleAlert className="text-warning" size={14} />}
+                <span className={ok ? "text-fg-2" : "text-warning"}>{label}: {ok ? "configurado" : "falta configurar"}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3">
+            <CopyField hint="Cole em SnakePay → Desenvolvedor → URL do webhook da sua plataforma." label="URL do webhook" value={data.admin.snakepay_webhook_url} />
+          </div>
+          {release.error && <p className="mt-3 text-xs text-danger">{errorText(release.error)}</p>}
+          <label className="mt-4 flex cursor-pointer items-center justify-between gap-4 border-t border-line-soft pt-4">
+            <span>
+              <span className="block text-sm font-medium text-fg-2">Liberar SnakePay para os usuários</span>
+              <span className="block text-xs text-muted">Com a opção ligada, cada operação pode escolher a SnakePay nesta aba.</span>
+            </span>
+            <input
+              checked={data.admin.snakepay_enabled}
+              className="size-5 accent-[var(--brand-c)]"
+              disabled={release.isPending}
+              onChange={(event) => release.mutate(event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+        </div>
+  );
+  const nameOf = (id: GatewayId) => data.gateways.find((g) => g.id === id)?.name ?? id;
   const needsRecipient = picked === "snakepay" && data.needs_recipient;
 
   return (
     <section className="space-y-4">
+      {/* While SnakePay is off the Super Admin sees the release switch first. */}
+      {data.admin && !data.admin.snakepay_enabled && adminCard}
       <div className="glass-panel p-4 sm:p-5">
         <div className="flex items-center gap-2">
           <CreditCard className="text-accent" size={18} />
@@ -137,6 +188,52 @@ export function GatewaysPanel() {
           </div>
         )}
 
+        <div className="mt-4 border-t border-line-soft pt-4">
+          <p className="text-sm font-medium text-fg">Usar em</p>
+          <div className="mt-2 inline-flex rounded-full border border-line-soft p-1" role="radiogroup">
+            {([["all", "Todos os fluxos"], ["flows", "Fluxos específicos"]] as const).map(([value, label]) => (
+              <button
+                aria-checked={scope === value}
+                className={`min-h-9 rounded-full px-4 text-xs font-medium transition ${scope === value ? "bg-brand text-white" : "text-muted hover:text-fg"}`}
+                key={value}
+                onClick={() => setScope(value)}
+                role="radio"
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {scope === "all" ? (
+            <p className="mt-2 text-[11px] text-muted">
+              Todos os seus fluxos usam o gateway escolhido acima{overrides ? " (salve para remover as escolhas por fluxo)" : ""}.
+            </p>
+          ) : data.flows.length === 0 ? (
+            <p className="mt-2 text-[11px] text-muted">Você ainda não tem fluxos.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-[color:var(--color-line-soft)] rounded-xl border border-line-soft">
+              {data.flows.map((flow) => (
+                <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2" key={flow.id}>
+                  <span className="min-w-0 truncate text-sm text-fg">{flow.name}</span>
+                  <select
+                    aria-label={`Gateway do fluxo ${flow.name}`}
+                    className="field !min-h-9 !w-auto text-xs"
+                    disabled={perFlow.isPending}
+                    onChange={(event) => perFlow.mutate({ id: flow.id, gateway: (event.target.value || null) as GatewayId | null })}
+                    value={flow.gateway ?? ""}
+                  >
+                    <option value="">Padrão ({nameOf(data.current)})</option>
+                    {data.gateways.map((gateway) => (
+                      <option disabled={!gateway.available} key={gateway.id} value={gateway.id}>{gateway.name}</option>
+                    ))}
+                  </select>
+                </li>
+              ))}
+            </ul>
+          )}
+          {perFlow.error && <p className="mt-2 text-xs text-danger">{errorText(perFlow.error)}</p>}
+        </div>
+
         {save.error && <p className="mt-3 text-xs text-danger">{errorText(save.error)}</p>}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
@@ -151,42 +248,7 @@ export function GatewaysPanel() {
         </div>
       </div>
 
-      {data.admin && (
-        <div className="glass-panel p-4 sm:p-5">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="text-accent" size={18} />
-            <h2 className="text-base font-semibold text-fg">Integração SnakePay (administrador)</h2>
-          </div>
-          <ul className="mt-3 space-y-1.5 text-xs">
-            {[
-              ["Chave da API (SNAKEPAY_API_KEY no Render)", data.admin.snakepay_key_set],
-              ["Segredo do webhook (SNAKEPAY_WEBHOOK_SECRET no Render)", data.admin.snakepay_secret_set],
-            ].map(([label, ok]) => (
-              <li className="flex items-center gap-2" key={String(label)}>
-                {ok ? <Check className="text-success" size={14} /> : <CircleAlert className="text-warning" size={14} />}
-                <span className={ok ? "text-fg-2" : "text-warning"}>{label}: {ok ? "configurado" : "falta configurar"}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-3">
-            <CopyField hint="Cole em SnakePay → Desenvolvedor → URL do webhook da sua plataforma." label="URL do webhook" value={data.admin.snakepay_webhook_url} />
-          </div>
-          {release.error && <p className="mt-3 text-xs text-danger">{errorText(release.error)}</p>}
-          <label className="mt-4 flex cursor-pointer items-center justify-between gap-4 border-t border-line-soft pt-4">
-            <span>
-              <span className="block text-sm font-medium text-fg-2">Liberar SnakePay para os usuários</span>
-              <span className="block text-xs text-muted">Com a opção ligada, cada operação pode escolher a SnakePay nesta aba.</span>
-            </span>
-            <input
-              checked={data.admin.snakepay_enabled}
-              className="size-5 accent-[var(--brand-c)]"
-              disabled={release.isPending}
-              onChange={(event) => release.mutate(event.target.checked)}
-              type="checkbox"
-            />
-          </label>
-        </div>
-      )}
+      {data.admin?.snakepay_enabled && adminCard}
     </section>
   );
 }

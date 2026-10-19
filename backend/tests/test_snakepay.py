@@ -215,3 +215,33 @@ async def test_only_super_admin_releases_snakepay_and_only_when_configured(clien
     owner_headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
     forbidden = await client.put("/api/payment-gateways/snakepay/enabled", headers=owner_headers, json={"enabled": True})
     assert forbidden.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_gateway_per_funnel_or_for_all(client, db_session, owner, super_admin, snake, apis) -> None:
+    await _enable(client)
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    # default stays SmokePay; only this funnel uses SnakePay
+    saved = await client.put("/api/payment-gateways", headers=headers, json={"gateway": "smokepay", "snakepay_recipient_id": SELLER})
+    assert saved.status_code == 200
+    bot, flow = await _setup(client, headers)
+    one = await client.put(f"/api/payment-gateways/flows/{flow['id']}", headers=headers, json={"gateway": "snakepay"})
+    assert one.status_code == 200 and one.json()["flows"][0]["gateway"] == "snakepay"
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    assert apis.methods("snake.create") and not apis.methods("pix.create")
+
+    # "all funnels": the default wins again
+    everyone = await client.put(
+        "/api/payment-gateways", headers=headers, json={"gateway": "smokepay", "snakepay_recipient_id": SELLER, "apply_to_all": True}
+    )
+    assert everyone.json()["flows"][0]["gateway"] is None
+    await db_session.commit()
+    for order in await db_session.scalars(select(TgOrder)):
+        order.status = "expired"
+    await db_session.commit()
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    assert apis.methods("pix.create")
+
+    other_flow = await client.put("/api/payment-gateways/flows/00000000-0000-0000-0000-000000000000", headers=headers, json={"gateway": None})
+    assert other_flow.status_code == 404

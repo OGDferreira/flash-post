@@ -52,6 +52,8 @@ class TgFlow(Base):
         Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="SET NULL")
     )
     customized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # PIX gateway for this funnel's sales; None follows the operation's default.
+    payment_gateway: Mapped[str | None] = mapped_column(String(16))
     # Loop that goes out together with the shared funnel (optional).
     shared_loop_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("instagram_loops.id", ondelete="SET NULL")

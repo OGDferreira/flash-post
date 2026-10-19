@@ -971,7 +971,8 @@ async def _charge_with_snakepay(db: AsyncSession, bot: TgBot, order: TgOrder, ro
     workspace = await db.get(Workspace, bot.workspace_id)
     if workspace is None:
         return False
-    plan = await gateways.snakepay_plan(db, workspace, route, amount)
+    flow = await db.get(TgFlow, bot.flow_id) if bot.flow_id else None
+    plan = await gateways.snakepay_plan(db, workspace, route, amount, flow)
     if plan is None:
         return False
     try:

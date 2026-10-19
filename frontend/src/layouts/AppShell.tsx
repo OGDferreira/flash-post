@@ -6,6 +6,7 @@ import { PushPrompt } from "@/components/PushPrompt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  ArrowLeft,
   Bell,
   ChevronDown,
   Plus,
@@ -95,6 +96,8 @@ export function AppShell() {
     });
   };
   const isAdminRoute = location.pathname.startsWith("/admin");
+  // FlashBot opens like its own app: no FlashPost menus, only a way back to the panel.
+  const botsApp = location.pathname.startsWith("/feature/bots");
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const workspaceRole =
     isSuperAdmin ? user.workspace_role : user?.role;
@@ -538,15 +541,28 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-transparent text-fg">
-      <aside className="glass-bar group fixed inset-y-0 left-0 z-30 hidden w-[68px] !border-y-0 !border-l-0 transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] data-[open=true]:w-[252px] lg:block"
+      {!botsApp && <aside className="glass-bar group fixed inset-y-0 left-0 z-30 hidden w-[68px] !border-y-0 !border-l-0 transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] data-[open=true]:w-[252px] lg:block"
         data-open={sidebarOpen}
         onMouseEnter={() => openSoon(true)}
         onMouseLeave={() => openSoon(false)}
       >
         {sidebar}
-      </aside>
-      <div className={`transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${pinned ? "lg:pl-[252px]" : "lg:pl-[68px]"}`}>
+      </aside>}
+      <div className={`transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${botsApp ? "" : pinned ? "lg:pl-[252px]" : "lg:pl-[68px]"}`}>
         <header className="app-shell-header glass-bar sticky top-0 z-20 flex items-center justify-between !border-x-0 !border-t-0 px-4 sm:px-6">
+          {botsApp ? (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <Link
+                aria-label="Voltar ao FlashPost"
+                className="flex min-h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line-soft px-3 text-sm font-medium text-fg-2 transition hover:border-accent hover:text-fg"
+                to="/dashboard"
+              >
+                <ArrowLeft size={16} />
+                <span className="sm:hidden">Voltar</span>
+                <span className="max-sm:hidden">Voltar ao FlashPost</span>
+              </Link>
+            </div>
+          ) : (
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Link aria-label="FlashPost" className="shrink-0 lg:hidden" to="/dashboard">
               <BrandLogo className="size-8" />
@@ -555,6 +571,7 @@ export function AppShell() {
               {isAdminRoute ? "FlashPost · Administração" : "FlashPost"}
             </span>
           </div>
+          )}
           <div className="app-header-actions flex shrink-0 items-center gap-1 pl-2">
             <RevenueBadge enabled={hasWorkspaceOwnerAccess && !isAdminRoute} />
             <div className="relative max-sm:static">
@@ -645,7 +662,7 @@ export function AppShell() {
       <RefreshFab />
       <nav
         aria-label="Navegação principal"
-        className="app-mobile-nav glass-bar fixed z-30 flex gap-0.5 lg:hidden"
+        className={`app-mobile-nav glass-bar fixed z-30 gap-0.5 lg:hidden ${botsApp ? "hidden" : "flex"}`}
       >
         {mobileLinks.map(({ label, to, icon: Icon }) => (
           <NavLink

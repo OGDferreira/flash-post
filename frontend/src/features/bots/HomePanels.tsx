@@ -143,6 +143,21 @@ export function NextAward() {
     element.addEventListener("wheel", onWheel, { passive: false });
     return () => element.removeEventListener("wheel", onWheel);
   }, [Boolean(goal)]);
+  // Drag / swipe sideways (finger or mouse) to the next or previous card.
+  const drag = useRef<{ x: number; y: number; id: number } | null>(null);
+  const swipedAt = useRef(0); // a swipe that ends over a side card must not also "click" it
+  const onPointerDown = (event: React.PointerEvent) => {
+    drag.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
+  };
+  const onPointerUp = (event: React.PointerEvent) => {
+    const start = drag.current;
+    drag.current = null;
+    if (!start || start.id !== event.pointerId) return;
+    const dx = event.clientX - start.x;
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(event.clientY - start.y)) return;
+    swipedAt.current = Date.now();
+    go(shown + (dx < 0 ? 1 : -1));
+  };
   return (
     <section className="dashboard-card flex flex-col rounded-2xl p-4">
       <PanelHeader icon={<Trophy size={16} />} subtitle="Conquiste novas placas" title="Premiações">
@@ -158,7 +173,7 @@ export function NextAward() {
           <p className="rounded-xl bg-surface-inset px-3 py-6 text-center text-xs text-muted">As premiações aparecem quando sua operação começar a faturar.</p>
         )
       ) : (
-        <div className="relative flex flex-1 items-center justify-center py-1" ref={stage}>
+        <div className="relative flex flex-1 touch-pan-y select-none items-center justify-center py-1" onPointerCancel={() => (drag.current = null)} onPointerDown={onPointerDown} onPointerUp={onPointerUp} ref={stage}>
           {[shown - 1, shown + 1].map((side) => {
             const neighbour = list[side];
             if (!neighbour) return null;
@@ -167,11 +182,11 @@ export function NextAward() {
                 aria-label={`Ver premiação de ${brl(neighbour.amount)}`}
                 className={`absolute top-1/2 z-20 hidden h-[78%] w-[34%] -translate-y-1/2 overflow-hidden rounded-xl opacity-30 transition hover:opacity-60 sm:block ${side < shown ? "left-0 -rotate-3" : "right-0 rotate-3"}`}
                 key={side}
-                onClick={() => go(side)}
+                onClick={() => Date.now() - swipedAt.current > 400 && go(side)}
                 type="button"
               >
                 {neighbour.image_url ? (
-                  <img alt="" className={`h-full w-full object-cover ${neighbour.reached ? "" : "grayscale"}`} src={neighbour.image_url} />
+                  <img alt="" draggable={false} className={`h-full w-full object-cover ${neighbour.reached ? "" : "grayscale"}`} src={neighbour.image_url} />
                 ) : (
                   <span className="grid h-full place-items-center bg-well"><Trophy className="text-warning" size={32} /></span>
                 )}
@@ -182,6 +197,7 @@ export function NextAward() {
             <div className="relative aspect-[4/5] overflow-hidden bg-well">
               {goal.image_url ? (
                 <img
+                  draggable={false}
                   alt={`Premiação de ${brl(goal.amount)} faturados`}
                   className={`h-full w-full object-cover transition duration-500 ${goal.reached ? "" : "brightness-[.4] grayscale group-hover:scale-105 group-hover:brightness-[.6]"}`}
                   src={goal.image_url}
