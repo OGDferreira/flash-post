@@ -37,6 +37,8 @@ class FinancialWithdrawal(Base):
     pix_key: Mapped[str | None] = mapped_column(String(140))
     # Automatic payout through SmokePay: its withdrawal id and fee.
     gateway_withdrawal_id: Mapped[str | None] = mapped_column(String(64))
+    # Pix end-to-end id from SmokePay: the bank receipt that traces where the money went.
+    gateway_e2e_id: Mapped[str | None] = mapped_column(String(64))
     fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     processed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

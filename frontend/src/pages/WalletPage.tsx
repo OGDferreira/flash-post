@@ -186,6 +186,7 @@ export function WithdrawalHistory({ items }: { items: Withdrawal[] }) {
               <span className="block truncate text-[11px] text-muted">
                 {when(item.created_at)}
                 {item.pix_key && ` · Pix ${item.pix_key}`}
+                {item.e2e_id && ` · Comprovante (E2E) ${item.e2e_id}`}
                 {item.note && ` · ${item.note}`}
               </span>
             </span>

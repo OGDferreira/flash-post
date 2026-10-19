@@ -266,6 +266,7 @@ def _withdrawal_out(item: FinancialWithdrawal, owner: str | None = None) -> dict
         "id": str(item.id), "amount": float(item.amount), "status": item.status, "note": item.note,
         "pix_key_type": item.pix_key_type, "pix_key": item.pix_key, "owner": owner,
         "fee": float(item.fee) if item.fee is not None else None,
+        "e2e_id": item.gateway_e2e_id,
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "processed_at": item.processed_at.isoformat() if item.processed_at else None,
     }
@@ -297,12 +298,19 @@ async def _gateway_balance(shop: str | None) -> Decimal | None:
 
 
 async def _reconcile(db, workspace_id: uuid.UUID, shop: str | None) -> None:
-    """Settle PROCESSING withdrawals with SmokePay's final status."""
+    """Settle PROCESSING withdrawals with SmokePay's final status, and keep the Pix receipt
+    (E2E id) of every recent payout."""
     waiting = list(
         await db.scalars(
             select(FinancialWithdrawal).where(
-                FinancialWithdrawal.workspace_id == workspace_id, FinancialWithdrawal.status == "PROCESSING",
+                FinancialWithdrawal.workspace_id == workspace_id,
                 FinancialWithdrawal.gateway_withdrawal_id.is_not(None),
+                (FinancialWithdrawal.status == "PROCESSING")
+                | (
+                    FinancialWithdrawal.gateway_e2e_id.is_(None)
+                    & (FinancialWithdrawal.status == "PAID")
+                    & (FinancialWithdrawal.created_at > utc_now() - timedelta(days=30))
+                ),
             )
         )
     )
@@ -318,6 +326,10 @@ async def _reconcile(db, workspace_id: uuid.UUID, shop: str | None) -> None:
             continue
         if payout.fee is not None:
             item.fee = payout.fee
+        if payout.e2e_id:
+            item.gateway_e2e_id = payout.e2e_id[:64]
+        if item.status != "PROCESSING":
+            continue
         if payout.status == "completed":
             item.status, item.processed_at = "PAID", utc_now()
         elif payout.status == "failed":
@@ -516,6 +528,28 @@ async def partner_wallets(_admin: SuperAdminUser, db: DbSession) -> dict:
         })
     items.sort(key=lambda item: item["available"], reverse=True)
     return {"items": items, "min_withdrawal": float(MIN_WITHDRAWAL)}
+
+
+@admin_router.get("/{user_id}/gateway-withdrawals")
+async def partner_gateway_withdrawals(user_id: uuid.UUID, _admin: SuperAdminUser, db: DbSession) -> dict:
+    """What SmokePay itself recorded for this partner's subaccount: status, destination key,
+    Pix receipt (E2E) and failure reason of each payout. For support when a Pix "did not arrive"."""
+    _partner, workspace = await _partner_workspace(db, user_id)
+    try:
+        payouts = await smokepay.withdrawals(shop_ref(workspace.id))
+    except smokepay.SmokepayError as exc:
+        status, message = _gateway_message(exc)
+        raise HTTPException(status_code=status, detail=message) from None
+    return {
+        "items": [
+            {
+                "id": p.withdrawal_id, "amount": float(p.amount), "fee": float(p.fee) if p.fee is not None else None,
+                "status": p.status, "pix_key_type": p.pix_key_type, "pix_key": p.pix_key, "e2e_id": p.e2e_id,
+                "failure_reason": p.failure_reason, "processed_at": p.processed_at,
+            }
+            for p in payouts
+        ]
+    }
 
 
 @admin_router.post("/{user_id}/withdrawals", status_code=201, dependencies=[Depends(require_csrf)])

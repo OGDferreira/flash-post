@@ -176,6 +176,10 @@ class Payout:
     fee: Decimal | None
     status: str  # completed | processing | pending | failed
     failure_reason: str | None = None
+    e2e_id: str | None = None  # Pix end-to-end id (bank receipt)
+    pix_key: str | None = None
+    pix_key_type: str | None = None
+    processed_at: str | None = None
 
 
 def _payout(data: dict) -> Payout:
@@ -185,6 +189,10 @@ def _payout(data: dict) -> Payout:
         fee=_money(data.get("fee")),
         status=str(data.get("status") or "processing"),
         failure_reason=data.get("failure_reason"),
+        e2e_id=data.get("gateway_e2eid") or data.get("e2e_id") or None,
+        pix_key=data.get("pix_key"),
+        pix_key_type=data.get("pix_key_type"),
+        processed_at=data.get("processed_at"),
     )
 
 
