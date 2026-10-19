@@ -890,38 +890,41 @@ async def create_order(
         order.shop_ref = route.shop_ref
         order.split_chief_user_id = route.chief_user_id
         order.split_percent = route.percent
-        try:
-            charge = await smokepay.create_pix(
-                amount=amount,
-                external_id=f"{ORDER_PREFIX}{order.id}",
-                description=f"{bot.name} · {name}",
-                webhook_url=payment_webhook_url(),
-                expiration_seconds=flow.payment.expiration_minutes * 60,
-                shop_id=route.shop_ref,
-                splits=route.splits,
-            )
-        except smokepay.SmokepayError as exc:
-            order.status = "failed"
-            bot.last_error = f"Gateway: {exc}"[:500]
-            await db.commit()
-            await tg.send_message(lead.chat_id, "Não consegui gerar o Pix agora. Tente de novo em alguns instantes.")
-            await notify_owners(db, bot, "⚠️ Falha ao gerar Pix", f"@{bot.username}: {str(exc)[:120]}", "bot-gateway")
-            return None
-        order.gateway_transaction_id = charge.transaction_id or None
-        order.gateway_fee = charge.fee
-        order.net_amount = charge.net_amount
-        if route.percent is not None:
-            commission, partner = route.preview(charge.net_amount)
-            order.split_amount = charge.split_total if charge.split_total is not None else commission
-            order.partner_net = charge.owner_net if charge.owner_net is not None else partner
-        elif route.splits:  # platform fee only (partner's own funnel)
-            fee = charge.split_total if charge.split_total is not None else route.platform_fee(charge.net_amount)
-            order.platform_fee = fee
-            if charge.owner_net is not None:
-                order.partner_net = charge.owner_net
-            elif fee is not None and charge.net_amount is not None:
-                order.partner_net = charge.net_amount - fee
-        order.pix_copy_paste = charge.copy_paste
+        qr: str | None = None
+        if not await _charge_with_snakepay(db, bot, order, route, amount):
+            try:
+                charge = await smokepay.create_pix(
+                    amount=amount,
+                    external_id=f"{ORDER_PREFIX}{order.id}",
+                    description=f"{bot.name} · {name}",
+                    webhook_url=payment_webhook_url(),
+                    expiration_seconds=flow.payment.expiration_minutes * 60,
+                    shop_id=route.shop_ref,
+                    splits=route.splits,
+                )
+            except smokepay.SmokepayError as exc:
+                order.status = "failed"
+                bot.last_error = f"Gateway: {exc}"[:500]
+                await db.commit()
+                await tg.send_message(lead.chat_id, "Não consegui gerar o Pix agora. Tente de novo em alguns instantes.")
+                await notify_owners(db, bot, "⚠️ Falha ao gerar Pix", f"@{bot.username}: {str(exc)[:120]}", "bot-gateway")
+                return None
+            order.gateway_transaction_id = charge.transaction_id or None
+            order.gateway_fee = charge.fee
+            order.net_amount = charge.net_amount
+            if route.percent is not None:
+                commission, partner = route.preview(charge.net_amount)
+                order.split_amount = charge.split_total if charge.split_total is not None else commission
+                order.partner_net = charge.owner_net if charge.owner_net is not None else partner
+            elif route.splits:  # platform fee only (partner's own funnel)
+                fee = charge.split_total if charge.split_total is not None else route.platform_fee(charge.net_amount)
+                order.platform_fee = fee
+                if charge.owner_net is not None:
+                    order.partner_net = charge.owner_net
+                elif fee is not None and charge.net_amount is not None:
+                    order.partner_net = charge.net_amount - fee
+            order.pix_copy_paste = charge.copy_paste
+            qr = charge.qr_code_base64
         await schedule(db, bot, "expire_order", order.expires_at, f"expire:{order.id}", lead, {"order_id": str(order.id)})
         if first_pix:
             # Generated a PIX: the "Pix não gerado" sequence stops, the "Pix gerado" one starts.
@@ -929,7 +932,6 @@ async def create_order(
             if kind in ("plan", "downsell") and flow.downsells:
                 await schedule_downsells(db, bot, lead, flow, "pix")
         await db.commit()
-        qr = charge.qr_code_base64
     else:
         qr = None
     lead.stage = "pix"
@@ -960,6 +962,31 @@ async def create_order(
     return order
 
 
+async def _charge_with_snakepay(db: AsyncSession, bot: TgBot, order: TgOrder, route, amount: Decimal) -> bool:
+    """Charge with SnakePay when the operation chose it and every share can be paid
+    (see app/bots/gateways.py). False = use SmokePay, also when SnakePay refuses."""
+    from app.bots import gateways, snakepay
+    from app.models import Workspace
+
+    workspace = await db.get(Workspace, bot.workspace_id)
+    if workspace is None:
+        return False
+    plan = await gateways.snakepay_plan(db, workspace, route, amount)
+    if plan is None:
+        return False
+    try:
+        charge = await snakepay.create_charge(
+            amount=amount, external_reference=f"{ORDER_PREFIX}{order.id}", split=plan.split or None
+        )
+    except snakepay.SnakepayError as exc:
+        # The sale must not be lost: SmokePay charges this order instead.
+        logger.warning("SnakePay charge failed (%s); falling back to SmokePay.", exc)
+        bot.last_error = f"SnakePay: {exc}"[:500]
+        return False
+    gateways.apply_snake_charge(order, route, plan, charge)
+    return True
+
+
 def pix_qr_png(code: str, fallback_b64: str | None = None) -> bytes | None:
     """Large, sharp QR (crisp square modules, ~1000px) from the copy-paste code;
     falls back to the gateway image when the code is missing."""
@@ -983,7 +1010,22 @@ def pix_qr_png(code: str, fallback_b64: str | None = None) -> bytes | None:
 
 
 async def check_order(db: AsyncSession, order: TgOrder) -> None:
-    """Ask SmokePay directly (the "Já paguei" button and the reconciliation job)."""
+    """Ask the gateway directly (the "Já paguei" button and the reconciliation job)."""
+    if order.gateway == "snakepay":
+        from app.bots import snakepay
+
+        if not order.gateway_transaction_id:
+            return
+        try:
+            snake = await snakepay.get_charge(order.gateway_transaction_id)
+        except snakepay.SnakepayError:
+            return
+        if snake.status == "paid":
+            net = snake.net_amount
+            fee = (snake.amount - net).quantize(Decimal("0.01")) if snake.amount is not None and net is not None else None
+            await approve_order(db, order.id, snake.amount or order.amount, None, fee, net)
+            await db.refresh(order)
+        return
     try:
         charge = await smokepay.get_pix(f"{ORDER_PREFIX}{order.id}")
     except smokepay.SmokepayError:
