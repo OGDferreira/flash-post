@@ -16,6 +16,7 @@ from app.bots import http
 
 API_BASE = "https://api.telegram.org"
 MAX_ATTEMPTS = 3
+_background: set[asyncio.Task] = set()  # keeps fire-and-forget calls alive until they finish
 
 
 @dataclass
@@ -150,10 +151,16 @@ class TelegramClient:
                 raise
 
     async def send_chat_action(self, chat_id: int, action: str) -> None:
-        try:
-            await self.call("sendChatAction", {"chat_id": chat_id, "action": action})
-        except TelegramError:
-            pass
+        """Fire and forget: "digitando…" must not delay the message that follows it."""
+        async def run() -> None:
+            try:
+                await self.call("sendChatAction", {"chat_id": chat_id, "action": action})
+            except TelegramError:
+                pass
+
+        task = asyncio.create_task(run())
+        _background.add(task)
+        task.add_done_callback(_background.discard)
 
     async def answer_callback(self, callback_id: str, text: str | None = None, alert: bool = False) -> None:
         try:

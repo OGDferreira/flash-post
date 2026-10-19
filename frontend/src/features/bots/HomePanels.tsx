@@ -214,12 +214,14 @@ export function NextAward() {
             return (
               <button
                 aria-label={`Ver premiação de ${brl(neighbour.amount)}`}
-                className={`absolute top-1/2 z-20 hidden h-[78%] w-[34%] -translate-y-1/2 overflow-hidden rounded-xl transition-[opacity,transform] duration-500 ease-out hover:opacity-60 sm:block ${side < shown ? "left-0 -rotate-3" : "right-0 rotate-3"}`}
+                className={`absolute top-1/2 z-0 hidden h-[78%] w-[34%] overflow-hidden rounded-xl transition-[opacity,translate] duration-500 ease-out hover:opacity-60 sm:block ${side < shown ? "left-0 -rotate-3" : "right-0 rotate-3"}`}
                 key={`${side}-${shown}`}
                 style={{
                   // the card being revealed by the drag comes forward
                   opacity: Math.min(0.75, 0.3 + Math.max(0, side < shown ? offset : -offset) / 300),
-                  translate: `${offset * 0.25}px 0`,
+                  // vertical centring lives here too: an inline `translate` replaces Tailwind's
+                  translate: `${offset * 0.25}px -50%`,
+                  transitionDuration: dragging ? "0ms" : undefined,
                 }}
                 onClick={() => Date.now() - swipedAt.current > 400 && go(side)}
                 type="button"

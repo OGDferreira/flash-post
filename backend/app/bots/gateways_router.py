@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, SuperAdminUser, require_csrf
-from app.bots import gateways, snakepay
+from app.bots import engine, gateways, snakepay
 from app.core.config import get_settings
 from app.models import SystemSetting, TgFlow, TgOrder
 
@@ -127,6 +127,7 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
     if payload.apply_to_all:
         await db.execute(update(TgFlow).where(TgFlow.workspace_id == workspace.id).values(payment_gateway=None))
     await db.commit()
+    engine.resume_snakepay()  # a new ShopID/choice gets a fresh try right away
     return await _state(db, user, workspace)
 
 
@@ -146,6 +147,7 @@ async def flow_gateway(
             raise HTTPException(status_code=422, detail="Cadastre o seu ShopID da SnakePay antes de usar a SnakePay num fluxo.")
     flow.payment_gateway = payload.gateway
     await db.commit()
+    engine.resume_snakepay()  # a new ShopID/choice gets a fresh try right away
     return await _state(db, user, workspace)
 
 
@@ -163,5 +165,6 @@ async def switch_snakepay(payload: SnakepaySwitch, user: SuperAdminUser, db: DbS
         row.value = {"enabled": payload.enabled}
         row.updated_by_user_id = user.id
     await db.commit()
+    engine.resume_snakepay()  # a new ShopID/choice gets a fresh try right away
     return {"enabled": payload.enabled}
 
