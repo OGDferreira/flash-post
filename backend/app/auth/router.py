@@ -21,6 +21,7 @@ from app.auth.dependencies import (
 from app.core.config import get_settings
 from app.core.nickname import nickname_key, normalize_nickname
 from app.core.rate_limit import LoginRateLimiter
+from app.notifications.signups import notify_new_signup
 from app.core.security import PlatformRole, WorkspaceRole, hash_password, verify_password
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.partners.service import partner_link
@@ -222,7 +223,9 @@ async def register(
 
     await db.refresh(user)
     csrf_token = csrf_token_for(request)
-    return AuthResponse(user=_user_response(user, membership), csrf_token=csrf_token)
+    response = AuthResponse(user=_user_response(user, membership), csrf_token=csrf_token)
+    await notify_new_signup(db, user, "conta nova")
+    return response
 
 
 @router.post("/auth/login", response_model=AuthResponse, dependencies=[Depends(require_csrf)])

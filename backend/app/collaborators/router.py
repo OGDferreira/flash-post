@@ -13,6 +13,7 @@ from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, Wor
 from app.core.nickname import nickname_key
 from app.core.security import WorkspaceRole, hash_password
 from app.auth.router import member_avatar_url
+from app.notifications.signups import notify_new_signup
 from app.models import (
     CollaboratorPayment,
     CollaboratorWorkDay,
@@ -491,6 +492,7 @@ async def create_collaborator(
             status_code=409,
             detail="O e-mail ou apelido informado já está em uso.",
         ) from None
+    await notify_new_signup(db, user, f"colaborador de {access.workspace.name}")
     return await list_collaborators(access, db)
 
 

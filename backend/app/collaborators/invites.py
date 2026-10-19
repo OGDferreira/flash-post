@@ -1,5 +1,5 @@
 """Invite links: the owner generates one, the collaborator self-registers,
-and the owner approves the access (INVITED -> ACTIVE) before anything opens."""
+and the Super Admin approves the access (INVITED -> ACTIVE) before anything opens."""
 
 import hashlib
 import secrets
@@ -15,7 +15,8 @@ from sqlalchemy.exc import IntegrityError
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
 from app.auth.router import _nickname_in_use, _request_host
 from app.core.nickname import nickname_key
-from app.core.security import WorkspaceRole, hash_password
+from app.core.security import PlatformRole, WorkspaceRole, hash_password
+from app.notifications.signups import notify_new_signup
 from app.models import CollaboratorInvite, User, Workspace, WorkspaceMember
 from app.schemas.auth import MessageResponse, RegisterRequest
 
@@ -228,7 +229,7 @@ async def register_with_invite(
         password_hash=hash_password(payload.password),
         is_active=True,
         is_verified=True,
-        # Two releases: the owner (membership INVITED -> ACTIVE) and the Super Admin.
+        # Only the Super Admin releases it (is_approved and membership INVITED -> ACTIVE).
         is_approved=False,
     )
     db.add(user)
@@ -251,7 +252,9 @@ async def register_with_invite(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="E-mail ou apelido já em uso.") from None
-    return MessageResponse(message="Cadastro enviado. Aguarde a aprovação do chefe e do administrador.")
+    workspace = await db.get(Workspace, invite.workspace_id)
+    await notify_new_signup(db, user, f"colaborador de {workspace.name}" if workspace else "colaborador")
+    return MessageResponse(message="Cadastro enviado. Aguarde a aprovação do administrador.")
 
 
 @router.post(
@@ -260,8 +263,14 @@ async def register_with_invite(
     dependencies=[Depends(require_csrf)],
 )
 async def approve_pending(member_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> None:
+    approver = await db.get(User, access.membership.user_id)
+    if approver is None or approver.platform_role != PlatformRole.SUPER_ADMIN.value:
+        raise HTTPException(status_code=403, detail="Só o Super Admin libera novos cadastros.")
     member = await _pending_member(db, access, member_id)
     member.status = "ACTIVE"
+    collaborator = await db.get(User, member.user_id)
+    if collaborator is not None:
+        collaborator.is_approved = True
     await db.commit()
 
 

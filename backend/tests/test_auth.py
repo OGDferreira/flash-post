@@ -836,25 +836,15 @@ async def test_super_admin_blocks_unblocks_and_changes_role(
     )
     assert unblocked.json()["status"] == "ACTIVE"
 
+    # The Super Admin is single (configured on the server): nobody is promoted here.
     promoted = await client.patch(
         f"/api/admin/users/{owner_user.id}/role",
         headers={"X-CSRF-Token": await csrf(client)},
         json={"platform_role": "SUPER_ADMIN"},
     )
-    assert promoted.status_code == 200, promoted.text
-    assert promoted.json()["role"] == "SUPER_ADMIN"
-    block_admin = await client.patch(
-        f"/api/admin/users/{owner_user.id}/access",
-        headers={"X-CSRF-Token": await csrf(client)},
-        json={"blocked": True},
-    )
-    assert block_admin.status_code == 409
-    demoted = await client.patch(
-        f"/api/admin/users/{owner_user.id}/role",
-        headers={"X-CSRF-Token": await csrf(client)},
-        json={"platform_role": "USER"},
-    )
-    assert demoted.json()["role"] == "OWNER"
+    assert promoted.status_code == 409
+    await db_session.refresh(owner_user)
+    assert owner_user.platform_role == "USER"
     self_demote = await client.patch(
         f"/api/admin/users/{super_admin.id}/role",
         headers={"X-CSRF-Token": await csrf(client)},

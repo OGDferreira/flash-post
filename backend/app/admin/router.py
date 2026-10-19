@@ -221,6 +221,13 @@ async def approve_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
     user.is_approved = True
+    # The Super Admin is the only release: a collaborator waiting on the
+    # chief's team joins it in the same click.
+    await db.execute(
+        update(WorkspaceMember)
+        .where(WorkspaceMember.user_id == user.id, WorkspaceMember.status == "INVITED")
+        .values(status="ACTIVE")
+    )
     await db.commit()
     return await _admin_user(db, user)
 
@@ -261,10 +268,11 @@ async def update_user_role(
     db: DbSession,
 ) -> AdminUser:
     user = await _target_user(db, admin, user_id, "alterar a função do")
-    if payload.platform_role == "SUPER_ADMIN" and not (user.is_approved and user.is_active):
+    if payload.platform_role == "SUPER_ADMIN":
+        # There is a single Super Admin, configured on the server.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Aprove e desbloqueie o usuário antes de torná-lo Super Admin.",
+            detail="O Super Admin é único e não pode ser atribuído por aqui.",
         )
     user.platform_role = payload.platform_role
     await db.commit()

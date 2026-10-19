@@ -34,10 +34,11 @@ def _signup(nickname: str, email: str) -> dict:
 
 
 @pytest.mark.anyio
-async def test_invite_signup_requires_owner_approval_and_keeps_owner_settings(
+async def test_invite_signup_requires_super_admin_approval_and_keeps_owner_settings(
     client: AsyncClient,
     db_session: AsyncSession,
     owner,
+    super_admin,
 ) -> None:
     _owner_user, workspace = owner
     assert (await _login(client, "owner@example.com", "correct horse battery staple")).status_code == 200
@@ -91,20 +92,14 @@ async def test_invite_signup_requires_owner_approval_and_keeps_owner_settings(
     )
     assert again.status_code == 404
 
-    # Blocked until the Super Admin approves the account...
+    # Blocked until the Super Admin approves the account.
     blocked = await _login(client, "novo.colab@example.com", "safe-collaborator-password")
     assert blocked.status_code == 403
     assert "administrador" in blocked.json()["detail"]
     new_user = await db_session.scalar(select(User).where(User.email == "novo.colab@example.com"))
     assert new_user.is_approved is False
-    new_user.is_approved = True
-    await db_session.commit()
 
-    # ...and until the owner approves the access.
-    blocked = await _login(client, "novo.colab@example.com", "safe-collaborator-password")
-    assert blocked.status_code == 403
-    assert "chefe" in blocked.json()["detail"]
-
+    # The chief sees the request but cannot release it.
     assert (await _login(client, "owner@example.com", "correct horse battery staple")).status_code == 200
     token = await _csrf(client)
     team = (await client.get("/api/collaborators")).json()
@@ -113,11 +108,23 @@ async def test_invite_signup_requires_owner_approval_and_keeps_owner_settings(
     pending = team["pending"][0]
     assert pending["rate_per_connection"] == "7.50"
     assert pending["daily_connection_goal"] == 3
-
-    approved = await client.post(
+    refused = await client.post(
         f"/api/collaborators/{pending['member_id']}/approve", headers={"X-CSRF-Token": token}
     )
-    assert approved.status_code == 204
+    assert refused.status_code == 403
+    await client.post("/api/auth/logout", headers={"X-CSRF-Token": token})
+
+    # One click by the Super Admin releases the account and joins the team.
+    assert (await _login(client, "superadmin@example.com", "super admin password")).status_code == 200
+    admin_token = await _csrf(client)
+    approved = await client.post(
+        f"/api/admin/users/{new_user.id}/approve", headers={"X-CSRF-Token": admin_token}
+    )
+    assert approved.status_code == 200, approved.text
+    await client.post("/api/auth/logout", headers={"X-CSRF-Token": admin_token})
+
+    assert (await _login(client, "owner@example.com", "correct horse battery staple")).status_code == 200
+    token = await _csrf(client)
     team = (await client.get("/api/collaborators")).json()
     assert team["pending"] == []
     assert team["collaborators"][0]["rate_per_connection"] == "7.50"

@@ -63,7 +63,7 @@ export function CollaboratorInvitePage() {
             <CircleCheck className="text-success" size={28} />
             <h1 className="mt-3 text-xl font-semibold text-fg">Cadastro enviado</h1>
             <p className="mt-2 text-sm text-muted">
-              Aguarde a aprovação do chefe e do administrador. Quando os dois liberarem, você já pode entrar com seu e-mail e senha.
+              Aguarde a aprovação do administrador. Quando ele liberar, você já pode entrar com seu e-mail e senha.
             </p>
             <Link className="btn-secondary mt-5" to="/login">Ir para o login</Link>
           </>
