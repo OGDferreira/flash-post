@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, Handshake, Info, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
+import { ProfileLink } from "@/components/ProfileLink";
 import { CopyField } from "@/components/ui/CopyField";
 import { Modal } from "@/components/ui/Modal";
 import {
@@ -323,6 +324,7 @@ function AccountsList({ accounts, filter, onFilter }: {
               <span className="flex items-center gap-2 text-fg">
                 <span className={`size-2 rounded-full ${account.status === "connected" ? "bg-success" : "bg-danger"}`} />
                 @{account.username}
+                <ProfileLink username={account.username} />
               </span>
               <span className="text-muted">
                 {accountStatus[account.status] ?? account.status} · {formatNumber(account.published_posts)} publicações ·{" "}
