@@ -34,6 +34,8 @@ export type Wallet = {
   shop_ref: string | null;
   balance_source: "smokepay" | "estimate";
   month_revenue: number;
+  month_shark_revenue?: number;
+  month_flash_revenue?: number;
   goal: Goal;
   earned: number;
   commissions_received: number;

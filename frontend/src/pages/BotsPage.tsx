@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bot, GitBranch, Megaphone, Receipt, Share2 } from "lucide-react";
+import { Bot, CalendarDays, GitBranch, Megaphone, Receipt, Share2 } from "lucide-react";
 
 import { FlashBotLogo } from "@/components/FlashBotLogo";
-import { todayInput, type MetricsPeriod } from "@/features/analytics/period";
+import { PeriodFilter, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { ConversionOverview } from "@/features/bots/ConversionOverview";
 
 import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
@@ -99,7 +99,16 @@ export function BotsPage() {
             </p>
           </header>
           <TabBar onChoose={choose} tab={tab} />
-          <ConversionOverview onPeriod={setPeriod} period={period} />
+          {/* Each tab is its own screen: the dashboard belongs to "Meus bots" only. */}
+          {tab === "bots" && <ConversionOverview onPeriod={setPeriod} period={period} />}
+          {tab === "flows" && (
+            <div className="dashboard-card flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3">
+              <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
+                <CalendarDays size={14} /> Período
+              </span>
+              <PeriodFilter onChange={setPeriod} value={period} />
+            </div>
+          )}
         </>
       )}
       {tab === "bots" && <BotsListPanel period={period} />}

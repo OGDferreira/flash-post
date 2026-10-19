@@ -1,4 +1,4 @@
-const CACHE_NAME = "flashpost-shell-v30";
+const CACHE_NAME = "flashpost-shell-v31";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -81,8 +81,10 @@ self.addEventListener("push", (event) => {
   }
   const title = typeof data.title === "string" && data.title ? data.title : "FlashPost";
   const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/dashboard";
-  // FlashBot (sales robot) notices carry the FlashBot logo; everything else is FlashPost.
-  const icon = data.brand === "flashbot" ? "/flashbot-logo.png" : "/flashpost-icon-192.png";
+  // Sales and commissions carry the dark FlashBot logo, other FlashBot notices the regular one;
+  // everything else is FlashPost.
+  const icon =
+    data.brand === "flashbot-dark" ? "/flashbot-logo-dark.png" : data.brand === "flashbot" ? "/flashbot-logo.png" : "/flashpost-icon-192.png";
   // Tell any open FlashPost window right away, so its numbers refresh without waiting.
   const tellWindows = self.clients
     .matchAll({ type: "window", includeUncontrolled: true })

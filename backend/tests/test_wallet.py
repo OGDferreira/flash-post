@@ -257,3 +257,20 @@ async def test_only_super_admin_sees_and_withdraws_partner_balances(client, db_s
     await _as(client, "socio@example.com")
     wallet = (await client.get("/api/wallet")).json()
     assert wallet["withdrawn"] == 30.0 and wallet["withdrawals"] == []
+
+
+@pytest.mark.anyio
+async def test_wallet_splits_month_revenue_between_sharkbot_and_flashbot(client, db_session, owner, smoke) -> None:
+    from app.core.time import utc_now
+    from app.models import SharkTransaction
+
+    chief, chief_ws = owner
+    await _paid(db_session, chief_ws)  # FlashBot 19.90
+    now = utc_now()
+    db_session.add(SharkTransaction(workspace_id=chief_ws.id, transaction_key="w1", status="paid",
+                                    amount=Decimal("50.00"), created_at_source=now, paid_at=now))
+    await db_session.commit()
+    await _as(client, "owner@example.com", "correct horse battery staple")
+    wallet = (await client.get("/api/wallet")).json()
+    assert wallet["month_shark_revenue"] == 50.0 and wallet["month_flash_revenue"] == 19.9
+    assert wallet["month_revenue"] == 69.9
