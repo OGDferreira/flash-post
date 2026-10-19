@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "react-router-dom";
 import { Bot, CalendarDays, CreditCard, GitBranch, LayoutDashboard, Megaphone, Receipt, Share2 } from "lucide-react";
 
 import { FlashBotLogo } from "@/components/FlashBotLogo";
@@ -70,7 +71,16 @@ function TabBar({ tab, onChoose }: { tab: Tab; onChoose: (tab: Tab) => void }) {
 }
 
 export function BotsPage() {
-  const [tab, setTab] = useState<Tab>("home");
+  // ?tab=gateways (e.g. from the admin menu) opens that tab directly.
+  const [params, setParams] = useSearchParams();
+  const asked = params.get("tab");
+  const [tab, setTab] = useState<Tab>(tabs.some(({ id }) => id === asked) ? (asked as Tab) : "home");
+  useEffect(() => {
+    if (asked && tabs.some(({ id }) => id === asked)) {
+      setTab(asked as Tab);
+      setParams({}, { replace: true });
+    }
+  }, [asked, setParams]);
   // The flow editor has its own header and section navigation; give it the whole screen.
   const [editing, setEditing] = useState(false);
   const [remarketingFlow, setRemarketingFlow] = useState<string | null>(null);

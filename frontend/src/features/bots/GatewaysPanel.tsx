@@ -75,6 +75,33 @@ export function GatewaysPanel() {
             <ShieldCheck className="text-accent" size={18} />
             <h2 className="text-base font-semibold text-fg">Integração SnakePay (administrador)</h2>
           </div>
+          <div
+            className={`mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 ${
+              data.admin.snakepay_enabled ? "border-success/40 bg-success/10" : "border-accent/50 bg-brand/10"
+            }`}
+          >
+            <span className="min-w-0">
+              <span className="flex items-center gap-2 text-sm font-semibold text-fg">
+                SnakePay para os usuários:
+                <span className={`rounded-full px-2 py-0.5 text-[11px] ${data.admin.snakepay_enabled ? "bg-success/20 text-success" : "bg-warning/20 text-warning"}`}>
+                  {data.admin.snakepay_enabled ? "LIGADA" : "DESLIGADA"}
+                </span>
+              </span>
+              <span className="mt-0.5 block text-xs text-muted">
+                {data.admin.snakepay_enabled
+                  ? "Cada operação já pode escolher a SnakePay no cartão acima."
+                  : "Ligue para que a SnakePay possa ser escolhida (por você e pelos usuários)."}
+              </span>
+            </span>
+            <button
+              className={data.admin.snakepay_enabled ? "btn-secondary" : "btn-primary"}
+              disabled={release.isPending || (!data.admin.snakepay_enabled && !(data.admin.snakepay_key_set && data.admin.snakepay_secret_set))}
+              onClick={() => release.mutate(!data.admin?.snakepay_enabled)}
+              type="button"
+            >
+              {release.isPending ? "Salvando…" : data.admin.snakepay_enabled ? "Desligar" : "Liberar SnakePay"}
+            </button>
+          </div>
           <ul className="mt-3 space-y-1.5 text-xs">
             {[
               ["Chave da API (SNAKEPAY_API_KEY no Render)", data.admin.snakepay_key_set],
@@ -90,19 +117,6 @@ export function GatewaysPanel() {
             <CopyField hint="Cole em SnakePay → Desenvolvedor → URL do webhook da sua plataforma." label="URL do webhook" value={data.admin.snakepay_webhook_url} />
           </div>
           {release.error && <p className="mt-3 text-xs text-danger">{errorText(release.error)}</p>}
-          <label className="mt-4 flex cursor-pointer items-center justify-between gap-4 border-t border-line-soft pt-4">
-            <span>
-              <span className="block text-sm font-medium text-fg-2">Liberar SnakePay para os usuários</span>
-              <span className="block text-xs text-muted">Com a opção ligada, cada operação pode escolher a SnakePay nesta aba.</span>
-            </span>
-            <input
-              checked={data.admin.snakepay_enabled}
-              className="size-5 accent-[var(--brand-c)]"
-              disabled={release.isPending}
-              onChange={(event) => release.mutate(event.target.checked)}
-              type="checkbox"
-            />
-          </label>
         </div>
   );
   const nameOf = (id: GatewayId) => data.gateways.find((g) => g.id === id)?.name ?? id;
