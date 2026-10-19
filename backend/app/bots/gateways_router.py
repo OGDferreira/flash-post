@@ -101,11 +101,15 @@ async def _state(db, user, workspace) -> dict:
 async def _shared_flows(db, workspace) -> list[dict]:
     """Funnels shared by a chief that this operation's bots run: they charge with the
     gateway the chief picked for them, not with this operation's choice."""
-    flows = list(await db.scalars(
-        select(TgFlow).join(TgBot, TgBot.flow_id == TgFlow.id).where(TgBot.workspace_id == workspace.id).distinct()
+    # DISTINCT on ids only: Postgres cannot compare the funnels' json definition
+    flow_ids = list(await db.scalars(
+        select(TgBot.flow_id).where(TgBot.workspace_id == workspace.id, TgBot.flow_id.is_not(None)).distinct()
     ))
     shared = []
-    for flow in flows:
+    for flow_id in flow_ids:
+        flow = await db.get(TgFlow, flow_id)
+        if flow is None:
+            continue
         source = flow
         if flow.workspace_id == workspace.id and flow.template_flow_id is not None:
             source = await db.get(TgFlow, flow.template_flow_id) or flow
@@ -125,7 +129,7 @@ async def _partners_without_shop_id(db, workspace) -> list[str]:
         select(TgBot.workspace_id, TgFlow)
         .join(TgFlow, TgFlow.id == TgBot.flow_id)
         .where(TgBot.workspace_id != workspace.id)
-        .where((TgFlow.id.in_(own)) | (TgFlow.template_flow_id.in_(own)))
+        .where((TgFlow.id.in_(list(own))) | (TgFlow.template_flow_id.in_(list(own))))
     )
     names: list[str] = []
     for partner_ws_id, flow in rows.all():
