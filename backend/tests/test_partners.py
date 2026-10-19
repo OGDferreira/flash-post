@@ -428,10 +428,23 @@ async def test_linked_loop_follows_the_chief_and_posts_only_with_partner_account
                                                                      InstagramLoopMedia.media_id != extra.id))
     await db_session.delete(first)
     loop.interval_min_minutes, loop.interval_max_minutes = 30, 40
+    # ...and puts one caption and one Reels cover on every video
+    cover = InstagramMedia(workspace_id=chief_ws.id, storage_path=f"{chief_ws.id}/c/capa.jpg", filename="capa.jpg",
+                           mime_type="image/jpeg", media_type="image", size_bytes=10, is_cover=True)
+    db_session.add(cover)
+    await db_session.flush()
+    loop.caption_mode, loop.caption = "all", "Legenda do chefe"
+    loop.cover_mode, loop.cover_media_id = "all", cover.id
     await db_session.commit()
     await service.sync_all_shared_loops(db_session)
     copy = await db_session.get(InstagramLoop, uuid.UUID(copy_id), populate_existing=True)
     assert (copy.interval_min_minutes, copy.interval_max_minutes) == (30, 40)
+    assert (copy.caption_mode, copy.caption, copy.cover_mode) == ("all", "Legenda do chefe", "all")
+    copied_cover = await db_session.get(InstagramMedia, copy.cover_media_id)
+    assert copied_cover.workspace_id == partner_ws.id and copied_cover.is_cover and copied_cover.template_media_id == cover.id
+    await service.sync_all_shared_loops(db_session)  # a second sync reuses the copied cover
+    await db_session.refresh(copy)
+    assert copy.cover_media_id == copied_cover.id
     names = set(await db_session.scalars(
         select(InstagramMedia.filename).join(InstagramLoopMedia, InstagramLoopMedia.media_id == InstagramMedia.id)
         .where(InstagramLoopMedia.loop_id == copy.id)

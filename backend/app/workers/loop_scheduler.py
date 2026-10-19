@@ -28,6 +28,7 @@ from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.models import (
     DiagnosticsEvent,
     InstagramAccount,
+    InstagramLoop,
     InstagramMedia,
     InstagramPublicationJob,
 )
@@ -448,6 +449,31 @@ async def refresh_due_instagram_tokens(now: datetime | None = None) -> int:
     return refreshed_count
 
 
+async def _post_caption_and_cover(
+    db, loop: InstagramLoop | None, media: InstagramMedia | None
+) -> tuple[str | None, InstagramMedia | None]:
+    """The caption (None = the media's own) and Reels cover the loop sets for this post."""
+    if loop is None or media is None:
+        return None, None
+    caption = (loop.caption or "") if loop.caption_mode == "all" else None
+    cover_id = None
+    if media.media_type == "video":
+        if loop.cover_mode == "all":
+            cover_id = loop.cover_media_id
+        elif loop.cover_mode == "per_media":
+            cover_id = media.cover_media_id
+    cover = None
+    if cover_id is not None:
+        cover = await db.scalar(
+            select(InstagramMedia).where(
+                InstagramMedia.id == cover_id,
+                InstagramMedia.workspace_id == media.workspace_id,
+                InstagramMedia.media_type == "image",
+            )
+        )
+    return caption, cover
+
+
 async def process_one_queued_publication() -> bool:
     async with get_session_factory()() as db:
         job = await db.scalar(
@@ -483,6 +509,8 @@ async def process_one_queued_publication() -> bool:
                 InstagramMedia.workspace_id == job.workspace_id,
             )
         )
+        loop = await db.get(InstagramLoop, job.loop_id)
+        post_caption, cover = await _post_caption_and_cover(db, loop, media)
         if (
             account is None
             or media is None
@@ -573,7 +601,8 @@ async def process_one_queued_publication() -> bool:
 
     try:
         published_media_id = await publish_media(
-            account, media, access_token, storage, before_publish=before_publish
+            account, media, access_token, storage, before_publish=before_publish,
+            caption=post_caption, cover=cover,
         )
     except Exception as exc:
         async with get_session_factory()() as db:

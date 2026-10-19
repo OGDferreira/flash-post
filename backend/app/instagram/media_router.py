@@ -34,7 +34,8 @@ def _media_response(media: InstagramMedia) -> InstagramMediaResponse:
         return InstagramMediaResponse(
             id=media.id, filename="🔒 Mídia protegida do seu sócio", mime_type=media.mime_type,
             media_type=media.media_type, size_bytes=media.size_bytes, caption=None,
-            created_at=media.created_at, locked=True,
+            created_at=media.created_at, locked=True, is_cover=media.is_cover,
+            cover_media_id=media.cover_media_id,
         )
     return InstagramMediaResponse(
         id=media.id,
@@ -44,6 +45,8 @@ def _media_response(media: InstagramMedia) -> InstagramMediaResponse:
         size_bytes=media.size_bytes,
         caption=media.caption,
         created_at=media.created_at,
+        is_cover=media.is_cover,
+        cover_media_id=media.cover_media_id,
     )
 
 
@@ -116,6 +119,8 @@ async def upload_media(
     db: DbSession,
     filename: str = Query(min_length=1, max_length=255),
     caption: str | None = Query(default=None, max_length=2200),
+    # cover: a JPEG used only as a Reels cover, never posted on its own.
+    purpose: str = Query(default="post", pattern="^(post|cover)$"),
 ) -> InstagramMediaResponse:
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     media_type = SUPPORTED_MEDIA_TYPES.get(content_type)
@@ -123,6 +128,11 @@ async def upload_media(
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Upload a JPEG image or an MP4 video.",
+        )
+    if purpose == "cover" and media_type != "image":
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="A capa do Reels precisa ser uma imagem JPEG.",
         )
     content_length = request.headers.get("content-length")
     if content_length:
@@ -199,7 +209,8 @@ async def upload_media(
         mime_type=content_type,
         media_type=media_type,
         size_bytes=size_bytes,
-        caption=caption.strip() if caption and caption.strip() else None,
+        caption=caption.strip() if caption and caption.strip() and purpose == "post" else None,
+        is_cover=purpose == "cover",
     )
     db.add(media)
     try:

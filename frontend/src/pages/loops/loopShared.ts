@@ -19,6 +19,11 @@ export type InstagramMedia = {
   size_bytes: number;
   caption: string | null;
   created_at: string;
+  locked?: boolean;
+  /** A JPEG uploaded only to be a Reels cover (never posted). */
+  is_cover?: boolean;
+  /** This video's own Reels cover, used when the loop picks one cover per video. */
+  cover_media_id?: string | null;
 };
 
 export type InstagramMediaResponse = {
@@ -38,6 +43,10 @@ export type InstagramLoop = {
   daily_limit_per_account: number;
   post_type: "reels" | "images" | "both";
   repeat_media: boolean;
+  caption_mode?: CaptionMode;
+  caption?: string | null;
+  cover_mode?: CoverMode;
+  cover_media_id?: string | null;
   status: "active" | "paused";
   shared?: boolean;
   shared_with?: string[] | null;
@@ -120,6 +129,11 @@ export function groupFailuresByAccount(failures: PublicationFailure[]): FailureA
   return [...groups.values()];
 }
 
+/** per_media: each video keeps its own caption; all: one caption on every post. */
+export type CaptionMode = "per_media" | "all";
+/** auto: Instagram picks a frame; all: one cover image on every Reel; per_media: one per video. */
+export type CoverMode = "auto" | "all" | "per_media";
+
 export type LoopForm = {
   name: string;
   interval_min_minutes: number;
@@ -132,6 +146,12 @@ export type LoopForm = {
   media_ids: string[];
   /** Captions edited in the form, by media id (only the ones changed). */
   media_captions: Record<string, string>;
+  caption_mode: CaptionMode;
+  caption: string;
+  cover_mode: CoverMode;
+  cover_media_id: string | null;
+  /** Covers changed in the form, by video id (null removes it). */
+  media_covers: Record<string, string | null>;
 };
 
 export const emptyForm: LoopForm = {
@@ -145,6 +165,11 @@ export const emptyForm: LoopForm = {
   auto_folder_ids: [],
   media_ids: [],
   media_captions: {},
+  caption_mode: "per_media",
+  caption: "",
+  cover_mode: "auto",
+  cover_media_id: null,
+  media_covers: {},
 };
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;

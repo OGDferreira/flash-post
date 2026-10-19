@@ -40,6 +40,14 @@ class InstagramLoop(Base):
             "post_type IN ('reels', 'images', 'both')",
             name="ck_instagram_loops_post_type",
         ),
+        CheckConstraint(
+            "caption_mode IN ('per_media', 'all')",
+            name="ck_instagram_loops_caption_mode",
+        ),
+        CheckConstraint(
+            "cover_mode IN ('auto', 'all', 'per_media')",
+            name="ck_instagram_loops_cover_mode",
+        ),
         Index("ix_instagram_loops_due", "status", "next_run_at"),
         Index("ix_instagram_loops_workspace_id", "workspace_id"),
     )
@@ -60,6 +68,17 @@ class InstagramLoop(Base):
     repeat_media: Mapped[bool] = mapped_column(
         nullable=False, default=True, server_default=text("true")
     )
+    # per_media: each video keeps its own caption; all: ``caption`` goes on every post.
+    caption_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="per_media", server_default=text("'per_media'")
+    )
+    caption: Mapped[str | None] = mapped_column(String(2200))
+    # Reels cover: auto (Instagram picks a frame), all (``cover_media_id`` on every
+    # video) or per_media (each video's own ``InstagramMedia.cover_media_id``).
+    cover_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="auto", server_default=text("'auto'")
+    )
+    cover_media_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
     # Folders whose accounts join this loop automatically.
     auto_folder_ids: Mapped[list] = mapped_column(
         JSON, nullable=False, default=list, server_default=text("'[]'")
@@ -126,6 +145,12 @@ class InstagramMedia(Base):
     media_type: Mapped[str] = mapped_column(String(16), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     caption: Mapped[str | None] = mapped_column(String(2200))
+    # A JPEG uploaded only to be a Reels cover: never posted, kept out of the pool.
+    is_cover: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default=text("false")
+    )
+    # This video's own Reels cover (used when its loop's cover_mode is per_media).
+    cover_media_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
     # copied from a chief's shared loop: posts normally, but the partner never sees it
     locked: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=text("false"))
     # the chief's media this copy came from (lets a linked loop follow the original)

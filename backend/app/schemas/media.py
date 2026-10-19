@@ -14,6 +14,8 @@ class InstagramMediaResponse(BaseModel):
     caption: str | None
     created_at: datetime
     locked: bool = False
+    is_cover: bool = False
+    cover_media_id: UUID | None = None
 
 
 class InstagramMediaListResponse(BaseModel):

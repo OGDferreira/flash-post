@@ -175,6 +175,82 @@ async def test_image_publication_creates_and_publishes_instagram_container(
 
 
 @pytest.mark.anyio
+async def test_publication_uses_loop_caption_over_media_caption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    class FakeResponse:
+        def __init__(self, payload: object):
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> object:
+            return self.payload
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url: str, *, params: dict[str, str]):
+            assert url.endswith("/me")
+            assert params["fields"] == "user_id,username"
+            return FakeResponse({"user_id": "instagram-user-1", "username": "test_account"})
+
+        async def post(self, url: str, *, data: dict[str, str]):
+            calls.append((url, data))
+            return FakeResponse(
+                {"id": "container-1" if url.endswith("/media") else "published-1"}
+            )
+
+    class FakeStorage:
+        async def create_signed_url(self, path: str) -> str:
+            assert path == "workspace/media/photo.jpg"
+            return "https://private-storage.example/signed-photo"
+
+    monkeypatch.setattr(publishing.httpx, "AsyncClient", FakeClient)
+    account = InstagramAccount(
+        workspace_id=uuid.uuid4(),
+        instagram_user_id="instagram-user-1",
+        username="test_account",
+        encrypted_access_token="encrypted",
+        token_expires_at=datetime.now(timezone.utc),
+    )
+    media = InstagramMedia(
+        workspace_id=account.workspace_id,
+        storage_path="workspace/media/photo.jpg",
+        filename="photo.jpg",
+        mime_type="image/jpeg",
+        media_type="image",
+        size_bytes=100,
+        caption="Test caption",
+    )
+
+    published_id = await publishing.publish_media(
+        account,
+        media,
+        "private-access-token",
+        FakeStorage(),
+        caption="Loop caption",
+    )
+
+    assert published_id == "published-1"
+    assert calls[0][0].endswith("/instagram-user-1/media")
+    assert calls[0][1]["image_url"] == "https://private-storage.example/signed-photo"
+    assert calls[0][1]["caption"] == "Loop caption"
+    assert calls[1][0].endswith("/instagram-user-1/media_publish")
+    assert calls[1][1]["creation_id"] == "container-1"
+
+
+@pytest.mark.anyio
 async def test_video_publication_waits_for_processing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -245,6 +321,76 @@ async def test_video_publication_waits_for_processing(
     )
 
     assert published_id == "published-2"
+
+
+@pytest.mark.anyio
+async def test_reel_publication_sends_cover_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    created: list[dict[str, str]] = []
+
+    class FakeResponse:
+        def __init__(self, payload: object):
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> object:
+            return self.payload
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url: str, *, params: dict[str, str]):
+            if url.endswith("/me"):
+                return FakeResponse({"user_id": "instagram-user-3", "username": "test_account"})
+            return FakeResponse({"status_code": "FINISHED"})
+
+        async def post(self, url: str, *, data: dict[str, str]):
+            if url.endswith("/media"):
+                created.append(data)
+                return FakeResponse({"id": "container-3"})
+            return FakeResponse({"id": "published-3"})
+
+    class FakeStorage:
+        async def create_signed_url(self, path: str) -> str:
+            return f"https://private-storage.example/{path.rsplit('/', 1)[-1]}"
+
+    async def no_wait(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(publishing.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(publishing.asyncio, "sleep", no_wait)
+    account = InstagramAccount(
+        workspace_id=uuid.uuid4(),
+        instagram_user_id="instagram-user-3",
+        username="test_account",
+        encrypted_access_token="encrypted",
+        token_expires_at=datetime.now(timezone.utc),
+    )
+    media = InstagramMedia(
+        workspace_id=account.workspace_id, storage_path="workspace/media/reel.mp4",
+        filename="reel.mp4", mime_type="video/mp4", media_type="video", size_bytes=100,
+    )
+    cover = InstagramMedia(
+        workspace_id=account.workspace_id, storage_path="workspace/cover/capa.jpg",
+        filename="capa.jpg", mime_type="image/jpeg", media_type="image", size_bytes=100,
+        is_cover=True,
+    )
+
+    published_id = await publishing.publish_media(
+        account, media, "private-access-token", FakeStorage(), cover=cover,
+    )
+
+    assert published_id == "published-3"
+    assert created[0]["media_type"] == "REELS"
+    assert created[0]["cover_url"] == "https://private-storage.example/capa.jpg"
 
 
 @pytest.mark.anyio

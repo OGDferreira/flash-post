@@ -110,6 +110,7 @@ def _publication_error_detail(
     stage: str,
     access_token: str,
     signed_url: str,
+    cover_url: str = "",
 ) -> str:
     try:
         payload = response.json()
@@ -138,6 +139,8 @@ def _publication_error_detail(
         safe_message = safe_message.replace(access_token, "[redacted]")
     if signed_url:
         safe_message = safe_message.replace(signed_url, "[media URL]")
+    if cover_url:
+        safe_message = safe_message.replace(cover_url, "[cover URL]")
     safe_message = " ".join(safe_message.split())
 
     description = f"Instagram rejected {stage} (HTTP {response.status_code}"
@@ -163,8 +166,13 @@ async def publish_media(
     access_token: str,
     storage: SupabaseStorage,
     before_publish: Callable[[str], Awaitable[None]] | None = None,
+    caption: str | None = None,
+    cover: InstagramMedia | None = None,
 ) -> str:
     """Create, wait for and publish a container.
+
+    ``caption`` (when given) replaces the media's own caption; ``cover`` is a
+    JPEG used as the Reels cover (``cover_url``) of a video.
 
     ``before_publish(container_id)`` runs right before ``media_publish`` and
     must persist the container so an uncertain answer can be reconciled
@@ -184,8 +192,11 @@ async def publish_media(
     }
     if media.media_type == "video":
         create_payload["media_type"] = "REELS"
-    if media.caption:
-        create_payload["caption"] = media.caption
+        if cover is not None:
+            create_payload["cover_url"] = await storage.create_signed_url(cover.storage_path)
+    caption = caption if caption is not None else media.caption
+    if caption:
+        create_payload["caption"] = caption
 
     timeout = httpx.Timeout(30.0)
     stage = "account identity verification"
@@ -325,6 +336,7 @@ async def publish_media(
                 stage,
                 access_token,
                 signed_url,
+                create_payload.get("cover_url", ""),
             )
             logger.error(
                 "Instagram publication failed for account %s at %s: %s",

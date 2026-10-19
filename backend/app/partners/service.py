@@ -308,6 +308,57 @@ def _copied_path(workspace_id: uuid.UUID, media_id: uuid.UUID, source_path: str)
     return f"{workspace_id}/{media_id}/{source_path.rsplit('/', 1)[-1]}"
 
 
+async def _copy_covers(
+    db: AsyncSession,
+    source_workspace_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    cover_ids: set[uuid.UUID],
+    pairs: list[tuple[str, str]],
+) -> dict[uuid.UUID, uuid.UUID]:
+    """Reels covers of the chief's loop in the partner's workspace: source cover id -> copy id.
+    Covers already copied are reused; new ones are copied (locked) and their objects queued in ``pairs``."""
+    cover_ids.discard(None)
+    if not cover_ids:
+        return {}
+    if source_workspace_id == workspace_id:
+        return {cover: cover for cover in cover_ids}
+    mapping = {
+        media.template_media_id: media.id
+        for media in await db.scalars(
+            select(InstagramMedia).where(
+                InstagramMedia.workspace_id == workspace_id,
+                InstagramMedia.is_cover.is_(True),
+                InstagramMedia.template_media_id.in_(cover_ids),
+            )
+        )
+    }
+    for cover in await db.scalars(
+        select(InstagramMedia).where(
+            InstagramMedia.workspace_id == source_workspace_id,
+            InstagramMedia.id.in_(cover_ids - set(mapping)),
+        )
+    ):
+        new_id = uuid.uuid4()
+        path = _copied_path(workspace_id, new_id, cover.storage_path)
+        pairs.append((cover.storage_path, path))
+        db.add(
+            InstagramMedia(
+                id=new_id, workspace_id=workspace_id, storage_path=path, filename=cover.filename,
+                mime_type=cover.mime_type, media_type=cover.media_type, size_bytes=cover.size_bytes,
+                is_cover=True, locked=True, template_media_id=cover.id,
+            )
+        )
+        mapping[cover.id] = new_id
+    return mapping
+
+
+def _copy_post_settings(source: InstagramLoop, copy: InstagramLoop, covers: dict[uuid.UUID, uuid.UUID]) -> None:
+    copy.caption_mode = source.caption_mode
+    copy.caption = source.caption
+    copy.cover_mode = source.cover_mode
+    copy.cover_media_id = covers.get(source.cover_media_id) if source.cover_media_id else None
+
+
 async def clone_loop(db: AsyncSession, source: InstagramLoop, workspace_id: uuid.UUID) -> InstagramLoop:
     """Copy a chief's loop into a partner workspace: same settings and media, zero accounts."""
     clone = InstagramLoop(
@@ -333,6 +384,11 @@ async def clone_loop(db: AsyncSession, source: InstagramLoop, workspace_id: uuid
         )
     )
     pairs, links = [], []
+    covers = await _copy_covers(
+        db, source.workspace_id, workspace_id,
+        {source.cover_media_id, *(media.cover_media_id for media in medias)}, pairs,
+    )
+    _copy_post_settings(source, clone, covers)
     for media in medias:
         new_id = uuid.uuid4()
         path = _copied_path(workspace_id, new_id, media.storage_path)
@@ -342,6 +398,7 @@ async def clone_loop(db: AsyncSession, source: InstagramLoop, workspace_id: uuid
                 id=new_id, workspace_id=workspace_id, storage_path=path, filename=media.filename,
                 mime_type=media.mime_type, media_type=media.media_type, size_bytes=media.size_bytes,
                 caption=media.caption, locked=media.locked or source.workspace_id != workspace_id,
+                cover_media_id=covers.get(media.cover_media_id) if media.cover_media_id else None,
             )
         )
         links.append(InstagramLoopMedia(loop_id=clone.id, media_id=new_id))
@@ -406,16 +463,25 @@ async def sync_linked_loop(db: AsyncSession, source: InstagramLoop, copy: Instag
     )
     present = {media.template_media_id for media in have}
     gone = [media.id for media in have if media.template_media_id not in wanted]
-    for media in have:  # captions the chief edited later follow too
+    pairs, links = [], []
+    covers = await _copy_covers(
+        db, source.workspace_id, copy.workspace_id,
+        {source.cover_media_id, *(media.cover_media_id for media in wanted.values())}, pairs,
+    )
+    _copy_post_settings(source, copy, covers)
+    for media in have:  # captions and covers the chief edited later follow too
         source_media = wanted.get(media.template_media_id)
-        if source_media is not None and media.caption != source_media.caption:
-            media.caption = source_media.caption
+        if source_media is not None:
+            if media.caption != source_media.caption:
+                media.caption = source_media.caption
+            cover = covers.get(source_media.cover_media_id) if source_media.cover_media_id else None
+            if media.cover_media_id != cover:
+                media.cover_media_id = cover
     if gone:
         await _drop_pending_jobs(db, copy.id, gone)
         await db.execute(
             delete(InstagramLoopMedia).where(InstagramLoopMedia.loop_id == copy.id, InstagramLoopMedia.media_id.in_(gone))
         )
-    pairs, links = [], []
     for media in wanted.values():
         if media.id in present:
             continue
@@ -427,6 +493,7 @@ async def sync_linked_loop(db: AsyncSession, source: InstagramLoop, copy: Instag
                 id=new_id, workspace_id=copy.workspace_id, storage_path=path, filename=media.filename,
                 mime_type=media.mime_type, media_type=media.media_type, size_bytes=media.size_bytes,
                 caption=media.caption, locked=True, template_media_id=media.id,
+                cover_media_id=covers.get(media.cover_media_id) if media.cover_media_id else None,
                 created_at=media.created_at,  # same playlist order as the chief's loop
             )
         )
