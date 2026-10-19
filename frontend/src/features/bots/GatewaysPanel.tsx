@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CircleAlert, CreditCard, ShieldCheck } from "lucide-react";
+import { Check, CircleAlert, Clock3, CreditCard, ShieldCheck } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { CopyField } from "@/components/ui/CopyField";
@@ -36,6 +36,7 @@ export function GatewaysPanel() {
   const [picked, setPicked] = useState<GatewayId>("smokepay");
   const [recipient, setRecipient] = useState("");
   const [scope, setScope] = useState<"all" | "flows">("all");
+  const [info, setInfo] = useState<GatewayId | null>(null); // which card's "!" (fees) is open
   useEffect(() => {
     if (!state.data) return;
     setPicked(state.data.current);
@@ -133,33 +134,60 @@ export function GatewaysPanel() {
         </div>
         <p className="mt-1 text-xs text-muted">Escolha por onde os Pix dos seus robôs são gerados. Vale para todos os seus bots.</p>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {data.gateways.map((gateway) => {
             const active = picked === gateway.id;
             return (
-              <button
-                aria-pressed={active}
-                className={`relative flex items-start gap-3 rounded-2xl border p-4 text-left transition ${
-                  active ? "border-accent ring-2 ring-accent/40" : "border-line-soft hover:border-accent/60"
-                } ${gateway.available ? "" : "cursor-not-allowed opacity-50"}`}
-                disabled={!gateway.available}
-                key={gateway.id}
-                onClick={() => setPicked(gateway.id)}
-                type="button"
-              >
-                <GatewayLogo id={gateway.id} />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2 text-sm font-semibold text-fg">
-                    {gateway.name}
-                    {data.current === gateway.id && <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">em uso</span>}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-muted">{gateway.description}</span>
-                  <span className="mt-1 block text-[11px] text-fg-2">{gateway.available ? gateway.fee : "Ainda não liberado pelo administrador"}</span>
-                </span>
-                {active && <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-brand text-white"><Check size={12} /></span>}
-              </button>
+              <div className="relative" key={gateway.id}>
+                <button
+                  aria-pressed={active}
+                  className={`flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-2xl border p-3 text-center transition ${
+                    active ? "border-accent bg-brand/10 ring-2 ring-accent/40" : "border-line-soft hover:border-accent/60"
+                  } ${gateway.available ? "" : "cursor-not-allowed opacity-50"}`}
+                  disabled={!gateway.available}
+                  onClick={() => setPicked(gateway.id)}
+                  type="button"
+                >
+                  <GatewayLogo className="size-14 sm:size-16" id={gateway.id} />
+                  <span className="text-sm font-semibold text-fg">{gateway.name}</span>
+                  {data.current === gateway.id ? (
+                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">em uso</span>
+                  ) : !gateway.available ? (
+                    <span className="text-[10px] text-muted">Não liberado</span>
+                  ) : null}
+                  {active && <span className="absolute left-2.5 top-2.5 grid size-5 place-items-center rounded-full bg-brand text-white"><Check size={12} /></span>}
+                </button>
+                <button
+                  aria-expanded={info === gateway.id}
+                  aria-label={`Taxas e detalhes da ${gateway.name}`}
+                  className="absolute right-2 top-2 grid size-7 place-items-center rounded-full border border-line-soft bg-surface-inset text-xs font-bold text-muted transition hover:border-accent hover:text-accent"
+                  onClick={() => setInfo(info === gateway.id ? null : gateway.id)}
+                  type="button"
+                >
+                  !
+                </button>
+                {info === gateway.id && (
+                  <div className="absolute inset-x-1 top-11 z-20 rounded-xl border border-line bg-[var(--nm-bg)] p-3 text-left text-[11px] leading-5 shadow-2xl" role="dialog">
+                    <p className="font-semibold text-fg">{gateway.name}</p>
+                    <p className="text-muted">{gateway.description}</p>
+                    <p className="mt-1 text-fg-2">{gateway.fee}</p>
+                  </div>
+                )}
+              </div>
             );
           })}
+          {["Novo gateway", "Novo gateway"].map((name, index) => (
+            <div
+              className="flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-line-soft p-3 text-center opacity-70"
+              key={`soon-${index}`}
+            >
+              <span className="grid size-14 place-items-center rounded-xl border border-dashed border-line-soft text-muted sm:size-16">
+                <Clock3 size={22} />
+              </span>
+              <span className="text-sm font-semibold text-fg-2">{name}</span>
+              <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-semibold text-warning">Aguardando liberação</span>
+            </div>
+          ))}
         </div>
 
         {picked === "snakepay" && (
