@@ -295,3 +295,27 @@ async def test_bot_performance_is_owner_only_and_workspace_isolated(
     client.cookies.clear()
     await _login(client, "collaborator@example.com", "collaborator password")
     assert (await client.get("/api/analytics/bots")).status_code == 403
+
+
+@pytest.mark.anyio
+async def test_approved_sharkbot_sale_notifies_the_owner_once(
+    client: AsyncClient, db_session: AsyncSession, owner
+) -> None:
+    import time
+
+    from app.models import AppNotification
+
+    path = await _webhook(client)
+    now = int(time.time())
+    fresh_paid = _variant(PAYMENT_APPROVED, timestamp=now, data__transaction__paid_at=now)
+    for payload in (_variant(PAYMENT_CREATED, timestamp=now), fresh_paid, fresh_paid):
+        assert (await client.post(path, json=payload)).status_code == 200
+    notices = list(await db_session.scalars(select(AppNotification).where(AppNotification.user_id == owner[0].id)))
+    assert len(notices) == 1  # pending Pix and the re-delivery do not notify
+    assert notices[0].kind == "sale" and "SharkBot" in notices[0].title
+    assert "R$ 97,00" in notices[0].body and "Plano Premium" in notices[0].body
+
+    # an old approval re-sent by SharkBot (history backfill) stays silent
+    old = _variant(PAYMENT_APPROVED, data__transaction__id="old_payment")
+    assert (await client.post(path, json=old)).status_code == 200
+    assert await db_session.scalar(select(func.count(AppNotification.id)).where(AppNotification.user_id == owner[0].id)) == 1

@@ -168,6 +168,42 @@ async def test_register_with_invite_code_links_and_invalid_code_blocks_signup(
 
 
 @pytest.mark.anyio
+async def test_invite_link_with_percent_is_accepted_at_signup_and_cannot_be_forged(
+    client: AsyncClient, db_session: AsyncSession, owner
+) -> None:
+    from urllib.parse import parse_qs, urlparse
+
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    made = await client.post("/api/affiliates/invite/link", headers={"X-CSRF-Token": await _csrf(client)}, json={"percent": "30"})
+    assert made.status_code == 200, made.text
+    query = parse_qs(urlparse(made.json()["invite_url"]).query)
+    code, terms = query["invite"][0], query["terms"][0]
+    await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
+
+    preview = (await client.get("/api/affiliates/invite/preview", params={"code": code, "terms": terms})).json()
+    assert preview["percent"] == "30.00" and preview["chief_name"]
+    forged = terms[:-3] + ("aaa" if not terms.endswith("aaa") else "bbb")
+    assert (await client.get("/api/affiliates/invite/preview", params={"code": code, "terms": forged})).json()["percent"] is None
+
+    def payload(email: str, nick: str, token: str) -> dict:
+        return {
+            "full_name": "Com Link", "email": email, "nickname": nick, "password": PASSWORD,
+            "confirm_password": PASSWORD, "invite_code": code, "invite_terms": token,
+        }
+
+    good = await client.post("/api/auth/register", headers={"X-CSRF-Token": await _csrf(client)}, json=payload("link@example.com", "comlink", terms))
+    assert good.status_code == 201, good.text
+    link = await db_session.scalar(select(Affiliation).where(Affiliation.affiliate_user_id == uuid.UUID(good.json()["user"]["id"])))
+    assert link.participation_percent == Decimal("30.00") and link.accepted_percent == Decimal("30.00") and link.accepted_at is not None
+
+    # a tampered token links the person without any accepted commission
+    bad = await client.post("/api/auth/register", headers={"X-CSRF-Token": await _csrf(client)}, json=payload("forged@example.com", "forged1", forged))
+    assert bad.status_code == 201
+    link = await db_session.scalar(select(Affiliation).where(Affiliation.affiliate_user_id == uuid.UUID(bad.json()["user"]["id"])))
+    assert link.participation_percent == 0 and link.accepted_percent is None
+
+
+@pytest.mark.anyio
 async def test_chief_sees_affiliate_numbers_and_participation_but_not_other_chiefs(
     client: AsyncClient, db_session: AsyncSession, owner
 ) -> None:
@@ -241,3 +277,37 @@ async def test_database_blocks_self_link_and_second_chief(db_session: AsyncSessi
     db_session.add(Affiliation(chief_user_id=other_id, affiliate_user_id=other_id))
     with pytest.raises(IntegrityError):
         await db_session.commit()
+
+
+@pytest.mark.anyio
+async def test_partner_row_adds_flashbot_to_revenue_and_shows_withdrawn_and_balance(
+    client: AsyncClient, db_session: AsyncSession, owner
+) -> None:
+    from app.models import FinancialWithdrawal
+    from tests.test_wallet import _paid
+
+    chief, _ = owner
+    friend, friend_ws = await _make_owner(db_session, "friend")
+    db_session.add(Affiliation(chief_user_id=chief.id, affiliate_user_id=friend.id, participation_percent=Decimal("10")))
+    db_session.add(
+        SharkTransaction(
+            workspace_id=friend_ws.id, transaction_key="s1", status="paid", amount=Decimal("100.00"),
+            created_at_source=NOW, paid_at=NOW,
+        )
+    )
+    await db_session.commit()
+    await _paid(db_session, friend_ws)  # FlashBot sale of 19.90, net 18.90
+    db_session.add(FinancialWithdrawal(workspace_id=friend_ws.id, amount=Decimal("5.00"), status="PAID"))
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+
+    listing = (await client.get("/api/affiliates", params={"period": "today"})).json()
+    row = listing["rows"][0]
+    assert Decimal(row["revenue"]) == Decimal("100.00")  # SharkBot alone
+    assert Decimal(row["total_revenue"]) == Decimal("119.90")
+    assert Decimal(row["today_revenue"]) == Decimal("119.90")
+    assert row["total_sales"] == 2 and Decimal(row["total_ticket"]) == Decimal("59.95")
+    assert Decimal(row["withdrawn"]) == Decimal("5.00")
+    assert Decimal(row["balance"]) == Decimal("13.90")  # FlashBot net 18.90 minus the withdrawal
+    assert Decimal(listing["totals_revenue"]) == Decimal("119.90")
+    assert row["bot_leads"] == 1 and row["bot_pix"] == 1

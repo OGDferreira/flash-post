@@ -135,25 +135,31 @@ export function PartnerPanel() {
 }
 
 /** Chief: notices such as a partner customizing a shared funnel or accepting a commission. */
-export function NoticesCard() {
+export function NoticesCard({ side = false }: { side?: boolean } = {}) {
   const notices = useNotices();
   const read = useMarkNoticesRead();
   const items = notices.data?.items ?? [];
-  if (items.length === 0) return null;
+  if (items.length === 0 && !side) return null;
   return (
-    <section className="glass-panel space-y-2 p-4">
+    <section className={`glass-panel space-y-2 p-4 ${side ? "flex max-h-[calc(100dvh-110px)] flex-col" : ""}`}>
       <div className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-fg">
-          <Bell className="text-accent" size={15} /> Avisos {notices.data!.unread > 0 && <span className="text-xs text-accent">({notices.data!.unread} novos)</span>}
+          <Bell className="text-accent" size={15} /> Avisos {notices.data && notices.data.unread > 0 && <span className="text-xs text-accent">({notices.data.unread} novos)</span>}
+          {side && (
+            <span className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-success">
+              <span className="size-1.5 animate-pulse rounded-full bg-success" /> ao vivo
+            </span>
+          )}
         </h3>
-        {notices.data!.unread > 0 && (
+        {(notices.data?.unread ?? 0) > 0 && (
           <button className="text-xs text-muted hover:text-fg" disabled={read.isPending} onClick={() => read.mutate()} type="button">
             Marcar como lidos
           </button>
         )}
       </div>
-      <ul className="space-y-1.5">
-        {items.slice(0, 6).map((item) => (
+      {side && items.length === 0 && <p className="text-xs text-muted">Nenhum aviso ainda. Vendas, comissões e aceites aparecem aqui na hora.</p>}
+      <ul className={`space-y-1.5 ${side ? "min-h-0 flex-1 overflow-y-auto pr-1" : ""}`}>
+        {items.slice(0, side ? 40 : 6).map((item) => (
           <li className={`rounded-lg px-3 py-2 text-xs ${item.read ? "text-muted" : "bg-surface-inset text-fg"}`} key={item.id}>
             <strong>{item.title}</strong> · {item.body}
             <span className="block text-[10px] text-muted">{new Date(item.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>

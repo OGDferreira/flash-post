@@ -25,7 +25,8 @@ from app.notifications.signups import notify_new_signup
 from app.core.security import PlatformRole, WorkspaceRole, hash_password, verify_password
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.partners.service import partner_link
-from app.affiliates.router import find_chief
+from app.affiliates.router import find_chief, read_invite_terms
+from app.core.time import utc_now
 from app.models import Affiliation, User, Workspace, WorkspaceMember
 from app.schemas.auth import (
     AuthResponse,
@@ -212,7 +213,14 @@ async def register(
             # New user: no self-link or loop is possible. A partner's invite only
             # records who invited (``invited_by_user_id``); it never creates a
             # partnership, and the sign-up still waits for Super Admin approval.
-            db.add(Affiliation(chief_user_id=chief.id, affiliate_user_id=user.id))
+            link = Affiliation(chief_user_id=chief.id, affiliate_user_id=user.id)
+            terms = read_invite_terms(payload.invite_terms) if payload.invite_terms else None
+            if terms is not None and terms[0] == chief.id:
+                # The sign-up screen showed this percent and creating the account agrees to it.
+                link.participation_percent = terms[1]
+                link.accepted_percent = terms[1]
+                link.accepted_at = utc_now()
+            db.add(link)
         await db.commit()
     except IntegrityError:
         await db.rollback()

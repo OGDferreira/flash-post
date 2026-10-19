@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Handshake, Info, RefreshCw, Trash2 } from "lucide-react";
+import { BarChart3, Handshake, Info, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
+import { ProfileLink } from "@/components/ProfileLink";
 import { CopyField } from "@/components/ui/CopyField";
 import { Modal } from "@/components/ui/Modal";
 import {
@@ -43,7 +44,15 @@ type Row = {
   pending_acceptance: boolean;
   bot_revenue: string;
   bot_sales: number;
+  bot_leads?: number;
+  bot_pix?: number;
   commission_received: string;
+  total_revenue?: string;
+  total_sales?: number;
+  total_ticket?: string | null;
+  today_revenue?: string;
+  withdrawn?: string;
+  balance?: string;
 };
 
 type Listing = {
@@ -74,48 +83,101 @@ const money = (value: string | null) => (value === null ? "—" : moneyFormat.fo
 const percent = (value: string) => Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : "Não foi possível concluir a ação.");
 
-function InviteCard() {
+function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const [percentText, setPercentText] = useState("30");
   const invite = useQuery({
     queryKey: ["affiliates", "invite"],
     queryFn: () => apiRequest<{ code: string; invite_url: string }>("/api/affiliates/invite"),
+    enabled: open,
     staleTime: 5 * 60_000,
   });
   const rotate = useMutation({
     mutationFn: () => apiRequest<{ code: string; invite_url: string }>("/api/affiliates/invite/rotate", { method: "POST" }),
-    onSuccess: (data) => queryClient.setQueryData(["affiliates", "invite"], data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["affiliates", "invite"], data);
+      link.reset();
+    },
   });
+  const link = useMutation({
+    mutationFn: (percent: string) =>
+      apiRequest<{ invite_url: string; percent: string }>("/api/affiliates/invite/link", { method: "POST", body: { percent } }),
+  });
+  const value = Number(percentText.replace(",", "."));
+  const validPercent = Number.isFinite(value) && value >= 0 && value <= 90;
   return (
-    <section className="glass-panel space-y-3 p-4 sm:p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="text-base font-semibold text-fg">Seu código de convite</h3>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-muted">
-            Quem se cadastrar (ou informar o código no perfil) com este código vira seu sócio. Você define a comissão de cada
-            um; ela só passa a valer depois que o sócio aceitar. Sócios não veem seus dados, contas nem robôs.
-          </p>
+    <Modal
+      description="Quem se cadastrar por este link já entra como seu sócio, com a comissão definida aqui aceita no próprio cadastro."
+      onClose={onClose}
+      open={open}
+      title="Adicionar sócio"
+    >
+      <div className="space-y-4">
+        <div className="rounded-xl border border-line-soft bg-surface-inset p-3">
+          <label className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted" htmlFor="invite-percent">
+            Comissão do novo sócio
+          </label>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1 rounded-xl border border-line bg-surface px-3">
+              <input
+                className="min-h-11 w-20 bg-transparent text-xl font-semibold text-fg outline-none"
+                id="invite-percent"
+                inputMode="decimal"
+                onChange={(event) => {
+                  setPercentText(event.target.value);
+                  link.reset();
+                }}
+                value={percentText}
+              />
+              <span className="text-muted">%</span>
+            </span>
+            <button
+              className="btn-primary"
+              disabled={!validPercent || link.isPending}
+              onClick={() => link.mutate(value.toFixed(2))}
+              type="button"
+            >
+              {link.isPending ? "Gerando…" : "Gerar link"}
+            </button>
+          </div>
+          {!validPercent && <p className="mt-1 text-xs text-danger">Use um valor de 0 a 90%.</p>}
+          {link.data && (
+            <div className="mt-3">
+              <CopyField label={`Link de cadastro com ${Number(link.data.percent).toLocaleString("pt-BR")}% (vale 30 dias)`} value={link.data.invite_url} />
+              <p className="mt-1.5 text-[11px] text-muted">
+                O novo sócio vê a comissão na tela de cadastro e concorda ao criar a conta, sem precisar aceitar depois. Se
+                você mudar a comissão mais tarde, ele recebe a proposta para aceitar.
+              </p>
+            </div>
+          )}
+          {link.error && <p className="mt-2 text-xs text-danger">{errorText(link.error)}</p>}
         </div>
-        <button
-          className="btn-secondary !min-h-9 text-xs"
-          disabled={rotate.isPending}
-          onClick={async () => {
-            if (await confirmAction("Gerar um novo código? O código antigo deixa de funcionar para novos cadastros. Seus filiados atuais continuam vinculados.")) rotate.mutate();
-          }}
-          type="button"
-        >
-          <RefreshCw size={14} />
-          Novo código
-        </button>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-sm font-medium text-fg">Código simples (sem comissão definida)</h4>
+            <button
+              className="btn-secondary !min-h-8 text-xs"
+              disabled={rotate.isPending}
+              onClick={async () => {
+                if (await confirmAction("Gerar um novo código? O código antigo e os links já enviados deixam de funcionar para novos cadastros. Seus sócios atuais continuam vinculados.")) rotate.mutate();
+              }}
+              type="button"
+            >
+              <RefreshCw size={13} /> Novo código
+            </button>
+          </div>
+          {invite.isLoading && <div aria-busy="true" className="skeleton h-12" />}
+          {invite.error && <ErrorState message="Não foi possível carregar o código." onRetry={() => void invite.refetch()} />}
+          {invite.data && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <CopyField label="Código" value={invite.data.code} />
+              <CopyField label="Link de cadastro" value={invite.data.invite_url} />
+            </div>
+          )}
+          <p className="text-[11px] text-muted">Com o código simples, a comissão começa em 0% e você define depois; aí o sócio precisa aceitar.</p>
+        </div>
       </div>
-      {invite.isLoading && <div aria-busy="true" className="skeleton h-12" />}
-      {invite.error && <ErrorState message="Não foi possível carregar o código." onRetry={() => void invite.refetch()} />}
-      {invite.data && (
-        <div className="grid gap-3 md:grid-cols-2">
-          <CopyField label="Código" value={invite.data.code} />
-          <CopyField label="Link de cadastro" value={invite.data.invite_url} />
-        </div>
-      )}
-    </section>
+    </Modal>
   );
 }
 
@@ -151,13 +213,30 @@ function PercentEditor({ row, period }: { row: Row; period: MetricsPeriod }) {
   );
 }
 
-function DetailModal({ id, period, onClose }: { id: string | null; period: MetricsPeriod; onClose: () => void }) {
+type AccountFilter = "all" | "connected" | "disconnected";
+const accountStatus: Record<string, string> = {
+  connected: "conectada",
+  error: "desconectada (erro de autorização)",
+  expired: "desconectada (token expirado)",
+  disconnected: "desconectada",
+  manual: "desconectada manualmente",
+};
+
+function DetailModal({ id, period, onClose, initialAccounts = "all" }: {
+  id: string | null;
+  period: MetricsPeriod;
+  onClose: () => void;
+  initialAccounts?: AccountFilter;
+}) {
+  const [accountFilter, setAccountFilter] = useState<AccountFilter>(initialAccounts);
   const detail = useQuery({
     queryKey: ["affiliates", "detail", id, periodParams(period)],
     queryFn: () => apiRequest<Detail>(`/api/affiliates/${id}?${new URLSearchParams(periodParams(period))}`),
     enabled: Boolean(id),
   });
   const data = detail.data;
+  const allLeads = data ? data.leads + (data.bot_leads ?? 0) : 0;
+  const sales = data ? (data.total_sales ?? data.purchases) : 0;
   return (
     <Modal
       description="Métricas agregadas da operação do filiado no período selecionado."
@@ -171,15 +250,18 @@ function DetailModal({ id, period, onClose }: { id: string | null; period: Metri
         <div className="space-y-4">
           <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {[
-              ["Receita aprovada", money(data.revenue)],
-              [`Participação (${percent(data.participation_percent)}%)`, money(data.participation_amount)],
-              ["Ticket médio", money(data.average_ticket)],
-              ["Leads", formatNumber(data.leads)],
-              ["PIX gerados", formatNumber(data.pix_generated)],
-              ["Compras pagas", formatNumber(data.purchases)],
-              ["PIX pago ÷ gerado", formatPercent(data.pix_to_paid_rate)],
-              ["Lead → compra", formatPercent(data.lead_to_purchase_rate)],
-              ["Leads por compra", data.leads_per_purchase === null ? "—" : data.leads_per_purchase.toLocaleString("pt-BR")],
+              ["Faturamento (Shark + Flash)", money(data.total_revenue ?? data.revenue)],
+              ["Hoje", money(data.today_revenue ?? "0")],
+              ["Ticket médio", data.total_ticket ? money(data.total_ticket) : "—"],
+              ["Leads", formatNumber(allLeads)],
+              ["PIX gerados", formatNumber(data.pix_generated + (data.bot_pix ?? 0))],
+              ["Vendas pagas", formatNumber(sales)],
+              ["Lead → venda", allLeads ? `${((100 * sales) / allLeads).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—"],
+              ["Sacado", money(data.withdrawn ?? "0")],
+              ["Saldo na conta", money(data.balance ?? "0")],
+              [`Participação SharkBot (${percent(data.participation_percent)}%)`, money(data.participation_amount)],
+              ["Comissão recebida (FlashBot)", money(data.commission_received)],
+              ["Leads SharkBot · FlashBot", `${formatNumber(data.leads)} · ${formatNumber(data.bot_leads ?? 0)}`],
             ].map(([title, value]) => (
               <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={title}>
                 <dt className="text-[11px] text-muted">{title}</dt>
@@ -190,30 +272,70 @@ function DetailModal({ id, period, onClose }: { id: string | null; period: Metri
           {data.purchases_without_amount > 0 && (
             <p className="text-xs text-warning">{data.purchases_without_amount} compra(s) paga(s) chegaram sem valor e não entram na receita.</p>
           )}
-          <div>
-            <h4 className="text-sm font-medium text-fg">Contas do Instagram ({data.accounts.length})</h4>
-            {data.accounts.length === 0 ? (
-              <p className="mt-2 text-xs text-muted">Nenhuma conta conectada.</p>
-            ) : (
-              <ul className="mt-2 divide-y divide-[color:var(--color-line-soft)] rounded-xl border border-line-soft">
-                {data.accounts.map((account) => (
-                  <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs" key={account.account_id}>
-                    <span className="text-fg">@{account.username}</span>
-                    <span className="text-muted">
-                      {account.status === "connected" ? "conectada" : account.status} · {formatNumber(account.published_posts)} publicações ·{" "}
-                      {account.video_views_lifetime === null ? "views indisponíveis" : `${formatNumber(account.video_views_lifetime)} views acumuladas`}
-                      {account.follower_count !== null && ` · ${formatNumber(account.follower_count)} seguidores`}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <AccountsList accounts={data.accounts} filter={accountFilter} onFilter={setAccountFilter} />
           {id && <PartnerOperations id={id} period={period} />}
           <p className="rounded-xl border border-line-soft bg-surface-inset p-3 text-[11px] leading-5 text-muted">{data.criteria.participation}</p>
         </div>
       )}
     </Modal>
+  );
+}
+
+function AccountsList({ accounts, filter, onFilter }: {
+  accounts: Detail["accounts"];
+  filter: AccountFilter;
+  onFilter: (filter: AccountFilter) => void;
+}) {
+  const connected = accounts.filter((account) => account.status === "connected");
+  const disconnected = accounts.filter((account) => account.status !== "connected");
+  const shown = filter === "connected" ? connected : filter === "disconnected" ? disconnected : accounts;
+  const chips: [AccountFilter, string, number][] = [
+    ["all", "Todas", accounts.length],
+    ["connected", "Conectadas", connected.length],
+    ["disconnected", "Desconectadas", disconnected.length],
+  ];
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-sm font-medium text-fg">Contas do Instagram</h4>
+        <div className="flex gap-1 rounded-full bg-well p-1" role="tablist">
+          {chips.map(([key, label, count]) => (
+            <button
+              aria-selected={filter === key}
+              className={`rounded-full px-3 py-1 text-[11px] font-medium ${filter === key ? (key === "disconnected" ? "bg-danger text-white" : "bg-brand text-white") : "text-muted"}`}
+              key={key}
+              onClick={() => onFilter(key)}
+              role="tab"
+              type="button"
+            >
+              {label} ({count})
+            </button>
+          ))}
+        </div>
+      </div>
+      {shown.length === 0 ? (
+        <p className="mt-2 text-xs text-muted">
+          {filter === "disconnected" ? "Nenhuma conta desconectada." : filter === "connected" ? "Nenhuma conta conectada." : "Nenhuma conta."}
+        </p>
+      ) : (
+        <ul className="mt-2 max-h-72 divide-y divide-[color:var(--color-line-soft)] overflow-y-auto rounded-xl border border-line-soft">
+          {shown.map((account) => (
+            <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs" key={account.account_id}>
+              <span className="flex items-center gap-2 text-fg">
+                <span className={`size-2 rounded-full ${account.status === "connected" ? "bg-success" : "bg-danger"}`} />
+                @{account.username}
+                <ProfileLink username={account.username} />
+              </span>
+              <span className="text-muted">
+                {accountStatus[account.status] ?? account.status} · {formatNumber(account.published_posts)} publicações ·{" "}
+                {account.video_views_lifetime === null ? "views indisponíveis" : `${formatNumber(account.video_views_lifetime)} views`}
+                {account.follower_count !== null && ` · ${formatNumber(account.follower_count)} seguidores`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -269,7 +391,9 @@ function PartnerOperations({ id, period }: { id: string; period: MetricsPeriod }
 export function AffiliatesPage() {
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState<MetricsPeriod>({ period: "30d", start: todayInput(), end: todayInput() });
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [open, setOpen] = useState<{ id: string; accounts: AccountFilter } | null>(null);
+  const [only, setOnly] = useState<string>("");
+  const [inviting, setInviting] = useState(false);
   const list = useQuery({
     queryKey: ["affiliates", "list", periodParams(period)],
     queryFn: () => apiRequest<Listing>(`/api/affiliates?${new URLSearchParams(periodParams(period))}`),
@@ -282,9 +406,10 @@ export function AffiliatesPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["affiliates"] }),
   });
   const data = list.data;
+  const rows = data ? (only ? data.rows.filter((row) => row.id === only) : data.rows) : [];
 
   return (
-    <div className="mx-auto max-w-[1200px] space-y-4">
+    <div className="w-full space-y-4">
       <header className="space-y-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Rede</p>
@@ -298,9 +423,8 @@ export function AffiliatesPage() {
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>
 
-      <InviteCard />
-      <NoticesCard />
-
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="min-w-0 space-y-4">
       {list.isLoading && <LoadingState label="Carregando filiados" />}
       {list.error && <ErrorState message={errorText(list.error)} onRetry={() => void list.refetch()} />}
       {data && (
@@ -311,7 +435,7 @@ export function AffiliatesPage() {
                 ["Sócios", formatNumber(data.rows.length)],
                 ["Vendas FlashBot dos sócios", money(data.rows.reduce((sum, row) => sum + Number(row.bot_revenue), 0).toFixed(2))],
                 ["Comissão recebida", money(data.rows.reduce((sum, row) => sum + Number(row.commission_received), 0).toFixed(2))],
-                ["Receita SharkBot", money(data.totals_revenue)],
+                ["Faturamento total (Shark + Flash)", money(data.totals_revenue)],
                 ["Participação SharkBot (referência)", money(data.totals_participation)],
               ].map(([title, value]) => (
                 <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={title}>
@@ -325,12 +449,45 @@ export function AffiliatesPage() {
               {data.basis} Período: {data.period_label} (fuso {data.time_zone}).
             </p>
           </section>
+          {(
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="mr-auto flex items-center gap-2 text-base font-semibold text-fg">
+                Seus sócios <span className="text-sm font-normal text-muted">({data.rows.length})</span>
+              </h3>
+              <button className="btn-primary !min-h-10" onClick={() => setInviting(true)} type="button">
+                <Plus size={16} /> Adicionar sócio
+              </button>
+              {data.rows.length > 0 && <select
+                aria-label="Filtrar sócio"
+                className="field !w-auto min-w-[220px]"
+                onChange={(event) => setOnly(event.target.value)}
+                value={only}
+              >
+                <option value="">Todos os sócios ({data.rows.length})</option>
+                {data.rows.map((row) => (
+                  <option key={row.id} value={row.id}>{row.full_name}</option>
+                ))}
+              </select>}
+              {only && (
+                <button className="btn-primary !min-h-10" onClick={() => setOpen({ id: only, accounts: "all" })} type="button">
+                  <BarChart3 size={15} /> Abrir painel do sócio
+                </button>
+              )}
+            </div>
+          )}
           {data.rows.length === 0 ? (
-            <EmptyState message="Você ainda não tem sócios. Compartilhe seu código ou link de cadastro." />
+            <EmptyState message="Você ainda não tem sócios. Clique em “Adicionar sócio” para gerar o link de convite." />
           ) : (
             <div className="glass-panel overflow-x-auto">
-              <table className="w-full min-w-[1120px] text-left text-xs">
+              <table className="w-full min-w-[1420px] text-left text-xs">
                 <thead className="text-muted">
+                  <tr className="text-[10px] uppercase tracking-wider">
+                    <th colSpan={3} />
+                    <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={3}>SharkBot</th>
+                    <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={2}>FlashBot</th>
+                    <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={5}>Faturamento e carteira</th>
+                    <th colSpan={4} />
+                  </tr>
                   <tr className="border-b border-line-soft">
                     <th className="px-4 py-3 font-medium">Sócio</th>
                     <th className="px-2 py-3 text-right font-medium">Contas</th>
@@ -338,7 +495,13 @@ export function AffiliatesPage() {
                     <th className="px-2 py-3 text-right font-medium">Leads</th>
                     <th className="px-2 py-3 text-right font-medium">Compras</th>
                     <th className="px-2 py-3 text-right font-medium">Receita</th>
-                    <th className="px-2 py-3 text-right font-medium">FlashBot</th>
+                    <th className="px-2 py-3 text-right font-medium">Leads</th>
+                    <th className="px-2 py-3 text-right font-medium">Vendas</th>
+                    <th className="px-2 py-3 text-right font-medium">Total</th>
+                    <th className="px-2 py-3 text-right font-medium">Hoje</th>
+                    <th className="px-2 py-3 text-right font-medium">Ticket médio</th>
+                    <th className="px-2 py-3 text-right font-medium">Sacado</th>
+                    <th className="px-2 py-3 text-right font-medium">Saldo na conta</th>
                     <th className="px-2 py-3 text-right font-medium">Comissão recebida</th>
                     <th className="px-2 py-3 font-medium">Compartilhados</th>
                     <th className="px-2 py-3 text-right font-medium">Comissão (%)</th>
@@ -346,20 +509,47 @@ export function AffiliatesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.rows.map((row) => (
+                  {rows.map((row) => (
                     <tr className="border-b border-line-soft last:border-0" key={row.id}>
                       <td className="px-4 py-3">
-                        <button className="text-left text-fg hover:text-white" onClick={() => setOpenId(row.id)} type="button">
+                        <button className="text-left text-fg hover:text-white" onClick={() => setOpen({ id: row.id, accounts: "all" })} type="button">
                           <span className="block font-medium">{row.full_name}</span>
                           <span className="text-[10px] text-muted">{row.nickname}</span>
                         </button>
+                        <button
+                          className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-accent"
+                          onClick={() => setOpen({ id: row.id, accounts: "all" })}
+                          type="button"
+                        >
+                          <BarChart3 size={11} /> Abrir painel
+                        </button>
                       </td>
-                      <td className="px-2 py-3 text-right text-fg">{row.accounts_connected}/{row.accounts_total}</td>
+                      <td className="px-2 py-3 text-right">
+                        <button
+                          className="text-right"
+                          onClick={() => setOpen({ id: row.id, accounts: "connected" })}
+                          title="Ver as contas do sócio"
+                          type="button"
+                        >
+                          <span className="block font-semibold text-success hover:underline">{row.accounts_connected} conectadas</span>
+                        </button>
+                        {row.accounts_total - row.accounts_connected > 0 && (
+                          <button className="block w-full text-right" onClick={() => setOpen({ id: row.id, accounts: "disconnected" })} type="button">
+                            <span className="text-[10px] text-danger hover:underline">{row.accounts_total - row.accounts_connected} desconectadas</span>
+                          </button>
+                        )}
+                      </td>
                       <td className="px-2 py-3 text-right text-fg">{formatNumber(row.published_posts)}</td>
                       <td className="px-2 py-3 text-right text-fg">{formatNumber(row.leads)}</td>
                       <td className="px-2 py-3 text-right text-fg">{formatNumber(row.purchases)}</td>
                       <td className="px-2 py-3 text-right font-semibold text-success">{money(row.revenue)}</td>
-                      <td className="px-2 py-3 text-right text-fg">{money(row.bot_revenue)}<span className="block text-[10px] text-muted">{row.bot_sales} venda(s)</span></td>
+                      <td className="px-2 py-3 text-right text-fg">{formatNumber(row.bot_leads ?? 0)}</td>
+                      <td className="px-2 py-3 text-right text-fg">{money(row.bot_revenue)}<span className="block text-[10px] text-muted">{row.bot_sales} {row.bot_sales === 1 ? "venda" : "vendas"}</span></td>
+                      <td className="px-2 py-3 text-right font-semibold text-success">{money(row.total_revenue ?? "0")}<span className="block text-[10px] font-normal text-muted">{row.total_sales ?? 0} {row.total_sales === 1 ? "venda" : "vendas"}</span></td>
+                      <td className="px-2 py-3 text-right text-fg">{money(row.today_revenue ?? "0")}</td>
+                      <td className="px-2 py-3 text-right text-fg">{row.total_ticket ? money(row.total_ticket) : "—"}</td>
+                      <td className="px-2 py-3 text-right text-fg">{money(row.withdrawn ?? "0")}</td>
+                      <td className="px-2 py-3 text-right font-semibold text-fg">{money(row.balance ?? "0")}</td>
                       <td className="px-2 py-3 text-right font-semibold text-fg">{money(row.commission_received)}</td>
                       <td className="px-2 py-3">
                         <PartnerSharesCell affiliationId={row.id} name={row.full_name} userId={row.user_id} />
@@ -393,7 +583,19 @@ export function AffiliatesPage() {
           )}
         </>
       )}
-      <DetailModal id={openId} onClose={() => setOpenId(null)} period={period} />
+      </div>
+      <aside className="space-y-4 xl:sticky xl:top-[calc(72px+env(safe-area-inset-top)+16px)]">
+        <NoticesCard side />
+      </aside>
+      </div>
+      <InviteModal onClose={() => setInviting(false)} open={inviting} />
+      <DetailModal
+        id={open?.id ?? null}
+        initialAccounts={open?.accounts ?? "all"}
+        key={open ? `${open.id}-${open.accounts}` : "closed"}
+        onClose={() => setOpen(null)}
+        period={period}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import json
 import logging
 import secrets
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -161,6 +161,7 @@ async def receive_sharkbot_webhook(
 
     now = datetime.now(timezone.utc)
     accepted = duplicates = ignored = 0
+    newly_paid = []
     for raw_event in events:
         parsed = parse_event(raw_event)
         if parsed is None:
@@ -174,6 +175,8 @@ async def receive_sharkbot_webhook(
             changed = await upsert_transaction(
                 db, workspace.id, parsed, account_id, now, shark_account_id
             )
+            if changed and parsed.paid:
+                newly_paid.append(parsed)
         else:  # link_click: logged only
             changed = False
         await log_event(db, workspace.id, parsed, account_id)
@@ -184,9 +187,39 @@ async def receive_sharkbot_webhook(
     if shark_account is not None:
         shark_account.last_event_at = now
     await db.commit()
+    if newly_paid:
+        await _notify_shark_sales(db, workspace, newly_paid, now)
     # Unknown event types are acknowledged (200) so SharkBot does not retry
     # them forever; they are reported as ignored.
     return SharkbotWebhookResponse(accepted=accepted, duplicates=duplicates, ignored=ignored)
+
+
+_NOTIFY_MAX_AGE = timedelta(minutes=30)
+_NOTIFY_MAX_PER_DELIVERY = 3
+
+
+async def _notify_shark_sales(db, workspace: Workspace, sales: list, now: datetime) -> None:
+    """Approved SharkBot sale -> the same "Nova venda" notice (and cash sound) as FlashBot.
+    Old payments re-sent by SharkBot (history backfills) do not notify."""
+    from app.partners.service import notify_user
+
+    fresh = [
+        sale for sale in sales
+        if (sale.paid_at or sale.occurred_at or now) >= now - _NOTIFY_MAX_AGE
+    ]
+    try:
+        for sale in fresh[:_NOTIFY_MAX_PER_DELIVERY]:
+            amount = f"R$ {sale.amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if sale.amount else None
+            detail = " · ".join(part for part in (sale.plan_name, sale.bot_name) if part)
+            body = (f"Você recebeu {amount}" if amount else "Pagamento aprovado") + (f" · {detail}" if detail else "")
+            await notify_user(db, workspace.owner_id, "sale", "🦈 Nova venda SharkBot!", body, "/dashboard")
+        if len(fresh) > _NOTIFY_MAX_PER_DELIVERY:
+            extra = len(fresh) - _NOTIFY_MAX_PER_DELIVERY
+            await notify_user(db, workspace.owner_id, "sale", "🦈 Novas vendas SharkBot!", f"Mais {extra} venda(s) aprovada(s).", "/dashboard")
+        await db.commit()
+    except Exception as exc:  # a notice must never fail the webhook
+        await db.rollback()
+        logger.warning("SharkBot sale notice failed (%s).", type(exc).__name__)
 
 
 # ---------------------------------------------------------------- accounts

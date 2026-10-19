@@ -8,8 +8,12 @@ Rules enforced here (never only in the UI):
 * the participation is a reference calculation. FlashPost makes no payouts.
 """
 
+import base64
+import hashlib
+import hmac
 import secrets
-from datetime import date
+import time
+from datetime import date, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -22,12 +26,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
 from app.core.config import get_settings
-from app.core.time import APP_TIME_ZONE_NAME, utc_now
+from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, utc_now
 from app.models import (
     Affiliation,
     InstagramAccount,
     InstagramMediaInsight,
     InstagramPublicationJob,
+    TgLead,
     TgOrder,
     User,
     Workspace,
@@ -128,10 +133,56 @@ async def link_affiliate(db: AsyncSession, code: str, affiliate: User) -> Affili
     return link
 
 
+# --------------------------------------------------------------- invite terms
+_TERMS_TTL_SECONDS = 30 * 24 * 3600
+
+
+def _terms_key() -> bytes:
+    secret = get_settings().session_secret
+    if secret is None:
+        raise HTTPException(status_code=503, detail="Servidor sem chave de assinatura.")
+    return hashlib.sha256(b"invite-terms:" + secret.get_secret_value().encode()).digest()
+
+
+def make_invite_terms(chief_id: UUID, percent: Decimal) -> str:
+    """Signed "this chief offers X%": the invitee cannot change it in the URL."""
+    payload = f"{chief_id.hex}.{percent.quantize(Decimal('0.01'))}.{int(time.time()) + _TERMS_TTL_SECONDS}"
+    signature = hmac.new(_terms_key(), payload.encode(), hashlib.sha256).hexdigest()[:20]
+    return base64.urlsafe_b64encode(f"{payload}.{signature}".encode()).decode().rstrip("=")
+
+
+def read_invite_terms(token: str) -> tuple[UUID, Decimal] | None:
+    """(chief id, percent) for a valid, unexpired token; None otherwise."""
+    try:
+        raw = base64.urlsafe_b64decode(token.strip() + "=" * (-len(token.strip()) % 4)).decode()
+        chief_hex, whole, cents, expires, signature = raw.split(".")
+        percent = f"{whole}.{cents}"
+        payload = f"{chief_hex}.{percent}.{expires}"
+        expected = hmac.new(_terms_key(), payload.encode(), hashlib.sha256).hexdigest()[:20]
+        if not hmac.compare_digest(expected, signature) or int(expires) < time.time():
+            return None
+        value = Decimal(percent)
+        if not Decimal("0") <= value <= Decimal("100"):
+            return None
+        return UUID(chief_hex), value
+    except Exception:
+        return None
+
+
 # --------------------------------------------------------------- schemas
 class InviteResponse(BaseModel):
     code: str
     invite_url: str
+    percent: Decimal | None = None
+
+
+class InviteLinkRequest(BaseModel):
+    percent: Decimal = Field(ge=0, le=90, decimal_places=2)
+
+
+class InvitePreview(BaseModel):
+    chief_name: str
+    percent: Decimal | None
 
 
 class JoinRequest(BaseModel):
@@ -173,7 +224,16 @@ class AffiliateRow(BaseModel):
     pending_acceptance: bool = True
     bot_revenue: Decimal = Decimal("0.00")
     bot_sales: int = 0
+    bot_leads: int = 0
+    bot_pix: int = 0
     commission_received: Decimal = Decimal("0.00")
+    # SharkBot + FlashBot together, so a sale in either bot shows up.
+    total_revenue: Decimal = Decimal("0.00")
+    total_sales: int = 0
+    total_ticket: Decimal | None = None
+    today_revenue: Decimal = Decimal("0.00")
+    withdrawn: Decimal = Decimal("0.00")
+    balance: Decimal = Decimal("0.00")
 
 
 class AffiliatesResponse(BaseModel):
@@ -219,9 +279,31 @@ async def rotate_invite(access: OwnerAccess, user: AuthenticatedUser, db: DbSess
     return _invite(code)
 
 
-def _invite(code: str) -> InviteResponse:
+def _invite(code: str, terms: str | None = None, percent: Decimal | None = None) -> InviteResponse:
     base = get_settings().public_base_url.rstrip("/")
-    return InviteResponse(code=code, invite_url=f"{base}/register?invite={code}")
+    url = f"{base}/register?invite={code}" + (f"&terms={terms}" if terms else "")
+    return InviteResponse(code=code, invite_url=url, percent=percent)
+
+
+@router.post("/invite/link", response_model=InviteResponse, dependencies=[Depends(require_csrf)])
+async def invite_link_with_percent(
+    payload: InviteLinkRequest, access: OwnerAccess, user: AuthenticatedUser, db: DbSession
+) -> InviteResponse:
+    """Invite link that already carries the commission: whoever signs up through it
+    agrees to that percent on the sign-up screen, so no separate acceptance is asked."""
+    code = await ensure_invite_code(db, user)
+    await db.commit()
+    percent = payload.percent.quantize(Decimal("0.01"))
+    return _invite(code, make_invite_terms(user.id, percent), percent)
+
+
+@router.get("/invite/preview", response_model=InvitePreview)
+async def invite_preview(code: str, db: DbSession, terms: str | None = None) -> InvitePreview:
+    """Public: what the sign-up screen shows before the person creates the account."""
+    chief = await find_chief(db, code)
+    parsed = read_invite_terms(terms) if terms else None
+    percent = parsed[1] if parsed and parsed[0] == chief.id else None
+    return InvitePreview(chief_name=chief.full_name, percent=percent)
 
 
 @router.post("/join", response_model=MyChiefResponse, dependencies=[Depends(require_csrf)])
@@ -339,7 +421,31 @@ async def _row_for(db: AsyncSession, link: Affiliation, user: User, start, end) 
         accepted_percent=link.accepted_percent,
         pending_acceptance=pending_acceptance(link),
         **(await _bot_numbers(db, workspace.id if workspace else None, link.chief_user_id, start, end)),
+        **(await _money_numbers(db, user, workspace.id if workspace else None, start, end)),
     )
+
+
+async def _money_numbers(db: AsyncSession, user: User, workspace_id, start, end) -> dict:
+    """Combined revenue (period and today, Brazil time), what was withdrawn and what is left."""
+    if workspace_id is None:
+        return {}
+    from app.finance.router import _revenue_between
+    from app.wallet.router import balances
+
+    gross, _net, sales, _no_amount, _bot = await _revenue_between(db, workspace_id, start, end)
+    now = utc_now()
+    today_start = now.astimezone(BRAZIL_TIME_ZONE).replace(hour=0, minute=0, second=0, microsecond=0)
+    today, *_ = await _revenue_between(db, workspace_id, today_start.astimezone(timezone.utc), now)
+    wallet = await balances(db, user, workspace_id)
+    gross = Decimal(gross or 0).quantize(Decimal("0.01"))
+    return {
+        "total_revenue": gross,
+        "total_sales": int(sales),
+        "total_ticket": (gross / sales).quantize(Decimal("0.01")) if sales else None,
+        "today_revenue": Decimal(today or 0).quantize(Decimal("0.01")),
+        "withdrawn": wallet["withdrawn"],
+        "balance": wallet["available"],
+    }
 
 
 async def _bot_numbers(db: AsyncSession, workspace_id, chief_user_id, start, end) -> dict:
@@ -360,7 +466,19 @@ async def _bot_numbers(db: AsyncSession, workspace_id, chief_user_id, start, end
             )
         )
     ).one()
+    leads = await db.scalar(
+        select(func.count(TgLead.id)).where(
+            TgLead.workspace_id == workspace_id, TgLead.created_at >= start, TgLead.created_at < end
+        )
+    )
+    pix = await db.scalar(
+        select(func.count(TgOrder.id)).where(
+            TgOrder.workspace_id == workspace_id, TgOrder.created_at >= start, TgOrder.created_at < end
+        )
+    )
     return {
+        "bot_leads": int(leads or 0),
+        "bot_pix": int(pix or 0),
         "bot_sales": int(row[0]),
         "bot_revenue": Decimal(row[1] or 0).quantize(Decimal("0.01")),
         "commission_received": Decimal(row[2] or 0).quantize(Decimal("0.01")),
@@ -391,7 +509,7 @@ async def list_affiliates(
         period_label=period_label(start, end),
         time_zone=APP_TIME_ZONE_NAME,
         basis=PARTICIPATION_BASIS,
-        totals_revenue=sum((row.revenue for row in rows), Decimal("0.00")),
+        totals_revenue=sum((row.total_revenue for row in rows), Decimal("0.00")),
         totals_participation=sum((row.participation_amount for row in rows), Decimal("0.00")),
         rows=rows,
     )
