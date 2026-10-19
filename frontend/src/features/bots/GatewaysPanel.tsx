@@ -14,6 +14,9 @@ type GatewayState = {
   is_admin: boolean;
   needs_recipient: boolean;
   flows: { id: string; name: string; gateway: GatewayId | null }[];
+  // funnels shared by a chief that this operation's bots run: they follow the chief's gateway
+  shared_flows: { name: string; gateway: GatewayId }[];
+  partners_without_shop_id: string[];
   gateways: Gateway[];
   admin?: { snakepay_key_set: boolean; snakepay_secret_set: boolean; snakepay_enabled: boolean; snakepay_webhook_url: string };
 };
@@ -121,7 +124,9 @@ export function GatewaysPanel() {
         </div>
   );
   const nameOf = (id: GatewayId) => data.gateways.find((g) => g.id === id)?.name ?? id;
+  const sharedSnake = data.shared_flows.filter((flow) => flow.gateway === "snakepay");
   const needsRecipient = picked === "snakepay" && data.needs_recipient;
+  const missingShopId = sharedSnake.length > 0 && !(data.snakepay_recipient_id ?? "").trim();
 
   return (
     <section className="space-y-4">
@@ -133,6 +138,34 @@ export function GatewaysPanel() {
           <h2 className="text-base font-semibold text-fg">Gateway de pagamento</h2>
         </div>
         <p className="mt-1 text-xs text-muted">Escolha por onde os Pix dos seus robôs são gerados. Vale para todos os seus bots.</p>
+        {data.shared_flows.length > 0 && (
+          <div className={`mt-3 rounded-xl border p-3 text-xs leading-5 ${missingShopId ? "border-warning/50 bg-warning/10" : "border-line-soft bg-surface-inset"}`}>
+            <p className="flex items-center gap-2 font-semibold text-fg">
+              <CircleAlert className={missingShopId ? "text-warning" : "text-accent"} size={15} /> Funis compartilhados com você
+            </p>
+            <p className="mt-1 text-muted">
+              Estes funis usam o gateway que quem compartilhou escolheu:{" "}
+              {data.shared_flows.map((flow) => `${flow.name} (${nameOf(flow.gateway)})`).join(", ")}.
+            </p>
+            {missingShopId && (
+              <p className="mt-1 font-medium text-warning">
+                Cadastre seu ShopID da SnakePay abaixo para receber sua parte por lá. Enquanto não cadastrar, essas vendas continuam pela SmokePay.
+              </p>
+            )}
+          </div>
+        )}
+        {data.partners_without_shop_id.length > 0 && (
+          <div className="mt-3 rounded-xl border border-warning/50 bg-warning/10 p-3 text-xs leading-5">
+            <p className="flex items-center gap-2 font-semibold text-fg">
+              <CircleAlert className="text-warning" size={15} /> Sócios sem ShopID da SnakePay
+            </p>
+            <p className="mt-1 text-muted">
+              {data.partners_without_shop_id.join(", ")} {data.partners_without_shop_id.length > 1 ? "rodam" : "roda"} seus funis com SnakePay, mas ainda não
+              cadastrou o ShopID. Sem ele a SnakePay não tem para onde mandar a parte do sócio, então essas vendas (e a sua comissão) seguem pela SmokePay até o
+              ShopID ser cadastrado na aba Gateways do sócio.
+            </p>
+          </div>
+        )}
 
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {data.gateways.map((gateway) => {
@@ -190,7 +223,7 @@ export function GatewaysPanel() {
           ))}
         </div>
 
-        {picked === "snakepay" && (
+        {(picked === "snakepay" || sharedSnake.length > 0) && (
           <div className="mt-4 rounded-xl border border-line-soft bg-surface-inset p-3">
             <label className="block text-sm font-medium text-fg" htmlFor="snakepay-recipient">
               Seu ShopID da SnakePay {data.needs_recipient ? "" : "(opcional para a conta principal)"}
@@ -206,8 +239,8 @@ export function GatewaysPanel() {
             />
             <p className="mt-2 text-[11px] leading-5 text-muted">
               Na SnakePay, abra <b className="text-fg-2">Split da conta</b> e copie o <b className="text-fg-2">Seu ShopID</b>. Cada venda cai na conta da plataforma e
-              a SnakePay repassa na hora a sua parte para essa conta (taxa da SnakePay: 3% + R$ 0,25 por venda). Se você é sócio, quem te convidou
-              também precisa cadastrar o ShopID dele; até lá, suas vendas seguem pela SmokePay.
+              a SnakePay repassa na hora a sua parte para essa conta (taxa da SnakePay: 3% + R$ 0,25 por venda). Num funil compartilhado vale o gateway
+              escolhido por quem compartilhou; com SnakePay, o sócio precisa ter o ShopID cadastrado, senão a venda segue pela SmokePay.
             </p>
           </div>
         )}

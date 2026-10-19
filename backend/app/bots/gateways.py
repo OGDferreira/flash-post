@@ -79,17 +79,31 @@ async def platform_recipients(db: AsyncSession) -> list[str]:
 
 
 def gateway_for(workspace: Workspace, flow: TgFlow | None) -> str:
-    """The funnel's own choice (only for the operation's own funnels), else the default."""
-    if flow is not None and flow.workspace_id == workspace.id and flow.payment_gateway in GATEWAYS:
+    """The funnel's own choice, else the operation's default."""
+    if flow is not None and flow.payment_gateway in GATEWAYS:
         return flow.payment_gateway
     return workspace.payment_gateway if workspace.payment_gateway in GATEWAYS else "smokepay"
+
+
+async def gateway_choice(db: AsyncSession, workspace: Workspace, flow: TgFlow | None) -> str:
+    """Who picks the gateway for this sale. A funnel shared by the chief (run directly, or a
+    copy made from it) follows the chief's choice for that funnel, else the chief's default;
+    the operation's own funnels follow the operation."""
+    source = flow
+    if flow is not None and flow.workspace_id == workspace.id and flow.template_flow_id is not None:
+        template = await db.get(TgFlow, flow.template_flow_id)
+        source = template if template is not None and template.workspace_id != workspace.id else flow
+    if source is None or source.workspace_id == workspace.id:
+        return gateway_for(workspace, flow)
+    owner = await db.get(Workspace, source.workspace_id)
+    return gateway_for(owner, source) if owner is not None else gateway_for(workspace, None)
 
 
 async def snakepay_plan(
     db: AsyncSession, workspace: Workspace, route: BillingRoute, amount: Decimal, flow: TgFlow | None = None
 ) -> SnakePlan | None:
     """The SnakePay plan for this sale, or None to charge with SmokePay instead."""
-    if gateway_for(workspace, flow) != "snakepay" or not await snakepay_available(db):
+    if await gateway_choice(db, workspace, flow) != "snakepay" or not await snakepay_available(db):
         return None
     owner = await db.get(User, workspace.owner_id)
     if owner is None:

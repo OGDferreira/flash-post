@@ -10,7 +10,7 @@ from sqlalchemy import func, select, update
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, SuperAdminUser, require_csrf
 from app.bots import engine, gateways, snakepay
 from app.core.config import get_settings
-from app.models import SystemSetting, TgFlow, TgOrder
+from app.models import SystemSetting, TgBot, TgFlow, TgOrder, User, Workspace
 
 router = APIRouter(prefix="/api/payment-gateways", tags=["Payment gateways"])
 
@@ -84,6 +84,8 @@ async def _state(db, user, workspace) -> dict:
             },
         ],
     }
+    state["shared_flows"] = await _shared_flows(db, workspace)
+    state["partners_without_shop_id"] = await _partners_without_shop_id(db, workspace)
     if admin:
         state["admin"] = {
             "snakepay_key_set": bool(get_settings().snakepay_api_key and get_settings().snakepay_api_key.get_secret_value().strip()),
@@ -94,6 +96,49 @@ async def _state(db, user, workspace) -> dict:
             "snakepay_webhook_url": f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/snakepay",
         }
     return state
+
+
+async def _shared_flows(db, workspace) -> list[dict]:
+    """Funnels shared by a chief that this operation's bots run: they charge with the
+    gateway the chief picked for them, not with this operation's choice."""
+    flows = list(await db.scalars(
+        select(TgFlow).join(TgBot, TgBot.flow_id == TgFlow.id).where(TgBot.workspace_id == workspace.id).distinct()
+    ))
+    shared = []
+    for flow in flows:
+        source = flow
+        if flow.workspace_id == workspace.id and flow.template_flow_id is not None:
+            source = await db.get(TgFlow, flow.template_flow_id) or flow
+        if source.workspace_id == workspace.id:
+            continue
+        shared.append({"name": flow.name, "gateway": await gateways.gateway_choice(db, workspace, flow)})
+    return shared
+
+
+async def _partners_without_shop_id(db, workspace) -> list[str]:
+    """Partners whose bots run this operation's funnels set to SnakePay but who have no
+    ShopID yet: their sales keep going through SmokePay until they add it."""
+    own = {flow.id: flow for flow in await db.scalars(select(TgFlow).where(TgFlow.workspace_id == workspace.id))}
+    if not own:
+        return []
+    rows = await db.execute(
+        select(TgBot.workspace_id, TgFlow)
+        .join(TgFlow, TgFlow.id == TgBot.flow_id)
+        .where(TgBot.workspace_id != workspace.id)
+        .where((TgFlow.id.in_(own)) | (TgFlow.template_flow_id.in_(own)))
+    )
+    names: list[str] = []
+    for partner_ws_id, flow in rows.all():
+        partner_ws = await db.get(Workspace, partner_ws_id)
+        if partner_ws is None or gateways.valid_recipient(partner_ws.snakepay_recipient_id or ""):
+            continue
+        if await gateways.gateway_choice(db, partner_ws, flow) != "snakepay":
+            continue
+        owner = await db.get(User, partner_ws.owner_id)
+        name = (owner.full_name if owner else None) or partner_ws.name
+        if name not in names:
+            names.append(name)
+    return names
 
 
 @router.get("")
