@@ -151,7 +151,7 @@ export function NextAward() {
             <div className="relative aspect-[4/5] overflow-hidden bg-well">
               {goal.image_url ? (
                 <img
-                  alt={`Premiação de ${brl(goal.amount)} faturados: ${goal.prize}`}
+                  alt={`Premiação de ${brl(goal.amount)} faturados`}
                   className={`h-full w-full object-cover transition duration-500 ${goal.reached ? "" : "brightness-[.4] grayscale group-hover:scale-105 group-hover:brightness-[.6]"}`}
                   src={goal.image_url}
                 />
@@ -169,7 +169,6 @@ export function NextAward() {
             </div>
             <div className="space-y-1.5 bg-surface-inset p-3">
               <p className="truncate text-sm font-bold text-fg">{brl(goal.amount)} faturados</p>
-              <p className="truncate text-[11px] text-muted">{goal.prize}</p>
               <p className="flex justify-between text-[10px] text-muted">
                 <span className="font-semibold uppercase text-accent">Meta</span>
                 <span className="font-semibold text-fg">{brl(Math.min(data.month_revenue, goal.amount))} / {brl(goal.amount)}</span>
