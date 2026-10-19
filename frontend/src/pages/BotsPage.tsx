@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bot, CalendarDays, GitBranch, Megaphone, Receipt, Share2 } from "lucide-react";
+import { Bot, CalendarDays, CreditCard, GitBranch, Megaphone, Receipt, Share2 } from "lucide-react";
 
 import { FlashBotLogo } from "@/components/FlashBotLogo";
 import { PeriodFilter, todayInput, type MetricsPeriod } from "@/features/analytics/period";
@@ -9,6 +9,7 @@ import { ConversionOverview } from "@/features/bots/ConversionOverview";
 import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
 import { BotsListPanel } from "@/features/bots/BotsListPanel";
 import { FlowsPanel } from "@/features/bots/FlowsPanel";
+import { GatewaysPanel } from "@/features/bots/GatewaysPanel";
 import { RemarketingPanel } from "@/features/bots/remarketing/RemarketingPanel";
 import { SharedFlowsPanel } from "@/features/partners/SharedTemplates";
 
@@ -18,6 +19,7 @@ const tabs = [
   { id: "remarketing", label: "Remarketing", short: "Remarketing", Icon: Megaphone },
   { id: "shared", label: "Funis compartilhados", short: "Compartilhados", Icon: Share2 },
   { id: "sales", label: "Vendas", short: "Vendas", Icon: Receipt },
+  { id: "gateways", label: "Gateways", short: "Gateways", Icon: CreditCard },
 ] as const;
 
 type Tab = (typeof tabs)[number]["id"];
@@ -56,7 +58,7 @@ function TabBar({ tab, onChoose }: { tab: Tab; onChoose: (tab: Tab) => void }) {
           aria-label="Seções do FlashBot no celular"
           className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+92px)] z-30 lg:hidden"
         >
-          <div className="grid grid-cols-5 gap-0.5 rounded-2xl border border-line bg-[var(--nm-bg)]/95 p-1 shadow-2xl backdrop-blur" role="tablist">
+          <div className="grid grid-cols-6 gap-0.5 rounded-2xl border border-line bg-[var(--nm-bg)]/95 p-1 shadow-2xl backdrop-blur" role="tablist">
             {buttons(false)}
           </div>
         </nav>,
@@ -125,6 +127,7 @@ export function BotsPage() {
       {tab === "remarketing" && <RemarketingPanel flowId={remarketingFlow} onEditingChange={setEditing} onFlowChange={setRemarketingFlow} />}
       {tab === "shared" && <SharedFlowsPanel />}
       {tab === "sales" && <BotSalesPanel />}
+      {tab === "gateways" && <GatewaysPanel />}
     </div>
   );
 }

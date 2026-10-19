@@ -725,6 +725,39 @@ async def telegram_webhook(bot_id: uuid.UUID, request: Request, background: Back
     return {"ok": True}
 
 
+@router.post("/pay/snakepay", include_in_schema=False)
+async def snakepay_webhook(request: Request, db: DbSession) -> dict:
+    """``pix.paid`` from SnakePay: find the order by its charge id and approve it once.
+    SnakePay does not redeliver; the "Já paguei" button and reconciliation also ask it."""
+    from app.bots import snakepay
+
+    raw = await request.body()
+    if not snakepay.verify_signature(raw, request.headers.get("x-snakepay-signature")):
+        raise HTTPException(status_code=401, detail="Invalid signature.")
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return {"ok": True}
+    data = event.get("data") if isinstance(event, dict) and isinstance(event.get("data"), dict) else {}
+    charge_id = str(data.get("charge_id") or data.get("id") or "")
+    if event.get("type") != "pix.paid" or not charge_id:
+        return {"ok": True}  # expired/failed: the order's own expiry job handles it
+    order = await db.scalar(
+        select(TgOrder).where(TgOrder.gateway == "snakepay", TgOrder.gateway_transaction_id == charge_id[:64])
+    )
+    if order is None:
+        return {"ok": True}  # not a bot order (e.g. the panel's test event)
+    amount = snakepay._cents(data.get("amount"))
+    net = snakepay._cents(data.get("net_amount"))
+    fee = (amount - net).quantize(Decimal("0.01")) if amount is not None and net is not None else None
+    try:
+        await engine.approve_order(db, order.id, amount if amount is not None else order.amount, None, fee, net)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Retry.") from None
+    return {"ok": True}
+
+
 @router.post("/pay/smokepay", include_in_schema=False)
 async def smokepay_webhook(request: Request, db: DbSession) -> dict:
     raw = await request.body()

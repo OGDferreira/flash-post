@@ -110,19 +110,22 @@ async def _workspace_for(db, user: User) -> Workspace:
 
 async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
     """What the sales left for this user (after fee and split) and what is free to withdraw."""
+    # SnakePay sales are paid out by SnakePay itself (split to each account): only
+    # SmokePay money sits in the FlashPost wallet.
+    smoke = TgOrder.gateway != "snakepay"
     own = await db.scalar(
         select(func.coalesce(func.sum(func.coalesce(TgOrder.partner_net, TgOrder.net_amount, TgOrder.amount)), 0)).where(
-            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid"
+            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", smoke
         )
     )
     commissions = await db.scalar(
         select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
-            TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid"
+            TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid", smoke
         )
     )
     commission_paid = await db.scalar(
         select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
-            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.split_chief_user_id.is_not(None)
+            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.split_chief_user_id.is_not(None), smoke
         )
     )
     sums = dict(
@@ -145,6 +148,21 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
         "pending": pending,
         "available": max(Decimal("0.00"), earned - withdrawn - pending),
     }
+
+
+async def snakepay_received(db, user: User, workspace_id: uuid.UUID) -> Decimal:
+    """Shares of SnakePay sales already sent by SnakePay to this user's own account."""
+    own = await db.scalar(
+        select(func.coalesce(func.sum(func.coalesce(TgOrder.partner_net, TgOrder.net_amount)), 0)).where(
+            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.gateway == "snakepay"
+        )
+    )
+    commissions = await db.scalar(
+        select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
+            TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid", TgOrder.gateway == "snakepay"
+        )
+    )
+    return _money(own) + _money(commissions)
 
 
 async def month_revenue(db, workspace_id: uuid.UUID) -> Decimal:
@@ -354,6 +372,7 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "shop_ref": shop,
         "month_revenue": float(revenue),
         "month_shark_revenue": float(shark_revenue),
+        "snakepay_received": float(await snakepay_received(db, user, workspace.id)),
         "month_flash_revenue": float(flash_revenue),
         "goal": _goals_out(revenue, await award_image_urls(db)),
         **numbers,

@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # SmokePay takes its withdrawal fee from the balance on top of the amount.
     smokepay_withdraw_fee: Decimal = Decimal("3.00")
     smokepay_base_url: str = "https://smokepay.com.br"
+    # SnakePay (second PIX gateway): the platform owner's key and webhook secret.
+    snakepay_api_key: SecretStr | None = None
+    snakepay_webhook_secret: SecretStr | None = None
+    snakepay_base_url: str = "https://snakepay.com.br/api/public/v1"
     vapid_subject: str | None = None
     daily_views_goal_check_minutes: Annotated[int, Field(ge=5, le=240)] = 15
     session_max_age_seconds: Annotated[int, Field(ge=900, le=2592000)] = 2592000
@@ -54,6 +58,8 @@ class Settings(BaseSettings):
         "session_secret",
         "master_encryption_key",
         "vapid_private_key",
+        "snakepay_api_key",
+        "snakepay_webhook_secret",
         mode="before",
     )
     @classmethod

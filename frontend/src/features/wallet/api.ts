@@ -35,6 +35,7 @@ export type Wallet = {
   balance_source: "smokepay" | "estimate";
   month_revenue: number;
   month_shark_revenue?: number;
+  snakepay_received?: number;
   month_flash_revenue?: number;
   goal: Goal;
   earned: number;
