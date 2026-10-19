@@ -121,9 +121,11 @@ class TelegramClient:
         reply_markup: dict | None = None,
         spoiler: bool = False,
         protect: bool = False,
+        silent: bool = False,
     ) -> dict:
         params: dict[str, Any] = {
             "chat_id": chat_id,
+            "disable_notification": silent or None,
             "caption": caption or None,
             "parse_mode": "HTML" if caption else None,
             "reply_markup": reply_markup,
@@ -162,6 +164,10 @@ class TelegramClient:
             pass
 
     # --- groups ---
+    async def get_chat_member(self, chat_id: int, user_id: int) -> dict:
+        return await self.call("getChatMember", {"chat_id": chat_id, "user_id": user_id})
+
+
     async def create_invite_link(self, chat_id: int, name: str, expire_date: int) -> str:
         result = await self.call(
             "createChatInviteLink",

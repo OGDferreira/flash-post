@@ -165,6 +165,7 @@ export type Bot = {
   sales: number;
   revenue: string;
   delivery_group_chat_id?: number | null;
+  cache_chat_id?: number | null;
 };
 
 export type SharedFlowOption = { id: string; name: string; shared_from_chief: true };

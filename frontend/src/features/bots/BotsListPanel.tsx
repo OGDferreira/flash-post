@@ -22,6 +22,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
   const chief = useChiefLabel();
   const queryClient = useQueryClient();
   const [connectOpen, setConnectOpen] = useState(false);
+  const [cacheInfo, setCacheInfo] = useState<Record<string, string>>({});
   const bots = useQuery({ queryKey: ["bots"], queryFn: () => apiRequest<{ bots: Bot[] }>("/api/bots"), retry: false });
   const flows = useQuery({
     queryKey: ["bots", "flows"],
@@ -46,6 +47,14 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
     mutationFn: (id: string) => apiRequest<Bot>(`/api/bots/${id}/webhook`, { method: "POST" }),
     onSuccess: refresh,
   });
+  const checkCache = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest<{ ok: boolean; cached: number; total: number }>(`/api/bots/${id}/cache/check`, { method: "POST" }),
+    onSuccess: (result, id) => {
+      setCacheInfo((current) => ({ ...current, [id]: `${result.cached} de ${result.total} mídias no cache` }));
+      void groups.refetch();
+    },
+  });
   const remove = useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/api/bots/${id}`, { method: "DELETE" }),
     onSuccess: refresh,
@@ -55,7 +64,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
   if (bots.error || !bots.data) {
     return <ErrorState message={errorText(bots.error, "Não foi possível carregar os robôs.")} onRetry={() => void bots.refetch()} />;
   }
-  const mutationError = update.error ?? reconnect.error ?? remove.error;
+  const mutationError = update.error ?? reconnect.error ?? remove.error ?? checkCache.error;
 
   return (
     <div className="space-y-4">
@@ -160,6 +169,44 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                   <span className="text-[11px] text-muted">O funil é de {chief}; quem compra entra no seu grupo. Adicione o robô como admin dele.</span>
                 </label>
               )}
+              <div className="grid gap-1.5 text-sm text-fg-2">
+                <label htmlFor={`cache-${bot.id}`}>Cache de mídia</label>
+                <div className="flex gap-2">
+                  <select
+                    className="field min-w-0 flex-1"
+                    disabled={update.isPending}
+                    id={`cache-${bot.id}`}
+                    onChange={(event) =>
+                      update.mutate({
+                        id: bot.id,
+                        body: event.target.value ? { cache_chat_id: Number(event.target.value) } : { clear_cache_chat: true },
+                      })
+                    }
+                    value={bot.cache_chat_id ?? ""}
+                  >
+                    <option value="">Sem cache (envia direto do painel)</option>
+                    {(groups.data?.groups ?? []).filter((group) => group.bot === bot.username).map((group) => (
+                      <option key={group.chat_id} value={group.chat_id}>
+                        {group.title} ({group.type === "channel" ? "canal" : "grupo"})
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    aria-label="Verificar cache e enviar mídias que faltam"
+                    disabled={!bot.cache_chat_id || checkCache.isPending}
+                    onClick={() => checkCache.mutate(bot.id)}
+                    size="sm"
+                    title="Verificar admin e enviar mídias que faltam"
+                  >
+                    <RefreshCw size={14} />
+                  </Button>
+                </div>
+                <span className="text-[11px] text-muted">
+                  {bot.cache_chat_id
+                    ? cacheInfo[bot.id] ?? "Configurado. As mídias do fluxo ficam salvas nesse chat e são reenviadas pelo ID do Telegram."
+                    : "Crie um canal ou grupo, adicione o robô como admin e escolha aqui. Ele vira o backup das mídias e deixa o envio instantâneo."}
+                </span>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => update.mutate({ id: bot.id, body: { is_active: !bot.is_active } })}>
                   {bot.is_active ? "Pausar" : "Ativar"}
