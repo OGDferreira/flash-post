@@ -10,7 +10,9 @@
  * usually allows every 5-15 min), so a new sale shows as a green "+R$" badge, and tapping
  * the widget opens an animated view (chart drawing itself, numbers counting up).
  */
-export function scriptableWidgetScript(baseUrl: string, token: string): string {
+export type WidgetTheme = "azul" | "dark" | "white";
+
+export function scriptableWidgetScript(baseUrl: string, token: string, theme: WidgetTheme = "azul"): string {
   const base = baseUrl.replace(/\/$/, "");
   return `// FlashBot — widget de vendas do FlashPost para o Scriptable
 // Gerado em ${new Date().toLocaleDateString("pt-BR")}. Copiar o script de novo no site desliga este.
@@ -19,12 +21,28 @@ const TOKEN = ${JSON.stringify(token)};
 const LOGO = ${JSON.stringify(`${base}/brand/icon-192.png`)};
 const SITE = ${JSON.stringify(`${base}/feature/bots`)};
 
-// the logo's colors
-const BLUE = ["#3a5ffe", "#1e9cfd", "#15d6fe"];
-const C = {
-  text: Color.white(), soft: new Color("#ffffff", 0.78), faint: new Color("#ffffff", 0.55),
-  pill: new Color("#ffffff", 0.2), green: new Color("#b6ffcf"), badge: new Color("#22c55e", 0.9),
+// Three looks in the FlashPost colors. Pick one per widget in its "Parameter" field
+// (dark, white or azul); empty = the one chosen when the script was copied.
+const THEMES = {
+  azul: { bg: ["#3a5ffe", "#1e9cfd", "#15d6fe"], text: "#ffffff", soft: ["#ffffff", 0.8], faint: ["#ffffff", 0.6],
+          pill: ["#ffffff", 0.2], line: "#ffffff", fill: 0.16, profit: "#b6ffcf", rate: "#ffffff" },
+  dark: { bg: ["#0b1020", "#0e1630", "#10204a"], text: "#ffffff", soft: ["#9fb3d9", 1], faint: ["#6b7da3", 1],
+          pill: ["#1e9cfd", 0.22], line: "#1e9cfd", fill: 0.22, profit: "#22c55e", rate: "#15d6fe" },
+  white: { bg: ["#ffffff", "#f3f7ff", "#e8f1ff"], text: "#0b1530", soft: ["#4a5a7d", 1], faint: ["#8a97b4", 1],
+           pill: ["#1e7cfd", 0.12], line: "#1e7cfd", fill: 0.14, profit: "#16a34a", rate: "#1e7cfd" },
 };
+const PICK = String(args.widgetParameter || ${JSON.stringify(theme)}).trim().toLowerCase();
+const T = THEMES[PICK === "branco" ? "white" : PICK === "escuro" ? "dark" : PICK] || THEMES.azul;
+const BLUE = T.bg;
+const C = {
+  text: new Color(T.text), soft: new Color(...T.soft), faint: new Color(...T.faint),
+  pill: new Color(...T.pill), green: new Color(T.profit), rate: new Color(T.rate), badge: new Color("#22c55e", 0.92),
+};
+function rgba(hex, alpha = 1) {
+  const n = parseInt(hex.slice(1), 16);
+  return "rgba(" + (n >> 16) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + alpha + ")";
+}
+function rate(data) { return data.pix_generated ? Math.round((100 * data.pix_paid) / data.pix_generated) : 0; }
 const fm = FileManager.local();
 const dir = fm.documentsDirectory();
 const statePath = fm.joinPath(dir, "flashbot-widget-state.json");
@@ -95,7 +113,7 @@ function header(stack, logo, size, pill) {
     image.imageSize = new Size(size, size);
     image.cornerRadius = size * 0.24;
     image.borderWidth = 1;
-    image.borderColor = new Color("#ffffff", 0.35);
+    image.borderColor = new Color(T.text, 0.25);
     row.addSpacer(6);
   }
   const name = row.addText("FlashBot");
@@ -130,6 +148,21 @@ function value(stack, amount, size) {
   v.lineLimit = 1;
 }
 
+// "45% conversão · 31 pix": paid over generated Pix today
+function conversion(stack, data, size) {
+  const row = stack.addStack();
+  row.centerAlignContent();
+  const pct = row.addText(rate(data) + "%");
+  pct.font = Font.boldRoundedSystemFont(size + 1);
+  pct.textColor = C.rate;
+  row.addSpacer(4);
+  const rest = row.addText("conversão · " + data.pix_generated + " pix");
+  rest.font = Font.mediumSystemFont(size);
+  rest.textColor = C.soft;
+  rest.lineLimit = 1;
+  rest.minimumScaleFactor = 0.7;
+}
+
 function badge(stack, delta, size) {
   if (!delta) return;
   const b = stack.addStack();
@@ -162,18 +195,18 @@ function chart(series, width, height) {
   area.addLine(new Point((points.length - 1) * step, height));
   area.closeSubpath();
   ctx.addPath(area);
-  ctx.setFillColor(new Color("#ffffff", 0.16));
+  ctx.setFillColor(new Color(T.line, T.fill));
   ctx.fillPath();
   [[6, 0.15], [3.2, 0.3], [1.8, 1]].forEach(([w, a]) => {
     ctx.addPath(line);
-    ctx.setStrokeColor(new Color("#ffffff", a));
+    ctx.setStrokeColor(new Color(T.line, a));
     ctx.setLineWidth(w);
     ctx.strokePath();
   });
   const last = new Point((points.length - 1) * step, y(points[points.length - 1]));
-  ctx.setFillColor(new Color("#ffffff", 0.35));
+  ctx.setFillColor(new Color(T.line, 0.35));
   ctx.fillEllipse(new Rect(last.x - 6, last.y - 6, 12, 12));
-  ctx.setFillColor(Color.white());
+  ctx.setFillColor(new Color(T.line));
   ctx.fillEllipse(new Rect(last.x - 2.5, last.y - 2.5, 5, 5));
   return ctx.getImage();
 }
@@ -198,6 +231,8 @@ function medium(data, logo, delta) {
   label(left, "Faturamento hoje", 11);
   left.addSpacer(2);
   value(left, data.revenue, 34);
+  left.addSpacer(3);
+  conversion(left, data, 11);
   left.addSpacer(4);
   badge(left, delta, 10);
   body.addSpacer(10);
@@ -220,14 +255,9 @@ function small(data, logo, delta) {
   label(w, "Faturamento hoje", 9);
   w.addSpacer(1);
   value(w, data.revenue, 24);
-  if (delta) {
-    w.addSpacer(3);
-    badge(w, delta, 8);
-  } else {
-    const count = w.addText(sales(data.pix_paid));
-    count.font = Font.mediumSystemFont(10);
-    count.textColor = C.soft;
-  }
+  w.addSpacer(2);
+  if (delta) badge(w, delta, 8);
+  else conversion(w, data, 10);
   w.addSpacer();
   const graph = w.addImage(chart(data.series || [0], 132, 30));
   graph.imageSize = new Size(132, 30);
@@ -259,8 +289,7 @@ function large(data, logo, delta) {
   pix.backgroundColor = C.pill;
   pix.cornerRadius = 10;
   pix.setPadding(6, 10, 6, 10);
-  const conversion = data.pix_generated ? Math.round((100 * data.pix_paid) / data.pix_generated) : 0;
-  const pixText = pix.addText(data.pix_generated + " pix gerados  ·  " + data.pix_paid + " pagos  ·  " + conversion + "% conversão");
+  const pixText = pix.addText(data.pix_generated + " pix gerados  ·  " + data.pix_paid + " pagos  ·  " + rate(data) + "% conversão");
   pixText.font = Font.semiboldSystemFont(12);
   pixText.textColor = C.text;
   w.addSpacer(8);
@@ -327,19 +356,19 @@ async function animatedView(data) {
   const max = Math.max(...series, 1);
   const pts = series.map((v, i) => [(i / (series.length - 1)) * 320, 150 - (v / max) * 130]);
   const d = "M" + pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" L");
-  const conversion = data.pix_generated ? Math.round((100 * data.pix_paid) / data.pix_generated) : 0;
+  const conversion = rate(data);
   const html = \`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-body{margin:0;min-height:100vh;font-family:-apple-system,system-ui;color:#fff;background:linear-gradient(135deg,\${BLUE[0]},\${BLUE[1]} 55%,\${BLUE[2]});display:flex;flex-direction:column;gap:18px;padding:28px 22px;box-sizing:border-box}
-.top{display:flex;align-items:center;gap:10px;font-weight:700;font-size:22px}.top img{width:34px;height:34px;border-radius:9px;border:1px solid rgba(255,255,255,.4)}
-.pill{margin-left:auto;background:rgba(255,255,255,.2);border-radius:99px;padding:5px 12px;font-size:14px}
+body{margin:0;min-height:100vh;font-family:-apple-system,system-ui;color:\${T.text};background:linear-gradient(135deg,\${BLUE[0]},\${BLUE[1]} 55%,\${BLUE[2]});display:flex;flex-direction:column;gap:18px;padding:28px 22px;box-sizing:border-box}
+.top{display:flex;align-items:center;gap:10px;font-weight:700;font-size:22px}.top img{width:34px;height:34px;border-radius:9px;border:1px solid \${rgba(T.text, 0.3)}}
+.pill{margin-left:auto;background:\${rgba(...T.pill)};border-radius:99px;padding:5px 12px;font-size:14px}
 .lbl{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.8;font-weight:600}
 .big{font-size:46px;font-weight:800;letter-spacing:-.02em}.row{display:flex;gap:12px}
-.card{flex:1;background:rgba(255,255,255,.16);border-radius:16px;padding:12px 14px}.card b{display:block;font-size:22px;margin-top:4px}
-svg{width:100%;height:auto;overflow:visible}.line{fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px rgba(255,255,255,.7));stroke-dasharray:2000;stroke-dashoffset:2000;animation:draw 1.6s .2s ease-out forwards}
-.area{fill:rgba(255,255,255,.16);opacity:0;animation:fade .8s 1.2s forwards}.dot{fill:#fff;opacity:0;animation:pulse 1.4s 1.6s ease-in-out infinite}
+.card{flex:1;background:\${rgba(...T.pill)};border-radius:16px;padding:12px 14px}.card b{display:block;font-size:22px;margin-top:4px}
+svg{width:100%;height:auto;overflow:visible}.line{fill:none;stroke:\${T.line};stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px \${rgba(T.line, 0.7)});stroke-dasharray:2000;stroke-dashoffset:2000;animation:draw 1.6s .2s ease-out forwards}
+.area{fill:\${rgba(T.line, T.fill)};opacity:0;animation:fade .8s 1.2s forwards}.dot{fill:\${T.line};opacity:0;animation:pulse 1.4s 1.6s ease-in-out infinite}
 @keyframes draw{to{stroke-dashoffset:0}}@keyframes fade{to{opacity:1}}@keyframes pulse{0%,100%{opacity:1;r:5}50%{opacity:.5;r:9}}
-a{color:#fff;text-align:center;background:rgba(0,0,0,.18);border-radius:14px;padding:13px;text-decoration:none;font-weight:600}
+a{color:#fff;text-align:center;background:\${T.line === "#ffffff" ? "rgba(0,0,0,.18)" : T.line};border-radius:14px;padding:13px;text-decoration:none;font-weight:600}
 </style></head><body>
 <div class="top"><img src="\${LOGO}">FlashBot<span class="pill">\${sales(data.pix_paid)}</span></div>
 <div><div class="lbl">Faturamento hoje</div><div class="big" data-to="\${data.revenue}">R$ 0,00</div></div>
