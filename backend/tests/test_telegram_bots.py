@@ -61,6 +61,7 @@ class FakeApis:
         self.get_me_status = 200
         self.message_id = 0
         self.member_status = "administrator"
+        self.refuse_fixed_splits = False  # answer 400 to a charge with a fixed-amount split
 
     def methods(self, name: str) -> list[dict]:
         return [body for method, body in self.calls if method == name]
@@ -98,6 +99,8 @@ class FakeApis:
             body = json.loads(request.content)
             self.calls.append(("pix.create", body))
             assert request.headers["x-api-key"] == "smoke_test_key"
+            if self.refuse_fixed_splits and any("amount" in rule for rule in body.get("splits", [])):
+                return httpx.Response(400, json={"success": False, "error": "splits inválidos"})
             return httpx.Response(201, json={"success": True, "transaction": {
                 "id": f"tx-{body['external_id']}", "txid": "g1", "external_id": body["external_id"], "amount": body["amount"],
                 "fee": 1.0, "net_amount": body["amount"] - 1, "status": "pending",

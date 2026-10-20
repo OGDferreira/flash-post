@@ -985,16 +985,25 @@ async def create_order(
         timings["prepare"] = time.perf_counter() - mark
         mark = time.perf_counter()
         if not await _charge_with_snakepay(db, bot, order, route, amount):
+            pix = dict(
+                amount=amount,
+                external_id=f"{ORDER_PREFIX}{order.id}",
+                description=f"{bot.name} · {name}",
+                webhook_url=payment_webhook_url(),
+                expiration_seconds=flow.payment.expiration_minutes * 60,
+                shop_id=route.shop_ref,
+            )
             try:
-                charge = await smokepay.create_pix(
-                    amount=amount,
-                    external_id=f"{ORDER_PREFIX}{order.id}",
-                    description=f"{bot.name} · {name}",
-                    webhook_url=payment_webhook_url(),
-                    expiration_seconds=flow.payment.expiration_minutes * 60,
-                    shop_id=route.shop_ref,
-                    splits=route.splits,
-                )
+                try:
+                    charge = await smokepay.create_pix(**pix, splits=route.splits)
+                except smokepay.SmokepayError as refused:
+                    # A refused split (400) creates no charge: never lose the sale over the
+                    # transaction fee; charge without it and leave a trace to look into.
+                    if refused.status != 400 or not route.transaction_fee:
+                        raise
+                    logger.warning("SmokePay refused the splits with the transaction fee (%s); charging without it.", refused)
+                    route.drop_transaction_fee()
+                    charge = await smokepay.create_pix(**pix, splits=route.splits)
             except smokepay.SmokepayError as exc:
                 order.status = "failed"
                 bot.last_error = f"Gateway: {exc}"[:500]
@@ -1007,9 +1016,13 @@ async def create_order(
             order.net_amount = charge.net_amount
             if route.percent is not None:
                 commission, partner = route.preview(charge.net_amount)
-                order.split_amount = charge.split_total if charge.split_total is not None else commission
+                # SmokePay's preview sums every split: the transaction fee is the platform's, not the chief's
+                order.split_amount = (
+                    charge.split_total - route.transaction_fee if charge.split_total is not None else commission
+                )
                 order.partner_net = charge.owner_net if charge.owner_net is not None else partner
-            elif route.splits:  # platform fee only (partner's own funnel)
+                order.platform_fee = route.transaction_fee or None
+            elif route.splits:  # platform fee and/or transaction fee (the seller's own funnel)
                 fee = charge.split_total if charge.split_total is not None else route.platform_fee(charge.net_amount)
                 order.platform_fee = fee
                 if charge.owner_net is not None:

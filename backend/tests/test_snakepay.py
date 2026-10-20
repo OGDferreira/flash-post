@@ -344,3 +344,35 @@ async def test_platform_shop_id_never_goes_in_the_split_and_other_format_is_retr
     await db_session.commit()
     order = await db_session.scalar(select(TgOrder))
     assert order.gateway == "snakepay" and order.partner_net == Decimal("19.05")
+
+
+@pytest.mark.anyio
+async def test_transaction_fee_becomes_a_percentage_on_snakepay(client, db_session, owner, super_admin, snake, apis, monkeypatch) -> None:
+    monkeypatch.setattr(get_settings(), "flashbot_transaction_fee", Decimal("0.40"))
+    await _partner(db_session, owner, accepted=True)
+    await _enable(client)
+    headers = await _as(client, "socio@example.com")
+    await client.put("/api/payment-gateways", headers=headers, json={"gateway": "snakepay", "snakepay_recipient_id": SELLER})
+    bot, _ = await _setup(client, headers)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    # net 19.05: R$ 0,40 = 2.10% (rounded up), the partner gets 97.90%; the rest stays with the platform
+    assert apis.methods("snake.create")[-1]["split"] == [{"recipient_id": SELLER, "percentage": 97.9}]
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.partner_net == Decimal("18.64") and order.platform_fee == Decimal("0.41")
+
+
+@pytest.mark.anyio
+async def test_gateways_tab_shows_the_transaction_fee_except_to_the_super_admin(client, db_session, owner, super_admin, monkeypatch) -> None:
+    monkeypatch.setattr(get_settings(), "flashbot_transaction_fee", Decimal("0.40"))
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    state = await client.get("/api/payment-gateways")
+    assert state.status_code == 200, state.text
+    fees = [g["fee"] for g in state.json()["gateways"]]
+    assert all("taxa FlashBot R$ 0,40 por venda" in fee for fee in fees)
+    chief, _ = owner
+    chief.platform_role = "SUPER_ADMIN"  # the platform owner's own operation
+    await db_session.commit()
+    fees = [g["fee"] for g in (await client.get("/api/payment-gateways")).json()["gateways"]]
+    assert not any("taxa FlashBot" in fee for fee in fees)

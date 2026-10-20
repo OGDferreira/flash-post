@@ -121,10 +121,11 @@ async def snakepay_plan(
         return None
     chief_percent = route.percent or Decimal("0")
     fee_percent = route.fee_percent or Decimal("0")
-    if route.fee_amount:
-        # A fixed platform fee becomes a percentage of this sale's net, rounded up so
-        # the platform never gets less than the fee.
-        fee_percent = (route.fee_amount * HUNDRED / net).quantize(Decimal("0.01"), ROUND_UP)
+    fixed = (route.fee_amount or Decimal("0")) + route.transaction_fee
+    if fixed:
+        # Fixed fees (platform fee, transaction fee) become a percentage of this sale's net,
+        # rounded up so the platform never gets less than them.
+        fee_percent += (fixed * HUNDRED / net).quantize(Decimal("0.01"), ROUND_UP)
     seller_percent = HUNDRED - chief_percent - fee_percent
     if seller_percent <= 0:
         return None
@@ -165,7 +166,9 @@ def apply_snake_charge(order, route: BillingRoute, plan: SnakePlan, charge: snak
     if route.percent is not None:
         commission = amounts.get(plan.chief_recipient.lower()) if plan.chief_recipient else None
         order.split_amount = commission if commission is not None else snakepay.share(net, plan.chief_percent)
-    elif route.fee_percent is not None or route.fee_amount is not None:
+        if route.transaction_fee:  # what is left after the seller and the chief stays with the platform
+            order.platform_fee = (net - seller - order.split_amount).quantize(Decimal("0.01"))
+    elif route.fee_percent is not None or route.fee_amount is not None or route.transaction_fee:
         order.platform_fee = (net - seller).quantize(Decimal("0.01"))
 
 
