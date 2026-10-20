@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots import smokepay
@@ -406,12 +406,12 @@ def plans_keyboard(flow: FlowDefinition) -> dict:
     return {"inline_keyboard": rows}
 
 
-def offer_keyboard(flow: FlowDefinition) -> dict | None:
+def offer_keyboard(flow: FlowDefinition, previews: bool = True) -> dict | None:
     if flow.offer.cta_enabled and flow.plans:
         rows = [[button(flow.offer.cta_label, flow.offer.cta_style, callback_data="plans")]]
     else:
         rows = plans_keyboard(flow)["inline_keyboard"]
-    if flow.previews.enabled and flow.previews.media_ids:
+    if previews and flow.previews.enabled and flow.previews.media_ids:
         rows.append([button(flow.previews.label, flow.previews.style, callback_data="prev")])
     rows += _extra_rows(flow)
     return {"inline_keyboard": rows} if rows else None
@@ -420,7 +420,7 @@ def offer_keyboard(flow: FlowDefinition) -> dict | None:
 async def send_offer(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
     """Welcome screen: up to 3 media, the message, then the buttons (or a secondary message with them)."""
     offer = flow.offer
-    keyboard = offer_keyboard(flow)
+    keyboard = offer_keyboard(flow, previews=not (flow.previews.enabled and await previews_seen(db, lead)))
     text = render(offer.text, lead, bot=bot)
     if offer.secondary_enabled:
         await send_media_then_text(db, tg, bot, lead.chat_id, offer.media_ids, offer.spoiler, text, None)
@@ -452,10 +452,21 @@ def duration_text(seconds: int) -> str:
     return f"{seconds} segundos"
 
 
-async def _previews_open(db: AsyncSession, lead: TgLead) -> bool:
+async def previews_seen(db: AsyncSession, lead: TgLead) -> bool:
+    """The previews go out once per lead: their deletion job marks them as seen."""
     return bool(await db.scalar(
-        select(TgJob.id).where(TgJob.lead_id == lead.id, TgJob.kind == "delete_messages", TgJob.status == "pending").limit(1)
+        select(TgJob.id).where(
+            TgJob.lead_id == lead.id, TgJob.kind == "delete_messages", TgJob.idempotency_key.like(f"prevdel:{lead.id}:%")
+        ).limit(1)
     ))
+
+
+def _without_previews(markup: dict | None) -> dict:
+    rows = [
+        row for row in (markup or {}).get("inline_keyboard", [])
+        if not any(isinstance(item, dict) and item.get("callback_data") == "prev" for item in row)
+    ]
+    return {"inline_keyboard": rows}
 
 
 async def send_previews(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
@@ -663,6 +674,9 @@ async def run_due_jobs(db: AsyncSession, limit: int = 50, lead_id: uuid.UUID | N
     return done
 
 
+PREVIEW_FOLLOW_SECONDS = 60
+
+
 async def follow_lead_jobs(db: AsyncSession, lead_id: uuid.UUID, horizon_seconds: int = 120) -> None:
     """Run a lead's jobs as each comes due (welcome delays, PIX) instead of waiting
     for the worker tick; jobs further out than ``horizon_seconds`` stay with the worker."""
@@ -673,8 +687,12 @@ async def follow_lead_jobs(db: AsyncSession, lead_id: uuid.UUID, horizon_seconds
         await run_due_jobs(db, lead_id=lead_id)
         next_at = await db.scalar(
             select(TgJob.run_at)
-            # Preview deletions are not worth holding the update open; the worker tick runs them.
-            .where(TgJob.lead_id == lead_id, TgJob.status == "pending", TgJob.kind != "delete_messages")
+            # short preview deletions too, so the media leave at the second the owner chose
+            # (longer ones are left to the worker tick, a few seconds of slack)
+            .where(
+                TgJob.lead_id == lead_id, TgJob.status == "pending",
+                or_(TgJob.kind != "delete_messages", TgJob.run_at <= utcnow() + timedelta(seconds=PREVIEW_FOLLOW_SECONDS)),
+            )
             .order_by(TgJob.run_at)
             .limit(1)
         )
@@ -782,11 +800,15 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict, flow: Flow
         await send_plans(tg, bot, lead, flow)
         return None
     if data == "prev":
+        message = query.get("message") or {}
+        if message.get("message_id"):
+            # one tap only: the button leaves the message right away
+            await tg.edit_reply_markup(chat_id, int(message["message_id"]), _without_previews(message.get("reply_markup")))
         if not (flow.previews.enabled and flow.previews.media_ids):
             await tg.answer_callback(query["id"], "As prévias não estão disponíveis agora.")
             return None
-        if await _previews_open(db, lead):
-            await tg.answer_callback(query["id"], "Suas prévias já estão abertas 👀")
+        if await previews_seen(db, lead):
+            await tg.answer_callback(query["id"], "Você já viu as prévias 👀")
             return None
         await tg.answer_callback(query["id"])
         await send_previews(db, tg, bot, lead, flow)

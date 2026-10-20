@@ -389,11 +389,32 @@ async def test_previews_button_sends_media_that_delete_themselves(client, db_ses
     await db_session.commit()
     job = await db_session.scalar(select(TgJob).where(TgJob.kind == "delete_messages"))
     assert job is not None and job.status == "pending" and job.payload["chat_id"] == 555
-    # a second tap while they are open sends nothing new
+    # the tap takes the button off that message (the other buttons stay)
+    edited = apis.methods("editMessageReplyMarkup")[-1]
+    assert edited["message_id"] == 9 and all(
+        item.get("callback_data") != "prev" for row in edited["reply_markup"]["inline_keyboard"] for item in row
+    )
+    # a second tap (an old message) sends nothing new
     await _send(client, db_session, bot["id"], _tap("prev"))
     assert len(apis.methods("sendMediaGroup")) == 1
     await _run_jobs_now(db_session)
     assert apis.methods("deleteMessages")[-1]["chat_id"] == 555
+    # ... not even after they were deleted, and later offers come without the button
+    await _send(client, db_session, bot["id"], _tap("prev"))
+    assert len(apis.methods("sendMediaGroup")) == 1
+    await _send(client, db_session, bot["id"], _start())
+    rows = apis.methods("sendMessage")[-1]["reply_markup"]["inline_keyboard"]
+    assert all(item.get("callback_data") != "prev" for row in rows for item in row)
+
+
+@pytest.mark.anyio
+async def test_short_previews_are_deleted_on_time(client, db_session, owner, apis, monkeypatch) -> None:
+    headers = await _login(client)
+    photos = [await _media(client, headers, monkeypatch, "p.jpg")]
+    bot, _ = await _setup(client, headers, _flow(welcome=[], previews={"enabled": True, "media_ids": photos, "delete_after_seconds": 5}))
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("prev"))  # the update stays with them and deletes at 5 s
+    assert apis.methods("deleteMessages"), "deleted without waiting for the worker tick"
 
 
 def test_previews_need_media() -> None:

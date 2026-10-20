@@ -7,6 +7,7 @@ transient failure (429/5xx, retried here with Telegram's ``retry_after``).
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,6 +15,7 @@ import httpx
 
 from app.bots import http
 
+logger = logging.getLogger(__name__)
 API_BASE = "https://api.telegram.org"
 MAX_ATTEMPTS = 3
 _background: set[asyncio.Task] = set()  # keeps fire-and-forget calls alive until they finish
@@ -148,6 +150,15 @@ class TelegramClient:
             return
         try:
             await self.call("deleteMessages", {"chat_id": chat_id, "message_ids": message_ids[:100]})
+        except TelegramError as exc:
+            if exc.status != 400:
+                raise
+            logger.warning("Telegram did not delete messages in chat %s: %s", chat_id, exc.description)
+
+    async def edit_reply_markup(self, chat_id: int, message_id: int, reply_markup: dict) -> None:
+        """Best effort: the message may be gone or already have these buttons."""
+        try:
+            await self.call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id, "reply_markup": reply_markup})
         except TelegramError as exc:
             if exc.status != 400:
                 raise
