@@ -71,7 +71,7 @@ export function MonthTrend({ data, field, inverse }: { data: FinanceMonth; field
   );
 }
 
-function Card({
+export function MetricCard({
   title,
   icon,
   color,
@@ -123,7 +123,7 @@ export function MonthResultCards({ hideCollaboratorDue = false }: { hideCollabor
 
   return (
     <>
-      <Card
+      <MetricCard
         color="text-accent"
         detail={data ? `${data.today.sale_count} venda(s) hoje · Sharkbot e FlashBot` : "Somando Sharkbot e FlashBot"}
         icon={<CircleDollarSign size={16} />}
@@ -138,7 +138,7 @@ export function MonthResultCards({ hideCollaboratorDue = false }: { hideCollabor
         valueColor="text-fg"
       />
       {!hideCollaboratorDue && (
-        <Card
+        <MetricCard
           color="text-warning"
           detail={
             data
@@ -153,7 +153,7 @@ export function MonthResultCards({ hideCollaboratorDue = false }: { hideCollabor
           valueColor="text-warning"
         />
       )}
-      <Card
+      <MetricCard
         color={profit < 0 ? "text-danger" : "text-success"}
         detail={
           data
@@ -167,7 +167,7 @@ export function MonthResultCards({ hideCollaboratorDue = false }: { hideCollabor
         value={money(data?.profit)}
         valueColor={profit < 0 ? "text-danger" : "text-success"}
       />
-      <Card
+      <MetricCard
         color={todayProfit < 0 ? "text-danger" : "text-success"}
         detail={
           data

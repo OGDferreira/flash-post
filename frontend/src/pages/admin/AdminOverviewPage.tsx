@@ -32,10 +32,10 @@ export function AdminOverviewPage() {
       hint: `${brl(summary.data.flashbot_revenue_today)} vendidos por todas as operações`,
     },
     {
-      label: "Taxa por transação hoje",
+      label: "Arrecadação FlashBot hoje",
       value: brl(summary.data.transaction_fees_today),
       icon: CircleDollarSign,
-      hint: `Arrecadado com a taxa FlashBot (padrão ${brl(summary.data.transaction_fee_default)} por venda)`,
+      hint: `${summary.data.fee_pix_generated_today} pix gerados e ${summary.data.fee_pix_paid_today} pagos · taxa ${brl(summary.data.transaction_fee_default)} por venda`,
     },
     { label: "Usuários totais", value: summary.data.users_total, icon: Users },
     { label: "Workspaces", value: summary.data.workspaces_total, icon: Blocks },

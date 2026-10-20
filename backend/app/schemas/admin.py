@@ -18,6 +18,9 @@ class AdminSummary(BaseModel):
     flashbot_revenue_today: Decimal = Decimal("0.00")
     transaction_fees_today: Decimal = Decimal("0.00")
     transaction_fee_default: Decimal = Decimal("0.00")
+    # Pix of the operations that pay the fee (not the Super Admin's own): generated / paid today
+    fee_pix_generated_today: int = 0
+    fee_pix_paid_today: int = 0
 
 
 class AdminUser(BaseModel):

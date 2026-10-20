@@ -649,6 +649,7 @@ async def test_super_admin_sets_a_users_fee_and_sees_todays_fees(client, db_sess
     assert summary["flashbot_sales_today"] == 1
     assert Decimal(str(summary["flashbot_revenue_today"])) == Decimal("19.90")
     assert Decimal(str(summary["transaction_fees_today"])) == Decimal("0.15")
+    assert summary["fee_pix_generated_today"] == 1 and summary["fee_pix_paid_today"] == 1
 
     # back to the default
     admin = await _as(client, "superadmin@example.com", "super admin password")

@@ -188,6 +188,8 @@ export type AdminSummary = {
   flashbot_revenue_today: string;
   transaction_fees_today: string;
   transaction_fee_default: string;
+  fee_pix_generated_today: number;
+  fee_pix_paid_today: number;
 };
 
 export type AdminUser = {
