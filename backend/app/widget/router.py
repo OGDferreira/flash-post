@@ -1,0 +1,88 @@
+"""iPhone home-screen widget (Scriptable): today's FlashBot numbers for one operation.
+
+The script carries a read-only token made in Configurações; only its SHA-256 is stored, and
+making a new one (copying the script again) turns the old one off. The token reads these
+numbers and nothing else.
+"""
+
+import hashlib
+import secrets
+from datetime import datetime, timezone
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from sqlalchemy import func, select
+
+from app.auth.dependencies import AuthenticatedUser, DbSession, require_csrf
+from app.core.time import BRAZIL_TIME_ZONE
+from app.models import TgOrder, User
+from app.partners.service import owner_workspace
+
+router = APIRouter(prefix="/api/widget", tags=["widget"])
+CENT = Decimal("0.01")
+
+
+def _digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+@router.post("/token", dependencies=[Depends(require_csrf)])
+async def new_token(user: AuthenticatedUser, db: DbSession) -> dict:
+    if await owner_workspace(db, user.id) is None:
+        raise HTTPException(status_code=403, detail="O widget mostra a operação do dono da conta.")
+    token = "fpw_" + secrets.token_urlsafe(32)
+    user.widget_token_hash = _digest(token)
+    await db.commit()
+    return {"token": token}
+
+
+@router.get("/today")
+async def today(
+    db: DbSession,
+    authorization: str | None = Header(default=None),
+    token: str | None = Query(default=None, max_length=120),
+) -> dict:
+    raw = (authorization or "").removeprefix("Bearer ").strip() or (token or "").strip()
+    user = await db.scalar(select(User).where(User.widget_token_hash == _digest(raw))) if raw.startswith("fpw_") else None
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=401, detail="Widget desconectado: copie o script de novo em Configurações.")
+    workspace = await owner_workspace(db, user.id)
+    if workspace is None:
+        raise HTTPException(status_code=403, detail="Sem operação.")
+    now = datetime.now(BRAZIL_TIME_ZONE)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    own = TgOrder.workspace_id == workspace.id
+    generated = await db.scalar(
+        select(func.count(TgOrder.id)).where(own, TgOrder.created_at >= midnight, TgOrder.gateway_transaction_id.is_not(None))
+    ) or 0
+    paid_rows = (await db.execute(
+        select(TgOrder.paid_at, TgOrder.amount, func.coalesce(TgOrder.partner_net, TgOrder.net_amount, TgOrder.amount))
+        .where(own, TgOrder.status == "paid", TgOrder.paid_at >= midnight)
+    )).all()
+    # commissions earned today from partners' sales count as profit too
+    commissions = await db.scalar(
+        select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
+            TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid", TgOrder.paid_at >= midnight
+        )
+    ) or 0
+    hours = [Decimal("0")] * 24
+    revenue = profit = Decimal("0")
+    for paid_at, amount, kept in paid_rows:
+        moment = paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc)
+        hours[moment.astimezone(BRAZIL_TIME_ZONE).hour] += Decimal(amount)
+        revenue += Decimal(amount)
+        profit += Decimal(kept)
+    profit += Decimal(commissions)
+    running, series = Decimal("0"), []
+    for hour in range(now.hour + 1):  # cumulative revenue up to now
+        running += hours[hour]
+        series.append(float(running.quantize(CENT)))
+    return {
+        "name": "FlashBot",
+        "pix_generated": generated,
+        "pix_paid": len(paid_rows),
+        "revenue": float(revenue.quantize(CENT)),
+        "profit": float(profit.quantize(CENT)),
+        "series": series,
+        "updated_at": now.strftime("%H:%M"),
+    }
