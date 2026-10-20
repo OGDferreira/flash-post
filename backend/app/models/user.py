@@ -55,6 +55,8 @@ class User(Base):
     )
     # FlashBot fee per sale for this user's operations; NULL = the platform default
     transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    # iPhone widget (Scriptable): SHA-256 of a read-only token for today's FlashBot numbers
+    widget_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_approved: Mapped[bool] = mapped_column(

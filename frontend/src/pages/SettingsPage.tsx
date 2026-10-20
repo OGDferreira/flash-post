@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   Bell,
@@ -12,13 +13,16 @@ import {
   Puzzle,
   Settings,
   Settings2,
+  Smartphone,
   Sun,
   UserRound,
 } from "lucide-react";
 
 import { AppearanceCard } from "@/components/AppearanceCard";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { scriptableWidgetScript } from "@/lib/scriptableWidget";
 import { applyTheme, getTheme, type Theme } from "@/lib/theme";
+import { ApiError, apiRequest } from "@/services/api";
 
 type Item = { to: string; title: string; text: string; icon: ReactNode; owner?: boolean };
 
@@ -106,6 +110,49 @@ function ThemeSwitch() {
   );
 }
 
+/** The FlashBot sales widget for the iPhone home screen, through the free Scriptable app. */
+function IphoneWidgetCard() {
+  const [copied, setCopied] = useState(false);
+  const copy = useMutation({
+    mutationFn: async () => {
+      const { token } = await apiRequest<{ token: string }>("/api/widget/token", { method: "POST" });
+      await navigator.clipboard.writeText(scriptableWidgetScript(window.location.origin, token));
+    },
+    onSuccess: () => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 4000);
+    },
+  });
+  return (
+    <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
+      <div className="flex items-center gap-2">
+        <Smartphone className="text-accent" size={18} />
+        <h2 className="text-base font-semibold text-fg">Widget de vendas no iPhone</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted">
+        Faturamento, lucro, Pix gerados e pagos e o gráfico do dia na tela inicial, pelo app gratuito Scriptable.
+      </p>
+      <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs leading-5 text-fg-2">
+        <li>Instale o <b>Scriptable</b> na App Store.</li>
+        <li>Toque em <b>Copiar script</b> aqui, abra o Scriptable, toque em <b>+</b> e cole.</li>
+        <li>Na tela inicial, segure um espaço vazio → <b>+</b> → Scriptable → escolha o tamanho → toque no widget e selecione o script.</li>
+      </ol>
+      <p className="mt-2 text-[11px] leading-5 text-muted">
+        Grande: painel completo com gráfico. Médio: total vendido no dia. Pequeno e tela de bloqueio: valor e número de vendas.
+        O script tem uma chave só de leitura; copiar de novo desliga a anterior.
+      </p>
+      <button className="btn-primary mt-3" disabled={copy.isPending} onClick={() => copy.mutate()} type="button">
+        {copy.isPending ? "Gerando…" : copied ? "Script copiado ✓" : "Copiar script"}
+      </button>
+      {copy.error && (
+        <p className="mt-2 text-xs text-danger">
+          {copy.error instanceof ApiError ? copy.error.message : "Não foi possível copiar. Tente de novo."}
+        </p>
+      )}
+    </section>
+  );
+}
+
 /** One place for everything about how the site works for you: look, account, integrations. */
 export function SettingsPage() {
   const { user } = useAuth();
@@ -127,6 +174,8 @@ export function SettingsPage() {
         <ThemeSwitch />
         <AppearanceCard />
       </div>
+
+      {owner && <IphoneWidgetCard />}
 
       {sections.map((section) => {
         const items = section.items.filter((item) => owner || !item.owner);
