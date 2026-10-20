@@ -138,7 +138,9 @@ function IphoneWidgetCard() {
         <li>Na tela inicial, segure um espaço vazio → <b>+</b> → Scriptable → escolha o tamanho → toque no widget e selecione o script.</li>
       </ol>
       <p className="mt-2 text-[11px] leading-5 text-muted">
-        Grande: painel completo com gráfico. Médio: total vendido no dia. Pequeno e tela de bloqueio: valor e número de vendas.
+        Médio e pequeno: faturamento do dia, vendas e gráfico. Grande: também lucro e Pix gerados/pagos. Tela de bloqueio: logo,
+        valor e número de vendas. Venda nova aparece com um selo verde; tocar no widget abre a versão animada. O iPhone decide quando
+        atualizar (pedimos a cada minuto; costuma ser a cada 5 a 15 min). Já instalou antes? Copie de novo e cole por cima no Scriptable.
         O script tem uma chave só de leitura; copiar de novo desliga a anterior.
       </p>
       <button className="btn-primary mt-3" disabled={copy.isPending} onClick={() => copy.mutate()} type="button">
