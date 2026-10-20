@@ -161,6 +161,7 @@ export type User = {
   avatar_url: string | null;
   role: "SUPER_ADMIN" | "OWNER" | "COLLABORATOR" | "USER";
   workspace_role: "OWNER" | "COLLABORATOR" | null;
+  home_panel: "flashpost" | "flashbot" | null;
   is_active: boolean;
   is_verified: boolean;
   is_approved: boolean;

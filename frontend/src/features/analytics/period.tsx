@@ -12,8 +12,8 @@ const options: { value: MetricsPeriod["period"]; label: string }[] = [
   { value: "custom", label: "Personalizado" },
 ];
 
-export function todayInput() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+export function todayInput(timeZone = "America/Sao_Paulo") {
+  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date());
 }
 
 export function periodParams(value: MetricsPeriod): Record<string, string> {

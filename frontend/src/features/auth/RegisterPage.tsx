@@ -1,3 +1,4 @@
+import { homePath } from "@/features/auth/homePanel";
 import { useEffect, useState } from "react";
 import type { InputHTMLAttributes } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -106,7 +107,7 @@ export function RegisterPage() {
   });
 
   if (isLoading) return <RegisterLoading />;
-  if (user) return <Navigate to="/dashboard" replace />;
+  if (user) return <Navigate to={homePath(user)} replace />;
 
   const apiError =
     mutation.error instanceof ApiError ? mutation.error.message : null;

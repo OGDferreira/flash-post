@@ -1,3 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/services/api";
+import type { DailyViewsGoal } from "@/components/DailyViewsGoalCard";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
@@ -84,7 +87,17 @@ export function BotsPage() {
   // The flow editor has its own header and section navigation; give it the whole screen.
   const [editing, setEditing] = useState(false);
   const [remarketingFlow, setRemarketingFlow] = useState<string | null>(null);
-  const [period, setPeriod] = useState<MetricsPeriod>({ period: "30d", start: todayInput(), end: todayInput() });
+  const [period, setPeriod] = useState<MetricsPeriod>({ period: "today", start: todayInput(), end: todayInput() });
+  const goal = useQuery({
+    queryKey: ["notifications", "goal", "me"],
+    queryFn: () => apiRequest<DailyViewsGoal>("/api/notifications/goals/me"),
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (goal.data?.timezone) setPeriod((current) => current.period === "custom" ? current : {
+      ...current, start: todayInput(goal.data.timezone), end: todayInput(goal.data.timezone),
+    });
+  }, [goal.data?.timezone]);
   // On phones the tab bar sits at the bottom like an app; the floating refresh button steps aside.
   useEffect(() => {
     if (editing) return;

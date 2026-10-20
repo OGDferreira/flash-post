@@ -23,7 +23,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
+from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
 from app.core.config import get_settings
 from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, utc_now
@@ -493,8 +493,10 @@ async def list_affiliates(
     period: AnalyticsPeriod = "30d",
     start_date: date | None = None,
     end_date: date | None = None,
+    user_calendar: bool = False,
 ) -> AffiliatesResponse:
-    start, end = period_bounds(period, start_date, end_date, utc_now())
+    zone = await user_time_zone(db, access.workspace.id, user.id) if user_calendar else None
+    start, end = period_bounds(period, start_date, end_date, utc_now(), zone)
     links = (
         await db.execute(
             select(Affiliation, User)
@@ -506,8 +508,8 @@ async def list_affiliates(
     rows = [await _row_for(db, link, affiliate, start, end) for link, affiliate in links]
     return AffiliatesResponse(
         period=period,
-        period_label=period_label(start, end),
-        time_zone=APP_TIME_ZONE_NAME,
+        period_label=period_label(start, end, zone),
+        time_zone=zone.key if zone else APP_TIME_ZONE_NAME,
         basis=PARTICIPATION_BASIS,
         totals_revenue=sum((row.total_revenue for row in rows), Decimal("0.00")),
         totals_participation=sum((row.participation_amount for row in rows), Decimal("0.00")),

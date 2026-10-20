@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator, model_validator
@@ -77,6 +77,10 @@ class ProfileUpdateRequest(BaseModel):
         return normalize_nickname(value)
 
 
+class PreferencesUpdateRequest(BaseModel):
+    home_panel: Literal["flashpost", "flashbot"]
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -88,6 +92,7 @@ class UserResponse(BaseModel):
     avatar_url: str | None
     role: str
     workspace_role: str | None
+    home_panel: Literal["flashpost", "flashbot"] | None = None
     is_active: bool
     is_verified: bool
     is_approved: bool

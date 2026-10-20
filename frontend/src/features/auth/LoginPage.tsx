@@ -1,3 +1,4 @@
+import { homePath } from "@/features/auth/homePanel";
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -39,15 +40,9 @@ export function LoginPage() {
       queryClient.setQueryData(["auth", "me"], signedInUser);
       const requestedPath = (location.state as { from?: string } | null)?.from;
       const destination =
-        requestedPath?.startsWith("/") && !requestedPath.startsWith("//")
+        requestedPath?.startsWith("/") && !requestedPath.startsWith("//") && requestedPath !== "/" && requestedPath !== "/dashboard"
           ? requestedPath
-          : signedInUser.role === "SUPER_ADMIN"
-            ? signedInUser.workspace_role === "OWNER"
-              ? "/dashboard"
-              : signedInUser.workspace_role === "COLLABORATOR"
-                ? "/feature/accounts"
-                : "/admin"
-            : "/dashboard";
+          : homePath(signedInUser);
       navigate(destination, { replace: true });
     },
   });
@@ -58,15 +53,7 @@ export function LoginPage() {
   if (user) {
     return (
       <Navigate
-        to={
-          user.role === "SUPER_ADMIN"
-            ? user.workspace_role === "OWNER"
-              ? "/dashboard"
-              : user.workspace_role === "COLLABORATOR"
-                ? "/feature/accounts"
-                : "/admin"
-            : "/dashboard"
-        }
+        to={homePath(user)}
         replace
       />
     );

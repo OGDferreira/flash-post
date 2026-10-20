@@ -27,7 +27,7 @@ from app.core.crypto import encrypt_value
 from app.core.database import get_session_factory
 from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access, shares_with
-from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
+from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
 from app.core.time import utc_now
 
@@ -505,14 +505,17 @@ async def import_flow_code(payload: ImportCode, access: OwnerAccess, db: DbSessi
 
 @router.get("/stats")
 async def bot_stats(
-    access: OwnerAccess, db: DbSession, period: AnalyticsPeriod = "30d",
+    access: OwnerAccess, db: DbSession, period: AnalyticsPeriod = "today",
     start_date: date | None = None, end_date: date | None = None,
 ) -> dict:
-    start, end = period_bounds(period, start_date, end_date, utc_now())
-    data = await conversion_stats(db, access.workspace.id, start, end)
-    data["period_label"] = period_label(start, end)
-    # Commission received from partners' sales, per day (Brazil time), for the chart's second line.
-    from app.core.time import BRAZIL_TIME_ZONE
+    zone = await user_time_zone(db, access.workspace.id, access.membership.user_id)
+    start, end = period_bounds(period, start_date, end_date, utc_now(), zone)
+    if start is None or end is None:
+        raise HTTPException(status_code=422, detail="Escolha um período limitado para o painel.")
+    data = await conversion_stats(db, access.workspace.id, start, end, zone)
+    data["period_label"] = period_label(start, end, zone)
+    data["time_zone"] = zone.key
+    # Partner commissions use the same local calendar as the daily revenue series.
 
     per_day: dict[str, Decimal] = {}
     for paid_at, amount in await db.execute(
@@ -522,7 +525,7 @@ async def bot_stats(
         )
     ):
         moment = paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc)
-        day = moment.astimezone(BRAZIL_TIME_ZONE).date().isoformat()
+        day = moment.astimezone(zone).date().isoformat()
         per_day[day] = per_day.get(day, Decimal("0")) + Decimal(amount)
     for point in data.get("series", []):
         point["commission"] = float(per_day.get(point["date"], Decimal("0")))
@@ -543,9 +546,12 @@ async def partners_ranking(
 ) -> dict:
     """Revenue ranking of the chief and their partners. Only positions go out:
     nobody sees how much another member billed (not even the chief)."""
-    start, end = period_bounds(period, start_date, end_date, utc_now())
+    zone = await user_time_zone(db, access.workspace.id, user.id)
+    start, end = period_bounds(period, start_date, end_date, utc_now(), zone)
+    if start is None or end is None:
+        raise HTTPException(status_code=422, detail="Escolha um período limitado para o ranking.")
     data = await partners_ranking_of(db, user.id, start, end)
-    data["period_label"] = period_label(start, end)
+    data["period_label"] = period_label(start, end, zone)
     return data
 
 

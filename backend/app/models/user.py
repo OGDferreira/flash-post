@@ -12,6 +12,7 @@ from app.models import Base
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
+        CheckConstraint("home_panel IS NULL OR home_panel IN ('flashpost', 'flashbot')", name="ck_users_home_panel"),
         CheckConstraint(
             "platform_role IN ('USER', 'SUPER_ADMIN')",
             name="ck_users_platform_role",
@@ -55,6 +56,7 @@ class User(Base):
     )
     # FlashBot fee per sale for this user's operations; NULL = the platform default
     transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    home_panel: Mapped[str | None] = mapped_column(String(16))
     # iPhone widget (Scriptable): SHA-256 of a read-only token for today's FlashBot numbers
     widget_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))

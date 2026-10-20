@@ -1,3 +1,5 @@
+import { HomePanelPreference } from "@/components/HomePanelPreference";
+import { homePath } from "@/features/auth/homePanel";
 import { ContactsPage } from "@/pages/ContactsPage";
 import { CollaboratorInvitePage } from "@/features/auth/CollaboratorInvitePage";
 import { Suspense, lazy, type ComponentType } from "react";
@@ -205,7 +207,7 @@ function RequireAuth() {
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
-  return <Outlet />;
+  return <><HomePanelPreference prompt /><Outlet /></>;
 }
 
 function RequireSuperAdmin() {
@@ -223,17 +225,7 @@ function HomeRedirect() {
   if (!user) return <Navigate to="/login" replace />;
   return (
     <Navigate
-      to={
-        user.role === "SUPER_ADMIN"
-          ? user.workspace_role === "OWNER"
-            ? "/dashboard"
-            : user.workspace_role === "COLLABORATOR"
-              ? "/feature/accounts"
-              : "/admin"
-          : user.role === "COLLABORATOR"
-            ? "/feature/accounts"
-            : "/dashboard"
-      }
+      to={homePath(user)}
       replace
     />
   );

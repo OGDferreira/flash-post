@@ -14,7 +14,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import func, select
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, require_csrf
-from app.core.time import BRAZIL_TIME_ZONE
+from app.core.time import day_bounds_utc
+from app.analytics.periods import user_time_zone
 from app.models import TgOrder, User
 from app.partners.service import owner_workspace
 
@@ -49,27 +50,30 @@ async def today(
     workspace = await owner_workspace(db, user.id)
     if workspace is None:
         raise HTTPException(status_code=403, detail="Sem operação.")
-    now = datetime.now(BRAZIL_TIME_ZONE)
-    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    zone = await user_time_zone(db, workspace.id, user.id)
+    now = datetime.now(zone)
+    midnight, tomorrow = day_bounds_utc(now.date(), zone)
     own = TgOrder.workspace_id == workspace.id
     generated = await db.scalar(
-        select(func.count(TgOrder.id)).where(own, TgOrder.created_at >= midnight, TgOrder.gateway_transaction_id.is_not(None))
+        select(func.count(TgOrder.id)).where(own, TgOrder.created_at >= midnight, TgOrder.created_at < tomorrow,
+            TgOrder.gateway_transaction_id.is_not(None), TgOrder.gateway_transaction_id != "")
     ) or 0
     paid_rows = (await db.execute(
         select(TgOrder.paid_at, TgOrder.amount, func.coalesce(TgOrder.partner_net, TgOrder.net_amount, TgOrder.amount))
-        .where(own, TgOrder.status == "paid", TgOrder.paid_at >= midnight)
+        .where(own, TgOrder.status == "paid", TgOrder.paid_at >= midnight, TgOrder.paid_at < tomorrow,
+            TgOrder.gateway_transaction_id.is_not(None), TgOrder.gateway_transaction_id != "")
     )).all()
     # commissions earned today from partners' sales count as profit too
     commissions = await db.scalar(
         select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
-            TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid", TgOrder.paid_at >= midnight
+            TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid", TgOrder.paid_at >= midnight, TgOrder.paid_at < tomorrow
         )
     ) or 0
     hours = [Decimal("0")] * 24
     revenue = profit = Decimal("0")
     for paid_at, amount, kept in paid_rows:
         moment = paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc)
-        hours[moment.astimezone(BRAZIL_TIME_ZONE).hour] += Decimal(amount)
+        hours[moment.astimezone(zone).hour] += Decimal(amount)
         revenue += Decimal(amount)
         profit += Decimal(kept)
     profit += Decimal(commissions)

@@ -36,6 +36,7 @@ from app.schemas.auth import (
     ProfileUpdateRequest,
     RegisterRequest,
     UserResponse,
+    PreferencesUpdateRequest,
     WorkspaceResponse,
 )
 
@@ -78,6 +79,7 @@ def _user_response(user: User, membership: WorkspaceMember | None) -> UserRespon
         ),
         role=_user_role(user, membership),
         workspace_role=membership.role if membership is not None else None,
+        home_panel=user.home_panel,
         is_active=user.is_active,
         is_verified=user.is_verified,
         is_approved=user.is_approved,
@@ -330,6 +332,17 @@ async def auth_me(user: AuthenticatedUser, db: DbSession) -> UserResponse:
 @router.get("/profile", response_model=UserResponse)
 async def get_profile(user: AuthenticatedUser, db: DbSession) -> UserResponse:
     membership = await _primary_membership(user, db)
+    return _user_response(user, membership)
+
+
+@router.patch("/profile/preferences", response_model=UserResponse, dependencies=[Depends(require_csrf)])
+async def update_preferences(payload: PreferencesUpdateRequest, user: AuthenticatedUser, db: DbSession) -> UserResponse:
+    membership = await _primary_membership(user, db)
+    if payload.home_panel == "flashbot" and (membership is None or membership.role != "OWNER"):
+        raise HTTPException(status_code=403, detail="O FlashBot está disponível para o dono da operação.")
+    user.home_panel = payload.home_panel
+    await db.commit()
+    await db.refresh(user)
     return _user_response(user, membership)
 
 

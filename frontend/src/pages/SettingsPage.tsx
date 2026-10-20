@@ -18,8 +18,10 @@ import {
   UserRound,
 } from "lucide-react";
 
+import { HomePanelPreference } from "@/components/HomePanelPreference";
 import { AppearanceCard } from "@/components/AppearanceCard";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { copyGeneratedText, copyText } from "@/lib/clipboard";
 import { scriptableWidgetScript, type WidgetTheme } from "@/lib/scriptableWidget";
 import { applyTheme, getTheme, type Theme } from "@/lib/theme";
 import { ApiError, apiRequest } from "@/services/api";
@@ -120,16 +122,34 @@ const WIDGET_THEMES: { id: WidgetTheme; label: string; swatch: string; text: str
 function IphoneWidgetCard() {
   const [copied, setCopied] = useState(false);
   const [theme, setTheme] = useState<WidgetTheme>("azul");
-  const copy = useMutation({
-    mutationFn: async () => {
-      const { token } = await apiRequest<{ token: string }>("/api/widget/token", { method: "POST" });
-      await navigator.clipboard.writeText(scriptableWidgetScript(window.location.origin, token, theme));
-    },
-    onSuccess: () => {
+  const [token, setToken] = useState<string | null>(null);
+  const [copying, setCopying] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const script = token ? scriptableWidgetScript(window.location.origin, token, theme) : "";
+  // Keep a successfully generated token in memory, even if clipboard permission is denied.
+  // A retry or theme change must not invalidate a script already installed on the phone.
+  const generate = useMutation({
+    mutationFn: () => apiRequest<{ token: string }>("/api/widget/token", { method: "POST" }),
+    onSuccess: (result) => setToken(result.token),
+  });
+  const copy = async () => {
+    setCopying(true);
+    setCopied(false);
+    setCopyError("");
+    try {
+      if (script) await copyText(script);
+      else {
+        const ready = generate.mutateAsync().then(({ token: fresh }) => scriptableWidgetScript(window.location.origin, fresh, theme));
+        // Attach rejection handlers immediately to both promises, even when permission is denied first.
+        const results = await Promise.allSettled([ready, copyGeneratedText(ready)]);
+        for (const result of results) if (result.status === "rejected") throw result.reason;
+      }
       setCopied(true);
       window.setTimeout(() => setCopied(false), 4000);
-    },
-  });
+    } catch (error) {
+      setCopyError(error instanceof ApiError ? error.message : "Toque novamente em Copiar script ou selecione o código abaixo para copiar manualmente.");
+    } finally { setCopying(false); }
+  };
   return (
     <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
       <div className="flex items-center gap-2">
@@ -148,7 +168,7 @@ function IphoneWidgetCard() {
         Médio e pequeno: faturamento do dia, taxa de conversão, vendas e gráfico. Grande: também lucro e Pix gerados/pagos. Tela de bloqueio: logo,
         valor e número de vendas. Venda nova aparece com um selo verde; tocar no widget abre a versão animada. O iPhone decide quando
         atualizar (pedimos a cada minuto; costuma ser a cada 5 a 15 min). Já instalou antes? Copie de novo e cole por cima no Scriptable.
-        O script tem uma chave só de leitura; copiar de novo desliga a anterior.
+        O script tem uma chave só de leitura. Gerar um novo script em outra visita desliga a chave anterior; repetir a cópia aqui mantém a mesma chave.
       </p>
       <div aria-label="Tema do widget" className="mt-3 flex flex-wrap gap-2" role="radiogroup">
         {WIDGET_THEMES.map((item) => (
@@ -158,7 +178,7 @@ function IphoneWidgetCard() {
               theme === item.id ? "border-accent ring-2 ring-accent/40" : "border-line-soft"
             }`}
             key={item.id}
-            onClick={() => setTheme(item.id)}
+            onClick={() => { setTheme(item.id); setCopied(false); }}
             role="radio"
             style={{ background: item.swatch, color: item.text }}
             type="button"
@@ -170,14 +190,16 @@ function IphoneWidgetCard() {
       <p className="mt-1.5 text-[11px] text-muted">
         Dá para trocar em cada widget: segure o widget → Editar widget → em <b>Parameter</b> escreva dark, white ou azul.
       </p>
-      <button className="btn-primary mt-3" disabled={copy.isPending} onClick={() => copy.mutate()} type="button">
-        {copy.isPending ? "Gerando…" : copied ? "Script copiado ✓" : "Copiar script"}
+      <button className="btn-primary mt-3" disabled={copying} onClick={() => void copy()} type="button">
+        {copying ? "Preparando…" : copied ? "Script copiado ✓" : "Copiar script"}
       </button>
-      {copy.error && (
-        <p className="mt-2 text-xs text-danger">
-          {copy.error instanceof ApiError ? copy.error.message : "Não foi possível copiar. Tente de novo."}
-        </p>
-      )}
+      <p role="status" className="mt-2 text-xs text-success">{copied ? "Script completo copiado. Cole no Scriptable." : ""}</p>
+      {copyError && <p role="alert" className="mt-2 text-xs text-danger">{copyError}</p>}
+      {script && <details className="mt-3" open={!!copyError}>
+        <summary className="cursor-pointer text-xs text-muted">Ver script completo / copiar manualmente</summary>
+        <textarea aria-label="Script completo do widget" className="field mt-2 h-48 w-full font-mono text-xs"
+          readOnly value={script} onFocus={(event) => event.target.select()} />
+      </details>}
     </section>
   );
 }
@@ -195,6 +217,8 @@ export function SettingsPage() {
         </h1>
         <p className="mt-2 text-sm text-muted">Tema e aparência, conta, avisos e as integrações com API, webhooks e gateways.</p>
       </header>
+
+      <HomePanelPreference />
 
       <div className="space-y-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.12em] text-muted">

@@ -10,7 +10,8 @@ import { ActivityLog, NextAward, PartnersRanking } from "./HomePanels";
 export type StatLine = { leads: number; sales: number; buyers: number; revenue: number; conversion: number; ticket: number };
 export type BotStats = {
   period_label: string;
-  totals: StatLine & { pix_generated?: number; commission?: number };
+  totals: StatLine & { pix_generated: number; pix_paid: number; commission?: number };
+  time_zone: string;
   series: (StatLine & { date: string; commission?: number })[];
   flows: Record<string, StatLine>;
   bots: Record<string, StatLine>;
@@ -29,6 +30,8 @@ export function useBotStats(period: MetricsPeriod) {
     enabled: isPeriodReady(period),
     placeholderData: (previous) => previous,
     staleTime: 30_000,
+    refetchOnMount: "always",
+    refetchInterval: 60_000,
   });
 }
 
@@ -38,7 +41,7 @@ type PartnerRow = { bot_revenue: string; bot_sales: number; commission_received:
 function usePartnerTotals(period: MetricsPeriod) {
   return useQuery({
     queryKey: ["affiliates", "flashbot-totals", periodParams(period)],
-    queryFn: () => apiRequest<{ rows: PartnerRow[] }>(`/api/affiliates?${new URLSearchParams(periodParams(period))}`),
+    queryFn: () => apiRequest<{ rows: PartnerRow[] }>(`/api/affiliates?${new URLSearchParams(periodParams(period))}&user_calendar=true`),
     enabled: isPeriodReady(period),
     placeholderData: (previous) => previous,
     staleTime: 30_000,
@@ -85,7 +88,7 @@ function Gauge({ percent }: { percent: number }) {
         />
       </svg>
       <span className="absolute inset-x-0 bottom-0 text-center text-xl font-bold text-fg">
-        {value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%
+        {percent.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%
       </span>
     </div>
   );
@@ -94,6 +97,7 @@ function Gauge({ percent }: { percent: number }) {
 /** FlashBot home: SharkBot-style KPI cards, daily revenue chart, lead log, next award and the partners' ranking. */
 export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod; onPeriod: (value: MetricsPeriod) => void }) {
   const stats = useBotStats(period);
+  const chart = useBotStats({ period: "30d", start: "", end: "" });
   const partners = usePartnerTotals(period);
   const partnerRows = partners.data?.rows ?? [];
   const partnerRevenue = partnerRows.reduce((sum, row) => sum + Number(row.bot_revenue), 0);
@@ -101,13 +105,13 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
   const commission = partnerRows.reduce((sum, row) => sum + Number(row.commission_received), 0);
   const t = stats.data?.totals;
   const pix = t?.pix_generated ?? 0;
-  const paidShare = t && pix ? (100 * t.sales) / pix : 0;
-  const series = (stats.data?.series ?? []).map((day) => ({
+  const paidShare = t?.conversion ?? 0;
+  const series = (chart.data?.series ?? []).map((day) => ({
     ...day,
-    label: (stats.data?.series.length ?? 0) <= 7 ? weekday(day.date) : `${day.date.slice(8, 10)}/${day.date.slice(5, 7)}`,
+    label: (chart.data?.series.length ?? 0) <= 7 ? weekday(day.date) : `${day.date.slice(8, 10)}/${day.date.slice(5, 7)}`,
   }));
-  const recent = series.slice(-7);
-  const showCommission = (t?.commission ?? 0) > 0;
+  const recent = (stats.data?.series ?? []).slice(-7);
+  const showCommission = (chart.data?.totals.commission ?? 0) > 0;
   const peak = Math.max(1, ...recent.map((day) => day.leads));
 
   return (
@@ -133,7 +137,7 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
 
           <StatCard icon={<TrendingUp size={16} />} title="Taxa de conversão">
             <Gauge percent={t?.conversion ?? 0} />
-            <p className="mt-2 text-center text-[10px] text-muted">{t ? `${count(t.buyers)} compraram de ${count(t.leads)} leads` : ""}</p>
+            <p className="mt-2 text-center text-[10px] text-muted">{t ? `${count(t.pix_paid)} PIX pagos / ${count(pix)} PIX gerados` : ""}</p>
           </StatCard>
 
           <StatCard icon={<Zap size={16} />} title="Total de starts">
@@ -174,7 +178,7 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
             <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-inset text-accent"><Activity size={16} /></span>
             <div>
               <h3 className="text-sm font-semibold text-fg">Seu desempenho</h3>
-              <p className="text-[10px] uppercase tracking-[0.14em] text-muted">{stats.data?.period_label ?? ""}</p>
+              <p className="text-[10px] uppercase tracking-[0.14em] text-muted">Últimos 30 dias · {chart.data?.period_label ?? ""}</p>
             </div>
           </div>
           <p className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
