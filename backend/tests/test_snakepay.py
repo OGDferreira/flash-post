@@ -146,6 +146,17 @@ async def test_partner_sale_splits_to_the_partner_account_and_webhook_approves_o
     # SnakePay pays the partner directly: the FlashPost (SmokePay) wallet does not count it
     wallet = (await client.get("/api/wallet")).json()
     assert wallet["available"] == 0.0 and wallet["snakepay_received"] == 18.04
+    assert wallet["snakepay_sales"] == 18.04 and wallet["snakepay_fees"] == 0.0
+
+    # the platform owner sees the fee that stayed in the charging account, apart from their sales;
+    # their FlashPost revenue is still only their own sales
+    chief, _ = owner
+    chief.platform_role = "SUPER_ADMIN"
+    await db_session.commit()
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    wallet = (await client.get("/api/wallet")).json()
+    assert wallet["snakepay_fees"] == 1.01 and wallet["snakepay_sales"] == 0.0 and wallet["snakepay_received"] == 1.01
+    assert wallet["month_revenue"] == 0.0
 
 
 @pytest.mark.anyio

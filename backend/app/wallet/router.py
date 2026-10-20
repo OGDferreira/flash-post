@@ -150,19 +150,25 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
     }
 
 
-async def snakepay_received(db, user: User, workspace_id: uuid.UUID) -> Decimal:
-    """Shares of SnakePay sales already sent by SnakePay to this user's own account."""
+async def snakepay_breakdown(db, user: User, workspace_id: uuid.UUID) -> dict[str, Decimal]:
+    """What SnakePay already sent to this user's own account: the shares of their sales, the
+    commissions they earned and, for the Super Admin (the account that charges), the platform
+    and per-sale fees that stay in it. FlashPost revenue never counts the last two."""
+    paid_snake = (TgOrder.status == "paid", TgOrder.gateway == "snakepay")
     own = await db.scalar(
         select(func.coalesce(func.sum(func.coalesce(TgOrder.partner_net, TgOrder.net_amount)), 0)).where(
-            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.gateway == "snakepay"
+            TgOrder.workspace_id == workspace_id, *paid_snake
         )
     )
     commissions = await db.scalar(
-        select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
-            TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid", TgOrder.gateway == "snakepay"
-        )
+        select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(TgOrder.split_chief_user_id == user.id, *paid_snake)
     )
-    return _money(own) + _money(commissions)
+    fees = Decimal("0.00")
+    if user.platform_role == "SUPER_ADMIN":
+        fees = _money(await db.scalar(
+            select(func.coalesce(func.sum(TgOrder.platform_fee), 0)).where(TgOrder.workspace_id != workspace_id, *paid_snake)
+        ))
+    return {"sales": _money(own), "commissions": _money(commissions), "fees": fees}
 
 
 async def month_revenue(db, workspace_id: uuid.UUID) -> Decimal:
@@ -376,6 +382,7 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
     revenue, shark_revenue, flash_revenue = await month_revenue_by_bot(db, workspace.id)
     numbers = await _wallet_numbers(db, user, workspace, shop)
     is_partner = await _is_partner(db, user)
+    snake = await snakepay_breakdown(db, user, workspace.id)
     if is_partner:
         numbers.pop("commission_paid", None)
     return {
@@ -384,7 +391,10 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "shop_ref": shop,
         "month_revenue": float(revenue),
         "month_shark_revenue": float(shark_revenue),
-        "snakepay_received": float(await snakepay_received(db, user, workspace.id)),
+        "snakepay_received": float(sum(snake.values(), Decimal("0.00"))),
+        "snakepay_sales": float(snake["sales"]),
+        "snakepay_commissions": float(snake["commissions"]),
+        "snakepay_fees": float(snake["fees"]),
         "month_flash_revenue": float(flash_revenue),
         "goal": _goals_out(revenue, await award_image_urls(db)),
         **numbers,

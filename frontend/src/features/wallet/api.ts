@@ -36,7 +36,10 @@ export type Wallet = {
   balance_source: "smokepay" | "estimate";
   month_revenue: number;
   month_shark_revenue?: number;
-  snakepay_received?: number;
+  snakepay_received?: number; // everything SnakePay sent to the user's own account
+  snakepay_sales?: number;
+  snakepay_commissions?: number;
+  snakepay_fees?: number; // Super Admin: platform and per-sale fees kept in the charging account
   month_flash_revenue?: number;
   goal: Goal;
   earned: number;
