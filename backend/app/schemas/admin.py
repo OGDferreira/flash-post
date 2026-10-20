@@ -1,9 +1,10 @@
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class AdminSummary(BaseModel):
@@ -12,6 +13,11 @@ class AdminSummary(BaseModel):
     owners: int
     collaborators: int
     active_users: int
+    # FlashBot today (Brazil time): paid sales of every operation and the per-sale fee they paid
+    flashbot_sales_today: int = 0
+    flashbot_revenue_today: Decimal = Decimal("0.00")
+    transaction_fees_today: Decimal = Decimal("0.00")
+    transaction_fee_default: Decimal = Decimal("0.00")
 
 
 class AdminUser(BaseModel):
@@ -27,6 +33,8 @@ class AdminUser(BaseModel):
     created_at: datetime
     last_login_at: datetime | None
     hierarchy: str = "independent"  # chief | partner | independent
+    transaction_fee: Decimal | None = None  # own FlashBot fee per sale; None = the default
+    transaction_fee_effective: Decimal = Decimal("0.00")
     chief_name: str | None = None
     invited_by_name: str | None = None
 
@@ -72,3 +80,8 @@ class AdminWorkspacesPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class AdminTransactionFeeRequest(BaseModel):
+    # None goes back to the platform default
+    transaction_fee: Decimal | None = Field(default=None, ge=0, le=50, decimal_places=2)

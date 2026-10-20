@@ -225,16 +225,26 @@ async def _chief_copy_link(db: AsyncSession, flow: TgFlow, owner_id: uuid.UUID) 
 async def billing_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.UUID | None = None) -> BillingRoute:
     route = await _base_route(db, workspace_id, flow_id)
     if route.allowed and route.shop_ref is not None:  # every operation but the Super Admin's
-        _add_transaction_fee(route)
+        workspace = await db.get(Workspace, workspace_id)
+        owner = await db.get(User, workspace.owner_id) if workspace else None
+        _add_transaction_fee(route, transaction_fee_for(owner))
     return route
 
 
-def _add_transaction_fee(route: BillingRoute) -> None:
-    """The fixed fee per sale goes to the platform's main account, on top of any commission or
-    platform fee; it joins a fixed platform-fee rule when there is one."""
+def transaction_fee_for(user: User | None) -> Decimal:
+    """The FlashBot fee per sale: the user's own (set by the Super Admin) or the default."""
     from app.core.config import get_settings
 
-    fee = money(get_settings().flashbot_transaction_fee)
+    if user is not None and user.platform_role == "SUPER_ADMIN":
+        return Decimal("0.00")
+    if user is not None and user.transaction_fee is not None:
+        return money(user.transaction_fee)
+    return money(get_settings().flashbot_transaction_fee)
+
+
+def _add_transaction_fee(route: BillingRoute, fee: Decimal) -> None:
+    """The fixed fee per sale goes to the platform's main account, on top of any commission or
+    platform fee; it joins a fixed platform-fee rule when there is one."""
     if fee <= 0:
         return
     route.transaction_fee = fee

@@ -710,6 +710,10 @@ async def test_super_admin_can_view_real_admin_metrics_and_paginated_lists(
         "owners": 1,
         "collaborators": 1,
         "active_users": 3,
+        "flashbot_sales_today": 0,
+        "flashbot_revenue_today": "0.00",
+        "transaction_fees_today": "0.00",
+        "transaction_fee_default": "0.00",
     }
     assert users_response.status_code == 200
     assert users_response.json()["total"] == 3

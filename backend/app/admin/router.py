@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Annotated
 import re
 import uuid
@@ -7,6 +9,8 @@ from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import DbSession, SuperAdminUser, require_csrf
+from app.core.config import get_settings
+from app.core.time import BRAZIL_TIME_ZONE
 from app.models import (
     Affiliation,
     CollaboratorPayment,
@@ -14,12 +18,15 @@ from app.models import (
     InstagramAccount,
     InstagramPublicationJob,
     SystemSetting,
+    TgOrder,
     User,
     Workspace,
     WorkspaceMember,
 )
+from app.partners.service import transaction_fee_for
 from app.schemas.admin import (
     AdminSummary,
+    AdminTransactionFeeRequest,
     AdminUser,
     AdminUserAccessRequest,
     AdminUserRoleRequest,
@@ -55,13 +62,26 @@ async def summary(_admin: SuperAdminUser, db: DbSession) -> AdminSummary:
     active_users = await db.scalar(
         select(func.count()).select_from(User).where(User.is_active.is_(True))
     ) or 0
+    sales, revenue, fees = (await db.execute(
+        select(func.count(TgOrder.id), func.sum(TgOrder.amount), func.sum(TgOrder.transaction_fee))
+        .where(TgOrder.status == "paid", TgOrder.paid_at >= _brazil_midnight())
+    )).one()
     return AdminSummary(
         users_total=users_total,
         workspaces_total=workspaces_total,
         owners=owners,
         collaborators=collaborators,
         active_users=active_users,
+        flashbot_sales_today=sales or 0,
+        flashbot_revenue_today=Decimal(revenue or 0).quantize(Decimal("0.01")),
+        transaction_fees_today=Decimal(fees or 0).quantize(Decimal("0.01")),
+        transaction_fee_default=get_settings().flashbot_transaction_fee,
     )
+
+
+def _brazil_midnight() -> datetime:
+    now = datetime.now(BRAZIL_TIME_ZONE)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
 
 
 @router.get("/users", response_model=AdminUsersPage)
@@ -141,6 +161,8 @@ async def list_users(
             hierarchy="partner" if user.id in links else "chief" if user.id in chief_ids else "independent",
             chief_name=names.get(links[user.id].chief_user_id) if user.id in links else None,
             invited_by_name=names.get(user.invited_by_user_id),
+            transaction_fee=user.transaction_fee,
+            transaction_fee_effective=transaction_fee_for(user),
         )
         for user, resolved_role, workspace in rows
     ]
@@ -192,7 +214,26 @@ async def _admin_user(db: AsyncSession, user: User) -> AdminUser:
         workspace_name=await db.scalar(select(workspace_name)),
         created_at=user.created_at,
         last_login_at=user.last_login_at,
+        transaction_fee=user.transaction_fee,
+        transaction_fee_effective=transaction_fee_for(user),
     )
+
+
+@router.put(
+    "/users/{user_id}/transaction-fee",
+    response_model=AdminUser,
+    dependencies=[Depends(require_csrf)],
+)
+async def set_transaction_fee(
+    user_id: uuid.UUID, payload: AdminTransactionFeeRequest, _admin: SuperAdminUser, db: DbSession
+) -> AdminUser:
+    """The FlashBot fee per sale for one user's operations (None = back to the default)."""
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    user.transaction_fee = payload.transaction_fee
+    await db.commit()
+    return await _admin_user(db, user)
 
 
 async def _target_user(db: AsyncSession, admin: User, user_id: uuid.UUID, action: str) -> User:
