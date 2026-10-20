@@ -66,7 +66,15 @@ async def summary(_admin: SuperAdminUser, db: DbSession) -> AdminSummary:
         select(func.count(TgOrder.id), func.sum(TgOrder.amount), func.sum(TgOrder.transaction_fee))
         .where(TgOrder.status == "paid", TgOrder.paid_at >= _brazil_midnight())
     )).one()
+    midnight = _brazil_midnight()
+    charged = (TgOrder.origin != "main", TgOrder.gateway_transaction_id.is_not(None))
+    pix_generated = await db.scalar(select(func.count(TgOrder.id)).where(*charged, TgOrder.created_at >= midnight)) or 0
+    pix_paid = await db.scalar(
+        select(func.count(TgOrder.id)).where(*charged, TgOrder.status == "paid", TgOrder.paid_at >= midnight)
+    ) or 0
     return AdminSummary(
+        fee_pix_generated_today=pix_generated,
+        fee_pix_paid_today=pix_paid,
         users_total=users_total,
         workspaces_total=workspaces_total,
         owners=owners,

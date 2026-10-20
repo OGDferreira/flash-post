@@ -3,6 +3,7 @@ import { NoticesCard, PartnerPanel } from "@/features/partners/PartnerPanel";
 import { GoalsCard } from "@/features/wallet/GoalsCard";
 import { TrendBadge } from "@/components/TrendBadge";
 import { MonthResultCards, useFinanceMonth } from "@/components/MonthResultCards";
+import { PlatformFeeCard } from "@/components/PlatformFeeCard";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -470,6 +471,7 @@ export function DashboardPage() {
                   {droppedDetail || "Nenhuma queda de conta no período"}
                 </p>
               </article>
+              {user?.role === "SUPER_ADMIN" && <PlatformFeeCard />}
               <MonthResultCards hideCollaboratorDue />
               {metricsCards.map((metric) => (
                 <MetricCard key={metric.title} {...metric} />
