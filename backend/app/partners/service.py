@@ -148,6 +148,8 @@ class BillingRoute:
     origin: str = "main"
     fee_percent: Decimal | None = None
     fee_amount: Decimal | None = None
+    # fixed fee on every sale that is not the Super Admin's own (Settings.flashbot_transaction_fee)
+    transaction_fee: Decimal = Decimal("0.00")
     allowed: bool = True
 
     def preview(self, net: Decimal | None) -> tuple[Decimal | None, Decimal | None]:
@@ -155,14 +157,27 @@ class BillingRoute:
         if net is None or self.percent is None:
             return None, None
         commission = money(net * self.percent / Decimal(100))
-        return commission, money(net - commission)
+        return commission, money(net - commission - self.transaction_fee)
+
+    def drop_transaction_fee(self) -> None:
+        """Take the transaction fee back out of the splits (when the gateway refuses them)."""
+        fee, self.transaction_fee = self.transaction_fee, Decimal("0.00")
+        for rule in list(self.splits):
+            if rule.get("parent") and "amount" in rule:
+                left = money(Decimal(str(rule["amount"])) - fee)
+                if left > 0:
+                    rule["amount"] = float(left)
+                else:
+                    self.splits.remove(rule)
+                return
 
     def platform_fee(self, net: Decimal | None) -> Decimal | None:
+        """Everything the platform keeps from this sale: its fee plus the transaction fee."""
         if self.fee_amount is not None:
-            return self.fee_amount
+            return self.fee_amount + self.transaction_fee
         if self.fee_percent is not None and net is not None:
-            return money(net * self.fee_percent / Decimal(100))
-        return None
+            return money(net * self.fee_percent / Decimal(100)) + self.transaction_fee
+        return self.transaction_fee or None
 
 
 async def platform_fee_setting(db: AsyncSession) -> dict:
@@ -208,6 +223,29 @@ async def _chief_copy_link(db: AsyncSession, flow: TgFlow, owner_id: uuid.UUID) 
 
 
 async def billing_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.UUID | None = None) -> BillingRoute:
+    route = await _base_route(db, workspace_id, flow_id)
+    if route.allowed and route.shop_ref is not None:  # every operation but the Super Admin's
+        _add_transaction_fee(route)
+    return route
+
+
+def _add_transaction_fee(route: BillingRoute) -> None:
+    """The fixed fee per sale goes to the platform's main account, on top of any commission or
+    platform fee; it joins a fixed platform-fee rule when there is one."""
+    from app.core.config import get_settings
+
+    fee = money(get_settings().flashbot_transaction_fee)
+    if fee <= 0:
+        return
+    route.transaction_fee = fee
+    for rule in route.splits:
+        if rule.get("parent") and "amount" in rule:
+            rule["amount"] = float(money(Decimal(str(rule["amount"])) + fee))
+            return
+    route.splits.append({"parent": True, "amount": float(fee)})
+
+
+async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.UUID | None) -> BillingRoute:
     workspace = await db.get(Workspace, workspace_id)
     owner = await db.get(User, workspace.owner_id) if workspace else None
     flow = await db.get(TgFlow, flow_id) if flow_id else None

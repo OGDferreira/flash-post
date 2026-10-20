@@ -86,6 +86,10 @@ async def _state(db, user, workspace) -> dict:
     }
     state["shared_flows"] = await _shared_flows(db, workspace)
     state["partners_without_shop_id"] = await _partners_without_shop_id(db, workspace)
+    fee = get_settings().flashbot_transaction_fee
+    if not admin and fee > 0:  # the Super Admin's own bots do not pay it
+        for gateway in state["gateways"]:
+            gateway["fee"] += f" · taxa FlashBot {_brl(fee)} por venda"
     if admin:
         state["admin"] = {
             "snakepay_key_set": bool(get_settings().snakepay_api_key and get_settings().snakepay_api_key.get_secret_value().strip()),

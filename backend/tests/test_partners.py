@@ -532,3 +532,83 @@ async def test_activity_log_lists_leads_pix_and_sales(client, db_session, owner)
     assert kinds == ["lead", "pix", "sale"]
     sale = next(item for item in response.json()["items"] if item["kind"] == "sale")
     assert sale["amount"] == 19.9 and sale["bot"] == "b"
+
+
+@pytest.mark.anyio
+async def test_transaction_fee_on_every_sale_but_the_super_admins(db_session, owner, super_admin, monkeypatch) -> None:
+    from app.core.config import get_settings
+    from app.models import SystemSetting
+
+    monkeypatch.setattr(get_settings(), "flashbot_transaction_fee", Decimal("0.40"))
+    chief, chief_ws = owner
+    partner, partner_ws, link = await _partner(db_session, owner)
+    shared = TgFlow(workspace_id=chief_ws.id, name="Modelo", definition={}, shared=True)
+    db_session.add(shared)
+    await db_session.commit()
+
+    # an ordinary operation selling with its own funnel: only the R$ 0,40, to the main account
+    route = await service.billing_route(db_session, chief_ws.id)
+    assert route.splits == [{"parent": True, "amount": 0.4}] and route.transaction_fee == Decimal("0.40")
+    assert route.platform_fee(Decimal("19.00")) == Decimal("0.40")
+
+    # partner's own funnel with a fixed platform fee: one rule with both
+    db_session.add(SystemSetting(key=service.PLATFORM_FEE_KEY, value={"type": "fixed", "value": "1.00"}))
+    await db_session.commit()
+    route = await service.billing_route(db_session, partner_ws.id)
+    assert route.splits == [{"parent": True, "amount": 1.4}] and route.platform_fee(Decimal("19.00")) == Decimal("1.40")
+    route.drop_transaction_fee()  # a refused charge goes again with the platform fee alone
+    assert route.splits == [{"parent": True, "amount": 1.0}] and route.transaction_fee == Decimal("0.00")
+    # ... or a percentage fee: the R$ 0,40 rides as its own rule
+    setting = await db_session.get(SystemSetting, service.PLATFORM_FEE_KEY)
+    setting.value = {"type": "percent", "value": "5"}
+    await db_session.commit()
+    route = await service.billing_route(db_session, partner_ws.id)
+    assert route.splits == [{"parent": True, "percent": 5.0}, {"parent": True, "amount": 0.4}]
+    assert route.platform_fee(Decimal("100.00")) == Decimal("5.40")
+
+    # shared funnel: the chief's commission is unchanged, the R$ 0,40 comes out of the partner's share
+    link.accepted_percent, link.accepted_at = Decimal("30"), utc_now()
+    await db_session.commit()
+    route = await service.billing_route(db_session, partner_ws.id, shared.id)
+    assert route.splits == [{"shop_id": f"fp-{chief_ws.id.hex}", "percent": 30.0}, {"parent": True, "amount": 0.4}]
+    assert route.preview(Decimal("100.00")) == (Decimal("30.00"), Decimal("69.60"))
+
+    # the Super Admin's own bots pay nothing
+    chief.platform_role = "SUPER_ADMIN"
+    await db_session.commit()
+    route = await service.billing_route(db_session, chief_ws.id)
+    assert route.splits == [] and route.transaction_fee == Decimal("0.00") and route.shop_ref is None
+
+
+@pytest.mark.anyio
+async def test_transaction_fee_is_charged_and_recorded_on_the_sale(client, db_session, owner, apis, monkeypatch) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "flashbot_transaction_fee", Decimal("0.40"))
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    bot, _ = await _setup(client, headers)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    created = apis.methods("pix.create")[-1]
+    assert created["splits"] == [{"parent": True, "amount": 0.4}]
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    # fake SmokePay: R$ 19,90 with R$ 1,00 fee -> net 18,90; the operation keeps 18,50
+    assert order.platform_fee == Decimal("0.40") and order.partner_net == Decimal("18.50")
+
+
+@pytest.mark.anyio
+async def test_a_refused_transaction_fee_never_loses_the_sale(client, db_session, owner, apis, monkeypatch) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "flashbot_transaction_fee", Decimal("0.40"))
+    apis.refuse_fixed_splits = True
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    bot, _ = await _setup(client, headers)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    first, second = apis.methods("pix.create")
+    assert first["splits"] == [{"parent": True, "amount": 0.4}] and "splits" not in second
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.status == "pending" and order.platform_fee is None and order.pix_copy_paste

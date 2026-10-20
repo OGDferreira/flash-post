@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import AsyncGenerator
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -269,3 +270,12 @@ def _isolate_meta_period_views(monkeypatch: pytest.MonkeyPatch):
     analytics_router._meta_cache.clear()
     yield
     analytics_router._meta_cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_transaction_fee(monkeypatch: pytest.MonkeyPatch):
+    """Older split tests check the commission and platform-fee rules alone; the R$ 0,40
+    transaction fee has its own tests, which set it back on."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "flashbot_transaction_fee", Decimal("0.00"))
