@@ -612,3 +612,45 @@ async def test_a_refused_transaction_fee_never_loses_the_sale(client, db_session
     await db_session.commit()
     order = await db_session.scalar(select(TgOrder))
     assert order.status == "pending" and order.platform_fee is None and order.pix_copy_paste
+
+
+@pytest.mark.anyio
+async def test_super_admin_sets_a_users_fee_and_sees_todays_fees(client, db_session, owner, super_admin, apis, monkeypatch) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "flashbot_transaction_fee", Decimal("0.40"))
+    chief, chief_ws = owner
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    users = (await client.get("/api/admin/users")).json()["items"]
+    row = next(u for u in users if u["email"] == "owner@example.com")
+    assert row["transaction_fee"] is None and Decimal(str(row["transaction_fee_effective"])) == Decimal("0.40")
+
+    # a special fee for this user only; out-of-range values are refused
+    assert (await client.put(f"/api/admin/users/{chief.id}/transaction-fee", headers=admin, json={"transaction_fee": "-1"})).status_code == 422
+    saved = await client.put(f"/api/admin/users/{chief.id}/transaction-fee", headers=admin, json={"transaction_fee": "0.15"})
+    assert saved.status_code == 200, saved.text
+    assert Decimal(str(saved.json()["transaction_fee_effective"])) == Decimal("0.15")
+    await db_session.refresh(chief)
+    route = await service.billing_route(db_session, chief_ws.id)
+    assert route.splits == [{"parent": True, "amount": 0.15}]
+
+    # a sale pays it, and the admin overview counts today's sales and fees
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    bot, _ = await _setup(client, headers)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.transaction_fee == Decimal("0.15")
+    raw, sig = _signed(_paid_event(order.id))
+    assert (await client.post("/api/bots/pay/smokepay", content=raw, headers=sig)).status_code == 200
+    await _as(client, "superadmin@example.com", "super admin password")
+    summary = (await client.get("/api/admin/summary")).json()
+    assert summary["flashbot_sales_today"] == 1
+    assert Decimal(str(summary["flashbot_revenue_today"])) == Decimal("19.90")
+    assert Decimal(str(summary["transaction_fees_today"])) == Decimal("0.15")
+
+    # back to the default
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    reset = await client.put(f"/api/admin/users/{chief.id}/transaction-fee", headers=admin, json={"transaction_fee": None})
+    assert reset.json()["transaction_fee"] is None and Decimal(str(reset.json()["transaction_fee_effective"])) == Decimal("0.40")

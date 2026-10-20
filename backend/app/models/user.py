@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, LargeBinary, String, func, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, LargeBinary, Numeric, String, func, text
 from sqlalchemy.orm import Mapped, deferred, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -52,6 +53,8 @@ class User(Base):
     platform_role: Mapped[str] = mapped_column(
         String(32), nullable=False, default="USER", server_default="USER"
     )
+    # FlashBot fee per sale for this user's operations; NULL = the platform default
+    transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_approved: Mapped[bool] = mapped_column(

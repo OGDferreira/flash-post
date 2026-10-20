@@ -1031,6 +1031,7 @@ async def create_order(
                     order.partner_net = charge.net_amount - fee
             order.pix_copy_paste = charge.copy_paste
             qr = charge.qr_code_base64
+        order.transaction_fee = route.transaction_fee or None  # after a refused split dropped it
         timings["gateway"] = time.perf_counter() - mark
         mark = time.perf_counter()
         await schedule(db, bot, "expire_order", order.expires_at, f"expire:{order.id}", lead, {"order_id": str(order.id)})
