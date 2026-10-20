@@ -20,7 +20,7 @@ import {
 
 import { AppearanceCard } from "@/components/AppearanceCard";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { scriptableWidgetScript } from "@/lib/scriptableWidget";
+import { scriptableWidgetScript, type WidgetTheme } from "@/lib/scriptableWidget";
 import { applyTheme, getTheme, type Theme } from "@/lib/theme";
 import { ApiError, apiRequest } from "@/services/api";
 
@@ -111,12 +111,19 @@ function ThemeSwitch() {
 }
 
 /** The FlashBot sales widget for the iPhone home screen, through the free Scriptable app. */
+const WIDGET_THEMES: { id: WidgetTheme; label: string; swatch: string; text: string }[] = [
+  { id: "azul", label: "Azul", swatch: "linear-gradient(135deg,#3a5ffe,#1e9cfd 55%,#15d6fe)", text: "#fff" },
+  { id: "dark", label: "Escuro", swatch: "linear-gradient(135deg,#0b1020,#10204a)", text: "#fff" },
+  { id: "white", label: "Branco", swatch: "linear-gradient(135deg,#ffffff,#e8f1ff)", text: "#0b1530" },
+];
+
 function IphoneWidgetCard() {
   const [copied, setCopied] = useState(false);
+  const [theme, setTheme] = useState<WidgetTheme>("azul");
   const copy = useMutation({
     mutationFn: async () => {
       const { token } = await apiRequest<{ token: string }>("/api/widget/token", { method: "POST" });
-      await navigator.clipboard.writeText(scriptableWidgetScript(window.location.origin, token));
+      await navigator.clipboard.writeText(scriptableWidgetScript(window.location.origin, token, theme));
     },
     onSuccess: () => {
       setCopied(true);
@@ -138,10 +145,30 @@ function IphoneWidgetCard() {
         <li>Na tela inicial, segure um espaço vazio → <b>+</b> → Scriptable → escolha o tamanho → toque no widget e selecione o script.</li>
       </ol>
       <p className="mt-2 text-[11px] leading-5 text-muted">
-        Médio e pequeno: faturamento do dia, vendas e gráfico. Grande: também lucro e Pix gerados/pagos. Tela de bloqueio: logo,
+        Médio e pequeno: faturamento do dia, taxa de conversão, vendas e gráfico. Grande: também lucro e Pix gerados/pagos. Tela de bloqueio: logo,
         valor e número de vendas. Venda nova aparece com um selo verde; tocar no widget abre a versão animada. O iPhone decide quando
         atualizar (pedimos a cada minuto; costuma ser a cada 5 a 15 min). Já instalou antes? Copie de novo e cole por cima no Scriptable.
         O script tem uma chave só de leitura; copiar de novo desliga a anterior.
+      </p>
+      <div aria-label="Tema do widget" className="mt-3 flex flex-wrap gap-2" role="radiogroup">
+        {WIDGET_THEMES.map((item) => (
+          <button
+            aria-checked={theme === item.id}
+            className={`flex h-14 w-24 flex-col justify-end rounded-xl border-2 px-2.5 pb-1.5 text-left text-xs font-semibold transition ${
+              theme === item.id ? "border-accent ring-2 ring-accent/40" : "border-line-soft"
+            }`}
+            key={item.id}
+            onClick={() => setTheme(item.id)}
+            role="radio"
+            style={{ background: item.swatch, color: item.text }}
+            type="button"
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted">
+        Dá para trocar em cada widget: segure o widget → Editar widget → em <b>Parameter</b> escreva dark, white ou azul.
       </p>
       <button className="btn-primary mt-3" disabled={copy.isPending} onClick={() => copy.mutate()} type="button">
         {copy.isPending ? "Gerando…" : copied ? "Script copiado ✓" : "Copiar script"}
