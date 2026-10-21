@@ -43,6 +43,7 @@ from app.schemas.loops import (
     InstagramPublicationFailureResponse,
     InstagramPublicationFailuresResponse,
     InstagramLoopAccountResponse,
+    InstagramLoopAccountsPage,
     InstagramLoopAccountsUpdateRequest,
     InstagramLoopCreateRequest,
     InstagramLoopResponse,
@@ -87,24 +88,32 @@ async def _loop_response(
     loop: InstagramLoop,
     db: DbSession,
     now: datetime,
+    include_accounts: bool = True,
 ) -> InstagramLoopResponse:
-    accounts = (
-        await db.scalars(
-            select(InstagramAccount)
-            .join(
-                InstagramLoopAccount,
-                InstagramLoopAccount.account_id == InstagramAccount.id,
-            )
-            .where(
-                InstagramLoopAccount.loop_id == loop.id,
-                InstagramAccount.workspace_id == loop.workspace_id,
-                InstagramAccount.status == "connected",
-                InstagramAccount.encrypted_access_token.is_not(None),
-                InstagramAccount.token_expires_at > now,
-            )
-            .order_by(InstagramAccount.username)
+    accounts_query = (
+        select(InstagramAccount)
+        .join(
+            InstagramLoopAccount,
+            InstagramLoopAccount.account_id == InstagramAccount.id,
         )
-    ).all()
+        .where(
+            InstagramLoopAccount.loop_id == loop.id,
+            InstagramAccount.workspace_id == loop.workspace_id,
+            InstagramAccount.status == "connected",
+            InstagramAccount.encrypted_access_token.is_not(None),
+            InstagramAccount.token_expires_at > now,
+        )
+    )
+    if include_accounts:
+        accounts = (
+            await db.scalars(accounts_query.order_by(InstagramAccount.username))
+        ).all()
+        account_count = len(accounts)
+    else:
+        accounts = []
+        account_count = await db.scalar(
+            select(func.count()).select_from(accounts_query.subquery())
+        ) or 0
     local_day_start, local_day_end = local_day_bounds_utc(now)
     job = InstagramPublicationJob
     today = (job.updated_at >= local_day_start) & (job.updated_at < local_day_end)
@@ -188,7 +197,8 @@ async def _loop_response(
             )
             for account in accounts
         ],
-        active_accounts_count=len(accounts),
+        accounts_count=account_count,
+        active_accounts_count=account_count,
         media_ids=[item.id for item in selected_media],
         media_names=[item.filename for item in selected_media],
         media_count=len(selected_media),
@@ -210,6 +220,7 @@ async def _loop_response(
 async def list_loops(
     access: WorkspaceMemberAccess,
     db: DbSession,
+    include_accounts: bool = True,
 ) -> InstagramLoopsResponse:
     now = utc_now()
     loops = (
@@ -219,14 +230,33 @@ async def list_loops(
             .order_by(InstagramLoop.created_at.desc(), InstagramLoop.id)
         )
     ).all()
-    accounts = await _workspace_accounts(access.workspace.id, db)
+    accounts_count = await db.scalar(
+        select(func.count()).select_from(
+            select(InstagramAccount.id)
+            .where(
+                InstagramAccount.workspace_id == access.workspace.id,
+                InstagramAccount.status == "connected",
+                InstagramAccount.encrypted_access_token.is_not(None),
+                InstagramAccount.token_expires_at > now,
+            )
+            .subquery()
+        )
+    ) or 0
+    accounts = (
+        await _workspace_accounts(access.workspace.id, db)
+        if include_accounts
+        else []
+    )
     return InstagramLoopsResponse(
         can_manage=access.membership.role
         in {WorkspaceRole.OWNER.value, WorkspaceRole.COLLABORATOR.value},
         can_configure=access.membership.role == WorkspaceRole.OWNER.value,
         can_delete=access.membership.role == WorkspaceRole.OWNER.value,
         publishing_enabled=get_settings().instagram_publishing_enabled,
-        loops=[await _loop_response(loop, db, now) for loop in loops],
+        loops=[
+            await _loop_response(loop, db, now, include_accounts=include_accounts)
+            for loop in loops
+        ],
         available_accounts=[
             InstagramLoopAccountResponse(
                 id=account.id,
@@ -239,6 +269,91 @@ async def list_loops(
             )
             for account in accounts
         ],
+        available_accounts_count=accounts_count,
+    )
+
+
+@router.get("/accounts", response_model=InstagramLoopAccountsPage)
+async def list_loop_accounts(
+    access: WorkspaceMemberAccess,
+    db: DbSession,
+    loop_id: uuid.UUID | None = None,
+    only_loop_accounts: bool = False,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=1000),
+) -> InstagramLoopAccountsPage:
+    now = utc_now()
+    if loop_id is not None:
+        loop = await db.scalar(
+            select(InstagramLoop).where(
+                InstagramLoop.id == loop_id,
+                InstagramLoop.workspace_id == access.workspace.id,
+            )
+        )
+        if loop is None:
+            raise HTTPException(status_code=404, detail="Loop não encontrado.")
+
+    query = select(InstagramAccount).where(
+        InstagramAccount.workspace_id == access.workspace.id,
+        InstagramAccount.status == "connected",
+        InstagramAccount.encrypted_access_token.is_not(None),
+        InstagramAccount.token_expires_at > now,
+    )
+    if only_loop_accounts:
+        if loop_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Informe um loop para listar as contas associadas.",
+            )
+        query = query.join(
+            InstagramLoopAccount,
+            InstagramLoopAccount.account_id == InstagramAccount.id,
+        ).where(InstagramLoopAccount.loop_id == loop_id)
+    total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    accounts = (
+        await db.scalars(
+            query.order_by(InstagramAccount.username)
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+    selected_ids: list[uuid.UUID] = []
+    if loop_id is not None:
+        selected_ids = list(
+            (
+                await db.scalars(
+                    select(InstagramLoopAccount.account_id)
+                    .join(
+                        InstagramAccount,
+                        InstagramAccount.id == InstagramLoopAccount.account_id,
+                    )
+                    .where(
+                        InstagramLoopAccount.loop_id == loop_id,
+                        InstagramAccount.workspace_id == access.workspace.id,
+                        InstagramAccount.status == "connected",
+                        InstagramAccount.encrypted_access_token.is_not(None),
+                        InstagramAccount.token_expires_at > now,
+                    )
+                )
+            ).all()
+        )
+    return InstagramLoopAccountsPage(
+        accounts=[
+            InstagramLoopAccountResponse(
+                id=account.id,
+                profile_folder_id=account.profile_folder_id,
+                username=account.username,
+                token_expires_at=_utc_datetime(account.token_expires_at),
+                connected_at=_utc_datetime(account.connected_at),
+                error_at=_utc_datetime(account.error_at) if account.error_at else None,
+                status=account.status,
+            )
+            for account in accounts
+        ],
+        total=total,
+        offset=offset,
+        limit=limit,
+        selected_ids=selected_ids,
     )
 
 

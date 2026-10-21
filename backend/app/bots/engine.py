@@ -1115,16 +1115,27 @@ async def _charge_with_snakepay(db: AsyncSession, bot: TgBot, order: TgOrder, ro
     if workspace is None:
         return False
     flow = await db.get(TgFlow, bot.flow_id) if bot.flow_id else None
-    plan = await gateways.snakepay_plan(db, workspace, route, amount, flow)
+    try:
+        plan = await gateways.snakepay_plan(db, workspace, route, amount, flow)
+    except RuntimeError:
+        logger.exception("Could not load saved SnakePay credentials for workspace %s", workspace.id)
+        bot.last_error = "SnakePay: saved credentials could not be decrypted."
+        return False
     if plan is None:
         return False
     paused = _snakepay_paused.get(bot.workspace_id, 0.0)
     if paused > time.monotonic():
         return False  # refused a moment ago: go straight to SmokePay instead of waiting on a new refusal
+    if plan.api_key and plan.webhook_secret:
+        from app.core.crypto import encrypt_value
+
+        order.snakepay_api_key_encrypted = encrypt_value(plan.api_key)
+        order.snakepay_webhook_secret_encrypted = encrypt_value(plan.webhook_secret)
     try:
         try:
             charge = await snakepay.create_charge(
-                amount=amount, external_reference=f"{ORDER_PREFIX}{order.id}", split=plan.split or None
+                amount=amount, external_reference=f"{ORDER_PREFIX}{order.id}", split=plan.split or None,
+                api_key=plan.api_key,
             )
         except snakepay.SnakepayError as first:
             # A 400 creates no charge, so one retry is safe: the API may want the ShopID in
@@ -1134,12 +1145,15 @@ async def _charge_with_snakepay(db: AsyncSession, bot: TgBot, order: TgOrder, ro
             logger.warning("SnakePay refused the split (%s); retrying with the other ShopID format.", first)
             plan.split = [{**item, "recipient_id": snakepay.alternate_recipient(item["recipient_id"])} for item in plan.split]
             charge = await snakepay.create_charge(
-                amount=amount, external_reference=f"{ORDER_PREFIX}{order.id}", split=plan.split
+                amount=amount, external_reference=f"{ORDER_PREFIX}{order.id}", split=plan.split,
+                api_key=plan.api_key,
             )
             plan.seller_recipient = snakepay.alternate_recipient(plan.seller_recipient) if plan.seller_recipient else None
             plan.chief_recipient = snakepay.alternate_recipient(plan.chief_recipient) if plan.chief_recipient else None
     except snakepay.SnakepayError as exc:
         # The sale must not be lost: SmokePay charges this order instead.
+        order.snakepay_api_key_encrypted = None
+        order.snakepay_webhook_secret_encrypted = None
         logger.warning(
             "SnakePay charge failed (%s) for workspace %s with %d split recipient(s); falling back to SmokePay.",
             exc, bot.workspace_id, len(plan.split),
@@ -1183,7 +1197,13 @@ async def check_order(db: AsyncSession, order: TgOrder) -> None:
         if not order.gateway_transaction_id:
             return
         try:
-            snake = await snakepay.get_charge(order.gateway_transaction_id)
+            from app.core.crypto import decrypt_value
+
+            api_key = decrypt_value(order.snakepay_api_key_encrypted) if order.snakepay_api_key_encrypted else None
+            snake = await snakepay.get_charge(order.gateway_transaction_id, api_key=api_key)
+        except (RuntimeError, ValueError):
+            logger.exception("Could not decrypt SnakePay API key for order %s", order.id)
+            return
         except snakepay.SnakepayError:
             return
         if snake.status == "paid":
@@ -1269,12 +1289,11 @@ async def notify_sale(db: AsyncSession, bot: TgBot, order: TgOrder) -> None:
 
     try:
         workspace = await db.get(Workspace, bot.workspace_id)
-        net = order.partner_net if order.partner_net is not None else order.net_amount
         if workspace is not None:
-            # Short, like the gateways' own alerts: "Nova venda!" / "Você recebeu R$ 7,70".
+            # Report the plan price, not the net payout after gateway fees and commission.
             await notify_user(
                 db, workspace.owner_id, "sale", "⚡ Nova venda!",
-                f"Você recebeu {brl(net if net is not None else order.amount)} 🤑", "/feature/bots",
+                f"Venda de {brl(order.amount)} 🤑", "/feature/bots",
             )
         if order.split_chief_user_id and order.split_amount:
             seller = await db.get(User, workspace.owner_id) if workspace else None

@@ -15,7 +15,6 @@ import {
   MessageCircle,
   MessageSquareText,
   Puzzle,
-  Send,
   Settings,
   Settings2,
   Trophy,
@@ -48,7 +47,7 @@ export const adminLinks: NavItem[] = [
   { label: "Sistema", to: "/admin/system", icon: Settings2 },
 ];
 
-/** Six direct shortcuts, in this exact order (sidebar top and phone bottom bar). */
+/** Six direct shortcuts for the phone bottom bar. */
 export const directLinks: NavItem[] = [
   { label: "FlashBot", to: "/feature/bots", icon: FlashBotIcon },
   { label: "Painel", to: "/dashboard", icon: Home },
@@ -60,45 +59,34 @@ export const directLinks: NavItem[] = [
 
 const ownerGroups: NavGroup[] = [
   {
-    id: "contas",
-    title: "Contas",
-    icon: Users,
+    id: "visao-geral",
+    title: "Visão geral",
+    icon: Home,
     items: [
-      { label: "Hub de contas", to: "/feature/accounts", icon: Users },
-      { label: "Pastas de perfis", to: "/feature/profile-folders", icon: Folder },
-      { label: "E-mails", to: "/feature/emails", icon: Mail },
-      { label: "Log de erros", to: "/feature/error-logs", icon: Bug },
+      { label: "Painel", to: "/dashboard", icon: Home },
+      { label: "Métricas", to: "/feature/analytics", icon: ChartNoAxesCombined },
+      { label: "Ranking", to: "/feature/ranking", icon: Trophy },
     ],
   },
   {
-    id: "publicacao",
-    title: "Publicação",
-    icon: Send,
+    id: "vendas",
+    title: "Vendas",
+    icon: CircleDollarSign,
     items: [
+      { label: "Carteira", to: "/carteira", icon: Wallet },
+      { label: "Financeiro", to: "/feature/finance", icon: CircleDollarSign },
+      { label: "Sócios", to: "/feature/affiliates", icon: Handshake },
+    ],
+  },
+  {
+    id: "automacoes",
+    title: "Automações",
+    icon: InfinityIcon,
+    items: [
+      { label: "FlashBot", to: "/feature/bots", icon: FlashBotIcon },
       { label: "Loops", to: "/feature/loops", icon: InfinityIcon },
       { label: "Feed", to: "/feature/feed", icon: Clapperboard },
       { label: "Automações", to: "/feature/automations", icon: MessageSquareText },
-      { label: "FlashBot", to: "/feature/bots", icon: FlashBotIcon },
-    ],
-  },
-  {
-    id: "metricas",
-    title: "Métricas",
-    icon: ChartNoAxesCombined,
-    items: [
-      { label: "Analytics", to: "/feature/analytics", icon: ChartNoAxesCombined },
-      { label: "Ranking", to: "/feature/ranking", icon: Trophy },
-      { label: "Carteira", to: "/carteira", icon: Wallet },
-      { label: "Financeiro", to: "/feature/finance", icon: CircleDollarSign },
-    ],
-  },
-  {
-    id: "equipe",
-    title: "Equipe",
-    icon: UsersRound,
-    items: [
-      { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
-      { label: "Sócios", to: "/feature/affiliates", icon: Handshake },
     ],
   },
   {
@@ -112,14 +100,21 @@ const ownerGroups: NavGroup[] = [
     ],
   },
   {
-    id: "configuracoes",
-    title: "Configurações",
-    icon: Settings,
-    items: [{ label: "Configurações", to: "/configuracoes", icon: Settings }],
+    id: "conta",
+    title: "Conta",
+    icon: Users,
+    items: [
+      { label: "Hub de contas", to: "/feature/accounts", icon: Users },
+      { label: "Pastas de perfis", to: "/feature/profile-folders", icon: Folder },
+      { label: "E-mails", to: "/feature/emails", icon: Mail },
+      { label: "Log de erros", to: "/feature/error-logs", icon: Bug },
+      { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
+      { label: "Configurações", to: "/configuracoes", icon: Settings },
+    ],
   },
   {
-    id: "suporte",
-    title: "Suporte",
+    id: "navegacao",
+    title: "Navegação",
     icon: LifeBuoy,
     items: [
       { label: "Dúvidas e erros", to: "/feature/support", icon: LifeBuoy },
@@ -144,13 +139,8 @@ const collaboratorRoutes = new Set([
 ]);
 
 
-/** direct = shortcuts on top; flat = every other page as a plain link; groups = collapsible (admin only). */
+/** direct = phone shortcuts; groups = titled sidebar and mobile sections. */
 export type NavModel = { direct: NavItem[]; flat: NavItem[]; groups: NavGroup[]; admin: NavItem[] };
-
-function flatten(groups: NavGroup[], direct: NavItem[]): NavItem[] {
-  const seen = new Set(direct.map(({ to }) => to));
-  return groups.flatMap((group) => group.items).filter(({ to }) => !seen.has(to) && seen.add(to));
-}
 
 export function buildNavigation(opts: {
   isAdminRoute: boolean;
@@ -161,15 +151,12 @@ export function buildNavigation(opts: {
   // Super Admin pages are a plain, always-open section (no collapsible group).
   const admin = opts.isSuperAdmin ? adminLinks : [];
   if (opts.workspaceRole === "OWNER") {
-    const flat = flatten(ownerGroups, directLinks);
-    // "Sócios" sits right under "Colaboradores" (the last shortcut).
-    const partners = flat.filter(({ to }) => to === "/feature/affiliates");
-    return { direct: directLinks, flat: [...partners, ...flat.filter(({ to }) => to !== "/feature/affiliates")], groups: [], admin };
+    return { direct: directLinks, flat: [], groups: ownerGroups, admin };
   }
   if (opts.workspaceRole === "COLLABORATOR") {
     const direct = directLinks.filter(({ to }) => collaboratorRoutes.has(to));
     const allowed = ownerGroups.map((group) => ({ ...group, items: group.items.filter(({ to }) => collaboratorRoutes.has(to)) }));
-    return { direct, flat: flatten(allowed, direct), groups: [], admin };
+    return { direct, flat: [], groups: allowed.filter(({ items }) => items.length > 0), admin };
   }
   return { direct: [], flat: [], groups: [], admin };
 }

@@ -472,7 +472,7 @@ export function DashboardPage() {
                 </p>
               </article>
               {user?.role === "SUPER_ADMIN" && <PlatformFeeCard />}
-              <MonthResultCards hideCollaboratorDue />
+              <MonthResultCards hideCollaboratorDue hideMonthlyProfit />
               {metricsCards.map((metric) => (
                 <MetricCard key={metric.title} {...metric} />
               ))}

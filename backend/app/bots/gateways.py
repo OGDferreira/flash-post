@@ -6,11 +6,9 @@ SmokePay stays the default. SnakePay is used for an operation when:
 * the operation chose it (``workspaces.payment_gateway``);
 * everyone who must receive a share has a SnakePay recipient id.
 
-Money: the charge is made with the platform owner's key, so the sale lands in the
-platform's SnakePay account and SnakePay splits the net (after 3% + R$ 0,25) at once:
-the seller's share to the seller's account, the accepted commission to the chief's
-account. What is not split (platform fee, or a commission owed to the Super Admin)
-stays in the platform account. Same rules as the SmokePay route (``billing_route``).
+With the platform key, SnakePay splits the net (after 3% + R$ 0,25) to the seller
+and chief. When a seller configured their own credentials, their charge is created
+in their account and only external shares are split out. Same billing rules apply.
 """
 
 import re
@@ -56,6 +54,8 @@ class SnakePlan:
     seller_percent: Decimal | None = None  # None: the seller is the platform (keeps everything)
     chief_recipient: str | None = None
     chief_percent: Decimal = Decimal("0")
+    api_key: str | None = None
+    webhook_secret: str | None = None
 
 
 def same_recipient(a: str, b: str) -> bool:
@@ -110,6 +110,61 @@ async def snakepay_plan(
         return None
     if owner.platform_role == "SUPER_ADMIN":
         return SnakePlan()  # the platform's own sale: no split
+    if workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted:
+        from app.core.crypto import decrypt_value
+
+        try:
+            api_key = decrypt_value(workspace.snakepay_api_key_encrypted)
+            webhook_secret = decrypt_value(workspace.snakepay_webhook_secret_encrypted)
+        except (RuntimeError, ValueError) as exc:
+            raise RuntimeError("Saved SnakePay credentials could not be decrypted.") from exc
+        net = snakepay.expected_net(amount)
+        if net <= 0:
+            return None
+        chief_percent = route.percent or Decimal("0")
+        fee_percent = route.fee_percent or Decimal("0")
+        fixed = (route.fee_amount or Decimal("0")) + route.transaction_fee
+        if fixed:
+            fee_percent += (fixed * HUNDRED / net).quantize(Decimal("0.01"), ROUND_UP)
+
+        platform = [value for value in await platform_recipients(db) if valid_recipient(value)]
+        platform_accounts = {
+            value.strip().lower().removeprefix("snakepay_").replace("-", "")
+            for value in platform
+        }
+        platform_recipient = platform[0] if len(platform_accounts) == 1 else None
+        split_percents: dict[str, Decimal] = {}
+        chief_recipient = None
+        if chief_percent > 0:
+            chief = await db.get(User, route.chief_user_id) if route.chief_user_id else None
+            if chief is None:
+                return None
+            if chief.platform_role == "SUPER_ADMIN":
+                chief_recipient = platform_recipient
+            else:
+                chief_workspace = await owner_workspace(db, chief.id)
+                chief_recipient = (chief_workspace.snakepay_recipient_id or "").strip() if chief_workspace else None
+            if not chief_recipient or not valid_recipient(chief_recipient):
+                return None
+            split_percents[chief_recipient] = split_percents.get(chief_recipient, Decimal("0")) + chief_percent
+        if fee_percent > 0:
+            if not platform_recipient:
+                return None
+            split_percents[platform_recipient] = split_percents.get(platform_recipient, Decimal("0")) + fee_percent
+
+        total_split = sum(split_percents.values(), Decimal("0"))
+        seller_percent = HUNDRED - total_split
+        if seller_percent <= 0 or total_split > HUNDRED:
+            return None
+        return SnakePlan(
+            split=[{"recipient_id": recipient, "percentage": float(percent)} for recipient, percent in split_percents.items()],
+            seller_percent=seller_percent,
+            chief_recipient=chief_recipient,
+            chief_percent=chief_percent,
+            api_key=api_key,
+            webhook_secret=webhook_secret,
+        )
+
     recipient = (workspace.snakepay_recipient_id or "").strip()
     if not valid_recipient(recipient):
         return None
@@ -157,6 +212,19 @@ def apply_snake_charge(order, route: BillingRoute, plan: SnakePlan, charge: snak
     order.gateway_fee = (order.amount - net).quantize(Decimal("0.01"))
     order.pix_copy_paste = charge.copy_paste
     amounts = {k.lower(): v for k, v in (charge.split_amounts or {}).items()}
+    if plan.api_key is not None:
+        split_total = Decimal("0.00")
+        for rule in plan.split:
+            recipient = rule["recipient_id"].lower()
+            percentage = Decimal(str(rule["percentage"]))
+            split_total += amounts.get(recipient, snakepay.share(net, percentage))
+        seller = net - split_total
+        order.partner_net = seller
+        if route.percent is not None:
+            commission = amounts.get(plan.chief_recipient.lower()) if plan.chief_recipient else None
+            order.split_amount = commission if commission is not None else snakepay.share(net, plan.chief_percent)
+        order.platform_fee = (net - seller - (order.split_amount or Decimal("0.00"))).quantize(Decimal("0.01"))
+        return
     if plan.seller_percent is None:
         return  # platform sale: everything stays, nothing to record
     seller = amounts.get(plan.seller_recipient.lower()) if plan.seller_recipient else None

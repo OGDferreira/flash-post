@@ -10,7 +10,7 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy import select
 
-from app.bots import gateways, snakepay
+from app.bots import engine, gateways, snakepay
 from app.core.config import get_settings
 from app.models import TgOrder
 from tests.test_partners import CHIEF_PASSWORD, _as, _chief_shares_funnel, _partner
@@ -37,7 +37,8 @@ def snake(apis, monkeypatch):
             return httpx.Response(404, json={"error": "not found"})  # no SmokePay subaccount yet
         if "snake.test" not in url:
             return smoke(request)
-        assert request.headers["authorization"] == "Bearer sk_live_test"
+        apis.calls.append(("snake.auth", {"authorization": request.headers["authorization"]}))
+        assert request.headers["authorization"].startswith("Bearer ")
         if request.method == "POST" and url.endswith("/charges"):
             body = json.loads(request.content)
             apis.calls.append(("snake.create", body))
@@ -68,11 +69,11 @@ def snake(apis, monkeypatch):
     return state
 
 
-def _event(charge: dict) -> tuple[bytes, dict]:
+def _event(charge: dict, secret: str = SECRET) -> tuple[bytes, dict]:
     raw = json.dumps({"id": "evt_1", "type": "pix.paid", "data": {
         "charge_id": charge["id"], "amount": charge["amount"], "net_amount": charge["net_amount"], "status": "paid",
     }}).encode()
-    sig = hmac.new(SECRET.encode(), raw, hashlib.sha256).hexdigest()
+    sig = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
     return raw, {"X-SnakePay-Signature": f"sha256={sig}", "Content-Type": "application/json"}
 
 
@@ -198,6 +199,58 @@ async def test_shared_funnel_follows_the_chief_gateway_and_splits_the_commission
     assert order.split_chief_user_id == chief.id and order.split_amount == Decimal("5.71") and order.partner_net == Decimal("13.33")
     await _as(client, "owner@example.com", CHIEF_PASSWORD)
     assert (await client.get("/api/payment-gateways")).json()["partners_without_shop_id"] == []
+
+
+@pytest.mark.anyio
+async def test_partner_account_key_keeps_sale_in_seller_account_and_splits_only_chief(
+    client, db_session, owner, super_admin, snake, apis
+) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws, _ = await _partner(db_session, owner, accepted=True)
+    await _enable(client)
+    flow_id = await _chief_shares_funnel(client, db_session, chief_ws)
+
+    chief_headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (
+        await client.put(
+            "/api/payment-gateways",
+            headers=chief_headers,
+            json={"gateway": "snakepay", "snakepay_recipient_id": CHIEF},
+        )
+    ).status_code == 200
+    seller_headers = await _as(client, "socio@example.com")
+    credentials = await client.put(
+        "/api/payment-gateways/snakepay/credentials",
+        headers=seller_headers,
+        json={"api_key": "seller_sk_test", "webhook_secret": "seller_webhook_test"},
+    )
+    assert credentials.status_code == 200
+    assert credentials.json()["snakepay_account_key_set"] and credentials.json()["snakepay_account_secret_set"]
+    assert "seller_sk_test" not in credentials.text and "seller_webhook_test" not in credentials.text
+
+    seller_headers = await _as(client, "socio@example.com")
+    bot = (await client.post("/api/bots", headers=seller_headers, json={"token": TOKEN, "flow_id": flow_id})).json()
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    created = apis.methods("snake.create")[-1]
+    assert created["amount"] == 19.9
+    assert created["split"] == [{"recipient_id": CHIEF, "percentage": 30.0}]
+    assert ("snake.auth", {"authorization": "Bearer seller_sk_test"}) in apis.calls
+    assert partner_ws.snakepay_recipient_id is None
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder).where(TgOrder.gateway == "snakepay"))
+    assert order.workspace_id == partner_ws.id
+    assert order.snakepay_api_key_encrypted != "seller_sk_test"
+    await engine.check_order(db_session, order)
+    assert ("snake.auth", {"authorization": "Bearer seller_sk_test"}) in apis.calls
+
+    invalid_raw, invalid_sig = _event(snake["charges"]["in_1"])
+    assert (await client.post("/api/bots/pay/snakepay", content=invalid_raw, headers=invalid_sig)).status_code == 401
+    raw, sig = _event(snake["charges"]["in_1"], "seller_webhook_test")
+    assert (await client.post("/api/bots/pay/snakepay", content=raw, headers=sig)).status_code == 200
+    await db_session.refresh(order)
+    assert order.status == "paid" and order.split_amount == Decimal("5.71")
+    assert order.partner_net == Decimal("13.34")
 
 
 @pytest.mark.anyio

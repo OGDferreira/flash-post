@@ -210,6 +210,8 @@ class TgOrder(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     gateway: Mapped[str] = mapped_column(String(32), nullable=False, default="smokepay", server_default="smokepay")
     gateway_transaction_id: Mapped[str | None] = mapped_column(String(64))
+    snakepay_api_key_encrypted: Mapped[str | None] = mapped_column(String(1024))
+    snakepay_webhook_secret_encrypted: Mapped[str | None] = mapped_column(String(1024))
     gateway_fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     net_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     # Partner split, fixed when the PIX is created (server-side percentage).

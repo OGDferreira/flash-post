@@ -594,6 +594,14 @@ async def test_owner_can_create_color_folder_and_assign_accounts(
     folder_id = created.json()["id"]
     assert created.json()["color"] == "#ff3399"
 
+    moved = await client.patch(
+        f"/api/instagram/folders/accounts/{account.id}/folder",
+        headers={"X-CSRF-Token": token},
+        json={"folder_id": folder_id},
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["profile_folder_id"] == folder_id
+
     assigned = await client.put(
         f"/api/instagram/folders/{folder_id}/accounts",
         headers={"X-CSRF-Token": token},
@@ -611,6 +619,21 @@ async def test_owner_can_create_color_folder_and_assign_accounts(
     assert listed.json()["accounts"][0]["profile_folder_id"] == folder_id
     assert listed.json()["folders"][0]["accounts"][0]["connected_at"]
     assert listed.json()["folders"][0]["color"] == "#ff3399"
+
+    summary = await client.get("/api/instagram/folders?include_accounts=false")
+    assert summary.status_code == 200
+    assert summary.json()["accounts"] == []
+    assert summary.json()["accounts_count"] == 1
+    assert summary.json()["unassigned_count"] == 0
+    assert summary.json()["folders"][0]["accounts"] == []
+    assert summary.json()["folders"][0]["account_count"] == 1
+    account_page = await client.get(
+        f"/api/instagram/folders/accounts?folder_id={folder_id}"
+    )
+    assert account_page.status_code == 200
+    assert [item["username"] for item in account_page.json()["accounts"]] == [
+        "folder_test_account"
+    ]
 
     deleted = await client.delete(
         f"/api/instagram/folders/{folder_id}",

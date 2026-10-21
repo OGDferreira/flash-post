@@ -23,7 +23,7 @@ from app.bots import engine, portable, smokepay
 from app.bots.flow_schema import FlowDefinition, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
-from app.core.crypto import encrypt_value
+from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
 from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access, shares_with
@@ -855,21 +855,30 @@ async def snakepay_webhook(request: Request, db: DbSession) -> dict:
     from app.bots import snakepay
 
     raw = await request.body()
-    if not snakepay.verify_signature(raw, request.headers.get("x-snakepay-signature")):
-        raise HTTPException(status_code=401, detail="Invalid signature.")
     try:
         event = json.loads(raw)
-    except ValueError:
-        return {"ok": True}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid webhook payload.") from exc
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="Invalid webhook payload.")
     data = event.get("data") if isinstance(event, dict) and isinstance(event.get("data"), dict) else {}
     charge_id = str(data.get("charge_id") or data.get("id") or "")
-    if event.get("type") != "pix.paid" or not charge_id:
-        return {"ok": True}  # expired/failed: the order's own expiry job handles it
-    order = await db.scalar(
-        select(TgOrder).where(TgOrder.gateway == "snakepay", TgOrder.gateway_transaction_id == charge_id[:64])
-    )
-    if order is None:
-        return {"ok": True}  # not a bot order (e.g. the panel's test event)
+    order = None
+    if charge_id:
+        order = await db.scalar(
+            select(TgOrder).where(TgOrder.gateway == "snakepay", TgOrder.gateway_transaction_id == charge_id[:64])
+        )
+    webhook_secret = None
+    if order is not None and order.snakepay_webhook_secret_encrypted:
+        try:
+            webhook_secret = decrypt_value(order.snakepay_webhook_secret_encrypted)
+        except (RuntimeError, ValueError):
+            logger.exception("Could not decrypt SnakePay webhook secret for order %s", order.id)
+            raise HTTPException(status_code=500, detail="Webhook configuration unavailable.") from None
+    if not snakepay.verify_signature(raw, request.headers.get("x-snakepay-signature"), secret=webhook_secret):
+        raise HTTPException(status_code=401, detail="Invalid signature.")
+    if event.get("type") != "pix.paid" or not charge_id or order is None:
+        return {"ok": True}  # expired/failed or not a bot order
     amount = snakepay._cents(data.get("amount"))
     net = snakepay._cents(data.get("net_amount"))
     fee = (amount - net).quantize(Decimal("0.01")) if amount is not None and net is not None else None

@@ -123,6 +123,7 @@ class InstagramLoopResponse(BaseModel):
     last_run_at: datetime | None
     auto_folder_ids: list[UUID] = []
     accounts: list[InstagramLoopAccountResponse]
+    accounts_count: int = 0
     active_accounts_count: int
     media_ids: list[UUID]
     media_names: list[str]
@@ -145,6 +146,15 @@ class InstagramLoopsResponse(BaseModel):
     publishing_enabled: bool
     loops: list[InstagramLoopResponse]
     available_accounts: list[InstagramLoopAccountResponse]
+    available_accounts_count: int = 0
+
+
+class InstagramLoopAccountsPage(BaseModel):
+    accounts: list[InstagramLoopAccountResponse]
+    total: int
+    offset: int
+    limit: int
+    selected_ids: list[UUID] = []
 
 
 class InstagramPublicationFailureResponse(BaseModel):

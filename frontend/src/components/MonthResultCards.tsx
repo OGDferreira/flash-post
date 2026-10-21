@@ -108,7 +108,10 @@ export function MetricCard({
  * an indicator against the all-time daily average. Rendered as dashboard metric
  * cards, so it drops into any `dashboard-metrics` grid.
  */
-export function MonthResultCards({ hideCollaboratorDue = false }: { hideCollaboratorDue?: boolean } = {}) {
+export function MonthResultCards({
+  hideCollaboratorDue = false,
+  hideMonthlyProfit = false,
+}: { hideCollaboratorDue?: boolean; hideMonthlyProfit?: boolean } = {}) {
   const month = useFinanceMonth();
   if (month.isError) return null; // owner-only figures: hide quietly otherwise
   const data = month.data;
@@ -116,7 +119,6 @@ export function MonthResultCards({ hideCollaboratorDue = false }: { hideCollabor
   const monthName = data
     ? new Intl.DateTimeFormat("pt-BR", { month: "long", timeZone: "UTC" }).format(new Date(`${data.month}T00:00:00Z`))
     : "mês";
-  const profit = Number(data?.profit ?? 0);
   const todayProfit = Number(data?.today.profit ?? 0);
   const history = data?.history_per_day;
   const showTrend = Boolean(data && history && (data.history_days ?? 0) >= 2);
@@ -153,20 +155,22 @@ export function MonthResultCards({ hideCollaboratorDue = false }: { hideCollabor
           valueColor="text-warning"
         />
       )}
-      <MetricCard
-        color={profit < 0 ? "text-danger" : "text-success"}
-        detail={
-          data
-            ? `Líquido ${money(data.net_revenue)} − equipe ${money(data.collaborator_earnings)} − gastos ${money(data.expenses_total)}`
-            : "Faturamento menos equipe e gastos"
-        }
-        icon={<TrendingUp size={16} />}
-        loading={loading}
-        title={`Lucro de ${monthName}`}
-        trend={data && <MonthTrend data={data} field="profit" />}
-        value={money(data?.profit)}
-        valueColor={profit < 0 ? "text-danger" : "text-success"}
-      />
+      {!hideMonthlyProfit && (
+        <MetricCard
+          color={Number(data?.profit ?? 0) < 0 ? "text-danger" : "text-success"}
+          detail={
+            data
+              ? `Líquido ${money(data.net_revenue)} − equipe ${money(data.collaborator_earnings)} − gastos ${money(data.expenses_total)}`
+              : "Faturamento menos equipe e gastos"
+          }
+          icon={<TrendingUp size={16} />}
+          loading={loading}
+          title={`Lucro de ${monthName}`}
+          trend={data && <MonthTrend data={data} field="profit" />}
+          value={money(data?.profit)}
+          valueColor={Number(data?.profit ?? 0) < 0 ? "text-danger" : "text-success"}
+        />
+      )}
       <MetricCard
         color={todayProfit < 0 ? "text-danger" : "text-success"}
         detail={

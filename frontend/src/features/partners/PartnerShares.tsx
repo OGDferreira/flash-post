@@ -22,7 +22,7 @@ function useOwnItems() {
   });
   const loops = useQuery({
     queryKey: ["loops"],
-    queryFn: () => apiRequest<{ loops: InstagramLoop[] }>("/api/loops"),
+    queryFn: () => apiRequest<{ loops: InstagramLoop[] }>("/api/loops?include_accounts=false"),
     staleTime: 30_000,
   });
   return {

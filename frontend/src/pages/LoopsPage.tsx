@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -27,13 +27,75 @@ import {
 } from "@/features/instagram/accountDates";
 import { confirmAction } from "@/lib/confirm";
 import { ShareLoopButton, SharedLoopsSection } from "@/features/partners/SharedTemplates";
-import { type InstagramMedia, type InstagramMediaResponse, type InstagramFoldersResponse, type InstagramLoop, type InstagramLoopsResponse, type PublicationFailuresResponse, groupFailuresByAccount, type LoopForm, emptyForm, MAX_UPLOAD_BYTES, formatDate, apiErrorMessage, mediaFitsLoop, fileFitsLoop } from "@/pages/loops/loopShared";
+import { type InstagramMedia, type InstagramMediaResponse, type InstagramFoldersResponse, type InstagramLoop, type InstagramLoopAccountsPage, type InstagramLoopsResponse, type PublicationFailuresResponse, groupFailuresByAccount, type LoopForm, emptyForm, MAX_UPLOAD_BYTES, formatDate, apiErrorMessage, mediaFitsLoop, fileFitsLoop } from "@/pages/loops/loopShared";
+
+function LoopAccountsList({ loopId }: { loopId: string }) {
+  const [offset, setOffset] = useState(0);
+  const [loadedAccounts, setLoadedAccounts] = useState<InstagramLoopAccountsPage["accounts"]>([]);
+  const accounts = useQuery({
+    queryKey: ["loops", "accounts", "details", loopId, offset],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        loop_id: loopId,
+        only_loop_accounts: "true",
+        limit: "50",
+        offset: String(offset),
+      });
+      return apiRequest<InstagramLoopAccountsPage>(`/api/loops/accounts?${params}`);
+    },
+    placeholderData: (previous) => previous,
+    retry: false,
+  });
+  useEffect(() => {
+    if (!accounts.data) return;
+    setLoadedAccounts((current) => {
+      const next = offset === 0 ? [] : current;
+      const knownIds = new Set(next.map((account) => account.id));
+      return [...next, ...accounts.data.accounts.filter((account) => !knownIds.has(account.id))];
+    });
+  }, [accounts.data, offset]);
+  if (accounts.isLoading && loadedAccounts.length === 0) return <LoadingState label="Carregando contas do loop" />;
+  if (accounts.error || !accounts.data) {
+    return <ErrorState message="Não foi possível carregar as contas deste loop." />;
+  }
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {loadedAccounts.map((account) => (
+        <div className="rounded bg-well px-2 py-1 text-xs text-fg-2" key={account.id}>
+          <p>@{account.username}</p>
+          <p className="mt-0.5 text-[10px] text-muted">
+            Conectada em {formatAccountConnectedAt(account.connected_at)}
+          </p>
+          {account.status === "error" && (
+            <p className="mt-0.5 text-[10px] text-danger">
+              Duração antes do erro: {formatConnectedDuration(account.connected_at, account.error_at)}
+            </p>
+          )}
+        </div>
+      ))}
+      {loadedAccounts.length === 0 && (
+        <p className="text-xs text-muted">Nenhuma conta conectada neste loop.</p>
+      )}
+      {loadedAccounts.length < accounts.data.total && (
+        <button
+          className="min-h-8 rounded-lg border border-line px-3 text-xs text-fg-2 hover:text-white disabled:opacity-50"
+          disabled={accounts.isFetching}
+          onClick={() => setOffset(loadedAccounts.length)}
+          type="button"
+        >
+          {accounts.isFetching ? "Carregando..." : `Carregar mais (${accounts.data.total - loadedAccounts.length} restantes)`}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function LoopsPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"continuous" | "errors">("continuous");
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [initializedAccountsKey, setInitializedAccountsKey] = useState<string | null>(null);
   const [expandedLoops, setExpandedLoops] = useState<string[]>([]);
   const toggleLoop = (id: string) =>
     setExpandedLoops((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
@@ -44,7 +106,7 @@ export function LoopsPage() {
   const [poolSelected, setPoolSelected] = useState<Set<string>>(new Set());
   const loops = useQuery({
     queryKey: ["loops"],
-    queryFn: () => apiRequest<InstagramLoopsResponse>("/api/loops"),
+    queryFn: () => apiRequest<InstagramLoopsResponse>("/api/loops?include_accounts=false"),
     refetchInterval: 120_000,
     retry: false,
   });
@@ -55,9 +117,29 @@ export function LoopsPage() {
   });
   const folders = useQuery({
     queryKey: ["instagram", "folders"],
-    queryFn: () => apiRequest<InstagramFoldersResponse>("/api/instagram/folders"),
+    queryFn: () => apiRequest<InstagramFoldersResponse>("/api/instagram/folders?include_accounts=false"),
     retry: false,
   });
+  const editAccounts = useQuery({
+    queryKey: ["loops", "accounts", editingId],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: "1000" });
+      if (editingId) params.set("loop_id", editingId);
+      return apiRequest<InstagramLoopAccountsPage>(`/api/loops/accounts?${params}`);
+    },
+    enabled: formOpen,
+    staleTime: 30_000,
+    retry: false,
+  });
+  useEffect(() => {
+    const key = editingId ?? "new-loop";
+    if (!formOpen || !editAccounts.data || initializedAccountsKey === key) return;
+    setForm((current) => ({
+      ...current,
+      account_ids: editAccounts.data.selected_ids,
+    }));
+    setInitializedAccountsKey(key);
+  }, [editAccounts.data, editingId, formOpen, initializedAccountsKey]);
   const failures = useQuery({
     queryKey: ["loops", "failures"],
     queryFn: () => apiRequest<PublicationFailuresResponse>("/api/loops/failures"),
@@ -238,6 +320,7 @@ export function LoopsPage() {
 
   function beginEdit(loop: InstagramLoop) {
     setEditingId(loop.id);
+    setInitializedAccountsKey(null);
     setForm({
       name: loop.name,
       interval_min_minutes: loop.interval_min_minutes,
@@ -253,11 +336,7 @@ export function LoopsPage() {
       cover_mode: loop.cover_mode ?? "auto",
       cover_media_id: loop.cover_media_id ?? null,
       media_covers: {},
-      account_ids: loop.accounts
-        .filter((account) =>
-          loops.data?.available_accounts.some((available) => available.id === account.id),
-        )
-        .map((account) => account.id),
+      account_ids: loop.accounts.map((account) => account.id),
     });
     setFormOpen(true);
     saveLoop.reset();
@@ -281,6 +360,7 @@ export function LoopsPage() {
             type="button"
             onClick={() => {
               setEditingId(null);
+              setInitializedAccountsKey(null);
               setForm(emptyForm);
               setFormOpen((open) => !open);
               saveLoop.reset();
@@ -292,7 +372,7 @@ export function LoopsPage() {
         )}
       </header>
       {loops.data.can_configure && (
-        <SharedLoopsSection accounts={loops.data.available_accounts} loops={loops.data.loops} />
+        <SharedLoopsSection loops={loops.data.loops} />
       )}
 
       {!loops.data.publishing_enabled ? (
@@ -469,6 +549,7 @@ export function LoopsPage() {
         onClose={() => {
           setFormOpen(false);
           setEditingId(null);
+          setInitializedAccountsKey(null);
           setForm(emptyForm);
         }}
         open={formOpen && loops.data.can_manage}
@@ -490,7 +571,11 @@ export function LoopsPage() {
             <legend className="px-1 text-sm font-medium text-fg-2">
               Contas Instagram ({form.account_ids.length} selecionadas)
             </legend>
-            {loops.data.available_accounts.length === 0 ? (
+            {editAccounts.isLoading ? (
+              <LoadingState label="Carregando contas conectadas" />
+            ) : editAccounts.error ? (
+              <ErrorState message="Não foi possível carregar as contas conectadas." />
+            ) : editAccounts.data?.total === 0 ? (
               <p className="text-sm text-warning">
                 Não há contas ativas com token válido. Conecte ou reconecte uma conta no Hub de
                 Contas antes de criar o loop.
@@ -502,7 +587,7 @@ export function LoopsPage() {
                     id: folder.id,
                     label: folder.name,
                     color: folder.color,
-                    accounts: loops.data.available_accounts.filter(
+                    accounts: (editAccounts.data?.accounts ?? []).filter(
                       (account) => account.profile_folder_id === folder.id,
                     ),
                   })),
@@ -510,7 +595,7 @@ export function LoopsPage() {
                     id: "unassigned",
                     label: "Sem pasta",
                     color: "#64748b",
-                    accounts: loops.data.available_accounts.filter(
+                    accounts: (editAccounts.data?.accounts ?? []).filter(
                       (account) => !account.profile_folder_id,
                     ),
                   },
@@ -997,6 +1082,8 @@ export function LoopsPage() {
             type="submit"
             disabled={
               saveLoop.isPending ||
+              editAccounts.isLoading ||
+              Boolean(editAccounts.error) ||
               (!loops.data.can_configure && !editingId) ||
               !form.name.trim() ||
               (form.account_ids.length === 0 && form.auto_folder_ids.length === 0) ||
@@ -1084,28 +1171,10 @@ export function LoopsPage() {
                       className={`transition-transform ${expandedLoops.includes(loop.id) ? "rotate-180" : ""}`}
                       size={14}
                     />
-                    {expandedLoops.includes(loop.id) ? "Ocultar contas" : "Ver contas"} ({loop.accounts.length})
+                    {expandedLoops.includes(loop.id) ? "Ocultar contas" : "Ver contas"} ({loop.accounts_count})
                   </button>
                   {expandedLoops.includes(loop.id) && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                      {loop.accounts.map((account) => (
-                        <div
-                          className="rounded bg-well px-2 py-1 text-xs text-fg-2"
-                          key={account.id}
-                        >
-                          <p>@{account.username}</p>
-                          <p className="mt-0.5 text-[10px] text-muted">
-                            Conectada em {formatAccountConnectedAt(account.connected_at)}
-                          </p>
-                          {account.status === "error" && (
-                            <p className="mt-0.5 text-[10px] text-danger">
-                              Duração antes do erro:{" "}
-                              {formatConnectedDuration(account.connected_at, account.error_at)}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    <LoopAccountsList loopId={loop.id} />
                   )}
                   <p className="mt-3 text-xs text-muted">
                     Próxima execução: {formatDate(loop.next_run_at)}

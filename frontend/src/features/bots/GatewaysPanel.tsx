@@ -11,6 +11,9 @@ type Gateway = { id: GatewayId; name: string; available: boolean; fee: string; d
 type GatewayState = {
   current: GatewayId;
   snakepay_recipient_id: string | null;
+  snakepay_account_key_set: boolean;
+  snakepay_account_secret_set: boolean;
+  snakepay_webhook_url: string;
   is_admin: boolean;
   needs_recipient: boolean;
   flows: { id: string; name: string; gateway: GatewayId | null }[];
@@ -38,6 +41,8 @@ export function GatewaysPanel() {
   const state = useQuery({ queryKey: KEY, queryFn: () => apiRequest<GatewayState>("/api/payment-gateways") });
   const [picked, setPicked] = useState<GatewayId>("smokepay");
   const [recipient, setRecipient] = useState("");
+  const [snakepayApiKey, setSnakepayApiKey] = useState("");
+  const [snakepayWebhookSecret, setSnakepayWebhookSecret] = useState("");
   const [scope, setScope] = useState<"all" | "flows">("all");
   const [info, setInfo] = useState<GatewayId | null>(null); // which card's "!" (fees) is open
   useEffect(() => {
@@ -63,6 +68,18 @@ export function GatewaysPanel() {
   const release = useMutation({
     mutationFn: (enabled: boolean) => apiRequest("/api/payment-gateways/snakepay/enabled", { method: "PUT", body: { enabled } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }),
+  });
+  const saveAccount = useMutation({
+    mutationFn: (credentials: { api_key?: string; webhook_secret?: string; clear?: boolean }) =>
+      apiRequest<GatewayState>("/api/payment-gateways/snakepay/credentials", {
+        method: "PUT",
+        body: credentials,
+      }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(KEY, data);
+      setSnakepayApiKey("");
+      setSnakepayWebhookSecret("");
+    },
   });
 
   if (state.isLoading) return <LoadingState label="Carregando gateways" />;
@@ -126,12 +143,79 @@ export function GatewaysPanel() {
   const nameOf = (id: GatewayId) => data.gateways.find((g) => g.id === id)?.name ?? id;
   const sharedSnake = data.shared_flows.filter((flow) => flow.gateway === "snakepay");
   const needsRecipient = picked === "snakepay" && data.needs_recipient;
-  const missingShopId = sharedSnake.length > 0 && !(data.snakepay_recipient_id ?? "").trim();
+  const ownSnakePayAccount = data.snakepay_account_key_set && data.snakepay_account_secret_set;
+  const missingShopId = sharedSnake.length > 0 && !ownSnakePayAccount && !(data.snakepay_recipient_id ?? "").trim();
 
   return (
     <section className="space-y-4">
       {/* While SnakePay is off the Super Admin sees the release switch first. */}
       {data.admin && !data.admin.snakepay_enabled && adminCard}
+      {!data.is_admin && (
+        <div className="glass-panel p-4 sm:p-5">
+          <h2 className="text-base font-semibold text-fg">Sua conta SnakePay</h2>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            Para registrar as vendas diretamente na sua conta SnakePay, informe a chave API e o segredo do webhook da sua conta. As credenciais são armazenadas criptografadas e nunca são exibidas novamente.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-medium text-fg-2" htmlFor="snakepay-api-key">
+              Chave secreta da API
+              <input
+                autoComplete="new-password"
+                className="field mt-1 font-mono text-xs"
+                id="snakepay-api-key"
+                onChange={(event) => setSnakepayApiKey(event.target.value)}
+                placeholder={data.snakepay_account_key_set ? "Já configurada · deixe vazio para manter" : "Chave da sua conta SnakePay"}
+                type="password"
+                value={snakepayApiKey}
+              />
+            </label>
+            <label className="text-xs font-medium text-fg-2" htmlFor="snakepay-webhook-secret">
+              Segredo do webhook
+              <input
+                autoComplete="new-password"
+                className="field mt-1 font-mono text-xs"
+                id="snakepay-webhook-secret"
+                onChange={(event) => setSnakepayWebhookSecret(event.target.value)}
+                placeholder={data.snakepay_account_secret_set ? "Já configurado · deixe vazio para manter" : "Segredo configurado na SnakePay"}
+                type="password"
+                value={snakepayWebhookSecret}
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              className="btn-primary"
+              disabled={saveAccount.isPending || (!snakepayApiKey.trim() && !snakepayWebhookSecret.trim())}
+              onClick={() =>
+                saveAccount.mutate({
+                  api_key: snakepayApiKey.trim() || undefined,
+                  webhook_secret: snakepayWebhookSecret.trim() || undefined,
+                })
+              }
+              type="button"
+            >
+              {saveAccount.isPending ? "Salvando…" : "Salvar credenciais"}
+            </button>
+            {(data.snakepay_account_key_set || data.snakepay_account_secret_set) && (
+              <button
+                className="btn-secondary"
+                disabled={saveAccount.isPending}
+                onClick={() => saveAccount.mutate({ clear: true })}
+                type="button"
+              >
+                Remover credenciais
+              </button>
+            )}
+            {data.snakepay_account_key_set && data.snakepay_account_secret_set && (
+              <span className="text-xs text-success">Conta pronta para cobrar diretamente.</span>
+            )}
+          </div>
+          <div className="mt-3">
+            <CopyField hint="Cadastre esta URL na área Desenvolvedor da sua conta SnakePay." label="URL do webhook" value={data.snakepay_webhook_url} />
+          </div>
+          {saveAccount.error && <p className="mt-3 text-xs text-danger">{errorText(saveAccount.error)}</p>}
+        </div>
+      )}
       <div className="glass-panel p-4 sm:p-5">
         <div className="flex items-center gap-2">
           <CreditCard className="text-accent" size={18} />
@@ -149,7 +233,7 @@ export function GatewaysPanel() {
             </p>
             {missingShopId && (
               <p className="mt-1 font-medium text-warning">
-                Cadastre seu ShopID da SnakePay abaixo para receber sua parte por lá. Enquanto não cadastrar, essas vendas continuam pela SmokePay.
+                Cadastre suas credenciais SnakePay abaixo ou seu ShopID para receber sua parte. Sem uma dessas opções, as vendas continuam pela SmokePay.
               </p>
             )}
           </div>
@@ -161,8 +245,7 @@ export function GatewaysPanel() {
             </p>
             <p className="mt-1 text-muted">
               {data.partners_without_shop_id.join(", ")} {data.partners_without_shop_id.length > 1 ? "rodam" : "roda"} seus funis com SnakePay, mas ainda não
-              cadastrou o ShopID. Sem ele a SnakePay não tem para onde mandar a parte do sócio, então essas vendas (e a sua comissão) seguem pela SmokePay até o
-              ShopID ser cadastrado na aba Gateways do sócio.
+              cadastraram as credenciais da própria conta nem o ShopID. Sem uma dessas opções, essas vendas seguem pela SmokePay.
             </p>
           </div>
         )}
@@ -238,9 +321,8 @@ export function GatewaysPanel() {
               value={recipient}
             />
             <p className="mt-2 text-[11px] leading-5 text-muted">
-              Na SnakePay, abra <b className="text-fg-2">Split da conta</b> e copie o <b className="text-fg-2">Seu ShopID</b>. Cada venda cai na conta da plataforma e
-              a SnakePay repassa na hora a sua parte para essa conta (taxa da SnakePay: 3% + R$ 0,25 por venda). Num funil compartilhado vale o gateway
-              escolhido por quem compartilhou; com SnakePay, o sócio precisa ter o ShopID cadastrado, senão a venda segue pela SmokePay.
+              Use o ShopID apenas se quiser continuar recebendo vendas por split da conta da plataforma. Com suas credenciais próprias acima, a cobrança é criada
+              diretamente na sua conta, e só a comissão do sócio que compartilhou o funil é enviada via split.
             </p>
           </div>
         )}

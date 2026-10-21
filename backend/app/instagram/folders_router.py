@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select, update
 
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
 from app.instagram.folder_automation import join_auto_loops, normalize_prefixes
@@ -10,6 +10,8 @@ from app.models import InstagramAccount, InstagramProfileFolder, User
 from app.schemas.instagram_folders import (
     InstagramProfileFolderAccount,
     InstagramProfileFolderAccountsRequest,
+    InstagramProfileFolderAccountsPage,
+    InstagramProfileFolderAssignRequest,
     InstagramProfileFolderCreateRequest,
     InstagramProfileFolderResponse,
     InstagramProfileFoldersResponse,
@@ -51,21 +53,27 @@ def _account_response(
 async def _folder_response(
     folder: InstagramProfileFolder,
     db: DbSession,
+    include_accounts: bool = True,
 ) -> InstagramProfileFolderResponse:
-    accounts = (
-        await db.scalars(
-            select(InstagramAccount)
-            .where(
-                InstagramAccount.workspace_id == folder.workspace_id,
-                InstagramAccount.profile_folder_id == folder.id,
-                InstagramAccount.status == "connected",
-                InstagramAccount.encrypted_access_token.is_not(None),
-                InstagramAccount.token_expires_at > datetime.now(timezone.utc),
-            )
-            .order_by(InstagramAccount.username)
-        )
-    ).all()
-    names = await _connector_names(db, accounts)
+    account_query = select(InstagramAccount).where(
+        InstagramAccount.workspace_id == folder.workspace_id,
+        InstagramAccount.profile_folder_id == folder.id,
+        InstagramAccount.status == "connected",
+        InstagramAccount.encrypted_access_token.is_not(None),
+        InstagramAccount.token_expires_at > datetime.now(timezone.utc),
+    )
+    if include_accounts:
+        accounts = (
+            await db.scalars(account_query.order_by(InstagramAccount.username))
+        ).all()
+        names = await _connector_names(db, accounts)
+        account_count = len(accounts)
+    else:
+        accounts = []
+        names = {}
+        account_count = await db.scalar(
+            select(func.count()).select_from(account_query.subquery())
+        ) or 0
     created_at = _utc_datetime(folder.created_at)
     return InstagramProfileFolderResponse(
         id=folder.id,
@@ -74,6 +82,7 @@ async def _folder_response(
         created_at=created_at,
         auto_prefixes=list(folder.auto_prefixes or []),
         auto_enabled=folder.auto_enabled,
+        account_count=account_count,
         accounts=[_account_response(account, names) for account in accounts],
     )
 
@@ -95,6 +104,7 @@ async def _workspace_folder(
 async def list_profile_folders(
     access: OwnerAccess,
     db: DbSession,
+    include_accounts: bool = True,
 ) -> InstagramProfileFoldersResponse:
     folders = (
         await db.scalars(
@@ -103,23 +113,144 @@ async def list_profile_folders(
             .order_by(InstagramProfileFolder.name, InstagramProfileFolder.id)
         )
     ).all()
-    accounts = (
-        await db.scalars(
-            select(InstagramAccount)
-            .where(InstagramAccount.workspace_id == access.workspace.id)
+    account_query = select(InstagramAccount).where(
+        InstagramAccount.workspace_id == access.workspace.id,
+        InstagramAccount.status == "connected",
+        InstagramAccount.encrypted_access_token.is_not(None),
+        InstagramAccount.token_expires_at > datetime.now(timezone.utc),
+    )
+    if include_accounts:
+        accounts = (
+            await db.scalars(account_query.order_by(InstagramAccount.username))
+        ).all()
+        names = await _connector_names(db, accounts)
+        counts = {}
+        accounts_count = len(accounts)
+        unassigned_count = sum(
+            account.profile_folder_id is None for account in accounts
+        )
+    else:
+        accounts = []
+        names = {}
+        count_rows = await db.execute(
+            select(InstagramAccount.profile_folder_id, func.count())
             .where(
+                InstagramAccount.workspace_id == access.workspace.id,
                 InstagramAccount.status == "connected",
                 InstagramAccount.encrypted_access_token.is_not(None),
                 InstagramAccount.token_expires_at > datetime.now(timezone.utc),
             )
-            .order_by(InstagramAccount.username)
+            .group_by(InstagramAccount.profile_folder_id)
+        )
+        counts = {folder_id: count for folder_id, count in count_rows.all()}
+        accounts_count = sum(counts.values())
+        unassigned_count = counts.get(None, 0)
+    return InstagramProfileFoldersResponse(
+        folders=[
+            await _folder_response(folder, db, include_accounts=include_accounts)
+            if include_accounts
+            else InstagramProfileFolderResponse(
+                id=folder.id,
+                name=folder.name,
+                color=folder.color,
+                created_at=_utc_datetime(folder.created_at),
+                auto_prefixes=list(folder.auto_prefixes or []),
+                auto_enabled=folder.auto_enabled,
+                account_count=counts.get(folder.id, 0),
+                accounts=[],
+            )
+            for folder in folders
+        ],
+        accounts=[_account_response(account, names) for account in accounts],
+        accounts_count=accounts_count,
+        unassigned_count=unassigned_count,
+    )
+
+
+@router.get("/accounts", response_model=InstagramProfileFolderAccountsPage)
+async def list_profile_folder_accounts(
+    access: OwnerAccess,
+    db: DbSession,
+    folder_id: uuid.UUID | None = None,
+    unassigned: bool = False,
+    search: str | None = Query(default=None, max_length=80),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=1000),
+) -> InstagramProfileFolderAccountsPage:
+    if folder_id is not None and unassigned:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Escolha uma pasta ou as contas sem pasta, não ambos.",
+        )
+    query = select(InstagramAccount).where(
+        InstagramAccount.workspace_id == access.workspace.id,
+        InstagramAccount.status == "connected",
+        InstagramAccount.encrypted_access_token.is_not(None),
+        InstagramAccount.token_expires_at > datetime.now(timezone.utc),
+    )
+    if folder_id is not None:
+        query = query.where(InstagramAccount.profile_folder_id == folder_id)
+    elif unassigned:
+        query = query.where(InstagramAccount.profile_folder_id.is_(None))
+    normalized_search = (search or "").strip()
+    if normalized_search:
+        query = query.where(InstagramAccount.username.ilike(f"%{normalized_search}%"))
+    total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    accounts = (
+        await db.scalars(
+            query.order_by(InstagramAccount.username)
+            .offset(offset)
+            .limit(limit)
         )
     ).all()
     names = await _connector_names(db, accounts)
-    return InstagramProfileFoldersResponse(
-        folders=[await _folder_response(folder, db) for folder in folders],
+    return InstagramProfileFolderAccountsPage(
         accounts=[_account_response(account, names) for account in accounts],
+        total=total,
+        offset=offset,
+        limit=limit,
     )
+
+
+@router.patch(
+    "/accounts/{account_id}/folder",
+    response_model=InstagramProfileFolderAccount,
+    dependencies=[Depends(require_csrf)],
+)
+async def assign_profile_folder(
+    account_id: uuid.UUID,
+    payload: InstagramProfileFolderAssignRequest,
+    access: OwnerAccess,
+    db: DbSession,
+) -> InstagramProfileFolderAccount:
+    account = await db.scalar(
+        select(InstagramAccount).where(
+            InstagramAccount.id == account_id,
+            InstagramAccount.workspace_id == access.workspace.id,
+            InstagramAccount.status == "connected",
+            InstagramAccount.encrypted_access_token.is_not(None),
+            InstagramAccount.token_expires_at > datetime.now(timezone.utc),
+        )
+    )
+    if account is None:
+        raise HTTPException(status_code=404, detail="Conta conectada não encontrada.")
+    if payload.folder_id is not None:
+        folder = await _workspace_folder(access.workspace.id, payload.folder_id, db)
+        if folder is None:
+            raise HTTPException(status_code=404, detail="Pasta não encontrada.")
+    account.profile_folder_id = payload.folder_id
+    if payload.folder_id is not None:
+        await join_auto_loops(
+            db,
+            access.workspace.id,
+            payload.folder_id,
+            [account],
+            datetime.now(timezone.utc),
+        )
+    await db.commit()
+    await db.refresh(account)
+    names = await _connector_names(db, [account])
+    return _account_response(account, names)
 
 
 @router.post(

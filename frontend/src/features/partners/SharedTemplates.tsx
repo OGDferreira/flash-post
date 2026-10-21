@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import type { Flow } from "@/features/bots/types";
-import type { InstagramLoop, LoopAccount } from "@/pages/loops/loopShared";
+import type { InstagramLoop, InstagramLoopAccountsPage } from "@/pages/loops/loopShared";
 import { ApiError, apiRequest } from "@/services/api";
 import { type PartnerOption, useChiefLabel, useMyPartners, useShareToggle, useSharedTemplates, useUseTemplate } from "./api";
 
@@ -174,7 +174,7 @@ export function ShareLoopButton({ loop }: { loop: InstagramLoop }) {
 
 /** Partner: the area with the loops the chief shared. Each one posts the chief's media and
  *  only starts once the partner adds their own accounts to it. */
-export function SharedLoopsSection({ loops, accounts }: { loops: InstagramLoop[]; accounts: LoopAccount[] }) {
+export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
   const chief = useChiefLabel();
   const queryClient = useQueryClient();
   const shared = useSharedTemplates();
@@ -216,7 +216,7 @@ export function SharedLoopsSection({ loops, accounts }: { loops: InstagramLoop[]
                 <p className="min-w-0 truncate text-sm font-medium text-fg">{loop.name}</p>
                 {!loop.linked_available ? (
                   <Badge tone="warning">Parou de ser compartilhado</Badge>
-                ) : loop.accounts.length === 0 ? (
+                ) : loop.active_accounts_count === 0 ? (
                   <Badge tone="warning">Sem contas</Badge>
                 ) : loop.status === "active" ? (
                   <Badge tone="success">Postando</Badge>
@@ -229,14 +229,14 @@ export function SharedLoopsSection({ loops, accounts }: { loops: InstagramLoop[]
                 {loop.daily_limit_per_account}/dia por conta
               </p>
               <p className="text-xs text-fg-2">
-                {loop.accounts.length === 0
+                {loop.active_accounts_count === 0
                   ? "Nenhuma conta conectada neste loop ainda."
-                  : loop.accounts.map((account) => `@${account.username}`).join(", ")}
+                  : `${loop.active_accounts_count} conta(s) conectada(s).`}
               </p>
               {loop.linked_available && (
                 <div className="flex flex-wrap gap-2">
                   <Button disabled={!shared.data!.accepted} onClick={() => setEditing(loop)} size="sm" variant="primary">
-                    <UserPlus size={14} /> {loop.accounts.length === 0 ? "Conectar contas" : "Trocar contas"}
+                    <UserPlus size={14} /> {loop.active_accounts_count === 0 ? "Conectar contas" : "Trocar contas"}
                   </Button>
                   <Button
                     disabled={status.isPending}
@@ -252,18 +252,35 @@ export function SharedLoopsSection({ loops, accounts }: { loops: InstagramLoop[]
           ))}
         </div>
       )}
-      <LoopAccountsDialog accounts={accounts} loop={editing} onClose={() => setEditing(null)} />
+      <LoopAccountsDialog loop={editing} onClose={() => setEditing(null)} />
     </section>
   );
 }
 
 /** Partner: pick which of their own accounts post a shared loop. */
-function LoopAccountsDialog({ loop, accounts, onClose }: { loop: InstagramLoop | null; accounts: LoopAccount[]; onClose: () => void }) {
+function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [initializedLoopId, setInitializedLoopId] = useState<string | null>(null);
+  const accounts = useQuery({
+    queryKey: ["loops", "accounts", "shared", loop?.id],
+    queryFn: () => {
+      const params = new URLSearchParams({ loop_id: loop!.id, limit: "1000" });
+      return apiRequest<InstagramLoopAccountsPage>(`/api/loops/accounts?${params}`);
+    },
+    enabled: loop !== null,
+    retry: false,
+  });
   useEffect(() => {
-    setPicked(new Set(loop?.accounts.map((account) => account.id) ?? []));
-  }, [loop]);
+    if (!loop) {
+      setInitializedLoopId(null);
+      return;
+    }
+    if (accounts.data && initializedLoopId !== loop.id) {
+      setPicked(new Set(accounts.data.selected_ids));
+      setInitializedLoopId(loop.id);
+    }
+  }, [accounts.data, initializedLoopId, loop]);
   const save = useMutation({
     mutationFn: () => apiRequest(`/api/loops/${loop!.id}/accounts`, { method: "PUT", body: { account_ids: [...picked] } }),
     onSuccess: () => {
@@ -272,13 +289,13 @@ function LoopAccountsDialog({ loop, accounts, onClose }: { loop: InstagramLoop |
     },
   });
   if (!loop) return null;
-  const usable = accounts.filter((account) => account.status === "connected");
+  const usable = accounts.data?.accounts ?? [];
   return (
     <Modal
       busy={save.isPending}
       description="Só as contas que você marcar postam este loop. As mídias e os horários continuam vindo do seu sócio."
       footer={
-        <Button disabled={save.isPending} onClick={() => save.mutate()} variant="primary">
+        <Button disabled={save.isPending || accounts.isLoading || Boolean(accounts.error)} onClick={() => save.mutate()} variant="primary">
           Salvar contas
         </Button>
       }
@@ -287,7 +304,11 @@ function LoopAccountsDialog({ loop, accounts, onClose }: { loop: InstagramLoop |
       title={`Contas de “${loop.name}”`}
     >
       <div className="space-y-2">
-        {usable.length === 0 ? (
+        {accounts.isLoading ? (
+          <LoadingState label="Carregando contas conectadas" />
+        ) : accounts.error ? (
+          <ErrorState message={errorText(accounts.error)} />
+        ) : usable.length === 0 ? (
           <p className="text-sm text-muted">
             Você ainda não tem contas do Instagram conectadas.{" "}
             <Link className="text-accent underline" to="/feature/accounts">Conecte uma conta</Link> e volte aqui.
@@ -332,7 +353,7 @@ export function SharedFlowsPanel() {
   });
   const loops = useQuery({
     queryKey: ["loops"],
-    queryFn: () => apiRequest<{ loops: InstagramLoop[] }>("/api/loops"),
+    queryFn: () => apiRequest<{ loops: InstagramLoop[] }>("/api/loops?include_accounts=false"),
     enabled: isOwner,
   });
   if (shared.isLoading) return <LoadingState label="Carregando funis compartilhados" />;

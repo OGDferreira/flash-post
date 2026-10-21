@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { Bell, Handshake, Info } from "lucide-react";
 
 import { ErrorState } from "@/components/PageState";
 import { Button } from "@/components/ui/Button";
 import { ApiError } from "@/services/api";
+import { PeriodFilter, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { useWallet } from "@/features/wallet/api";
 import { brl, useAcceptCommission, useMarkNoticesRead, useNotices, usePartnerMe, type Sale, type SaleTotals } from "./api";
 
@@ -95,7 +97,12 @@ function PartnerBalance({ totals }: { totals: SaleTotals | null }) {
 
 /** Dashboard card for partners: accept the commission, see what they billed and their balance. */
 export function PartnerPanel() {
-  const me = usePartnerMe();
+  const [period, setPeriod] = useState<MetricsPeriod>({
+    period: "30d",
+    start: todayInput(),
+    end: todayInput(),
+  });
+  const me = usePartnerMe(periodParams(period));
   const accept = useAcceptCommission();
   const data = me.data;
   if (!data?.partnership) return null;
@@ -108,10 +115,11 @@ export function PartnerPanel() {
             <Handshake className="text-accent" size={17} /> Sociedade com {p.chief_name}
           </h3>
           <p className="mt-1 text-xs text-muted">
-            Comissão em vigor: <strong className="text-fg">{percent(p.accepted_percent)}</strong> · últimos 30 dias ({data.period_label})
+            Comissão em vigor: <strong className="text-fg">{percent(p.accepted_percent)}</strong> · {data.period_label}
           </p>
         </div>
       </div>
+      <PeriodFilter onChange={setPeriod} showCustom={false} value={period} />
       {p.pending_acceptance && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning-soft p-3">
           <p className="text-xs text-warning">

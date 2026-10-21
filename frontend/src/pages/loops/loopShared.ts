@@ -58,6 +58,7 @@ export type InstagramLoop = {
   last_run_at: string | null;
   auto_folder_ids?: string[];
   accounts: LoopAccount[];
+  accounts_count: number;
   active_accounts_count: number;
   media_ids: string[];
   media_names: string[];
@@ -80,6 +81,15 @@ export type InstagramLoopsResponse = {
   publishing_enabled: boolean;
   loops: InstagramLoop[];
   available_accounts: LoopAccount[];
+  available_accounts_count: number;
+};
+
+export type InstagramLoopAccountsPage = {
+  accounts: LoopAccount[];
+  total: number;
+  offset: number;
+  limit: number;
+  selected_ids: string[];
 };
 
 export type PublicationFailure = {

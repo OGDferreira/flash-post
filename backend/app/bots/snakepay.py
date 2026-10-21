@@ -59,7 +59,9 @@ def configured() -> bool:
     )
 
 
-def _api_key() -> str:
+def _api_key(api_key: str | None = None) -> str:
+    if api_key is not None and api_key.strip():
+        return api_key.strip()
     key = get_settings().snakepay_api_key
     if key is None or not key.get_secret_value().strip():
         raise SnakepayNotConfigured("SNAKEPAY_API_KEY is not configured.")
@@ -104,9 +106,12 @@ def _charge(data: dict) -> SnakeCharge:
     )
 
 
-async def _request(method: str, path: str, json_body: dict | None = None, *, attempts: int = 3) -> dict:
+async def _request(
+    method: str, path: str, json_body: dict | None = None, *, api_key: str | None = None, attempts: int = 3
+) -> dict:
     url = f"{get_settings().snakepay_base_url.rstrip('/')}{path}"
     headers = {"Authorization": f"Bearer {_api_key()}", "Content-Type": "application/json"}
+    headers["Authorization"] = "Bearer " + _api_key(api_key)
     last: SnakepayError | None = None
     for attempt in range(attempts):
         if attempt:
@@ -135,21 +140,27 @@ async def _request(method: str, path: str, json_body: dict | None = None, *, att
     raise last
 
 
-async def create_charge(*, amount: Decimal, external_reference: str, split: list[dict] | None = None) -> SnakeCharge:
+async def create_charge(
+    *,
+    amount: Decimal,
+    external_reference: str,
+    split: list[dict] | None = None,
+    api_key: str | None = None,
+) -> SnakeCharge:
     """One attempt only: the endpoint has no idempotency key, so a retry could create a
     second charge. ``split`` = ``[{"recipient_id": ..., "percentage": 12.5}]``."""
     payload: dict = {"amount": float(amount.quantize(CENT)), "external_reference": external_reference[:64]}
     if split:
         payload["split"] = split
-    body = await _request("POST", "/charges", payload, attempts=1)
+    body = await _request("POST", "/charges", payload, api_key=api_key, attempts=1)
     charge = _charge(body.get("charge") if isinstance(body.get("charge"), dict) else body)
     if not charge.charge_id or not charge.copy_paste:
         raise SnakepayError("SnakePay answered without the Pix code.")
     return charge
 
 
-async def get_charge(charge_id: str) -> SnakeCharge:
-    body = await _request("GET", f"/charges/{charge_id}")
+async def get_charge(charge_id: str, *, api_key: str | None = None) -> SnakeCharge:
+    body = await _request("GET", f"/charges/{charge_id}", api_key=api_key)
     return _charge(body.get("charge") if isinstance(body.get("charge"), dict) else body)
 
 
@@ -163,13 +174,15 @@ def alternate_recipient(value: str) -> str:
     return f"snakepay_{bare}" if len(bare) == 32 else value
 
 
-def verify_signature(raw_body: bytes, header: str | None) -> bool:
+def verify_signature(raw_body: bytes, header: str | None, *, secret: str | None = None) -> bool:
     """``X-SnakePay-Signature: sha256=<hex HMAC-SHA256(raw body, webhook secret)>``."""
-    secret = get_settings().snakepay_webhook_secret
-    if secret is None or not secret.get_secret_value().strip() or not header:
+    if secret is None:
+        configured_secret = get_settings().snakepay_webhook_secret
+        secret = configured_secret.get_secret_value() if configured_secret else None
+    if secret is None or not secret.strip() or not header:
         return False
     received = header.strip()
     if received.lower().startswith("sha256="):
         received = received[7:]
-    expected = hmac.new(secret.get_secret_value().strip().encode(), raw_body, hashlib.sha256).hexdigest()
+    expected = hmac.new(secret.strip().encode(), raw_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, received.strip().lower())

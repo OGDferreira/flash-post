@@ -10,6 +10,7 @@ from sqlalchemy import func, select, update
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, SuperAdminUser, require_csrf
 from app.bots import engine, gateways, snakepay
 from app.core.config import get_settings
+from app.core.crypto import encrypt_value
 from app.models import SystemSetting, TgBot, TgFlow, TgOrder, User, Workspace
 
 router = APIRouter(prefix="/api/payment-gateways", tags=["Payment gateways"])
@@ -28,6 +29,12 @@ class FlowGateway(BaseModel):
 
 class SnakepaySwitch(BaseModel):
     enabled: bool
+
+
+class SnakepayCredentials(BaseModel):
+    api_key: str | None = Field(default=None, max_length=512)
+    webhook_secret: str | None = Field(default=None, max_length=512)
+    clear: bool = False
 
 
 def _smokepay_configured() -> bool:
@@ -63,6 +70,9 @@ async def _state(db, user, workspace) -> dict:
     state = {
         "current": workspace.payment_gateway if workspace.payment_gateway in gateways.GATEWAYS else "smokepay",
         "snakepay_recipient_id": workspace.snakepay_recipient_id,
+        "snakepay_account_key_set": bool(workspace.snakepay_api_key_encrypted),
+        "snakepay_account_secret_set": bool(workspace.snakepay_webhook_secret_encrypted),
+        "snakepay_webhook_url": f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/snakepay",
         "is_admin": admin,
         "flows": [
             {"id": str(flow.id), "name": flow.name, "gateway": flow.payment_gateway}
@@ -71,7 +81,9 @@ async def _state(db, user, workspace) -> dict:
             )
         ],
         # The platform's own sales need no recipient: everything stays in its account.
-        "needs_recipient": not admin,
+        "needs_recipient": not admin and not (
+            workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted
+        ),
         "gateways": [
             {
                 "id": "smokepay", "name": "SmokePay", "available": _smokepay_configured(),
@@ -138,7 +150,9 @@ async def _partners_without_shop_id(db, workspace) -> list[str]:
     names: list[str] = []
     for partner_ws_id, flow in rows.all():
         partner_ws = await db.get(Workspace, partner_ws_id)
-        if partner_ws is None or gateways.valid_recipient(partner_ws.snakepay_recipient_id or ""):
+        if partner_ws is None or (
+            partner_ws.snakepay_api_key_encrypted and partner_ws.snakepay_webhook_secret_encrypted
+        ) or gateways.valid_recipient(partner_ws.snakepay_recipient_id or ""):
             continue
         if await gateways.gateway_choice(db, partner_ws, flow) != "snakepay":
             continue
@@ -173,7 +187,9 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
     if payload.gateway == "snakepay":
         if not await gateways.snakepay_available(db):
             raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
-        if user.platform_role != "SUPER_ADMIN" and recipient is None:
+        if user.platform_role != "SUPER_ADMIN" and recipient is None and not (
+            workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted
+        ):
             raise HTTPException(status_code=422, detail="Cole o seu ShopID da SnakePay para receber suas vendas.")
     workspace.payment_gateway = payload.gateway
     workspace.snakepay_recipient_id = recipient
@@ -181,6 +197,39 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
         await db.execute(update(TgFlow).where(TgFlow.workspace_id == workspace.id).values(payment_gateway=None))
     await db.commit()
     engine.resume_snakepay()  # a new ShopID/choice gets a fresh try right away
+    return await _state(db, user, workspace)
+
+
+@router.put("/snakepay/credentials", dependencies=[Depends(require_csrf)])
+async def save_snakepay_credentials(
+    payload: SnakepayCredentials, access: OwnerAccess, user: AuthenticatedUser, db: DbSession
+) -> dict:
+    if user.platform_role == "SUPER_ADMIN":
+        raise HTTPException(status_code=403, detail="Use a configuração de servidor da SnakePay.")
+    workspace = access.workspace
+    if payload.clear:
+        if payload.api_key or payload.webhook_secret:
+            raise HTTPException(status_code=422, detail="Não envie credenciais junto com a solicitação para remover.")
+        workspace.snakepay_api_key_encrypted = None
+        workspace.snakepay_webhook_secret_encrypted = None
+    else:
+        api_key = payload.api_key.strip() if payload.api_key and payload.api_key.strip() else None
+        webhook_secret = payload.webhook_secret.strip() if payload.webhook_secret and payload.webhook_secret.strip() else None
+        if api_key is None and webhook_secret is None:
+            raise HTTPException(status_code=422, detail="Informe a chave API e/ou o segredo de webhook.")
+        if not (workspace.snakepay_api_key_encrypted or api_key) or not (
+            workspace.snakepay_webhook_secret_encrypted or webhook_secret
+        ):
+            raise HTTPException(status_code=422, detail="Configure a chave API e o segredo de webhook da sua conta.")
+        try:
+            if api_key:
+                workspace.snakepay_api_key_encrypted = encrypt_value(api_key)
+            if webhook_secret:
+                workspace.snakepay_webhook_secret_encrypted = encrypt_value(webhook_secret)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail="A criptografia de credenciais não está configurada.") from exc
+    await db.commit()
+    engine.resume_snakepay()
     return await _state(db, user, workspace)
 
 
@@ -196,7 +245,10 @@ async def flow_gateway(
     if payload.gateway == "snakepay":
         if not await gateways.snakepay_available(db):
             raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
-        if user.platform_role != "SUPER_ADMIN" and not workspace.snakepay_recipient_id:
+        if user.platform_role != "SUPER_ADMIN" and not (
+            workspace.snakepay_recipient_id
+            or (workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted)
+        ):
             raise HTTPException(status_code=422, detail="Cadastre o seu ShopID da SnakePay antes de usar a SnakePay num fluxo.")
     flow.payment_gateway = payload.gateway
     await db.commit()
@@ -220,4 +272,3 @@ async def switch_snakepay(payload: SnakepaySwitch, user: SuperAdminUser, db: DbS
     await db.commit()
     engine.resume_snakepay()  # a new ShopID/choice gets a fresh try right away
     return {"enabled": payload.enabled}
-

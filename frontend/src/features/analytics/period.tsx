@@ -1,5 +1,5 @@
 export type MetricsPeriod = {
-  period: "today" | "yesterday" | "7d" | "30d" | "custom";
+  period: "today" | "yesterday" | "7d" | "30d" | "all" | "custom";
   start: string;
   end: string;
 };
@@ -9,6 +9,7 @@ const options: { value: MetricsPeriod["period"]; label: string }[] = [
   { value: "yesterday", label: "Ontem" },
   { value: "7d", label: "7 dias" },
   { value: "30d", label: "30 dias" },
+  { value: "all", label: "Total" },
   { value: "custom", label: "Personalizado" },
 ];
 
@@ -30,14 +31,17 @@ export function isPeriodReady(value: MetricsPeriod) {
 export function PeriodFilter({
   value,
   onChange,
+  showCustom = true,
 }: {
   value: MetricsPeriod;
   onChange: (next: MetricsPeriod) => void;
+  showCustom?: boolean;
 }) {
+  const visibleOptions = showCustom ? options : options.filter(({ value: option }) => option !== "custom");
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div aria-label="Período" className="dashboard-periods" role="group">
-        {options.map((option) => (
+        {visibleOptions.map((option) => (
           <button
             aria-pressed={value.period === option.value}
             className={value.period === option.value ? "is-selected" : ""}
@@ -49,7 +53,7 @@ export function PeriodFilter({
           </button>
         ))}
       </div>
-      {value.period === "custom" && (
+      {showCustom && value.period === "custom" && (
         <div className="flex items-center gap-2 text-xs text-muted">
           <input
             aria-label="Data inicial"

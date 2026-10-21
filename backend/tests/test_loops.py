@@ -102,6 +102,21 @@ async def test_owner_can_create_and_read_a_loop(
     assert listing.json()["available_accounts"][0]["username"] == "flashpost_demo"
     assert "publishing_enabled" in listing.json()
 
+    summary = await client.get("/api/loops?include_accounts=false")
+    assert summary.status_code == 200
+    assert summary.json()["available_accounts"] == []
+    assert summary.json()["available_accounts_count"] == 1
+    assert summary.json()["loops"][0]["accounts"] == []
+    assert summary.json()["loops"][0]["accounts_count"] == 1
+    account_page = await client.get(
+        f"/api/loops/accounts?loop_id={result['id']}&only_loop_accounts=true"
+    )
+    assert account_page.status_code == 200
+    assert [item["username"] for item in account_page.json()["accounts"]] == [
+        "flashpost_demo"
+    ]
+    assert account_page.json()["selected_ids"] == [str(account.id)]
+
     errored_account = _active_account(workspace.id, "flashpost_error")
     errored_account.status = "error"
     db_session.add(errored_account)

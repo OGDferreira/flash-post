@@ -234,9 +234,9 @@ export function AppShell() {
   });
   const navigation = buildNavigation({ isAdminRoute, isSuperAdmin, workspaceRole });
   // The phone bar holds a few shortcuts; everything else lives in "Mais", grouped.
+  const sidebarDirect = navigation.groups.length === 0 ? navigation.direct : [];
   const mobileLinks = navigation.direct.slice(0, isAdminRoute ? 4 : 6);
   const mobileOverflow = navigation.direct.slice(mobileLinks.length);
-  const [hoverGroup, setHoverGroup] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const activeGroupId = navigation.groups.find((group) =>
     group.items.some(({ to }) => location.pathname === to || location.pathname.startsWith(`${to}/`)),
@@ -407,7 +407,7 @@ export function AppShell() {
       )}
 
       <nav className="app-sidebar-nav flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        {[navigation.direct, navigation.flat, navigation.admin].filter((links) => links.length > 0).map((links, index) => (
+        {[sidebarDirect, navigation.flat, navigation.admin].filter((links) => links.length > 0).map((links, index) => (
         <div className={index ? "mt-4 space-y-1 border-t border-line-soft pt-3" : "space-y-1"} key={index}>
           {links === navigation.admin && (
             <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted lg:opacity-0 lg:group-data-[open=true]:opacity-100">
@@ -434,69 +434,34 @@ export function AppShell() {
           ))}
         </div>
         ))}
-        {navigation.groups.length > 0 && (
-          <div className="mt-4 space-y-1 border-t border-line-soft pt-3">
-            {navigation.groups.map((group) => {
-              const open = hoverGroup === group.id;
-              const GroupIcon = group.icon;
-              return (
-                <div
-                  key={group.id}
-                  onBlur={() => setHoverGroup((current) => (current === group.id ? null : current))}
-                  onFocus={() => setHoverGroup(group.id)}
-                  onMouseEnter={() => setHoverGroup(group.id)}
-                  onMouseLeave={() => setHoverGroup((current) => (current === group.id ? null : current))}
-                >
-                  <button
-                    aria-expanded={open}
-                    className={`nm-hover flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-sm ${
-                      group.id === activeGroupId || open ? "text-fg" : "text-muted"
-                    }`}
-                    onClick={() => setHoverGroup(open ? null : group.id)}
-                    title={group.title}
-                    type="button"
-                  >
-                    <GroupIcon className="shrink-0" size={17} strokeWidth={1.8} />
-                    <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap text-left lg:max-w-0 lg:opacity-0 lg:transition-[max-width,opacity] lg:duration-300 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
-                      {group.title}
-                    </span>
-                    <ChevronDown
-                      className={`hidden shrink-0 transition-transform duration-200 lg:group-data-[open=true]:block ${open ? "rotate-180" : ""}`}
-                      size={14}
-                    />
-                  </button>
-                  <div
-                    className={`grid transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                      open
-                        ? "grid-rows-[1fr] opacity-100 lg:grid-rows-[0fr] lg:opacity-0 lg:group-data-[open=true]:grid-rows-[1fr] lg:group-data-[open=true]:opacity-100"
-                        : "grid-rows-[0fr] opacity-0"
-                    }`}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="mb-1 ml-3 space-y-0.5 border-l border-line-soft pl-2">
-                        {group.items.map(({ label, to, icon: Icon }) => (
-                          <NavLink
-                            key={to}
-                            to={to}
-                            tabIndex={open ? 0 : -1}
-                            className={({ isActive }) =>
-                              `flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-transform duration-150 hover:translate-x-0.5 ${
-                                isActive ? "nm-active font-medium" : "nm-hover text-muted"
-                              }`
-                            }
-                          >
-                            <Icon className="shrink-0" size={15} strokeWidth={1.8} />
-                            <span className="truncate">{label}</span>
-                          </NavLink>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {navigation.groups.map((group, index) => (
+          <section
+            className={index ? "mt-4 space-y-1 border-t border-line-soft pt-3" : "space-y-1"}
+            key={group.id}
+          >
+            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted lg:opacity-0 lg:group-data-[open=true]:opacity-100">
+              {group.title}
+            </p>
+            {group.items.map(({ label, to, icon: Icon }) => (
+              <NavLink
+                end={to === "/dashboard"}
+                key={to}
+                to={to}
+                title={label}
+                className={({ isActive }) =>
+                  `flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm transition-[color,box-shadow] ${
+                    isActive ? "nm-active font-medium" : "nm-hover text-muted"
+                  }`
+                }
+              >
+                <Icon className="shrink-0" size={17} strokeWidth={1.8} />
+                <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap lg:max-w-0 lg:opacity-0 lg:transition-[max-width,opacity] lg:duration-300 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
+                  {label}
+                </span>
+              </NavLink>
+            ))}
+          </section>
+        ))}
       </nav>
 
       <div className="border-t border-line-soft p-3">

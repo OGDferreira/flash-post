@@ -23,12 +23,22 @@ class InstagramProfileFolderResponse(BaseModel):
     created_at: datetime
     auto_prefixes: list[str] = []
     auto_enabled: bool = True
+    account_count: int = 0
     accounts: list[InstagramProfileFolderAccount]
 
 
 class InstagramProfileFoldersResponse(BaseModel):
     folders: list[InstagramProfileFolderResponse]
     accounts: list[InstagramProfileFolderAccount]
+    accounts_count: int = 0
+    unassigned_count: int = 0
+
+
+class InstagramProfileFolderAccountsPage(BaseModel):
+    accounts: list[InstagramProfileFolderAccount]
+    total: int
+    offset: int
+    limit: int
 
 
 class InstagramProfileFolderCreateRequest(BaseModel):
@@ -70,3 +80,7 @@ class InstagramProfileFolderAccountsRequest(BaseModel):
         if len(set(values)) != len(values):
             raise ValueError("Cada conta pode ser selecionada apenas uma vez.")
         return values
+
+
+class InstagramProfileFolderAssignRequest(BaseModel):
+    folder_id: UUID | None = None

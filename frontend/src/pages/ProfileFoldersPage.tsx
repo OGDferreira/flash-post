@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Folder, Pencil, Plus, Save, Trash2, Users, X } from "lucide-react";
 
@@ -31,12 +31,22 @@ type ProfileFolder = {
   created_at: string;
   auto_prefixes?: string[];
   auto_enabled?: boolean;
+  account_count: number;
   accounts: ProfileFolderAccount[];
 };
 
 type ProfileFoldersResponse = {
   folders: ProfileFolder[];
   accounts: ProfileFolderAccount[];
+  accounts_count: number;
+  unassigned_count: number;
+};
+
+type ProfileFolderAccountsPage = {
+  accounts: ProfileFolderAccount[];
+  total: number;
+  offset: number;
+  limit: number;
 };
 
 const emptyDraft = { name: "", color: "#00c9d8", prefixes: "", auto_enabled: true };
@@ -83,6 +93,92 @@ function getErrorMessage(error: unknown, fallback: string): string | null {
   return error instanceof ApiError ? error.message : fallback;
 }
 
+function FolderAccountsList({
+  folderId,
+  color,
+  onAssign,
+}: {
+  folderId: string;
+  color: string;
+  onAssign: (account: ProfileFolderAccount) => void;
+}) {
+  const [offset, setOffset] = useState(0);
+  const [loadedAccounts, setLoadedAccounts] = useState<ProfileFolderAccount[]>([]);
+  const accounts = useQuery({
+    queryKey: ["instagram", "folder-accounts", folderId, offset],
+    queryFn: () =>
+      apiRequest<ProfileFolderAccountsPage>(
+        `/api/instagram/folders/accounts?${new URLSearchParams({ folder_id: folderId, limit: "50", offset: String(offset) })}`,
+      ),
+    placeholderData: (previous) => previous,
+    retry: false,
+  });
+  useEffect(() => {
+    if (!accounts.data) return;
+    setLoadedAccounts((current) => {
+      const next = offset === 0 ? [] : current;
+      const knownIds = new Set(next.map((account) => account.id));
+      return [...next, ...accounts.data.accounts.filter((account) => !knownIds.has(account.id))];
+    });
+  }, [accounts.data, offset]);
+  if (accounts.isLoading && loadedAccounts.length === 0) return <LoadingState label="Carregando perfis da pasta" />;
+  if (accounts.error || !accounts.data) {
+    return <ErrorState message="Não foi possível carregar os perfis desta pasta." />;
+  }
+  if (loadedAccounts.length === 0) {
+    return <p className="text-sm text-muted">Nenhuma conta nesta pasta ainda.</p>;
+  }
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {loadedAccounts.map((account) => (
+        <div
+          className="flex min-w-0 items-start gap-2 rounded-lg border bg-well px-2.5 py-2 text-sm text-fg"
+          key={account.id}
+          style={{ borderColor: `${color}99` }}
+        >
+          <InstagramAvatar
+            className="size-6 shrink-0 rounded-full border border-line object-cover"
+            src={account.profile_picture_url}
+            username={account.username}
+          />
+          <div className="min-w-0">
+            <p className="flex min-w-0 items-center gap-2">
+              <span className="truncate">@{account.username}</span>
+              <ProfileLink username={account.username} />
+            </p>
+            <p className="mt-0.5 text-[10px] text-muted">
+              Conectada em {formatAccountConnectedAt(account.connected_at)}
+              {account.connected_by_name ? ` · por ${account.connected_by_name}` : ""}
+            </p>
+            {account.status === "error" && (
+              <p className="mt-0.5 text-[10px] text-danger">
+                Duração antes do erro: {formatConnectedDuration(account.connected_at, account.error_at)}
+              </p>
+            )}
+          </div>
+          <button
+            className="ml-auto shrink-0 text-[11px] text-accent hover:text-white"
+            onClick={() => onAssign(account)}
+            type="button"
+          >
+            Mover
+          </button>
+        </div>
+      ))}
+      {loadedAccounts.length < accounts.data.total && (
+        <button
+          className="min-h-9 rounded-lg border border-line px-3 text-xs font-medium text-fg-2 hover:text-white disabled:opacity-50 sm:col-span-2"
+          disabled={accounts.isFetching}
+          onClick={() => setOffset(loadedAccounts.length)}
+          type="button"
+        >
+          {accounts.isFetching ? "Carregando..." : `Carregar mais perfis (${accounts.data.total - loadedAccounts.length} restantes)`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ProfileFoldersPage() {
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
@@ -91,12 +187,51 @@ export function ProfileFoldersPage() {
   const [managingFolderId, setManagingFolderId] = useState<string | null>(null);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [accountSearch, setAccountSearch] = useState("");
+  const [showUnassigned, setShowUnassigned] = useState(false);
+  const [unassignedOffset, setUnassignedOffset] = useState(0);
+  const [loadedUnassignedAccounts, setLoadedUnassignedAccounts] = useState<ProfileFolderAccount[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<string[]>([]);
   const [assigningAccount, setAssigningAccount] = useState<ProfileFolderAccount | null>(null);
   const folders = useQuery({
     queryKey: ["instagram", "folders"],
-    queryFn: () => apiRequest<ProfileFoldersResponse>("/api/instagram/folders"),
+    queryFn: () => apiRequest<ProfileFoldersResponse>("/api/instagram/folders?include_accounts=false"),
     retry: false,
   });
+  const folderAccounts = useQuery({
+    queryKey: ["instagram", "folder-accounts", "manager", managingFolderId],
+    queryFn: () =>
+      apiRequest<ProfileFolderAccountsPage>(
+        `/api/instagram/folders/accounts?${new URLSearchParams({ limit: "1000" })}`,
+      ),
+    enabled: Boolean(managingFolderId),
+    retry: false,
+  });
+  const unassignedAccounts = useQuery({
+    queryKey: ["instagram", "folder-accounts", "unassigned", unassignedOffset],
+    queryFn: () =>
+      apiRequest<ProfileFolderAccountsPage>(
+        `/api/instagram/folders/accounts?${new URLSearchParams({ unassigned: "true", limit: "50", offset: String(unassignedOffset) })}`,
+      ),
+    enabled: showUnassigned,
+    placeholderData: (previous) => previous,
+    retry: false,
+  });
+  useEffect(() => {
+    if (!unassignedAccounts.data) return;
+    setLoadedUnassignedAccounts((current) => {
+      const next = unassignedOffset === 0 ? [] : current;
+      const knownIds = new Set(next.map((account) => account.id));
+      return [...next, ...unassignedAccounts.data.accounts.filter((account) => !knownIds.has(account.id))];
+    });
+  }, [unassignedAccounts.data, unassignedOffset]);
+  useEffect(() => {
+    if (!managingFolderId || !folderAccounts.data) return;
+    setSelectedAccountIds(
+      folderAccounts.data.accounts
+        .filter((account) => account.profile_folder_id === managingFolderId)
+        .map((account) => account.id),
+    );
+  }, [folderAccounts.dataUpdatedAt, folderAccounts.data, managingFolderId]);
   const saveFolder = useMutation({
     mutationFn: () =>
       apiRequest<ProfileFolder>(
@@ -126,6 +261,7 @@ export function ProfileFoldersPage() {
       apiRequest(`/api/instagram/folders/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["instagram", "folders"] });
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "folder-accounts"] });
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
     },
   });
@@ -139,8 +275,31 @@ export function ProfileFoldersPage() {
       setManagingFolderId(null);
       setAssigningAccount(null);
       setSelectedAccountIds([]);
+      setUnassignedOffset(0);
+      setLoadedUnassignedAccounts([]);
+      setShowUnassigned(false);
+      setExpandedFolders([]);
       void queryClient.invalidateQueries({ queryKey: ["instagram", "folders"] });
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "folder-accounts"] });
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
+    },
+  });
+  const moveAccount = useMutation({
+    mutationFn: ({ accountId, folderId }: { accountId: string; folderId: string }) =>
+      apiRequest<ProfileFolderAccount>(`/api/instagram/folders/accounts/${accountId}/folder`, {
+        method: "PATCH",
+        body: { folder_id: folderId },
+      }),
+    onSuccess: () => {
+      setAssigningAccount(null);
+      setUnassignedOffset(0);
+      setLoadedUnassignedAccounts([]);
+      setShowUnassigned(false);
+      setExpandedFolders([]);
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "folders"] });
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "folder-accounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["loops"] });
     },
   });
 
@@ -153,13 +312,10 @@ export function ProfileFoldersPage() {
   const mutationError =
     getErrorMessage(saveFolder.error, "Não foi possível salvar a pasta.") ??
     getErrorMessage(removeFolder.error, "Não foi possível remover a pasta.") ??
-    getErrorMessage(saveFolderAccounts.error, "Não foi possível organizar as contas.");
-  const folderAccountIds = folderData.accounts
-    .filter((account) => account.profile_folder_id)
-    .map((account) => account.id);
-  const unassignedCount = folderData.accounts.length - folderAccountIds.length;
+    getErrorMessage(saveFolderAccounts.error, "Não foi possível organizar as contas.") ??
+    getErrorMessage(moveAccount.error, "Não foi possível mover a conta.");
   const query = accountSearch.trim().toLocaleLowerCase("pt-BR");
-  const visibleAccounts = folderData.accounts.filter((account) =>
+  const visibleAccounts = (folderAccounts.data?.accounts ?? []).filter((account) =>
     account.username.toLocaleLowerCase("pt-BR").includes(query),
   );
 
@@ -185,11 +341,7 @@ export function ProfileFoldersPage() {
   function openAccountManager(folder: ProfileFolder) {
     setManagingFolderId(folder.id);
     setAccountSearch("");
-    setSelectedAccountIds(
-      folderData.accounts
-        .filter((account) => account.profile_folder_id === folder.id)
-        .map((account) => account.id),
-    );
+    setSelectedAccountIds([]);
     saveFolderAccounts.reset();
   }
 
@@ -275,15 +427,26 @@ export function ProfileFoldersPage() {
       )}
 
       <section className="rounded-xl border border-line bg-surface p-4">
-        <h3 className="font-medium text-fg">Contas sem pasta ({unassignedCount})</h3>
+        <h3 className="font-medium text-fg">Contas sem pasta ({folderData.unassigned_count})</h3>
         <p className="mt-1 text-xs text-muted">
           Toque em uma conta para escolher a pasta dela, ou use “Organizar contas” em uma pasta.
         </p>
-        {unassignedCount > 0 && (
+        {folderData.unassigned_count > 0 && (
+          <button
+            className="mt-3 min-h-9 rounded-lg border border-line px-3 text-xs font-medium text-fg-2 hover:text-white"
+            onClick={() => setShowUnassigned((visible) => !visible)}
+            type="button"
+          >
+            {showUnassigned ? "Ocultar perfis" : "Carregar perfis"}
+          </button>
+        )}
+        {showUnassigned && unassignedAccounts.isLoading && loadedUnassignedAccounts.length === 0 && <LoadingState label="Carregando perfis sem pasta" />}
+        {showUnassigned && unassignedAccounts.error && (
+          <ErrorState message="Não foi possível carregar os perfis sem pasta." />
+        )}
+        {showUnassigned && unassignedAccounts.data && (
           <div className="mt-3 flex flex-wrap gap-2">
-            {folderData.accounts
-              .filter((account) => !account.profile_folder_id)
-              .map((account) => (
+            {loadedUnassignedAccounts.map((account) => (
                 <button
                   className="inline-flex items-start gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-left text-xs text-fg-2 transition-shadow active:shadow-none"
                   key={account.id}
@@ -312,7 +475,17 @@ export function ProfileFoldersPage() {
                     )}
                   </div>
                 </button>
-              ))}
+            ))}
+            {loadedUnassignedAccounts.length < unassignedAccounts.data.total && (
+              <button
+                className="min-h-9 rounded-lg border border-line px-3 text-xs font-medium text-fg-2 hover:text-white disabled:opacity-50"
+                disabled={unassignedAccounts.isFetching}
+                onClick={() => setUnassignedOffset(loadedUnassignedAccounts.length)}
+                type="button"
+              >
+                {unassignedAccounts.isFetching ? "Carregando..." : `Carregar mais (${unassignedAccounts.data.total - loadedUnassignedAccounts.length} restantes)`}
+              </button>
+            )}
           </div>
         )}
       </section>
@@ -369,7 +542,7 @@ export function ProfileFoldersPage() {
                   <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: folder.color }} />
                   <h3 className="truncate font-semibold text-fg">{folder.name}</h3>
                   <span className="text-xs text-muted">
-                    ({folder.accounts.length} {folder.accounts.length === 1 ? "conta" : "contas"})
+                    ({folder.account_count} {folder.account_count === 1 ? "conta" : "contas"})
                   </span>
                   {(folder.auto_prefixes?.length ?? 0) > 0 && (
                     <span
@@ -419,40 +592,29 @@ export function ProfileFoldersPage() {
                 </div>
               </div>
               )}
-              <div className="grid gap-2 sm:grid-cols-2">
-                {folder.accounts.map((account) => (
-                  <div
-                    className="flex min-w-0 items-start gap-2 rounded-lg border bg-well px-2.5 py-2 text-sm text-fg"
-                    key={account.id}
-                    style={{ borderColor: `${folder.color}99` }}
-                  >
-                    <InstagramAvatar
-                      className="size-6 shrink-0 rounded-full border border-line object-cover"
-                      src={account.profile_picture_url}
-                      username={account.username}
-                    />
-                    <div className="min-w-0">
-                      <p className="flex min-w-0 items-center gap-2">
-                        <span className="truncate">@{account.username}</span>
-                        <ProfileLink username={account.username} />
-                      </p>
-                      <p className="mt-0.5 text-[10px] text-muted">
-                        Conectada em {formatAccountConnectedAt(account.connected_at)}
-                      {account.connected_by_name ? ` · por ${account.connected_by_name}` : ""}
-                      </p>
-                      {account.status === "error" && (
-                        <p className="mt-0.5 text-[10px] text-danger">
-                          Duração antes do erro:{" "}
-                          {formatConnectedDuration(account.connected_at, account.error_at)}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {folder.accounts.length === 0 && (
-                  <p className="text-sm text-muted">Nenhuma conta nesta pasta ainda.</p>
-                )}
-              </div>
+              <button
+                className="min-h-8 rounded-lg border border-line px-3 text-xs font-medium text-fg-2 hover:text-white"
+                onClick={() =>
+                  setExpandedFolders((current) =>
+                    current.includes(folder.id)
+                      ? current.filter((id) => id !== folder.id)
+                      : [...current, folder.id],
+                  )
+                }
+                type="button"
+              >
+                {expandedFolders.includes(folder.id) ? "Ocultar perfis" : "Carregar perfis"} ({folder.account_count})
+              </button>
+              {expandedFolders.includes(folder.id) && (
+                <FolderAccountsList
+                  color={folder.color}
+                  folderId={folder.id}
+                  onAssign={(account) => {
+                    saveFolderAccounts.reset();
+                    setAssigningAccount(account);
+                  }}
+                />
+              )}
             </article>
           ))}
         </section>
@@ -477,6 +639,8 @@ export function ProfileFoldersPage() {
                     });
                   }}
                 >
+                  {folderAccounts.isLoading && <LoadingState label="Carregando contas conectadas" />}
+                  {folderAccounts.error && <ErrorState message="Não foi possível carregar as contas conectadas." />}
                   <label className="grid gap-1.5 text-xs text-muted">
                     Buscar perfil pelo nome
                     <input
@@ -495,7 +659,7 @@ export function ProfileFoldersPage() {
                     <button
                       className="min-h-8 rounded-lg border border-line px-3 text-xs font-medium text-fg-2 hover:bg-well disabled:opacity-50"
                       type="button"
-                      disabled={visibleAccounts.length === 0}
+                      disabled={visibleAccounts.length === 0 || folderAccounts.isLoading}
                       onClick={() =>
                         setSelectedAccountIds((current) =>
                           Array.from(
@@ -507,7 +671,7 @@ export function ProfileFoldersPage() {
                       Selecionar todos
                     </button>
                   </div>
-                  {visibleAccounts.length === 0 ? (
+                  {folderAccounts.isLoading ? null : visibleAccounts.length === 0 ? (
                     <p className="py-2 text-xs text-muted">
                       Nenhum perfil corresponde à busca.
                     </p>
@@ -568,7 +732,7 @@ export function ProfileFoldersPage() {
       </Modal>
 
       <Modal
-        busy={saveFolderAccounts.isPending}
+        busy={moveAccount.isPending}
         description="Escolha a pasta para esta conta."
         onClose={() => setAssigningAccount(null)}
         open={Boolean(assigningAccount)}
@@ -582,27 +746,24 @@ export function ProfileFoldersPage() {
               <li key={folder.id}>
                 <button
                   className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-3.5 text-left text-sm text-fg disabled:opacity-60"
-                  disabled={saveFolderAccounts.isPending}
+                  disabled={moveAccount.isPending}
                   onClick={() =>
                     assigningAccount &&
-                    saveFolderAccounts.mutate({
-                      folderId: folder.id,
-                      accountIds: [...folder.accounts.map((item) => item.id), assigningAccount.id],
-                    })
+                    moveAccount.mutate({ folderId: folder.id, accountId: assigningAccount.id })
                   }
                   type="button"
                 >
                   <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: folder.color }} />
                   <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
-                  <span className="text-xs text-muted">{folder.accounts.length}</span>
+                  <span className="text-xs text-muted">{folder.account_count}</span>
                 </button>
               </li>
             ))}
           </ul>
         )}
-        {saveFolderAccounts.error && (
+        {moveAccount.error && (
           <p className="mt-3 text-sm text-danger" role="alert">
-            {getErrorMessage(saveFolderAccounts.error, "Não foi possível mover a conta.")}
+            {getErrorMessage(moveAccount.error, "Não foi possível mover a conta.")}
           </p>
         )}
       </Modal>

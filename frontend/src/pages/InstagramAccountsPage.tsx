@@ -98,7 +98,7 @@ export function InstagramAccountsPage() {
   });
   const folders = useQuery({
     queryKey: ["instagram", "folders"],
-    queryFn: () => apiRequest<ProfileFoldersResponse>("/api/instagram/folders"),
+    queryFn: () => apiRequest<ProfileFoldersResponse>("/api/instagram/folders?include_accounts=false"),
     retry: false,
   });
   const startConnection = () => setShowAppSelector(true);
