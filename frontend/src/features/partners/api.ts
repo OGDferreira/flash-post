@@ -76,19 +76,12 @@ export type Notice = { id: string; kind: string; title: string; body: string; ur
 export const brl = (value: number | null | undefined) =>
   (value ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-export function usePartnerMe(params: Record<string, string> = {}) {
+export function usePartnerMe(params: Record<string, string> = {}, enabled = true) {
   return useQuery({
     queryKey: ["partners", "me", params],
     queryFn: () => apiRequest<PartnerMe>(`/api/partners/me?${new URLSearchParams(params)}`),
+    enabled,
     staleTime: 30_000,
-  });
-}
-
-export function useAcceptCommission() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (percent: number) => apiRequest("/api/partners/me/accept", { method: "POST", body: { percent: String(percent) } }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["partners"] }),
   });
 }
 

@@ -98,21 +98,16 @@ def storage(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_commission_needs_acceptance_and_split_goes_into_the_charge(client, db_session, owner, apis) -> None:
+async def test_chief_set_commission_needs_no_acceptance_and_splits_into_the_charge(client, db_session, owner, apis) -> None:
     chief, chief_ws = owner
     partner, partner_ws, link = await _partner(db_session, owner)
 
     headers = await _as(client, "socio@example.com")
     me = (await client.get("/api/partners/me")).json()
-    assert me["role"] == "partner" and me["partnership"]["pending_acceptance"] is True
+    assert me["role"] == "partner" and me["partnership"]["pending_acceptance"] is False
     assert me["shop_ref"] == f"fp-{partner_ws.id.hex}"
-    wrong = await client.post("/api/partners/me/accept", headers=headers, json={"percent": "25"})
-    assert wrong.status_code == 409
-    ok = await client.post("/api/partners/me/accept", headers=headers, json={"percent": "30"})
-    assert ok.status_code == 200, ok.text
-    assert await db_session.scalar(select(AppNotification.id).where(AppNotification.user_id == chief.id))
 
-    # the partner's bot runs the chief's shared funnel: subaccount charge, 30% to the chief
+    # An active partnership is available immediately; the chief's 30% is effective without acceptance.
     shared_flow_id = await _chief_shares_funnel(client, db_session, chief_ws)
     headers = await _as(client, "socio@example.com")
     connected = await client.post("/api/bots", headers=headers, json={"token": TOKEN, "flow_id": shared_flow_id})
@@ -156,13 +151,16 @@ async def test_commission_needs_acceptance_and_split_goes_into_the_charge(client
     assert ops.status_code == 200 and ops.json()["bots"][0]["username"] == "ana_vip_bot"
     assert TOKEN not in json.dumps(ops.json()) and "encrypted_token" not in ops.text
 
-    # a new percentage waits for a new acceptance: the next sale still splits 30%
+    # A percentage change made by the chief applies to the next sale without partner action.
     changed = await client.patch(f"/api/affiliates/{link.id}", headers=chief_headers, json={"participation_percent": "40"})
-    assert changed.status_code == 200 and changed.json()["pending_acceptance"] is True
+    assert changed.status_code == 200 and changed.json()["pending_acceptance"] is False
     await _as(client, "socio@example.com")
     await _send(client, db_session, bot["id"], _tap("plan:vip"))
-    assert apis.methods("pix.create")[-1]["splits"][0]["percent"] == 30.0
-    assert (await client.get("/api/partners/me")).json()["partnership"]["pending_acceptance"] is True
+    assert apis.methods("pix.create")[-1]["splits"][0]["percent"] == 40.0
+    assert (await client.get("/api/partners/me")).json()["partnership"]["pending_acceptance"] is False
+    assert await db_session.scalar(select(AppNotification.id).where(
+        AppNotification.user_id == partner.id, AppNotification.kind == "partner-commission"
+    ))
 
 
 @pytest.mark.anyio
@@ -172,8 +170,9 @@ async def test_billing_routes(db_session, owner, super_admin) -> None:
     shared = TgFlow(workspace_id=chief_ws.id, name="Modelo", definition={}, shared=True)
     db_session.add(shared)
     await db_session.commit()
-    # not accepted: the shared funnel is not available, own funnels have no split
-    assert (await service.billing_route(db_session, partner_ws.id, shared.id)).allowed is False
+    # Active partnerships use the chief-set percentage immediately, without acceptance.
+    initial = await service.billing_route(db_session, partner_ws.id, shared.id)
+    assert initial.allowed is True and initial.percent == Decimal("30.00")
     route = await service.billing_route(db_session, partner_ws.id)
     assert route.shop_ref == f"fp-{partner_ws.id.hex}" and route.splits == [] and route.origin == "own_funnel"
     link.accepted_percent, link.accepted_at = Decimal("30"), utc_now()

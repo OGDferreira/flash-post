@@ -12,11 +12,12 @@ import {
   useLocation,
 } from "react-router-dom";
 
-import { LoadingState } from "@/components/PageState";
+import { ErrorState, LoadingState } from "@/components/PageState";
 import { ConfirmHost } from "@/lib/confirm";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
+import { usePartnerMe } from "@/features/partners/api";
 import { AppShell } from "@/layouts/AppShell";
 import { FeaturePlaceholderPage } from "@/pages/FeaturePlaceholderPage";
 import { importWithReload } from "@/lib/chunkReload";
@@ -55,6 +56,7 @@ const AdminUsersPage = lazyPage(() => import("@/pages/admin/AdminUsersPage"), "A
 const AdminWorkspacesPage = lazyPage(() => import("@/pages/admin/AdminWorkspacesPage"), "AdminWorkspacesPage");
 
 const DashboardPage = lazyPage(() => import("@/pages/DashboardPage"), "DashboardPage");
+const PartnerDashboardPage = lazyPage(() => import("@/pages/PartnerDashboardPage"), "PartnerDashboardPage");
 const AnalyticsPage = lazyPage(() => import("@/pages/AnalyticsPage"), "AnalyticsPage");
 const FinancePage = lazyPage(() => import("@/pages/FinancePage"), "FinancePage");
 const CollaboratorDashboardPage = lazyPage(() => import("@/pages/CollaboratorDashboardPage"), "CollaboratorDashboardPage");
@@ -143,11 +145,33 @@ function WorkspaceDashboard() {
   const { user } = useAuth();
   const workspaceRole =
     user?.role === "SUPER_ADMIN" ? user.workspace_role : user?.role;
+  const partner = usePartnerMe(
+    { period: "today" },
+    workspaceRole === "OWNER",
+  );
   if (workspaceRole === "COLLABORATOR") {
     return (
       <Suspense fallback={<LoadingState fullscreen label="Carregando seu painel" />}>
         <CollaboratorDashboardPage />
       </Suspense>
+    );
+  }
+  if (workspaceRole === "OWNER" && partner.data?.role === "partner") {
+    return (
+      <Suspense fallback={<LoadingState fullscreen label="Carregando seu painel" />}>
+        <PartnerDashboardPage />
+      </Suspense>
+    );
+  }
+  if (workspaceRole === "OWNER" && partner.isLoading) {
+    return <LoadingState fullscreen label="Carregando seu painel" />;
+  }
+  if (workspaceRole === "OWNER" && partner.error) {
+    return (
+      <ErrorState
+        message="Não foi possível verificar seu perfil de sócio."
+        onRetry={() => void partner.refetch()}
+      />
     );
   }
   return (

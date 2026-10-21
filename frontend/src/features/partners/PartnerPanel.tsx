@@ -1,12 +1,9 @@
 import { useState } from "react";
 import { Bell, Handshake, Info } from "lucide-react";
 
-import { ErrorState } from "@/components/PageState";
-import { Button } from "@/components/ui/Button";
-import { ApiError } from "@/services/api";
 import { PeriodFilter, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { useWallet } from "@/features/wallet/api";
-import { brl, useAcceptCommission, useMarkNoticesRead, useNotices, usePartnerMe, type Sale, type SaleTotals } from "./api";
+import { brl, useMarkNoticesRead, useNotices, usePartnerMe, type Sale, type SaleTotals } from "./api";
 
 const percent = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
@@ -19,7 +16,7 @@ export function TotalsGrid({ totals, commissionLabel = "Comissão do sócio", ne
   const items: [string, string, string?][] = [
     ["Vendas pagas", String(totals.sales)],
     ["Bruto", brl(totals.gross)],
-    ["Taxas SmokePay", brl(totals.fees)],
+    ["Taxas do gateway", brl(totals.fees)],
     ["Líquido (após taxas)", brl(totals.gross - totals.fees)],
     [commissionLabel, brl(totals.commission)],
     [netLabel, brl(totals.net), "text-success"],
@@ -95,7 +92,7 @@ function PartnerBalance({ totals }: { totals: SaleTotals | null }) {
   );
 }
 
-/** Dashboard card for partners: accept the commission, see what they billed and their balance. */
+/** Dashboard card for partners: see what they billed and their balance. */
 export function PartnerPanel() {
   const [period, setPeriod] = useState<MetricsPeriod>({
     period: "30d",
@@ -103,7 +100,6 @@ export function PartnerPanel() {
     end: todayInput(),
   });
   const me = usePartnerMe(periodParams(period));
-  const accept = useAcceptCommission();
   const data = me.data;
   if (!data?.partnership) return null;
   const p = data.partnership;
@@ -115,37 +111,22 @@ export function PartnerPanel() {
             <Handshake className="text-accent" size={17} /> Sociedade com {p.chief_name}
           </h3>
           <p className="mt-1 text-xs text-muted">
-            Comissão em vigor: <strong className="text-fg">{percent(p.accepted_percent)}</strong> · {data.period_label}
+            Comissão definida pelo sócio que convidou: <strong className="text-fg">{percent(p.proposed_percent)}</strong> · {data.period_label}
           </p>
         </div>
       </div>
       <PeriodFilter onChange={setPeriod} showCustom={false} value={period} />
-      {p.pending_acceptance && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning-soft p-3">
-          <p className="text-xs text-warning">
-            {p.chief_name} propôs <strong>{percent(p.proposed_percent)}</strong> de comissão sobre o líquido de cada venda.
-            {p.accepted_percent === null
-              ? " Aceite para usar os loops e funis compartilhados e ativar o split."
-              : ` Até você aceitar, continua valendo ${percent(p.accepted_percent)}. O novo valor vale só para vendas futuras.`}
-          </p>
-          <Button disabled={accept.isPending} onClick={() => accept.mutate(p.proposed_percent)} size="sm" variant="primary">
-            Aceitar {percent(p.proposed_percent)}
-          </Button>
-        </div>
-      )}
-      {accept.error && <ErrorState message={accept.error instanceof ApiError ? accept.error.message : "Não foi possível aceitar."} />}
       <PartnerBalance totals={data.totals} />
       <SalesTable sales={data.sales.slice(0, 8)} showCommission={false} />
       <p className="flex gap-2 text-[11px] leading-5 text-muted">
         <Info className="mt-0.5 shrink-0" size={13} />
-        {data.basis} Sua subconta na SmokePay é criada automaticamente na primeira cobrança
-        {data.shop_ref ? ` (referência ${data.shop_ref})` : ""}; o saldo dela é sacado pelo administrador da plataforma.
+        {data.basis}
       </p>
     </section>
   );
 }
 
-/** Chief: notices such as a partner customizing a shared funnel or accepting a commission. */
+/** Chief: notices such as a partner customizing a shared funnel or commission changes. */
 export function NoticesCard({ side = false }: { side?: boolean } = {}) {
   const notices = useNotices();
   const read = useMarkNoticesRead();
@@ -168,7 +149,7 @@ export function NoticesCard({ side = false }: { side?: boolean } = {}) {
           </button>
         )}
       </div>
-      {side && items.length === 0 && <p className="text-xs text-muted">Nenhum aviso ainda. Vendas, comissões e aceites aparecem aqui na hora.</p>}
+      {side && items.length === 0 && <p className="text-xs text-muted">Nenhum aviso ainda. Vendas, comissões e atualizações da sociedade aparecem aqui.</p>}
       <ul className={`space-y-1.5 ${side ? "min-h-0 flex-1 overflow-y-auto pr-1" : ""}`}>
         {items.slice(0, side ? 40 : 6).map((item) => (
           <li className={`rounded-lg px-3 py-2 text-xs ${item.read ? "text-muted" : "bg-surface-inset text-fg"}`} key={item.id}>

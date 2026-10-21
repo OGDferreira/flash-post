@@ -141,7 +141,7 @@ async def operations(
         user_rows.append({
             "user_id": str(owner.id), "name": owner.full_name, "email": owner.email, "hierarchy": hierarchy(owner.id),
             "chief": users[link.chief_user_id].full_name if link and link.chief_user_id in users else None,
-            "commission_percent": _f(link.accepted_percent) if link and link.accepted_percent is not None else None,
+            "commission_percent": _f(link.participation_percent) if link else None,
             "revenue": total, "fees": fees, "commission_paid": paid_out, "commission_received": _f(received.get(owner.id)),
         })
     user_rows.sort(key=lambda r: r["revenue"], reverse=True)

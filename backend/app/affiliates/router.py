@@ -38,7 +38,7 @@ from app.models import (
     Workspace,
     WorkspaceMember,
 )
-from app.partners.service import accepted, notify_user, pending_acceptance
+from app.partners.service import notify_user
 from app.shark.metrics import CRITERIA, compute_shark_metrics, window
 
 router = APIRouter(prefix="/api/affiliates", tags=["Affiliates"])
@@ -50,8 +50,8 @@ _MAX_CHAIN_DEPTH = 50
 PARTICIPATION_BASIS = (
     "Participação = receita aprovada do filiado no período (compras pagas com valor informado, "
     "valor bruto, sem descontar taxas, impostos ou custos) × percentual definido por você. "
-    "É um valor de referência. Nas vendas do FlashBot, a comissão aceita pelo sócio é separada "
-    "automaticamente pela SmokePay (split) e aparece em “Comissão recebida”."
+    "É um valor de referência. Nas vendas do FlashBot, o percentual definido pelo sócio que convida "
+    "é separado automaticamente pelo gateway (split) e aparece em “Comissão recebida”."
 )
 
 
@@ -418,8 +418,8 @@ async def _row_for(db: AsyncSession, link: Affiliation, user: User, start, end) 
         lead_to_purchase_rate=metrics.lead_to_purchase_rate if metrics else None,
         average_ticket=metrics.average_ticket if metrics else None,
         participation_amount=(revenue * percent / Decimal(100)).quantize(Decimal("0.01")),
-        accepted_percent=link.accepted_percent,
-        pending_acceptance=pending_acceptance(link),
+        accepted_percent=link.participation_percent,
+        pending_acceptance=False,
         **(await _bot_numbers(db, workspace.id if workspace else None, link.chief_user_id, start, end)),
         **(await _money_numbers(db, user, workspace.id if workspace else None, start, end)),
     )
@@ -621,13 +621,14 @@ async def set_participation(
     end_date: date | None = None,
 ) -> AffiliateRow:
     link, affiliate = await _own_link(db, user, affiliation_id)
-    if link.participation_percent != payload.participation_percent or not accepted(link):
+    if link.participation_percent != payload.participation_percent:
         link.participation_percent = payload.participation_percent
-        # The accepted percentage keeps applying until the partner accepts the new one.
+        link.accepted_percent = payload.participation_percent
+        link.accepted_at = utc_now()
         await notify_user(
-            db, affiliate.id, "partner-commission", "Nova comissão para aceitar",
-            f"{user.full_name} propôs {float(payload.participation_percent):g}% de comissão. "
-            "Ela só vale para as próximas vendas depois do seu aceite.", "/",
+            db, affiliate.id, "partner-commission", "Comissão da sociedade atualizada",
+            f"{user.full_name} definiu sua comissão em {float(payload.participation_percent):g}%. "
+            "O novo percentual vale para as próximas vendas.", "/",
         )
     await db.commit()
     start, end = period_bounds(period, start_date, end_date, utc_now())

@@ -19,7 +19,7 @@ function AcceptFirst() {
   const chief = useChiefLabel();
   return (
     <p className="rounded-xl border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning">
-      Aceite a comissão da sociedade no Painel para poder usar os modelos de {chief}.
+      Os modelos compartilhados por {chief} ficam disponíveis quando sua sociedade estiver ativa.
     </p>
   );
 }

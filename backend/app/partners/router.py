@@ -38,8 +38,8 @@ from app.partners import service
 router = APIRouter(prefix="/api/partners", tags=["Partners"])
 
 SPLIT_BASIS = (
-    "O split é feito pela própria SmokePay na cobrança: do valor líquido (bruto menos a taxa "
-    "da SmokePay), o percentual aceito vai para o sócio dono da operação e o restante fica na subconta do sócio."
+    "O split é feito pelo gateway na cobrança: do valor líquido após a taxa, o percentual definido "
+    "pelo sócio que convida vai para ele e o restante fica para o sócio dono da operação."
 )
 
 
@@ -125,7 +125,7 @@ async def my_partnership(
         out["partnership"] = {
             "chief_name": chief.full_name, "chief_nickname": chief.nickname,
             "proposed_percent": _f(link.participation_percent),
-            "accepted_percent": _f(link.accepted_percent) if link.accepted_percent is not None else None,
+            "accepted_percent": _f(link.participation_percent),
             "accepted_at": link.accepted_at.isoformat() if link.accepted_at else None,
             "pending_acceptance": service.pending_acceptance(link),
             "since": link.created_at.isoformat(),
@@ -135,20 +135,13 @@ async def my_partnership(
 
 @router.post("/me/accept", dependencies=[Depends(require_csrf)])
 async def accept_commission(payload: AcceptRequest, user: AuthenticatedUser, db: DbSession) -> dict:
-    """The partner confirms the percentage they are seeing; it must match the current proposal."""
+    """Legacy endpoint kept for existing clients; the chief-set percentage is already active."""
     link = await service.partner_link(db, user.id)
     if link is None:
         raise HTTPException(status_code=404, detail="Você não tem uma sociedade ativa.")
     if payload.percent != link.participation_percent:
-        raise HTTPException(status_code=409, detail="O percentual mudou. Atualize a página e confira de novo.")
-    link.accepted_percent = link.participation_percent
-    link.accepted_at = utc_now()
-    await service.notify_user(
-        db, link.chief_user_id, "partner-accepted", "Sócio aceitou a comissão",
-        f"{user.full_name} aceitou {float(link.participation_percent):g}% de comissão. Vale para as próximas vendas.", "/feature/affiliates",
-    )
-    await db.commit()
-    return {"accepted_percent": _f(link.accepted_percent), "accepted_at": link.accepted_at.isoformat()}
+        raise HTTPException(status_code=409, detail="O percentual foi atualizado pelo sócio que convidou.")
+    return {"accepted_percent": _f(link.participation_percent), "accepted_at": None}
 
 
 async def _partner_context(db, user: User, access) -> tuple[Affiliation, Workspace]:

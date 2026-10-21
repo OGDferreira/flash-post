@@ -242,7 +242,7 @@ export function RegisterPage() {
                 <div className="mt-2 rounded-xl border border-brand/40 bg-brand-soft p-3 text-xs text-fg-2">
                   <strong className="text-fg">Comissão de {Number(offer.percent).toLocaleString("pt-BR")}% para {offer.chief_name}.</strong>{" "}
                   Nas vendas feitas com os funis compartilhados por {offer.chief_name}, essa porcentagem é separada automaticamente
-                  pela SmokePay. Ao criar a conta você concorda com essa comissão. Mudanças futuras só valem se você aceitar.
+                  pelo gateway. O sócio que convidou define a comissão, que pode ser atualizada para vendas futuras sem aceite adicional.
                 </div>
               )}
             </div>

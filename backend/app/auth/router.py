@@ -218,7 +218,7 @@ async def register(
             link = Affiliation(chief_user_id=chief.id, affiliate_user_id=user.id)
             terms = read_invite_terms(payload.invite_terms) if payload.invite_terms else None
             if terms is not None and terms[0] == chief.id:
-                # The sign-up screen showed this percent and creating the account agrees to it.
+                # The signed invite sets the chief's commission for this new partnership.
                 link.participation_percent = terms[1]
                 link.accepted_percent = terms[1]
                 link.accepted_at = utc_now()

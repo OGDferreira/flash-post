@@ -1,8 +1,7 @@
 """Partner (sócio) rules shared by loops, funnels, payments and panels.
 
 * A partner is an affiliate (``Affiliation``) of exactly one chief.
-* The commission that money splits use is the one the partner *accepted*;
-  a new proposal only applies after a new acceptance (future sales only).
+* The chief sets the commission; a change applies to future sales immediately.
 * Templates are copied into the partner's own workspace: the copy has its own
   media files, accounts, queue and metrics, and never touches the original.
 * A loop or funnel is shared with every partner (``shared_with`` None) or only
@@ -75,7 +74,8 @@ async def partner_link(db: AsyncSession, user_id: uuid.UUID) -> Affiliation | No
 
 
 def accepted(link: Affiliation | None) -> bool:
-    return link is not None and link.accepted_at is not None and link.accepted_percent is not None
+    """Whether this is an active partnership; commission acceptance is not required."""
+    return link is not None and link.status == "ACTIVE"
 
 
 def shares_with(item: InstagramLoop | TgFlow, user_id: uuid.UUID) -> bool:
@@ -102,7 +102,7 @@ async def partner_ids(db: AsyncSession, chief_id: uuid.UUID) -> set[str]:
 
 
 def pending_acceptance(link: Affiliation) -> bool:
-    return not accepted(link) or link.accepted_percent != link.participation_percent
+    return False
 
 
 async def is_chief(db: AsyncSession, user_id: uuid.UUID) -> bool:
@@ -136,7 +136,7 @@ class BillingRoute:
     ``origin`` is fixed on the order when the charge is created:
     * ``main`` — the platform owner's own sale (main wallet, no split);
     * ``shared_funnel`` — a partner selling with the chief's shared funnel:
-      the accepted commission goes to the chief (SmokePay split);
+      the chief-set commission goes to the chief (gateway split);
     * ``own_funnel`` — a funnel of the seller's own: no chief commission; a
       partner pays only the platform fee set by the Super Admin.
     """
@@ -273,7 +273,7 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
         link = await _chief_copy_link(db, flow, owner.id)
     if link is not None:
         route.origin = "shared_funnel"
-        if not link.accepted_percent:
+        if not link.participation_percent:
             return route
         chief = await db.get(User, link.chief_user_id)
         if chief is None:
@@ -285,7 +285,7 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
             if chief_workspace is None:
                 return route
             rule = {"shop_id": shop_ref(chief_workspace.id)}
-        percent = min(link.accepted_percent, MAX_COMMISSION)
+        percent = min(link.participation_percent, MAX_COMMISSION)
         rule["percent"] = float(percent)
         route.splits = [rule]
         route.chief_user_id = chief.id

@@ -106,7 +106,7 @@ function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) 
   const validPercent = Number.isFinite(value) && value >= 0 && value <= 90;
   return (
     <Modal
-      description="Quem se cadastrar por este link já entra como seu sócio, com a comissão definida aqui aceita no próprio cadastro."
+      description="Quem se cadastrar por este link já entra como seu sócio, com a comissão que você definir aplicada automaticamente."
       onClose={onClose}
       open={open}
       title="Adicionar sócio"
@@ -144,8 +144,7 @@ function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) 
             <div className="mt-3">
               <CopyField label={`Link de cadastro com ${Number(link.data.percent).toLocaleString("pt-BR")}% (vale 30 dias)`} value={link.data.invite_url} />
               <p className="mt-1.5 text-[11px] text-muted">
-                O novo sócio vê a comissão na tela de cadastro e concorda ao criar a conta, sem precisar aceitar depois. Se
-                você mudar a comissão mais tarde, ele recebe a proposta para aceitar.
+                A comissão vale automaticamente para as próximas vendas. Você pode alterá-la a qualquer momento; a mudança não exige aceite do sócio.
               </p>
             </div>
           )}
@@ -173,7 +172,7 @@ function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) 
               <CopyField label="Link de cadastro" value={invite.data.invite_url} />
             </div>
           )}
-          <p className="text-[11px] text-muted">Com o código simples, a comissão começa em 0% e você define depois; aí o sócio precisa aceitar.</p>
+          <p className="text-[11px] text-muted">Com o código simples, a comissão começa em 0% e você pode defini-la depois. Nenhum aceite do sócio é necessário.</p>
         </div>
       </div>
     </Modal>
@@ -569,10 +568,8 @@ export function AffiliatesPage() {
                       </td>
                       <td className="px-2 py-3">
                         <PercentEditor key={`${row.id}-${row.participation_percent}`} period={period} row={row} />
-                        <p className={`mt-1 text-right text-[10px] ${row.pending_acceptance ? "text-warning" : "text-muted"}`}>
-                          {row.pending_acceptance
-                            ? row.accepted_percent === null ? "aguardando aceite" : `aguardando aceite · vale ${percent(row.accepted_percent)}%`
-                            : "aceita pelo sócio"}
+                        <p className="mt-1 text-right text-[10px] text-muted">
+                          Vale automaticamente nas próximas vendas
                         </p>
                       </td>
                       <td className="px-4 py-3 text-right">
