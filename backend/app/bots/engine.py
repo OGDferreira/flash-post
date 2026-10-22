@@ -108,11 +108,58 @@ def telegram(bot: TgBot) -> TelegramClient:
     return TelegramClient(decrypt_value(bot.encrypted_token))
 
 
-async def load_flow(db: AsyncSession, bot: TgBot) -> FlowDefinition | None:
-    if bot.flow_id is None:
+def flow_id_for(bot: TgBot, lead: TgLead | None = None) -> uuid.UUID | None:
+    """The funnel this lead follows: the one drawn from the bot's folder, else the bot's funnel."""
+    if bot.folder_id is not None and lead is not None and lead.flow_id is not None:
+        return lead.flow_id
+    return bot.flow_id
+
+
+async def load_flow(db: AsyncSession, bot: TgBot, lead: TgLead | None = None) -> FlowDefinition | None:
+    flow_id = flow_id_for(bot, lead)
+    if flow_id is None:
         return None
-    flow = await db.get(TgFlow, bot.flow_id)
+    flow = await db.get(TgFlow, flow_id)
     return FlowDefinition.model_validate(flow.definition) if flow else None
+
+
+async def folder_flows(db: AsyncSession, bot: TgBot) -> list[TgFlow]:
+    """The funnels of the bot's folder this operation may run (its own, or shared with it)."""
+    if bot.folder_id is None:
+        return []
+    from app.models import TgFlowFolderItem
+    from app.partners.service import shared_funnel_access
+
+    rows = await db.scalars(
+        select(TgFlow)
+        .join(TgFlowFolderItem, TgFlowFolderItem.flow_id == TgFlow.id)
+        .where(TgFlowFolderItem.folder_id == bot.folder_id)
+        .order_by(TgFlow.name, TgFlow.id)
+    )
+    usable = []
+    for flow in rows:
+        if flow.workspace_id == bot.workspace_id or await shared_funnel_access(db, flow, bot.workspace_id) is not None:
+            usable.append(flow)
+    return usable
+
+
+async def bot_flow_ids(db: AsyncSession, bot: TgBot) -> list[uuid.UUID]:
+    """Every funnel the bot can send: its own funnel and the funnels of its folder."""
+    ids = [flow.id for flow in await folder_flows(db, bot)]
+    if bot.flow_id is not None and bot.flow_id not in ids:
+        ids.insert(0, bot.flow_id)
+    return ids
+
+
+async def assign_folder_flow(db: AsyncSession, bot: TgBot, lead: TgLead) -> None:
+    """A lead of a folder bot gets one of the folder's funnels at random and keeps it, so each
+    funnel's numbers stay comparable; a new draw only when its funnel left the folder."""
+    if bot.folder_id is None:
+        return
+    flows = await folder_flows(db, bot)
+    if not flows or lead.flow_id in {flow.id for flow in flows}:
+        return
+    lead.flow_id = secrets.choice(flows).id
 
 
 # ---------------------------------------------------------------- media
@@ -135,10 +182,9 @@ async def _media_rows(db: AsyncSession, bot: TgBot, ids: list[uuid.UUID]) -> lis
         return []
     # A bot may run a funnel shared by the chief: its media live in the funnel's workspace.
     workspaces = {bot.workspace_id}
-    if bot.flow_id:
-        flow_workspace = await db.scalar(select(TgFlow.workspace_id).where(TgFlow.id == bot.flow_id))
-        if flow_workspace:
-            workspaces.add(flow_workspace)
+    flow_ids = await bot_flow_ids(db, bot)
+    if flow_ids:
+        workspaces.update(await db.scalars(select(TgFlow.workspace_id).where(TgFlow.id.in_(flow_ids))))
     rows = {
         m.id: m
         for m in await db.scalars(
@@ -190,12 +236,18 @@ def _stale_file(exc: TelegramError) -> bool:
 
 
 async def warm_cache(db: AsyncSession, tg: TelegramClient, bot: TgBot) -> int:
-    """Put every file of the bot's funnel in the cache chat ahead of the first lead."""
-    flow = await load_flow(db, bot)
-    if flow is None or not bot.cache_chat_id:
+    """Put every file of the bot's funnels in the cache chat ahead of the first lead."""
+    if not bot.cache_chat_id:
+        return 0
+    media_ids: set = set()
+    for flow_id in await bot_flow_ids(db, bot):
+        row = await db.get(TgFlow, flow_id)
+        if row is not None:
+            media_ids |= FlowDefinition.model_validate(row.definition).media_ids()
+    if not media_ids:
         return 0
     stored = 0
-    for media in await _media_rows(db, bot, sorted(flow.media_ids(), key=str)):
+    for media in await _media_rows(db, bot, sorted(media_ids, key=str)):
         if (media.file_ids or {}).get(str(bot.id)):
             continue
         if await store_in_cache(tg, bot, media):
@@ -617,7 +669,7 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
         return
     tg = telegram(bot)
     if job.kind in ("send_block", "send_offer", "send_downsell", "send_downsell_np", "send_upsell"):
-        flow = await load_flow(db, bot)
+        flow = await load_flow(db, bot, lead)
         if flow is None or lead is None:
             return
         index = int(job.payload.get("index", -1))
@@ -633,7 +685,7 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
         else:
             await send_upsell(db, tg, bot, lead, flow, index, str(job.payload.get("chain", "")))
     elif job.kind == "create_pix":
-        flow = await load_flow(db, bot)
+        flow = await load_flow(db, bot, lead)
         resolved = resolve_offer(flow, str(job.payload.get("data", ""))) if flow and lead else "gone"
         if isinstance(resolved, str):
             return
@@ -752,7 +804,6 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
     if chat_type in ("group", "supergroup"):
         await remember_chat(db, bot, update_data["message"]["chat"])
         return None
-    flow = await load_flow(db, bot)
     if "message" in update_data:
         message = update_data["message"]
         chat = message.get("chat") or {}
@@ -764,6 +815,8 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
         parts = text.split(maxsplit=1)
         if len(parts) == 2 and not lead.source:
             lead.source = parts[1][:64]
+        await assign_folder_flow(db, bot, lead)
+        flow = await load_flow(db, bot, lead)
         if flow is None:
             return None
         if flow.age_gate.enabled and lead.age_confirmed_at is None:
@@ -777,7 +830,13 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
         await start_welcome(db, bot, lead, flow)
         return lead.id
     if "callback_query" in update_data:
-        return await _handle_callback(db, bot, update_data["callback_query"], flow)
+        query = update_data["callback_query"]
+        sender_id = (query.get("from") or {}).get("id")
+        lead = (
+            await db.scalar(select(TgLead).where(TgLead.bot_id == bot.id, TgLead.tg_user_id == sender_id))
+            if sender_id else None
+        )
+        return await _handle_callback(db, bot, query, await load_flow(db, bot, lead))
     return None
 
 
@@ -985,7 +1044,8 @@ async def create_order(
     mark = time.perf_counter()
     if order is None:
         await tg.send_chat_action(lead.chat_id, "upload_photo")  # the lead sees activity while the gateway answers
-        route = await billing_route(db, bot.workspace_id, bot.flow_id)
+        flow_id = flow_id_for(bot, lead)
+        route = await billing_route(db, bot.workspace_id, flow_id)
         if not route.allowed:  # a shared funnel that is no longer available to this bot
             await tg.send_message(lead.chat_id, "Esta oferta não está disponível no momento.")
             await notify_owners(db, bot, "⚠️ Funil indisponível", f"@{bot.username}: o funil compartilhado não está mais liberado.", "bot-flow")
@@ -995,7 +1055,7 @@ async def create_order(
             "kind": kind, "step": step, "chain": chain, "retry": retry or f"plan:{plan.id}",
         }
         order = TgOrder(
-            workspace_id=bot.workspace_id, bot_id=bot.id, lead_id=lead.id, flow_id=bot.flow_id, kind=kind,
+            workspace_id=bot.workspace_id, bot_id=bot.id, lead_id=lead.id, flow_id=flow_id, kind=kind,
             offer_id=offer_id[:64], offer_name=name[:120], offer_snapshot=snapshot,
             amount=amount, expires_at=now + timedelta(minutes=flow.payment.expiration_minutes),
         )
@@ -1303,7 +1363,7 @@ async def approve_order(
     await db.execute(update(TgJob).where(TgJob.idempotency_key == f"expire:{order.id}").values(status="cancelled"))
     await cancel_lead_jobs(db, lead, ("send_downsell", "send_downsell_np"))
     tg = telegram(bot)
-    flow = await load_flow(db, bot)
+    flow = await load_flow(db, bot, lead)
     plan, bump, info = order_parts(order)
     delivery = plan.delivery or (flow.default_delivery if flow else None)
     try:
@@ -1386,7 +1446,8 @@ async def _deliver_group(db, tg, bot, lead, order, plan: Plan, delivery: Deliver
     now = utcnow()
     chat_id = int(delivery.group_chat_id)
     if bot.delivery_group_chat_id and (
-        chat_id == 0 or await db.scalar(select(TgFlow.workspace_id).where(TgFlow.id == bot.flow_id)) != bot.workspace_id
+        chat_id == 0
+        or await db.scalar(select(TgFlow.workspace_id).where(TgFlow.id == (order.flow_id or bot.flow_id))) != bot.workspace_id
     ):
         chat_id = int(bot.delivery_group_chat_id)  # partner's own group for a shared funnel
     subscription = await db.scalar(
@@ -1429,7 +1490,7 @@ async def expire_order(db: AsyncSession, tg: TelegramClient, bot: TgBot, order_i
         return
     order.status = "expired"
     lead = await db.get(TgLead, order.lead_id)
-    flow = await load_flow(db, bot)
+    flow = await load_flow(db, bot, lead)
     if lead and flow:
         retry = (order.offer_snapshot or {}).get("retry") or f"plan:{order.offer_id}"
         await tg.send_message(
@@ -1453,7 +1514,7 @@ async def end_subscription(db: AsyncSession, tg: TelegramClient, bot: TgBot, sub
         await tg.remove_member(subscription.chat_id, lead.tg_user_id)
     except TelegramError as exc:
         logger.info("Could not remove member: %s", exc)
-    flow = await load_flow(db, bot)
+    flow = await load_flow(db, bot, lead)
     if flow and flow.plans:
         await tg.send_message(lead.chat_id, "Seu acesso terminou. Renove para continuar 👇", plans_keyboard(flow))
 

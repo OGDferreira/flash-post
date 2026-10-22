@@ -157,6 +157,8 @@ export type Bot = {
   username: string;
   name: string;
   flow_id: string | null;
+  /** A folder of funnels instead of one funnel (each new lead gets one at random). */
+  folder_id?: string | null;
   is_active: boolean;
   status: string;
   last_error: string | null;

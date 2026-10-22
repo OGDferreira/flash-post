@@ -11,7 +11,9 @@ import { ConversionOverview } from "@/features/bots/ConversionOverview";
 import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
 import { BotsListPanel } from "@/features/bots/BotsListPanel";
 import { FlowsPanel } from "@/features/bots/FlowsPanel";
+import { FoldersPanel } from "@/features/bots/FoldersPanel";
 import { GatewaysPanel } from "@/features/bots/GatewaysPanel";
+import { StrategyPanel } from "@/features/bots/StrategyPanel";
 import { RemarketingPanel } from "@/features/bots/remarketing/RemarketingPanel";
 import { SharedByMePanel } from "@/features/partners/SharedByMePanel";
 import { SharedFlowsPanel } from "@/features/partners/SharedTemplates";
@@ -22,6 +24,8 @@ import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "
 export const BOT_SECTIONS = {
   home: { slug: "", title: "Painel", eyebrow: "Visão geral", hint: "Leads, starts, vendas e conversão dos seus robôs no período." },
   bots: { slug: "robos", title: "Meus robôs", eyebrow: "Robôs e leads", hint: "Conecte robôs do Telegram e escolha o funil (ou a pasta de funis) de cada um." },
+  strategy: { slug: "estrategia", title: "Estratégia", eyebrow: "Visão geral", hint: "Compare funis e pastas: quem vendeu mais, converteu mais e lucrou mais, e quanto cada plano vendeu." },
+  folders: { slug: "pastas", title: "Pastas de funis", eyebrow: "Funis", hint: "Junte funis numa pasta e conecte um robô a ela: cada lead novo recebe um funil da pasta, sorteado no /start." },
   flows: { slug: "funis", title: "Meus funis", eyebrow: "Funis", hint: "Funis criados por você: conteúdo, planos, entregas e o gateway de cada um." },
   remarketing: { slug: "remarketing", title: "Remarketing", eyebrow: "Robôs e leads", hint: "Disparos para os leads de um funil, pelos próprios robôs." },
   sharedByMe: { slug: "compartilhei", title: "Que compartilhei", eyebrow: "Funis", hint: "Seus funis compartilhados com cada sócio: gateway, a parte do vendedor, a sua comissão e as vendas. Só você altera essas regras." },
@@ -102,6 +106,8 @@ export function BotsPage() {
       {tab === "remarketing" && <RemarketingPanel flowId={remarketingFlow} onEditingChange={setEditing} onFlowChange={setRemarketingFlow} />}
       {tab === "shared" && <SharedFlowsPanel />}
       {tab === "sharedByMe" && <SharedByMePanel />}
+      {tab === "folders" && <FoldersPanel />}
+      {tab === "strategy" && <StrategyPanel />}
       {tab === "sales" && <BotSalesPanel />}
       {tab === "gateways" && <GatewaysPanel />}
     </div>

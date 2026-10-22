@@ -429,7 +429,7 @@ export function AppShell() {
           )}
           {links.map(({ label, to, icon: Icon }) => (
             <NavLink
-              end={to === "/admin" || to === "/dashboard"}
+              end={to === "/admin" || to === "/dashboard" || to === "/bot"}
               key={to}
               to={to}
               title={label}
@@ -457,7 +457,7 @@ export function AppShell() {
             </p>
             {group.items.map(({ label, to, icon: Icon }) => (
               <NavLink
-                end={to === "/dashboard"}
+                end={to === "/dashboard" || to === "/bot"}
                 key={to}
                 to={to}
                 title={label}
@@ -651,7 +651,7 @@ export function AppShell() {
       >
         {mobileLinks.map(({ label, short, to, icon: Icon }) => (
           <NavLink
-            end={to === "/dashboard" || to === "/admin"}
+            end={to === "/dashboard" || to === "/admin" || to === "/bot"}
             key={to}
             to={to}
             onClick={() => setMobileOpen(false)}

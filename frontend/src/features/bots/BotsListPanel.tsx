@@ -11,6 +11,7 @@ import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 import type { MetricsPeriod } from "@/features/analytics/period";
 import { BotAvatar } from "./BotAvatar";
+import { useFolders } from "./FoldersPanel";
 import { useBotStats } from "./ConversionOverview";
 import { brl, type Bot, type BotGroup, type Flow, type SharedFlowOption } from "./types";
 import { useChiefLabel } from "@/features/partners/api";
@@ -35,6 +36,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
     retry: false,
   });
   const stats = useBotStats(period);
+  const folders = useFolders();
   const sharedIds = new Set((flows.data?.shared_flows ?? []).map((flow) => flow.id));
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["bots"] });
 
@@ -118,19 +120,20 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                 ))}
               </dl>
               <label className="grid gap-1.5 text-sm text-fg-2">
-                Fluxo
+                Funil ou pasta de funis
                 <select
                   className="field"
-                  value={bot.flow_id ?? ""}
+                  value={bot.folder_id ? `folder:${bot.folder_id}` : bot.flow_id ?? ""}
                   disabled={update.isPending}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const value = event.target.value;
                     update.mutate({
                       id: bot.id,
-                      body: event.target.value ? { flow_id: event.target.value } : { clear_flow: true },
-                    })
-                  }
+                      body: value.startsWith("folder:") ? { folder_id: value.slice(7) } : value ? { flow_id: value } : { clear_flow: true },
+                    });
+                  }}
                 >
-                  <option value="">Sem fluxo (o robô não responde)</option>
+                  <option value="">Sem funil (o robô não responde)</option>
                   {flows.data?.flows.map((flow) => (
                     <option key={flow.id} value={flow.id}>
                       {flow.name}
@@ -143,9 +146,17 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                       ))}
                     </optgroup>
                   )}
+                  {(folders.data?.folders ?? []).length > 0 && (
+                    <optgroup label="Pastas (funil sorteado por lead)">
+                      {folders.data!.folders.map((folder) => (
+                        <option key={folder.id} value={`folder:${folder.id}`}>📁 {folder.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </label>
-              {bot.flow_id && sharedIds.has(bot.flow_id) && (
+              {((bot.flow_id && sharedIds.has(bot.flow_id)) ||
+                (bot.folder_id && folders.data?.folders.find((f) => f.id === bot.folder_id)?.flows.some((f) => f.shared))) && (
                 <label className="grid gap-1.5 text-sm text-fg-2">
                   Grupo de entrega deste robô
                   <select

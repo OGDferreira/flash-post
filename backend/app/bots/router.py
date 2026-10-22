@@ -57,6 +57,8 @@ class BotCreate(BaseModel):
 class BotUpdate(BaseModel):
     flow_id: uuid.UUID | None = None
     clear_flow: bool = False
+    # A folder instead of a single funnel (each new lead gets one of its funnels at random).
+    folder_id: uuid.UUID | None = None
     is_active: bool | None = None
     delivery_group_chat_id: int | None = None
     clear_delivery_group: bool = False
@@ -80,6 +82,7 @@ def _bot_out(bot: TgBot, stats: dict | None = None) -> dict:
         "username": bot.username,
         "name": bot.name,
         "flow_id": str(bot.flow_id) if bot.flow_id else None,
+        "folder_id": str(bot.folder_id) if bot.folder_id else None,
         "delivery_group_chat_id": bot.delivery_group_chat_id,
         "cache_chat_id": bot.cache_chat_id,
         "is_active": bot.is_active,
@@ -283,9 +286,19 @@ async def update_bot(bot_id: uuid.UUID, payload: BotUpdate, access: OwnerAccess,
     bot = await _owned(db, TgBot, bot_id, access)
     if payload.clear_flow:
         bot.flow_id = None
+        bot.folder_id = None
     elif payload.flow_id:
         await _usable_flow(db, payload.flow_id, access)
         bot.flow_id = payload.flow_id
+        bot.folder_id = None
+    elif payload.folder_id:
+        from app.models import TgFlowFolder
+
+        folder = await db.get(TgFlowFolder, payload.folder_id)
+        if folder is None or folder.workspace_id != access.workspace.id:
+            raise HTTPException(status_code=404, detail="Pasta não encontrada.")
+        bot.folder_id = folder.id
+        bot.flow_id = None
     if payload.clear_delivery_group:
         bot.delivery_group_chat_id = None
     elif payload.delivery_group_chat_id is not None:
@@ -304,7 +317,7 @@ async def update_bot(bot_id: uuid.UUID, payload: BotUpdate, access: OwnerAccess,
         warm = True
     if payload.is_active is not None:
         bot.is_active = payload.is_active
-    if warm or (bot.cache_chat_id and (payload.flow_id or payload.clear_flow)):
+    if warm or (bot.cache_chat_id and (payload.flow_id or payload.folder_id or payload.clear_flow)):
         await _schedule_cache_warm(db, bot)
     await db.commit()
     return _bot_out(bot)
@@ -343,8 +356,12 @@ async def check_media_cache(bot_id: uuid.UUID, access: OwnerAccess, db: DbSessio
     await _check_cache_chat(db, bot, int(bot.cache_chat_id))
     await _schedule_cache_warm(db, bot)
     await db.commit()
-    flow = await engine.load_flow(db, bot)
-    medias = await engine._media_rows(db, bot, sorted(flow.media_ids(), key=str)) if flow else []
+    media_ids: set = set()
+    for flow_id in await engine.bot_flow_ids(db, bot):
+        row = await db.get(TgFlow, flow_id)
+        if row is not None:
+            media_ids |= FlowDefinition.model_validate(row.definition).media_ids()
+    medias = await engine._media_rows(db, bot, sorted(media_ids, key=str)) if media_ids else []
     cached = sum(1 for m in medias if (m.file_ids or {}).get(str(bot.id)))
     return {"ok": True, "cached": cached, "total": len(medias)}
 

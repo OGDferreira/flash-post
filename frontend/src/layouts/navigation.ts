@@ -31,6 +31,8 @@ import {
   BellRing,
   type LucideIcon,
   Share2,
+  FolderTree,
+  Target,
 } from "lucide-react";
 
 import { appForPath, type AppId } from "@/lib/brand";
@@ -185,6 +187,7 @@ const botGroups: NavGroup[] = [
     icon: LayoutDashboard,
     items: [
       { label: "Painel", to: "/bot", icon: LayoutDashboard },
+      { label: "Estratégia", to: "/bot/estrategia", icon: Target },
     ],
   },
   {
@@ -193,6 +196,7 @@ const botGroups: NavGroup[] = [
     icon: GitBranch,
     items: [
       { label: "Meus funis", to: "/bot/funis", icon: GitBranch },
+      { label: "Pastas de funis", to: "/bot/pastas", icon: FolderTree },
       { label: "Compartilhados comigo", to: "/bot/compartilhados-comigo", icon: Inbox },
       { label: "Que compartilhei", to: "/bot/compartilhei", icon: Share2 },
     ],

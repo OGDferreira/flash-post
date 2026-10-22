@@ -172,3 +172,11 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - **Gateways**: credenciais só no modal de cada gateway e só para funis próprios; funis compartilhados aparecem só para leitura. **Principal e backups** (`tg_gateway_settings`): ordem, ligar/desligar e funis associados; a escolha do funil vem antes da ordem. Sem nada salvo, a operação continua como antes.
 - **Failover seguro**: se um gateway recusar ou não responder, o próximo gera o Pix do mesmo pedido. O lead recebe um único Pix; o webhook da SnakePay acha o pedido pelo id da cobrança e o da SmokePay só aprova pedidos da SmokePay, então uma tentativa perdida nunca paga o pedido. Tentativas ficam em `tg_orders.gateway_attempts`.
 - Testes: `tests/test_falcon_shares.py`.
+
+## 0.17.0 — Falcon Bot (etapa 3: pastas de funis e Estratégia)
+- **Pastas de funis** (`tg_flow_folders`, `tg_flow_folder_items`, `tg_bots.folder_id`; migração `20261022_58`, aditiva): o robô conecta a um funil ou a uma pasta. Com pasta, cada lead novo recebe um funil sorteado no /start (`secrets.choice`) e continua nele; só é sorteado de novo se o funil sair da pasta ou deixar de ser compartilhado. Excluir a pasta desconecta os robôs; leads mantêm o funil.
+- Só entram funis próprios ou compartilhados e ainda acessíveis; pastas de outra operação são invisíveis (404).
+- **Estratégia** (`/bot/estrategia`, `GET /api/bots/strategy`): por funil e por pasta, no período: starts, Pix gerados, vendas, conversão, bruto, líquido (o que ficou com a operação) e vendas por plano; destaques "vendeu mais", "converteu mais" e "lucrou mais".
+- Entrega imediata: teste garante que acesso e próximo upsell saem logo após cada pagamento, sem esperar o worker.
+- Menu: "Painel" não fica mais marcado nas outras telas do Falcon Bot.
+- Testes: `tests/test_falcon_folders.py`.

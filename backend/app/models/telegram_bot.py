@@ -79,6 +79,10 @@ class TgBot(Base):
     flow_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="SET NULL")
     )
+    # A folder of funnels instead of one funnel: each new lead gets one of them at random.
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flow_folders.id", ondelete="SET NULL")
+    )
     tg_bot_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     username: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -448,4 +452,34 @@ class AuditEvent(Base):
     details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class TgFlowFolder(Base):
+    """A folder of funnels to test against each other: a bot connected to it sends each new
+    lead one of its funnels at random (the lead keeps that funnel)."""
+
+    __tablename__ = "tg_flow_folders"
+    __table_args__ = (Index("ix_tg_flow_folders_workspace", "workspace_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = _workspace_fk()
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class TgFlowFolderItem(Base):
+    """A funnel in a folder: one of the operation's own, or one shared with it."""
+
+    __tablename__ = "tg_flow_folder_items"
+    __table_args__ = (UniqueConstraint("folder_id", "flow_id", name="uq_tg_flow_folder_items"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    folder_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flow_folders.id", ondelete="CASCADE"), nullable=False
+    )
+    flow_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="CASCADE"), nullable=False
     )

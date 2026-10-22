@@ -44,6 +44,7 @@ from app.notifications.router import router as notifications_router
 from app.shark.router import router as shark_router
 from app.smokepay.router import router as smokepay_router
 from app.bots.gateways_router import router as payment_gateways_router
+from app.bots.strategy_router import router as bot_strategy_router
 from app.widget.router import router as widget_router
 from app.affiliates.router import router as affiliates_router
 from app.partners.router import router as partners_router
@@ -152,6 +153,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(health_router)
     application.include_router(auth_router)
     application.include_router(bot_campaigns_router)  # before /api/bots/{bot_id}
+    application.include_router(bot_strategy_router)  # before /api/bots/{bot_id}
     application.include_router(bots_router)
     application.include_router(admin_notifications_router)
     application.include_router(admin_router)
