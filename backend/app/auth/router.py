@@ -324,9 +324,17 @@ async def logout(request: Request) -> MessageResponse:
 
 
 @router.get("/auth/me", response_model=UserResponse)
-async def auth_me(user: AuthenticatedUser, db: DbSession) -> UserResponse:
+async def auth_me(request: Request, user: AuthenticatedUser, db: DbSession) -> UserResponse:
     membership = await _primary_membership(user, db)
-    return _user_response(user, membership)
+    response = _user_response(user, membership)
+    impersonator_id = request.session.get("impersonator_id")
+    if isinstance(impersonator_id, str):
+        try:
+            impersonator = await db.scalar(select(User).where(User.id == uuid.UUID(impersonator_id)))
+        except ValueError:
+            impersonator = None
+        response.impersonator_name = impersonator.full_name if impersonator is not None else "Super Admin"
+    return response
 
 
 @router.get("/profile", response_model=UserResponse)

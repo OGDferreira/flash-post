@@ -168,6 +168,8 @@ export type User = {
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
+  /** Set while a Super Admin is inside this account via "Entrar". */
+  impersonator_name?: string | null;
 };
 
 export type Workspace = {

@@ -99,6 +99,8 @@ class UserResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None
+    # Set while a Super Admin is inside this account via "Entrar".
+    impersonator_name: str | None = None
 
 
 class AuthResponse(BaseModel):

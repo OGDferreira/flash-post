@@ -7,6 +7,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, apiRequest, type User } from "@/services/api";
+import { ImpersonationBanner } from "@/features/auth/ImpersonationBanner";
 
 type AuthState = {
   user: User | null;
@@ -40,6 +41,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       value={{ user, isLoading: auth.isLoading && !isUnauthorized }}
     >
       {children}
+      {user?.impersonator_name && (
+        <ImpersonationBanner userName={user.full_name} adminName={user.impersonator_name} />
+      )}
     </AuthContext.Provider>
   );
 }
