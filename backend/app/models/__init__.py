@@ -29,6 +29,7 @@ from app.models.instagram_loop import (
     SharkEvent,
 )
 from app.models.user import User
+from app.models.admin_audit_log import AdminAuditLog
 from app.models.affiliation import Affiliation
 from app.models.app_notification import AppNotification
 from app.models.shark_account import SharkAccount
@@ -59,6 +60,7 @@ from app.models.telegram_bot import (
 )
 
 __all__ = [
+    "AdminAuditLog",
     "AppNotification",
     "TgBot",
     "TgCampaign",

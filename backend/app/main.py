@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.admin.impersonation import router as admin_impersonation_router
 from app.admin.notifications import router as admin_notifications_router
 from app.admin.router import router as admin_router
 from app.admin.operations import router as admin_operations_router
@@ -154,6 +155,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(bots_router)
     application.include_router(admin_notifications_router)
     application.include_router(admin_router)
+    application.include_router(admin_impersonation_router)
     application.include_router(admin_operations_router)
     application.include_router(analytics_router)
     application.include_router(bot_performance_router)
