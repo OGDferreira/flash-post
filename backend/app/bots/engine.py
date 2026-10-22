@@ -578,10 +578,12 @@ def upsell_plan(index: int, step: UpsellStep) -> Plan:
     return Plan(id=f"up{index}", name=step.name, price=step.price, duration_days=step.duration_days, delivery=step.delivery)
 
 
-async def schedule_upsell(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, chain: str) -> None:
+async def schedule_upsell(
+    db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, chain: str, immediate: bool = False,
+) -> None:
     """``chain`` (the first order of the series) keys the jobs so double taps never repeat a step."""
     if 0 <= index < len(flow.upsells):
-        run = utcnow() + timedelta(minutes=flow.upsells[index].delay_minutes)
+        run = utcnow() + (timedelta() if immediate else timedelta(minutes=flow.upsells[index].delay_minutes))
         await schedule(db, bot, "send_upsell", run, f"upsell:{chain}:{index}", lead, {"index": index, "chain": chain})
 
 
@@ -1274,10 +1276,16 @@ async def approve_order(
         logger.warning("Delivery for order %s failed: %s", order.id, exc)
     if flow and flow.upsells:
         if info.get("kind") == "upsell":
-            await schedule_upsell(db, bot, lead, flow, int(info.get("step") or 0) + 1, str(info.get("chain") or order.id.hex))
+            await schedule_upsell(db, bot, lead, flow, int(info.get("step") or 0) + 1, str(info.get("chain") or order.id.hex), True)
         elif delivery is None or delivery.type == "upsell" or delivery.start_upsell:
-            await schedule_upsell(db, bot, lead, flow, 0, order.id.hex)
+            await schedule_upsell(db, bot, lead, flow, 0, order.id.hex, True)
     await db.commit()
+    # The next step of the sequence goes out right after the payment, no tap needed.
+    try:
+        await run_due_jobs(db, lead_id=lead.id)
+    except Exception:
+        await db.rollback()
+        logger.exception("Immediate post-payment send failed for order %s; the worker will retry.", order.id)
     await notify_sale(db, bot, order)
     return True
 
@@ -1413,7 +1421,7 @@ async def reconcile_pending_orders(db: AsyncSession, limit: int = 25) -> int:
     orders = list(
         await db.scalars(
             select(TgOrder)
-            .where(TgOrder.status == "pending", TgOrder.created_at <= now - timedelta(seconds=90), TgOrder.expires_at > now - timedelta(minutes=10))
+            .where(TgOrder.status == "pending", TgOrder.created_at <= now - timedelta(seconds=10), TgOrder.expires_at > now - timedelta(minutes=10))
             .order_by(TgOrder.created_at)
             .limit(limit)
         )
