@@ -26,7 +26,7 @@ from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
 from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
-from app.partners.service import accepted, notify_user, owner_workspace, partner_link, shared_funnel_access, shares_with
+from app.partners.service import accepted, flow_offered_to, notify_user, owner_workspace, partner_link, shared_funnel_access
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
 from app.core.time import utc_now
@@ -448,7 +448,7 @@ async def list_flows(access: OwnerAccess, db: DbSession) -> dict:
                 for f in await db.scalars(
                     select(TgFlow).where(TgFlow.workspace_id == chief_workspace.id, TgFlow.shared.is_(True)).order_by(TgFlow.name)
                 )
-                if shares_with(f, access.workspace.owner_id)
+                if await flow_offered_to(db, f, access.workspace.owner_id)
             ]
     received = {f.id for f in flows if await _is_received_copy(db, f)}
     return {"flows": [_flow_out(f, int(usage.get(f.id, 0)), f.id in received) for f in flows], "shared_flows": shared}
@@ -906,6 +906,8 @@ async def smokepay_webhook(request: Request, db: DbSession) -> dict:
         order_id = uuid.UUID(external_id[len(engine.ORDER_PREFIX):])
     except ValueError:
         return {"ok": True}
+    if await db.scalar(select(TgOrder.gateway).where(TgOrder.id == order_id)) != "smokepay":
+        return {"ok": True}  # charged by another gateway (failover): only its own notice pays it
     try:
         await engine.approve_order(
             db, order_id, Decimal(str(event.get("amount"))), event.get("payer_name"),

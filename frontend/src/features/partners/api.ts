@@ -48,8 +48,64 @@ export type SharedTemplates = {
     media_count: number;
     in_use: boolean;
   }[];
-  flows: { id: string; name: string; in_use: boolean; loop_id: string | null; loop_name: string | null; loop_in_use: boolean }[];
+  flows: {
+    id: string;
+    name: string;
+    in_use: boolean;
+    loop_id: string | null;
+    loop_name: string | null;
+    loop_in_use: boolean;
+    /** The owner's rules for this partner: read-only for the seller. */
+    rules: SellerRules;
+  }[];
 };
+
+export type GatewayId = "smokepay" | "snakepay";
+
+export type SellerRules = {
+  set_by_owner: boolean;
+  gateway: GatewayId;
+  seller_percent: number;
+  owner_percent: number;
+  /** Masked ("••••1234"). */
+  seller_shop_id: string | null;
+  basis: string;
+};
+
+/** One funnel of mine shared with one partner ("Que compartilhei"). ``rule: "partnership"``
+ *  = shared before the per-partner rules: it follows the partnership percentage until saved. */
+export type FlowShare = {
+  id: string | null;
+  flow_id: string;
+  flow_name: string;
+  partner_id: string;
+  partner_name: string | null;
+  gateway: GatewayId;
+  seller_percent: number;
+  owner_percent: number;
+  seller_shop_id: string | null;
+  owner_shop_id: string | null;
+  loop_id: string | null;
+  status: "ACTIVE" | "REVOKED";
+  rule: "share" | "partnership";
+  updated_at: string | null;
+  stats: { sales: number; gross: number; commission: number } | null;
+};
+
+export type FlowShareInput = {
+  flow_id: string;
+  partner_id: string;
+  gateway: GatewayId;
+  seller_percent: string;
+  owner_percent: string;
+  /** undefined keeps the saved ShopID. */
+  seller_shop_id?: string;
+  owner_shop_id?: string;
+  /** undefined keeps the paired loop; null removes it. */
+  loop_id?: string | null;
+};
+
+export type ShareHistoryItem = { action: string; details: Record<string, unknown>; created_at: string | null };
 
 export type Operations = {
   period_label: string;
@@ -129,6 +185,47 @@ export function useShareToggle(kind: "loops" | "flows") {
 }
 
 export type PartnerOption = { id: string; name: string; nickname: string };
+
+export function useFlowShares(enabled = true) {
+  return useQuery({
+    queryKey: ["partners", "flow-shares"],
+    queryFn: () => apiRequest<{ basis: string; items: FlowShare[] }>("/api/partners/flow-shares"),
+    enabled,
+  });
+}
+
+function useShareInvalidation() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ["partners"] });
+    void queryClient.invalidateQueries({ queryKey: ["bots", "flows"] });
+    void queryClient.invalidateQueries({ queryKey: ["loops"] });
+  };
+}
+
+export function useSaveFlowShare() {
+  const invalidate = useShareInvalidation();
+  return useMutation({
+    mutationFn: (input: FlowShareInput) => apiRequest<FlowShare>("/api/partners/flow-shares", { method: "PUT", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRevokeFlowShare() {
+  const invalidate = useShareInvalidation();
+  return useMutation({
+    mutationFn: (id: string) => apiRequest<FlowShare>(`/api/partners/flow-shares/${id}`, { method: "DELETE" }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useShareHistory(id: string | null) {
+  return useQuery({
+    queryKey: ["partners", "flow-shares", id, "history"],
+    queryFn: () => apiRequest<{ items: ShareHistoryItem[] }>(`/api/partners/flow-shares/${id}/history`),
+    enabled: id !== null,
+  });
+}
 
 /** Chief: their active partners, to pick who receives a funnel or a loop. */
 export function useMyPartners(enabled = true) {

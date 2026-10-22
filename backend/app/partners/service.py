@@ -24,12 +24,14 @@ from app.core.time import utc_now
 from app.models import (
     Affiliation,
     AppNotification,
+    AuditEvent,
     InstagramLoop,
     InstagramLoopMedia,
     InstagramMedia,
     InstagramPublicationJob,
     PushSubscription,
     TgFlow,
+    TgFlowShare,
     TgMedia,
     User,
     Workspace,
@@ -83,6 +85,14 @@ def shares_with(item: InstagramLoop | TgFlow, user_id: uuid.UUID) -> bool:
     if not item.shared:
         return False
     return item.shared_with is None or str(user_id) in {str(target) for target in item.shared_with}
+
+
+async def flow_offered_to(db: AsyncSession, flow: TgFlow, user_id: uuid.UUID) -> bool:
+    """``shares_with`` for funnels, where the owner's per-partner rules (when set) decide."""
+    if not flow.shared:
+        return False
+    rule = await share_for_partner(db, flow.id, user_id)
+    return rule.status == "ACTIVE" if rule is not None else shares_with(flow, user_id)
 
 
 def merge_targets(current: list | None, extra: list | None) -> list | None:
@@ -151,6 +161,8 @@ class BillingRoute:
     # fixed fee on every sale that is not the Super Admin's own (Settings.flashbot_transaction_fee)
     transaction_fee: Decimal = Decimal("0.00")
     allowed: bool = True
+    # The owner-set rules this sale follows (shared funnels whose owner set them).
+    share_id: uuid.UUID | None = None
 
     def preview(self, net: Decimal | None) -> tuple[Decimal | None, Decimal | None]:
         """(chief commission, partner net) from the net after the gateway fee."""
@@ -204,9 +216,41 @@ async def shared_funnel_access(db: AsyncSession, flow: TgFlow, workspace_id: uui
     link = await partner_link(db, workspace.owner_id)
     if not accepted(link) or link.chief_user_id != flow_workspace.owner_id:
         return None
+    rule = await share_for_partner(db, flow.id, workspace.owner_id)
+    if rule is not None:  # the owner set rules for this partner: they decide, also when revoked
+        return link if rule.status == "ACTIVE" else None
     if not shares_with(flow, workspace.owner_id):
         return None
     return link
+
+
+async def share_for_partner(db: AsyncSession, flow_id: uuid.UUID, partner_user_id: uuid.UUID) -> TgFlowShare | None:
+    return await db.scalar(
+        select(TgFlowShare).where(TgFlowShare.flow_id == flow_id, TgFlowShare.partner_user_id == partner_user_id)
+    )
+
+
+async def shared_source(db: AsyncSession, flow: TgFlow | None, workspace_id: uuid.UUID) -> TgFlow | None:
+    """The other operation's funnel behind this sale: the funnel itself when the bot runs a
+    funnel shared with it, or the original of a copy; None for the operation's own funnels."""
+    if flow is None:
+        return None
+    if flow.workspace_id != workspace_id:
+        return flow
+    if flow.template_flow_id is None:
+        return None
+    template = await db.get(TgFlow, flow.template_flow_id)
+    return template if template is not None and template.workspace_id != workspace_id else None
+
+
+async def active_share(db: AsyncSession, flow: TgFlow | None, workspace_id: uuid.UUID) -> TgFlowShare | None:
+    """The owner's active rules for this operation's sales of a shared funnel, if set."""
+    source = await shared_source(db, flow, workspace_id)
+    workspace = await db.get(Workspace, workspace_id) if source is not None else None
+    if workspace is None:
+        return None
+    rule = await share_for_partner(db, source.id, workspace.owner_id)
+    return rule if rule is not None and rule.status == "ACTIVE" else None
 
 
 async def _chief_copy_link(db: AsyncSession, flow: TgFlow, owner_id: uuid.UUID) -> Affiliation | None:
@@ -273,7 +317,12 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
         link = await _chief_copy_link(db, flow, owner.id)
     if link is not None:
         route.origin = "shared_funnel"
-        if not link.participation_percent:
+        rule = await active_share(db, flow, workspace_id)
+        commission = link.participation_percent
+        if rule is not None:  # the rules the owner set for this partner and funnel
+            route.share_id = rule.id
+            commission = rule.owner_percent
+        if not commission:
             return route
         chief = await db.get(User, link.chief_user_id)
         if chief is None:
@@ -285,7 +334,7 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
             if chief_workspace is None:
                 return route
             rule = {"shop_id": shop_ref(chief_workspace.id)}
-        percent = min(link.participation_percent, MAX_COMMISSION)
+        percent = min(commission, MAX_COMMISSION)
         rule["percent"] = float(percent)
         route.splits = [rule]
         route.chief_user_id = chief.id
@@ -302,6 +351,29 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
                 route.fee_percent = min(fee["value"], MAX_COMMISSION)
                 route.splits = [{"parent": True, "percent": float(route.fee_percent)}]
     return route
+
+
+# ------------------------------------------------------------------ audit
+
+
+def mask_shop_id(value: str | None) -> str | None:
+    """Enough to recognize a ShopID, never the whole of it."""
+    value = (value or "").strip()
+    return f"••••{value[-4:]}" if value else None
+
+
+def audit(
+    db: AsyncSession, *, actor: User | None, workspace_id: uuid.UUID | None, action: str, entity: str,
+    entity_id: uuid.UUID | None, details: dict,
+) -> None:
+    """Record a change to a financial rule. The caller commits; never pass a secret in ``details``."""
+    db.add(
+        AuditEvent(
+            workspace_id=workspace_id, actor_user_id=actor.id if actor else None, action=action[:48],
+            entity=entity[:32], entity_id=entity_id, details=details,
+        )
+    )
+    logger.info("audit %s %s %s by %s", action, entity, entity_id, actor.id if actor else None)
 
 
 # ------------------------------------------------------------------ notices

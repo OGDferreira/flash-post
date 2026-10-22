@@ -11,7 +11,8 @@ from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, Sup
 from app.bots import engine, gateways, snakepay
 from app.core.config import get_settings
 from app.core.crypto import encrypt_value
-from app.models import SystemSetting, TgBot, TgFlow, TgOrder, User, Workspace
+from app.models import SystemSetting, TgBot, TgFlow, TgGatewaySetting, TgOrder, User, Workspace
+from app.partners.service import active_share, audit
 
 router = APIRouter(prefix="/api/payment-gateways", tags=["Payment gateways"])
 
@@ -35,6 +36,18 @@ class SnakepayCredentials(BaseModel):
     api_key: str | None = Field(default=None, max_length=512)
     webhook_secret: str | None = Field(default=None, max_length=512)
     clear: bool = False
+
+
+class PriorityItem(BaseModel):
+    gateway: str = Field(pattern="^(smokepay|snakepay)$")
+    enabled: bool
+    # None = every funnel of the operation; else only these own funnels.
+    flow_ids: list[uuid.UUID] | None = Field(default=None, max_length=500)
+
+
+class PriorityRequest(BaseModel):
+    # In order: the first enabled one is the principal, the next ones are backups.
+    items: list[PriorityItem] = Field(min_length=1, max_length=len(gateways.GATEWAYS))
 
 
 def _smokepay_configured() -> bool:
@@ -96,6 +109,7 @@ async def _state(db, user, workspace) -> dict:
             },
         ],
     }
+    state["priority"] = await _priority(db, workspace, state["gateways"], admin)
     state["shared_flows"] = await _shared_flows(db, workspace)
     state["partners_without_shop_id"] = await _partners_without_shop_id(db, workspace)
     fee = get_settings().flashbot_transaction_fee
@@ -112,6 +126,109 @@ async def _state(db, user, workspace) -> dict:
             "snakepay_webhook_url": f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/snakepay",
         }
     return state
+
+
+def _snake_ready(workspace, admin: bool) -> bool:
+    return admin or bool(
+        workspace.snakepay_recipient_id
+        or (workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted)
+    )
+
+
+async def _priority(db, workspace, catalog: list[dict], admin: bool) -> list[dict]:
+    """Principal and backups of the operation's own funnels, with each gateway's status.
+    With nothing saved yet it shows what already happens: the chosen gateway, and SmokePay
+    behind SnakePay."""
+    rows = await gateways.gateway_settings(db, workspace.id)
+    if rows:
+        items = [{"gateway": r.gateway, "enabled": r.enabled, "flow_ids": r.flow_ids} for r in rows]
+        for name in gateways.GATEWAYS:
+            if name not in {r.gateway for r in rows}:
+                items.append({"gateway": name, "enabled": False, "flow_ids": None})
+    else:
+        first = workspace.payment_gateway if workspace.payment_gateway in gateways.GATEWAYS else "smokepay"
+        items = [{"gateway": first, "enabled": True, "flow_ids": None}]
+        for name in gateways.GATEWAYS:
+            if name != first:
+                items.append({"gateway": name, "enabled": first == "snakepay" and name == "smokepay", "flow_ids": None})
+    available = {g["id"]: g["available"] for g in catalog}
+    paused = engine.snakepay_paused(workspace.id)
+    out = []
+    for index, item in enumerate(items, start=1):
+        name = item["gateway"]
+        if not available.get(name):
+            status = "indisponivel"
+        elif name == "snakepay" and not _snake_ready(workspace, admin):
+            status = "configurar"
+        elif name == "snakepay" and paused:
+            status = "pausado"
+        else:
+            status = "ativo" if item["enabled"] else "desligado"
+        out.append({
+            "gateway": name, "enabled": item["enabled"], "priority": index,
+            "flow_ids": [str(v) for v in item["flow_ids"]] if item["flow_ids"] is not None else None, "status": status,
+        })
+    return out
+
+
+@router.put("/priority", dependencies=[Depends(require_csrf)])
+async def save_priority(payload: PriorityRequest, access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> dict:
+    """Order, on/off and funnel association of the operation's gateways. Shared funnels are
+    not touched: they always follow their owner's rules."""
+    workspace = access.workspace
+    admin = user.platform_role == "SUPER_ADMIN"
+    names = [item.gateway for item in payload.items]
+    if len(set(names)) != len(names):
+        raise HTTPException(status_code=422, detail="Cada gateway aparece uma vez só.")
+    if not any(item.enabled and item.flow_ids is None for item in payload.items):
+        raise HTTPException(
+            status_code=422, detail="Deixe pelo menos um gateway ligado para todos os funis, para nenhuma venda ficar sem Pix."
+        )
+    own = set(await db.scalars(select(TgFlow.id).where(TgFlow.workspace_id == workspace.id)))
+    for item in payload.items:
+        if item.flow_ids is not None:
+            if not item.flow_ids:
+                raise HTTPException(status_code=422, detail="Escolha pelo menos um funil ou deixe para todos.")
+            if not set(item.flow_ids) <= own:
+                raise HTTPException(status_code=422, detail="Associe só funis próprios desta operação.")
+        if item.enabled and item.gateway == "snakepay":
+            if not await gateways.snakepay_available(db):
+                raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
+            if not _snake_ready(workspace, admin):
+                raise HTTPException(status_code=422, detail="Configure a SnakePay (ShopID ou credenciais) antes de ligá-la.")
+        if item.enabled and item.gateway == "smokepay" and not _smokepay_configured():
+            raise HTTPException(status_code=409, detail="A SmokePay não está configurada no servidor.")
+    before = await _priority(db, workspace, (await _state_catalog(db)), admin)
+    current = {row.gateway: row for row in await gateways.gateway_settings(db, workspace.id)}
+    for index, item in enumerate(payload.items, start=1):
+        row = current.get(item.gateway)
+        if row is None:
+            row = TgGatewaySetting(workspace_id=workspace.id, gateway=item.gateway)
+            db.add(row)
+        row.enabled = item.enabled
+        row.priority = index
+        row.flow_ids = sorted(str(v) for v in item.flow_ids) if item.flow_ids is not None else None
+    principal = next(item.gateway for item in payload.items if item.enabled and item.flow_ids is None)
+    workspace.payment_gateway = principal  # the legacy default follows the principal
+    await db.flush()
+    audit(
+        db, actor=user, workspace_id=workspace.id, action="gateways.priority", entity="workspace", entity_id=workspace.id,
+        details={
+            "before": [{k: v for k, v in i.items() if k != "status"} for i in before],
+            "after": [{"gateway": i.gateway, "enabled": i.enabled, "flow_ids": [str(v) for v in i.flow_ids] if i.flow_ids is not None else None} for i in payload.items],
+        },
+    )
+    await db.commit()
+    engine.resume_snakepay()
+    return await _state(db, user, workspace)
+
+
+async def _state_catalog(db) -> list[dict]:
+    enabled = await gateways.snakepay_enabled(db)
+    return [
+        {"id": "smokepay", "available": _smokepay_configured()},
+        {"id": "snakepay", "available": snakepay.configured() and enabled},
+    ]
 
 
 async def _shared_flows(db, workspace) -> list[dict]:
@@ -131,7 +248,15 @@ async def _shared_flows(db, workspace) -> list[dict]:
             source = await db.get(TgFlow, flow.template_flow_id) or flow
         if source.workspace_id == workspace.id:
             continue
-        shared.append({"name": flow.name, "gateway": await gateways.gateway_choice(db, workspace, flow)})
+        rule = await active_share(db, flow, workspace.id)
+        shared.append({
+            "name": flow.name, "gateway": await gateways.gateway_choice(db, workspace, flow),
+            # read-only: the owner's rules for this partner (the seller sets nothing here)
+            "set_by_owner": rule is not None,
+            "seller_percent": float(rule.seller_percent) if rule else None,
+            "owner_percent": float(rule.owner_percent) if rule else None,
+            "shop_id_ready": bool(rule and rule.gateway == "snakepay" and gateways.valid_recipient(rule.seller_shop_id or "")),
+        })
     return shared
 
 
@@ -154,6 +279,9 @@ async def _partners_without_shop_id(db, workspace) -> list[str]:
             partner_ws.snakepay_api_key_encrypted and partner_ws.snakepay_webhook_secret_encrypted
         ) or gateways.valid_recipient(partner_ws.snakepay_recipient_id or ""):
             continue
+        rule = await active_share(db, flow, partner_ws.id)
+        if rule is not None:
+            continue  # the share's own ShopIDs were validated when the owner saved it
         if await gateways.gateway_choice(db, partner_ws, flow) != "snakepay":
             continue
         owner = await db.get(User, partner_ws.owner_id)
@@ -193,6 +321,12 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
             raise HTTPException(status_code=422, detail="Cole o seu ShopID da SnakePay para receber suas vendas.")
     workspace.payment_gateway = payload.gateway
     workspace.snakepay_recipient_id = recipient
+    rows = await gateways.gateway_settings(db, workspace.id)
+    if rows:  # the chosen gateway becomes the principal; the others keep their order as backups
+        rows.sort(key=lambda row: (row.gateway != payload.gateway, row.priority))
+        for index, row in enumerate(rows, start=1):
+            row.priority = index
+        rows[0].enabled, rows[0].flow_ids = True, None
     if payload.apply_to_all:
         await db.execute(update(TgFlow).where(TgFlow.workspace_id == workspace.id).values(payment_gateway=None))
     await db.commit()
@@ -228,6 +362,10 @@ async def save_snakepay_credentials(
                 workspace.snakepay_webhook_secret_encrypted = encrypt_value(webhook_secret)
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail="A criptografia de credenciais não está configurada.") from exc
+    audit(
+        db, actor=user, workspace_id=workspace.id, action="gateways.credentials", entity="workspace",
+        entity_id=workspace.id, details={"gateway": "snakepay", "cleared": payload.clear},  # never the values
+    )
     await db.commit()
     engine.resume_snakepay()
     return await _state(db, user, workspace)

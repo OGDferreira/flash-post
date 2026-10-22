@@ -13,6 +13,7 @@ import { BotsListPanel } from "@/features/bots/BotsListPanel";
 import { FlowsPanel } from "@/features/bots/FlowsPanel";
 import { GatewaysPanel } from "@/features/bots/GatewaysPanel";
 import { RemarketingPanel } from "@/features/bots/remarketing/RemarketingPanel";
+import { SharedByMePanel } from "@/features/partners/SharedByMePanel";
 import { SharedFlowsPanel } from "@/features/partners/SharedTemplates";
 
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -23,6 +24,7 @@ export const BOT_SECTIONS = {
   bots: { slug: "robos", title: "Meus robôs", eyebrow: "Robôs e leads", hint: "Conecte robôs do Telegram e escolha o funil (ou a pasta de funis) de cada um." },
   flows: { slug: "funis", title: "Meus funis", eyebrow: "Funis", hint: "Funis criados por você: conteúdo, planos, entregas e o gateway de cada um." },
   remarketing: { slug: "remarketing", title: "Remarketing", eyebrow: "Robôs e leads", hint: "Disparos para os leads de um funil, pelos próprios robôs." },
+  sharedByMe: { slug: "compartilhei", title: "Que compartilhei", eyebrow: "Funis", hint: "Seus funis compartilhados com cada sócio: gateway, a parte do vendedor, a sua comissão e as vendas. Só você altera essas regras." },
   shared: { slug: "compartilhados-comigo", title: "Compartilhados comigo", eyebrow: "Funis", hint: "Funis de outro proprietário que você pode usar nos seus robôs. Gateway e comissão são definidos por quem compartilhou." },
   sales: { slug: "vendas", title: "Leads, starts e vendas", eyebrow: "Vendas e financeiro", hint: "Cada Pix gerado e pago, com taxas, comissões e o líquido de cada venda." },
   gateways: { slug: "gateways", title: "Gateways de pagamento", eyebrow: "Configuração", hint: "Configure os gateways dos seus funis próprios. Funis compartilhados com você usam o gateway de quem compartilhou." },
@@ -99,6 +101,7 @@ export function BotsPage() {
       )}
       {tab === "remarketing" && <RemarketingPanel flowId={remarketingFlow} onEditingChange={setEditing} onFlowChange={setRemarketingFlow} />}
       {tab === "shared" && <SharedFlowsPanel />}
+      {tab === "sharedByMe" && <SharedByMePanel />}
       {tab === "sales" && <BotSalesPanel />}
       {tab === "gateways" && <GatewaysPanel />}
     </div>

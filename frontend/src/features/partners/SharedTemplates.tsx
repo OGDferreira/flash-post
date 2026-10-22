@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CopyPlus, Infinity as InfinityIcon, Pause, Play, Share2, UserPlus } from "lucide-react";
+import { Check, CopyPlus, Infinity as InfinityIcon, Lock, Pause, Play, Share2, UserPlus } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
-import type { Flow } from "@/features/bots/types";
 import type { InstagramLoop, InstagramLoopAccountsPage } from "@/pages/loops/loopShared";
 import { ApiError, apiRequest } from "@/services/api";
 import { type PartnerOption, useChiefLabel, useMyPartners, useShareToggle, useSharedTemplates, useUseTemplate } from "./api";
@@ -338,104 +337,88 @@ function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onC
   );
 }
 
-/** Falcon Bot tab: partners pick the chief's shared funnels; owners choose what to share and with whom. */
+/** Falcon Bot > Compartilhados comigo: the funnels another owner shared with me, with the
+ *  rules that owner set (read-only: gateway, my part, the owner's commission). */
 export function SharedFlowsPanel() {
   const chief = useChiefLabel();
   const shared = useSharedTemplates();
   const use = useUseTemplate("flows");
-  const isOwner = shared.data !== undefined && !shared.data.available;
-  const partners = useMyPartners(isOwner);
-  const [sharing, setSharing] = useState<Flow | null>(null);
-  const own = useQuery({
-    queryKey: ["bots", "flows"],
-    queryFn: () => apiRequest<{ flows: Flow[] }>("/api/bots/flows/list"),
-    enabled: isOwner,
-  });
-  const loops = useQuery({
-    queryKey: ["loops"],
-    queryFn: () => apiRequest<{ loops: InstagramLoop[] }>("/api/loops?include_accounts=false"),
-    enabled: isOwner,
-  });
   if (shared.isLoading) return <LoadingState label="Carregando funis compartilhados" />;
   if (shared.error) return <ErrorState message={errorText(shared.error)} onRetry={() => void shared.refetch()} />;
   const data = shared.data!;
 
-  if (data.available) {
+  if (!data.available) {
     return (
-      <div className="space-y-3">
-        <p className="text-sm text-muted">
-          Funis de {chief} prontos para rodar no seu robô. Quando o funil vem com um loop, ele já aparece em Loops, na área
-          “Loops compartilhados”, sem contas: conecte as suas e ele começa a postar. Depois, escolha o funil no seu robô em
-          “Meus bots”. O conteúdo do funil é de {chief} e fica protegido; leads, vendas e métricas são seus.
-        </p>
-        {!data.accepted && <AcceptFirst />}
-        {use.error && <ErrorState message={errorText(use.error)} />}
-        {use.data && (
-          <p className="text-xs text-success">
-            Pronto! {use.data.loop ? `O loop “${use.data.loop.name}” está em Loops compartilhados (conecte suas contas nele). ` : ""}
-            Agora vá em “Meus bots” e escolha “{use.data.name}” no seu robô, junto com o seu grupo de entrega.
-          </p>
-        )}
-        {data.flows.length === 0 ? (
-          <EmptyState message={`${chief} ainda não compartilhou nenhum funil com você.`} />
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-            {data.flows.map((flow) => (
-              <Card className="space-y-2" key={flow.id}>
-                <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
-                  {flow.in_use && <Badge tone="success">No seu robô</Badge>}
-                </div>
-                <p className="text-xs text-muted">
-                  {flow.loop_name ? `Loop junto: ${flow.loop_name}${flow.loop_in_use ? " · já está nos seus loops" : ""}` : "Sem loop junto"}
-                </p>
-                <Button disabled={!data.accepted || use.isPending} onClick={() => use.mutate(flow.id)} size="sm" variant="primary">
-                  {flow.loop_in_use || !flow.loop_name ? <Check size={14} /> : <CopyPlus size={14} />}{" "}
-                  {flow.loop_name ? (flow.loop_in_use ? "Usar funil" : "Usar funil + loop") : "Usar funil"}
-                </Button>
-              </Card>
-            ))}
-          </div>
-        )}
+      <div className="dashboard-card space-y-3 p-5">
+        <EmptyState message="Nenhum funil foi compartilhado com você. Funis que você compartilha com seus sócios ficam em “Que compartilhei”." />
+        <div className="flex justify-center">
+          <Link className="btn-primary" to="/bot/compartilhei">
+            <Share2 size={15} /> Ver o que compartilhei
+          </Link>
+        </div>
       </div>
     );
   }
 
-  const flows = (own.data?.flows ?? []).filter((flow) => !flow.from_template);
-  const myLoops = (loops.data?.loops ?? []).filter((loop) => !loop.linked && !loop.from_template);
-  const partnerList = partners.data?.partners ?? [];
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        Clique em um funil para compartilhar com todos os sócios ou só com quem você escolher, e, se quiser, mande um loop
-        junto para o sócio receber tudo pronto. O sócio roda o funil sem ver o conteúdo e recebe o loop sem contas. Só as
-        vendas por funis seus geram a sua comissão.
+        Funis de {chief} prontos para rodar no seu robô. Gateway, porcentagens e ShopIDs são definidos por {chief}: você não precisa
+        cadastrar credenciais para vender estes funis. Quando o funil vem com um loop, ele aparece em Loops compartilhados, sem contas:
+        conecte as suas e ele começa a postar. O conteúdo do funil é protegido; leads, vendas e métricas são seus.
       </p>
-      {own.isLoading && <LoadingState label="Carregando funis" />}
-      {own.data && flows.length === 0 && <EmptyState message="Crie um funil em “Meus funis” para poder compartilhar." />}
-      <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
-        {flows.map((flow) => {
-          const loopName = flow.shared ? myLoops.find((loop) => loop.id === flow.shared_loop_id)?.name : undefined;
-          return (
-            <button
-              className={`space-y-1 rounded-xl border bg-surface-inset p-3 text-left hover:bg-surface-raised ${
-                flow.shared ? "border-brand" : "border-line-soft"
-              }`}
-              key={flow.id}
-              onClick={() => setSharing(flow)}
-              type="button"
-            >
-              <span className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate text-sm font-medium text-fg">{flow.name}</span>
-                <Share2 className={flow.shared ? "text-accent" : "text-muted"} size={14} />
-              </span>
-              <span className="block text-[11px] text-muted">{shareLabel(flow, partnerList)}</span>
-              {flow.shared && <span className="block text-[11px] text-muted">{loopName ? `Com o loop “${loopName}”` : "Sem loop junto"}</span>}
-            </button>
-          );
-        })}
-      </div>
-      <ShareDialog item={sharing} kind="flows" loops={myLoops} onClose={() => setSharing(null)} />
+      {!data.accepted && <AcceptFirst />}
+      {use.error && <ErrorState message={errorText(use.error)} />}
+      {use.data && (
+        <p className="text-xs text-success">
+          Pronto! {use.data.loop ? `O loop “${use.data.loop.name}” está em Loops compartilhados (conecte suas contas nele). ` : ""}
+          Agora vá em “Meus robôs” e escolha “{use.data.name}” no seu robô, junto com o seu grupo de entrega.
+        </p>
+      )}
+      {data.flows.length === 0 ? (
+        <EmptyState message={`${chief} ainda não compartilhou nenhum funil com você.`} />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+          {data.flows.map((flow) => (
+            <Card className="space-y-3" key={flow.id}>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
+                {flow.in_use && <Badge tone="success">No seu robô</Badge>}
+              </div>
+              <dl className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg bg-surface-inset px-2 py-2">
+                  <dt className="text-[10px] uppercase tracking-wide text-muted">Gateway</dt>
+                  <dd className="mt-0.5 text-sm font-semibold text-fg">{flow.rules.gateway === "snakepay" ? "SnakePay" : "SmokePay"}</dd>
+                </div>
+                <div className="rounded-lg bg-surface-inset px-2 py-2">
+                  <dt className="text-[10px] uppercase tracking-wide text-muted">Você</dt>
+                  <dd className="mt-0.5 text-sm font-semibold text-accent">{percent(flow.rules.seller_percent)}</dd>
+                </div>
+                <div className="rounded-lg bg-surface-inset px-2 py-2">
+                  <dt className="text-[10px] uppercase tracking-wide text-muted">Dono</dt>
+                  <dd className="mt-0.5 text-sm font-semibold text-fg">{percent(flow.rules.owner_percent)}</dd>
+                </div>
+              </dl>
+              <p className="flex items-start gap-1.5 text-[11px] leading-4 text-muted">
+                <Lock className="mt-0.5 shrink-0" size={12} />
+                {flow.rules.set_by_owner
+                  ? `Regras definidas por ${chief}${flow.rules.seller_shop_id ? ` · seu ShopID neste funil ${flow.rules.seller_shop_id}` : ""}. Só ${chief} altera.`
+                  : `Segue a porcentagem da sociedade com ${chief}.`}{" "}
+                Base: líquido da venda (bruto menos a taxa do gateway).
+              </p>
+              <p className="text-xs text-muted">
+                {flow.loop_name ? `Loop junto: ${flow.loop_name}${flow.loop_in_use ? " · já está nos seus loops" : ""}` : "Sem loop junto"}
+              </p>
+              <Button disabled={!data.accepted || use.isPending} onClick={() => use.mutate(flow.id)} size="sm" variant="primary">
+                {flow.loop_in_use || !flow.loop_name ? <Check size={14} /> : <CopyPlus size={14} />}{" "}
+                {flow.loop_name ? (flow.loop_in_use ? "Usar funil" : "Usar funil + loop") : "Usar funil"}
+              </Button>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+
+const percent = (value: number) => `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;

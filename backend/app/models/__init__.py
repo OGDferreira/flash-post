@@ -47,9 +47,12 @@ from app.models.push import (
 )
 from app.models.workspace import Workspace, WorkspaceMember
 from app.models.telegram_bot import (
+    AuditEvent,
     TgBot,
     TgCampaign,
     TgFlow,
+    TgFlowShare,
+    TgGatewaySetting,
     TgGroup,
     TgJob,
     TgLead,
@@ -60,6 +63,9 @@ from app.models.telegram_bot import (
 )
 
 __all__ = [
+    "AuditEvent",
+    "TgFlowShare",
+    "TgGatewaySetting",
     "AdminAuditLog",
     "AppNotification",
     "TgBot",

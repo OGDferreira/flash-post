@@ -20,8 +20,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots import snakepay
-from app.models import SystemSetting, TgFlow, User, Workspace
-from app.partners.service import BillingRoute, owner_workspace
+from app.models import SystemSetting, TgFlow, TgFlowShare, TgGatewaySetting, User, Workspace
+from app.partners.service import BillingRoute, active_share, owner_workspace, shared_source
 
 SNAKEPAY_ENABLED_KEY = "snakepay_enabled"
 GATEWAYS = ("smokepay", "snakepay")
@@ -87,29 +87,84 @@ def gateway_for(workspace: Workspace, flow: TgFlow | None) -> str:
 
 async def gateway_choice(db: AsyncSession, workspace: Workspace, flow: TgFlow | None) -> str:
     """Who picks the gateway for this sale. A funnel shared by the chief (run directly, or a
-    copy made from it) follows the chief's choice for that funnel, else the chief's default;
-    the operation's own funnels follow the operation."""
-    source = flow
-    if flow is not None and flow.workspace_id == workspace.id and flow.template_flow_id is not None:
-        template = await db.get(TgFlow, flow.template_flow_id)
-        source = template if template is not None and template.workspace_id != workspace.id else flow
-    if source is None or source.workspace_id == workspace.id:
-        return gateway_for(workspace, flow)
+    copy made from it) follows the gateway of the share's rules, else the chief's choice for
+    that funnel, else the chief's default; the operation's own funnels follow the operation
+    (its principal gateway for that funnel)."""
+    source = await shared_source(db, flow, workspace.id)
+    if source is None:
+        return (await gateway_order(db, workspace, flow))[0]
+    rule = await active_share(db, flow, workspace.id)
+    if rule is not None:
+        return rule.gateway
     owner = await db.get(Workspace, source.workspace_id)
     return gateway_for(owner, source) if owner is not None else gateway_for(workspace, None)
 
 
+async def gateway_settings(db: AsyncSession, workspace_id) -> list[TgGatewaySetting]:
+    return list(
+        await db.scalars(
+            select(TgGatewaySetting)
+            .where(TgGatewaySetting.workspace_id == workspace_id)
+            .order_by(TgGatewaySetting.priority, TgGatewaySetting.gateway)
+        )
+    )
+
+
+def serves(setting: TgGatewaySetting, flow: TgFlow | None) -> bool:
+    """Whether a gateway may charge this funnel (None = every funnel of the operation)."""
+    if setting.flow_ids is None:
+        return True
+    return flow is not None and str(flow.id) in {str(value) for value in setting.flow_ids}
+
+
+async def gateway_order(db: AsyncSession, workspace: Workspace, flow: TgFlow | None) -> list[str]:
+    """The gateways to try for one sale, in order: the principal first, then the backups.
+
+    * A funnel shared by another operation follows that owner's rules (one gateway, with
+      SmokePay as the safety net when SnakePay cannot pay every share).
+    * The operation's own funnel: its own gateway choice comes first, then the operation's
+      enabled gateways by priority, limited to the ones associated with this funnel.
+    * An operation that never set the priority keeps the old behaviour: its choice, with
+      SmokePay behind SnakePay.
+    """
+    if await shared_source(db, flow, workspace.id) is not None:
+        first = await gateway_choice(db, workspace, flow)
+        return [first, "smokepay"] if first == "snakepay" else [first]
+    settings = await gateway_settings(db, workspace.id)
+    if not settings:
+        first = gateway_for(workspace, flow)
+        return [first, "smokepay"] if first == "snakepay" else [first]
+    order = [row.gateway for row in settings if row.enabled and serves(row, flow)]
+    enabled = {row.gateway for row in settings if row.enabled}
+    if flow is not None and flow.payment_gateway in enabled:  # the funnel's own choice beats the global order
+        if flow.payment_gateway in order:
+            order.remove(flow.payment_gateway)
+        order.insert(0, flow.payment_gateway)
+    return order or ["smokepay"]
+
+
 async def snakepay_plan(
-    db: AsyncSession, workspace: Workspace, route: BillingRoute, amount: Decimal, flow: TgFlow | None = None
+    db: AsyncSession, workspace: Workspace, route: BillingRoute, amount: Decimal, flow: TgFlow | None = None,
+    *, chosen: bool = False,
 ) -> SnakePlan | None:
-    """The SnakePay plan for this sale, or None to charge with SmokePay instead."""
-    if await gateway_choice(db, workspace, flow) != "snakepay" or not await snakepay_available(db):
+    """The SnakePay plan for this sale, or None to charge with another gateway instead.
+    ``chosen``: the gateway order already put SnakePay here (see ``gateway_order``)."""
+    if not chosen and await gateway_choice(db, workspace, flow) != "snakepay":
+        return None
+    if not await snakepay_available(db):
         return None
     owner = await db.get(User, workspace.owner_id)
     if owner is None:
         return None
     if owner.platform_role == "SUPER_ADMIN":
         return SnakePlan()  # the platform's own sale: no split
+    rule = await active_share(db, flow, workspace.id) if route.share_id else None
+    if rule is not None:
+        # A shared funnel with the owner's rules: the ShopIDs saved on the share, never the
+        # seller's own setup (the seller needs no SnakePay credentials to sell it).
+        if rule.gateway != "snakepay":
+            return None
+        return await _split_plan(db, route, amount, (rule.seller_shop_id or "").strip(), rule)
     if workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted:
         from app.core.crypto import decrypt_value
 
@@ -165,7 +220,14 @@ async def snakepay_plan(
             webhook_secret=webhook_secret,
         )
 
-    recipient = (workspace.snakepay_recipient_id or "").strip()
+    return await _split_plan(db, route, amount, (workspace.snakepay_recipient_id or "").strip())
+
+
+async def _split_plan(
+    db: AsyncSession, route: BillingRoute, amount: Decimal, recipient: str, rule: TgFlowShare | None = None
+) -> SnakePlan | None:
+    """Platform key: the net is split to the seller's ShopID, the chief's commission to the
+    chief's ShopID (the share's, when the owner set one) and the fees stay with the platform."""
     if not valid_recipient(recipient):
         return None
     platform = await platform_recipients(db)
@@ -192,6 +254,8 @@ async def snakepay_plan(
             return None
         chief_workspace = None if chief.platform_role == "SUPER_ADMIN" else await owner_workspace(db, chief.id)
         chief_recipient = (chief_workspace.snakepay_recipient_id or "").strip() if chief_workspace else ""
+        if rule is not None and chief_workspace is not None:
+            chief_recipient = (rule.owner_shop_id or "").strip()
         if chief_workspace is not None and any(same_recipient(chief_recipient, own) for own in platform):
             chief_workspace = None  # the chief's ShopID is the platform account: the commission stays there
         if chief_workspace is not None:  # a Super Admin's commission stays in the platform account
