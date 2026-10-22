@@ -232,7 +232,7 @@ async def billing_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid
 
 
 def transaction_fee_for(user: User | None) -> Decimal:
-    """The FlashBot fee per sale: the user's own (set by the Super Admin) or the default."""
+    """The Falcon Bot fee per sale: the user's own (set by the Super Admin) or the default."""
     from app.core.config import get_settings
 
     if user is not None and user.platform_role == "SUPER_ADMIN":
@@ -307,7 +307,7 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
 # ------------------------------------------------------------------ notices
 
 
-# Money notices: shown with the dark FlashBot logo on the phone.
+# Money notices: shown with the dark Falcon Bot logo on the phone.
 SALE_KINDS = ("sale", "commission")
 
 

@@ -63,7 +63,7 @@ def _f(value: Decimal | None) -> float:
 
 
 async def _sales(db, workspace_id: uuid.UUID, start, end, *, chief_user_id: uuid.UUID | None = None) -> dict:
-    """Paid FlashBot sales of a workspace with fee, commission and partner net."""
+    """Paid Falcon Bot sales of a workspace with fee, commission and partner net."""
     where = [TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end]
     if chief_user_id is not None:
         where.append(TgOrder.split_chief_user_id == chief_user_id)

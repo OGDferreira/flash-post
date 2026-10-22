@@ -206,7 +206,7 @@ export type AdminUser = {
   created_at: string;
   last_login_at: string | null;
   hierarchy?: "chief" | "partner" | "independent";
-  transaction_fee?: string | null; // own FlashBot fee per sale; null = the default
+  transaction_fee?: string | null; // own Falcon Bot fee per sale; null = the default
   transaction_fee_effective?: string;
   chief_name?: string | null;
   invited_by_name?: string | null;

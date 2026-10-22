@@ -3,11 +3,16 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import App from "./App";
+import "@fontsource-variable/space-grotesk";
+import "@fontsource/jetbrains-mono/latin-500.css";
 import "./index.css";
 import { initAppearance } from "@/lib/appearance";
+import { appForPath } from "@/lib/brand";
 import { applyTheme, getStoredTheme, getTheme } from "@/lib/theme";
 import { reloadOnce } from "@/lib/chunkReload";
 
+// Palette of the tool the page opens in, before the first paint (the shell keeps it in sync).
+document.documentElement.dataset.app = appForPath(window.location.pathname);
 initAppearance();
 {
   // Re-apply the saved theme in case the inline boot script could not read it.
@@ -26,7 +31,7 @@ if ("serviceWorker" in navigator) {
     void navigator.serviceWorker
       .register("/service-worker.js")
       .catch((error: unknown) => {
-        console.error("FlashPost could not register its offline app shell.", error);
+        console.error("Falcon Post could not register its offline app shell.", error);
       });
   });
 }

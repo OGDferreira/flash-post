@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { AppearanceCard } from "@/components/AppearanceCard";
+import { ChangePasswordCard } from "@/features/auth/ChangePasswordCard";
 import { AffiliateLinkCard } from "@/features/affiliates/AffiliateLinkCard";
 import { DailyViewsGoalCard } from "@/components/DailyViewsGoalCard";
 import { ErrorState, LoadingState } from "@/components/PageState";
@@ -148,11 +149,13 @@ export function ProfilePage() {
           Perfil
         </h2>
         <p className="mt-2 text-sm text-muted">
-          Consulte seus dados e atualize seu nome, apelido e imagem de perfil.
+          Consulte seus dados, atualize nome, apelido e foto e altere sua senha.
         </p>
       </div>
 
       <AppearanceCard />
+
+      <ChangePasswordCard />
 
       <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
         <div className="mb-7 flex items-center gap-4 border-b border-line-soft pb-6">

@@ -1,4 +1,4 @@
-"""FlashBot conversion numbers for one operation (never mixes workspaces).
+"""Falcon Bot conversion numbers for one operation (never mixes workspaces).
 
 * leads      = leads that entered in the period (one per Telegram user per bot)
 * sales      = paid orders in the period (upsells count as sales)
@@ -109,7 +109,7 @@ def _public_avatar(user: User) -> str | None:
 
 
 async def partners_ranking_of(db: AsyncSession, user_id: uuid.UUID, start: datetime, end: datetime) -> dict:
-    """Positions of the chief and their active partners by FlashBot revenue.
+    """Positions of the chief and their active partners by Falcon Bot revenue.
 
     A partner sees their chief and sibling partners; a chief sees their partners.
     Revenue only orders the list and never leaves this function.

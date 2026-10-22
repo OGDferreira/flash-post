@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { FlashBotGlyph } from "@/components/FlashBotLogo";
 
-/** Telegram profile photo of the bot (served by our API, token stays on the server); FlashBot mark fallback. */
+/** Telegram profile photo of the bot (served by our API, token stays on the server); Falcon Bot emblem fallback. */
 export function BotAvatar({ botId, name, size = 40 }: { botId?: string | null; name: string; size?: number }) {
   const [failed, setFailed] = useState(false);
   const style = { width: size, height: size };
@@ -10,10 +10,10 @@ export function BotAvatar({ botId, name, size = 40 }: { botId?: string | null; n
     return (
       <span
         aria-hidden
-        className="grid shrink-0 place-items-center rounded-full bg-gradient-to-br from-[var(--grad-a)] to-[var(--grad-b)] text-white shadow-sm"
+        className="grid shrink-0 place-items-center rounded-full border border-line-soft bg-well"
         style={style}
       >
-        <FlashBotGlyph size={Math.round(size * 0.55)} />
+        <FlashBotGlyph size={Math.round(size * 0.78)} />
       </span>
     );
   }

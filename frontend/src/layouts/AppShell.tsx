@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { useNotices } from "@/features/partners/api";
+import { useNotices, usePartnerMe } from "@/features/partners/api";
 import { playCashSound, unlockCashSound } from "@/lib/cashSound";
 import { RevenueBadge } from "@/features/wallet/RevenueBadge";
 import { PushPrompt } from "@/components/PushPrompt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  ArrowLeft,
+  ArrowLeftRight,
   Bell,
   ChevronDown,
   Plus,
@@ -23,7 +23,8 @@ import {
 import { buildNavigation } from "./navigation";
 import { RefreshFab } from "@/components/RefreshFab";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { BrandLogo } from "@/components/BrandLogo";
+import { BrandLogo, BrandLockup } from "@/components/BrandLogo";
+import { APPS, appForPath, lastPath, otherApp, rememberPath } from "@/lib/brand";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { applyTheme, getTheme, type Theme } from "@/lib/theme";
@@ -46,7 +47,7 @@ function isInstallPromptSnoozed() {
       Date.now()
     );
   } catch (error) {
-    console.warn("FlashPost could not read the install-prompt preference.", error);
+    console.warn("Falcon Post could not read the install-prompt preference.", error);
     return false;
   }
 }
@@ -58,7 +59,7 @@ function snoozeInstallPrompt() {
       String(Date.now() + INSTALL_PROMPT_SNOOZE_MS),
     );
   } catch (error) {
-    console.warn("FlashPost could not save the install-prompt preference.", error);
+    console.warn("Falcon Post could not save the install-prompt preference.", error);
   }
 }
 
@@ -86,6 +87,9 @@ export function AppShell() {
     // Small intent delay so sweeping the mouse past the rail doesn't flicker it open.
     hoverTimer.current = window.setTimeout(() => setHovered(next), next ? 60 : 220);
   };
+  useEffect(() => {
+    document.body.dataset.sidebarPinned = pinned ? "1" : "0";
+  }, [pinned]);
   const togglePin = () => {
     setPinned((value) => {
       try {
@@ -97,12 +101,20 @@ export function AppShell() {
     });
   };
   const isAdminRoute = location.pathname.startsWith("/admin");
-  // FlashBot opens like its own app: no FlashPost menus, only a way back to the panel.
-  const botsApp = location.pathname.startsWith("/feature/bots");
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const workspaceRole =
     isSuperAdmin ? user.workspace_role : user?.role;
   const hasWorkspaceOwnerAccess = workspaceRole === "OWNER";
+  // Falcon Post and Falcon Bot share this shell (one session): the path decides the tool,
+  // its menu, its palette and its logo. Collaborators only use Falcon Post.
+  const app = isAdminRoute || !hasWorkspaceOwnerAccess ? "post" : appForPath(location.pathname);
+  const other = otherApp(app);
+  const partnerMe = usePartnerMe({ period: "today" }, hasWorkspaceOwnerAccess && !isAdminRoute);
+  const isPartner = partnerMe.data?.role === "partner";
+  useEffect(() => {
+    document.documentElement.dataset.app = app;
+    rememberPath(app, location.pathname + location.search);
+  }, [app, location.pathname, location.search]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -232,7 +244,7 @@ export function AppShell() {
       navigate("/login", { replace: true });
     },
   });
-  const navigation = buildNavigation({ isAdminRoute, isSuperAdmin, workspaceRole });
+  const navigation = buildNavigation({ isAdminRoute, isSuperAdmin, workspaceRole, pathname: location.pathname, isPartner });
   // The phone bar holds a few shortcuts; everything else lives in "Mais", grouped.
   const sidebarDirect = navigation.groups.length === 0 ? navigation.direct : [];
   const mobileLinks = navigation.direct.slice(0, isAdminRoute ? 4 : 6);
@@ -364,7 +376,7 @@ export function AppShell() {
           className="flex items-center gap-3 lg:gap-0 lg:group-data-[open=true]:gap-3"
           to={
             hasWorkspaceOwnerAccess
-              ? "/dashboard"
+              ? APPS[app].home
               : workspaceRole === "COLLABORATOR"
                 ? "/feature/accounts"
                 : isSuperAdmin
@@ -373,9 +385,10 @@ export function AppShell() {
           }
           onClick={() => setMobileOpen(false)}
         >
-          <BrandLogo className="size-9 shrink-0" />
-          <span className="max-w-[140px] overflow-hidden whitespace-nowrap text-base font-semibold tracking-[-0.03em] text-fg opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[140px] lg:group-data-[open=true]:opacity-100">
-            FlashPost<span className="text-accent">.</span>
+          <BrandLogo app={app} className="size-9 shrink-0" />
+          <span className="max-w-[160px] overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[160px] lg:group-data-[open=true]:opacity-100">
+            <span className="block font-display text-base font-semibold leading-tight text-fg">{APPS[app].name}</span>
+            <span className="block text-[10px] text-muted">{APPS[app].tagline}</span>
           </span>
         </Link>
         <button
@@ -509,37 +522,25 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-transparent text-fg">
-      {!botsApp && <aside className="glass-bar group fixed inset-y-0 left-0 z-30 hidden w-[68px] !border-y-0 !border-l-0 transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] data-[open=true]:w-[252px] lg:block"
+      <aside className="glass-bar group fixed inset-y-0 left-0 z-30 hidden w-[68px] !border-y-0 !border-l-0 transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] data-[open=true]:w-[252px] lg:block"
         data-open={sidebarOpen}
         onMouseEnter={() => openSoon(true)}
         onMouseLeave={() => openSoon(false)}
       >
         {sidebar}
-      </aside>}
-      <div className={`transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${botsApp ? "" : pinned ? "lg:pl-[252px]" : "lg:pl-[68px]"}`}>
+      </aside>
+      <div className={`transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${pinned ? "lg:pl-[252px]" : "lg:pl-[68px]"}`}>
         <header className="app-shell-header glass-bar sticky top-0 z-20 flex items-center justify-between !border-x-0 !border-t-0 px-4 sm:px-6">
-          {botsApp ? (
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <Link
-                aria-label="Voltar ao FlashPost"
-                className="flex min-h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line-soft px-3 text-sm font-medium text-fg-2 transition hover:border-accent hover:text-fg"
-                to="/dashboard"
-              >
-                <ArrowLeft size={16} />
-                <span className="sm:hidden">Voltar</span>
-                <span className="max-sm:hidden">Voltar ao FlashPost</span>
-              </Link>
-            </div>
-          ) : (
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Link aria-label="FlashPost" className="shrink-0 lg:hidden" to="/dashboard">
-              <BrandLogo className="size-8" />
+            <Link aria-label={APPS[app].name} className="shrink-0 lg:hidden" to={APPS[app].home}>
+              <BrandLogo app={app} className="size-8" />
             </Link>
-            <span className="truncate text-base font-semibold tracking-[-0.03em] text-fg max-sm:hidden sm:text-lg">
-              {isAdminRoute ? "FlashPost · Administração" : "FlashPost"}
-            </span>
+            {isAdminRoute ? (
+              <span className="truncate font-display text-base font-semibold text-fg max-sm:hidden sm:text-lg">Falcon · Administração</span>
+            ) : (
+              <BrandLockup app={app} className="h-4 max-sm:hidden sm:h-[18px]" kind="wordmark" />
+            )}
           </div>
-          )}
           <div className="app-header-actions flex shrink-0 items-center gap-1 pl-2">
             <RevenueBadge enabled={hasWorkspaceOwnerAccess && !isAdminRoute} />
             <div className="relative max-sm:static">
@@ -631,9 +632,22 @@ export function AppShell() {
         </main>
       </div>
       <RefreshFab />
+      {hasWorkspaceOwnerAccess && !isAdminRoute && (
+        <Link
+          aria-label={`Ir para o ${APPS[other].name}`}
+          className="app-switcher [body[data-flow-editor]_&]:hidden"
+          data-target={other}
+          title={`Ir para o ${APPS[other].name} (mesma sessão)`}
+          to={lastPath(other)}
+        >
+          <BrandLogo app={other} className="size-8" />
+          <span className="app-switcher-label">{APPS[other].name}</span>
+          <ArrowLeftRight className="app-switcher-label text-muted" size={14} />
+        </Link>
+      )}
       <nav
         aria-label="Navegação principal"
-        className={`app-mobile-nav glass-bar fixed z-30 gap-0.5 lg:hidden ${botsApp ? "hidden" : "flex"}`}
+        className="app-mobile-nav glass-bar fixed z-30 flex gap-0.5 lg:hidden"
       >
         {mobileLinks.map(({ label, short, to, icon: Icon }) => (
           <NavLink
@@ -714,7 +728,7 @@ export function AppShell() {
                 </div>
               ))}
             {isAdminRoute && (
-              <Link className="btn-secondary mt-3 w-full" to="/dashboard">Voltar ao FlashPost</Link>
+              <Link className="btn-secondary mt-3 w-full" to="/dashboard">Voltar ao Falcon Post</Link>
             )}
             <div className="mt-1 space-y-1">
               {navigation.groups.map((group) => {
@@ -776,7 +790,7 @@ export function AppShell() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.14em] text-accent">
-                  App FlashPost
+                  App Falcon Post
                 </p>
                 <h2 id="install-guide-title" className="mt-2 text-lg font-semibold text-fg">
                   Adicione à tela de início
@@ -806,14 +820,14 @@ export function AppShell() {
             ) : (
               <p className="mt-4 text-sm leading-6 text-fg-2">
                 {installPrompt
-                  ? "Adicione o FlashPost à tela inicial para abrir em modo de aplicativo."
+                  ? "Adicione o Falcon Post à tela inicial para abrir em modo de aplicativo."
                   : "Abra o menu do navegador e escolha “Instalar app” ou “Adicionar à tela inicial”."}
               </p>
             )}
             <p className="mt-4 rounded-lg border border-line bg-surface p-3 text-xs leading-5 text-muted">
               {isIosDevice
-                ? "Depois de adicionar, abra o ícone FlashPost pela tela de início. O app abrirá sem a barra de endereço."
-                : "A instalação mantém sua sessão e abre o FlashPost numa janela própria."}
+                ? "Depois de adicionar, abra o ícone Falcon Post pela tela de início. O app abrirá sem a barra de endereço."
+                : "A instalação mantém sua sessão e abre o Falcon Post numa janela própria."}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button

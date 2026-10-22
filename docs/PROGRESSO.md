@@ -152,3 +152,14 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 ## 0.14.1 — Notificações
 - Causa de "não funcionam": em produção havia 0 dispositivos com push inscritos (nada a entregar). Novo aviso "Ativar notificações" (um toque) no app; no iPhone orienta instalar na Tela de Início.
 - Frases padrão curtas: parabéns + views do dia + posts postados hoje (novo placeholder `{posts}`).
+
+## 0.15.0 — Falcon Post e Falcon Bot (etapa 1: identidade, navegação e conta)
+- FlashPost passa a se chamar **Falcon Post** (azul → ciano) e FlashBot **Falcon Bot** (violeta → magenta). Emblemas, logos com nome (versões para fundo claro e escuro), favicon, ícones do app instalado e notificações vêm de `frontend/public/brand/falcon*`. As páginas legais (Meta) continuam com o nome antigo até o app da Meta ser renomeado.
+- As duas ferramentas dividem o mesmo login e o mesmo shell: o caminho decide a ferramenta (`lib/brand.ts`: `/bot/*`, `/carteira`, `/feature/affiliates` são Falcon Bot), com menu, paleta (`html[data-app]`) e logo próprios. Botão flutuante no canto inferior esquerdo alterna entre elas e volta para a última tela usada em cada uma.
+- Falcon Post: menu por finalidade — Visão geral, Contas, Pastas, Loops, Métricas e relatórios, Automações e filas, Colaboradores, Configurações, Suporte. Item "Automações" (página vazia) saiu do menu.
+- Falcon Bot deixou de ser uma página com abas: cada seção tem endereço (`/bot`, `/bot/funis`, `/bot/robos`, `/bot/remarketing`, `/bot/compartilhados-comigo`, `/bot/vendas`, `/bot/gateways`) e o menu lateral agrupa Funis, Robôs e leads, Vendas e financeiro, Gateways, Sócios e Conta. `/feature/bots?tab=x` redireciona.
+- Visual inspirado na organização do painel da Sharkbot: fundo quase preto, cards com borda fina, Space Grotesk em títulos/números e JetBrains Mono nos rótulos (fontes empacotadas pelo Vite; a CSP não permite fontes externas). Camada "Falcon" no fim de `index.css`.
+- Animação de entrada: o emblema da ferramenta gira e pousa com um anel e um brilho (splash do `index.html` e carregamentos).
+- Perfil → **Alterar senha** (`POST /api/profile/password`): exige a senha atual, confirmação, nova ≠ atual; tentativas erradas usam o mesmo limitador do login; a sessão do navegador é renovada. Outras sessões abertas não são encerradas (o cookie de sessão é assinado e não há versão de sessão no banco).
+- Painel do sócio no Falcon Post simplificado: contas conectadas e desconectadas (estado atual, não por período), botão "Conectar nova conta", faturamento com filtro de período e saldo da carteira, e ranking de posts. O menu do sócio no Falcon Post mostra só Painel, Contas, Loops (para os loops compartilhados), Ranking e Suporte.
+- Pendente: artes das premiações ainda têm a marca antiga (FLASHBOT) embutida na imagem.

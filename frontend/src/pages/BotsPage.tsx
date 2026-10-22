@@ -2,9 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/services/api";
 import type { DailyViewsGoal } from "@/components/DailyViewsGoalCard";
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import { useSearchParams } from "react-router-dom";
-import { Bot, CalendarDays, CreditCard, GitBranch, LayoutDashboard, Megaphone, Receipt, Share2 } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 
 import { FlashBotLogo } from "@/components/FlashBotLogo";
 import { PeriodFilter, todayInput, type MetricsPeriod } from "@/features/analytics/period";
@@ -17,76 +15,38 @@ import { GatewaysPanel } from "@/features/bots/GatewaysPanel";
 import { RemarketingPanel } from "@/features/bots/remarketing/RemarketingPanel";
 import { SharedFlowsPanel } from "@/features/partners/SharedTemplates";
 
-const tabs = [
-  { id: "home", label: "Painel", short: "Painel", Icon: LayoutDashboard },
-  { id: "bots", label: "Meus bots", short: "Robôs", Icon: Bot },
-  { id: "flows", label: "Meus funis", short: "Funis", Icon: GitBranch },
-  { id: "remarketing", label: "Remarketing", short: "Remarket.", Icon: Megaphone },
-  { id: "shared", label: "Funis compartilhados", short: "Compart.", Icon: Share2 },
-  { id: "sales", label: "Vendas", short: "Vendas", Icon: Receipt },
-  { id: "gateways", label: "Gateways", short: "Gateways", Icon: CreditCard },
-] as const;
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-type Tab = (typeof tabs)[number]["id"];
+/** Each Falcon Bot section has its own address (the sidebar links to them). */
+export const BOT_SECTIONS = {
+  home: { slug: "", title: "Painel", eyebrow: "Visão geral", hint: "Leads, starts, vendas e conversão dos seus robôs no período." },
+  bots: { slug: "robos", title: "Meus robôs", eyebrow: "Robôs e leads", hint: "Conecte robôs do Telegram e escolha o funil (ou a pasta de funis) de cada um." },
+  flows: { slug: "funis", title: "Meus funis", eyebrow: "Funis", hint: "Funis criados por você: conteúdo, planos, entregas e o gateway de cada um." },
+  remarketing: { slug: "remarketing", title: "Remarketing", eyebrow: "Robôs e leads", hint: "Disparos para os leads de um funil, pelos próprios robôs." },
+  shared: { slug: "compartilhados-comigo", title: "Compartilhados comigo", eyebrow: "Funis", hint: "Funis de outro proprietário que você pode usar nos seus robôs. Gateway e comissão são definidos por quem compartilhou." },
+  sales: { slug: "vendas", title: "Leads, starts e vendas", eyebrow: "Vendas e financeiro", hint: "Cada Pix gerado e pago, com taxas, comissões e o líquido de cada venda." },
+  gateways: { slug: "gateways", title: "Gateways de pagamento", eyebrow: "Configuração", hint: "Configure os gateways dos seus funis próprios. Funis compartilhados com você usam o gateway de quem compartilhou." },
+} as const;
 
-/** Floating tab bar: stuck under the header on desktop; on phones it lives at the bottom of the
- * screen like an app (rendered on <body> so no animated ancestor can unpin it). */
-function TabBar({ tab, onChoose }: { tab: Tab; onChoose: (tab: Tab) => void }) {
-  const buttons = (desktop: boolean) =>
-    tabs.map(({ id, label, short, Icon }) => (
-      <button
-        aria-selected={tab === id}
-        className={`flex min-w-0 items-center justify-center rounded-full font-medium transition-colors ${
-          desktop ? "min-h-10 gap-2 px-4 text-sm" : "min-h-12 flex-col gap-0.5 rounded-xl px-1 text-[10px]"
-        } ${tab === id ? "bg-brand text-white shadow" : "text-muted hover:text-fg"}`}
-        key={id}
-        onClick={() => onChoose(id)}
-        role="tab"
-        type="button"
-      >
-        <Icon className="shrink-0" size={desktop ? 16 : 18} />
-        <span className="max-w-full truncate">{desktop ? label : short}</span>
-      </button>
-    ));
-  return (
-    <>
-      <nav
-        aria-label="Seções do FlashBot"
-        className="sticky top-[calc(72px+env(safe-area-inset-top)+10px)] z-20 mx-auto hidden w-fit lg:block"
-      >
-        <div className="flex gap-1 rounded-full border border-line bg-[var(--nm-bg)]/95 p-1 shadow-2xl backdrop-blur" role="tablist">
-          {buttons(true)}
-        </div>
-      </nav>
-      {createPortal(
-        <nav
-          aria-label="Seções do FlashBot no celular"
-          className="fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-30 lg:hidden"
-        >
-          <div className="grid grid-cols-7 gap-0.5 rounded-2xl border border-line bg-[var(--nm-bg)]/95 p-1 shadow-2xl backdrop-blur" role="tablist">
-            {buttons(false)}
-          </div>
-        </nav>,
-        document.body,
-      )}
-    </>
-  );
+type Tab = keyof typeof BOT_SECTIONS;
+const tabBySlug = Object.fromEntries(Object.entries(BOT_SECTIONS).map(([id, { slug }]) => [slug, id as Tab])) as Record<string, Tab>;
+export const botPath = (tab: Tab) => (BOT_SECTIONS[tab].slug ? `/bot/${BOT_SECTIONS[tab].slug}` : "/bot");
+
+/** Old /feature/bots?tab=x links (notifications, bookmarks) open the new address. */
+export function LegacyBotsRedirect() {
+  const { search } = useLocation();
+  const asked = new URLSearchParams(search).get("tab");
+  return <Navigate replace to={asked && asked in BOT_SECTIONS ? botPath(asked as Tab) : "/bot"} />;
 }
 
 export function BotsPage() {
-  // ?tab=gateways (e.g. from the admin menu) opens that tab directly.
-  const [params, setParams] = useSearchParams();
-  const asked = params.get("tab");
-  const [tab, setTab] = useState<Tab>(tabs.some(({ id }) => id === asked) ? (asked as Tab) : "home");
-  useEffect(() => {
-    if (asked && tabs.some(({ id }) => id === asked)) {
-      setTab(asked as Tab);
-      setParams({}, { replace: true });
-    }
-  }, [asked, setParams]);
+  const { section = "" } = useParams();
+  const navigate = useNavigate();
+  const tab: Tab | undefined = tabBySlug[section];
   // The flow editor has its own header and section navigation; give it the whole screen.
   const [editing, setEditing] = useState(false);
-  const [remarketingFlow, setRemarketingFlow] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const [remarketingFlow, setRemarketingFlow] = useState<string | null>(params.get("funil"));
   const [period, setPeriod] = useState<MetricsPeriod>({ period: "today", start: todayInput(), end: todayInput() });
   const goal = useQuery({
     queryKey: ["notifications", "goal", "me"],
@@ -98,34 +58,23 @@ export function BotsPage() {
       ...current, start: todayInput(goal.data.timezone), end: todayInput(goal.data.timezone),
     });
   }, [goal.data?.timezone]);
-  // On phones the tab bar sits at the bottom like an app; the floating refresh button steps aside.
-  useEffect(() => {
-    if (editing) return;
-    document.body.dataset.bottomTabs = "1";
-    return () => {
-      delete document.body.dataset.bottomTabs;
-    };
-  }, [editing]);
-  const choose = (next: Tab) => {
-    setTab(next);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  if (!tab) return <Navigate replace to="/bot" />;
+  const info = BOT_SECTIONS[tab];
   return (
-    <div className={`mx-auto w-full max-w-[1500px] space-y-4 ${editing ? "" : "pb-24 lg:pb-0"}`}>
+    <div className="mx-auto w-full max-w-[1500px] space-y-4">
       {!editing && (
         <>
-          <header>
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Vendas</p>
-            <h1 className="mt-2 flex items-center gap-2.5 text-2xl font-semibold text-fg sm:text-3xl">
-              <FlashBotLogo className="size-8 shrink-0 sm:size-9" />
-              FlashBot
-            </h1>
-            <p className="mt-2 text-sm text-muted">
-              Seus robôs de venda no Telegram: conecte, monte o funil de cada um e acompanhe as vendas no Pix em tempo real.
-            </p>
+          <header className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Falcon Bot · {info.eyebrow}</p>
+              <h1 className="mt-2 flex items-center gap-2.5 text-2xl font-semibold text-fg sm:text-3xl">
+                {tab === "home" && <FlashBotLogo className="size-8 shrink-0 sm:size-9" />}
+                {info.title}
+              </h1>
+              <p className="mt-2 max-w-3xl text-sm text-muted">{info.hint}</p>
+            </div>
           </header>
-          <TabBar onChoose={choose} tab={tab} />
-          {/* Each tab is its own screen: the dashboard lives in "Painel", the robots in "Meus bots". */}
+          {/* Each section is its own screen: the dashboard lives in "Painel", the robots in "Meus robôs". */}
           {tab === "home" && <ConversionOverview onPeriod={setPeriod} period={period} />}
           {(tab === "flows" || tab === "bots") && (
             <div className="dashboard-card flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3">
@@ -142,8 +91,8 @@ export function BotsPage() {
         <FlowsPanel
           onEditingChange={setEditing}
           onRemarketing={(flowId) => {
-            setRemarketingFlow(flowId);
-            choose("remarketing");
+            navigate(`${botPath("remarketing")}?funil=${encodeURIComponent(flowId)}`);
+            window.scrollTo({ top: 0, behavior: "smooth" });
           }}
           period={period}
         />

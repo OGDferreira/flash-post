@@ -33,6 +33,7 @@ from app.schemas.auth import (
     LoginRequest,
     MessageResponse,
     NicknameAvailabilityResponse,
+    PasswordChangeRequest,
     ProfileUpdateRequest,
     RegisterRequest,
     UserResponse,
@@ -323,6 +324,41 @@ async def logout(request: Request) -> MessageResponse:
     return MessageResponse(message="Signed out.", csrf_token=csrf_token)
 
 
+@router.post("/profile/password", response_model=MessageResponse, dependencies=[Depends(require_csrf)])
+async def change_password(
+    payload: PasswordChangeRequest, request: Request, user: AuthenticatedUser, db: DbSession
+) -> MessageResponse:
+    """The signed-in user changes their own password. The current one is required and wrong
+    attempts share the sign-in limiter, so a stolen open session cannot brute-force it."""
+    settings = get_settings()
+    limiter: LoginRateLimiter = request.app.state.login_rate_limiter
+    rate_key = limiter.key(_request_host(request), f"password-change:{user.id}")
+    if await limiter.is_limited(rate_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas. Aguarde alguns minutos e tente de novo.",
+            headers={"Retry-After": str(settings.login_window_seconds)},
+        )
+    if not verify_password(payload.current_password, user.password_hash):
+        await limiter.record_failure(rate_key)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A senha atual está incorreta.")
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(status_code=422, detail="A confirmação não confere com a nova senha.")
+    if verify_password(payload.new_password, user.password_hash):
+        raise HTTPException(status_code=422, detail="A nova senha precisa ser diferente da atual.")
+    user.password_hash = hash_password(payload.new_password)
+    await db.commit()
+    await limiter.clear(rate_key)
+    logger.info("Password changed for user %s", user.id)
+    # New session cookie for this browser (same user and workspace).
+    workspace_id = request.session.get("workspace_id")
+    request.session.clear()
+    request.session["user_id"] = str(user.id)
+    if workspace_id:
+        request.session["workspace_id"] = workspace_id
+    return MessageResponse(message="Senha alterada.", csrf_token=csrf_token_for(request))
+
+
 @router.get("/auth/me", response_model=UserResponse)
 async def auth_me(user: AuthenticatedUser, db: DbSession) -> UserResponse:
     membership = await _primary_membership(user, db)
@@ -339,7 +375,7 @@ async def get_profile(user: AuthenticatedUser, db: DbSession) -> UserResponse:
 async def update_preferences(payload: PreferencesUpdateRequest, user: AuthenticatedUser, db: DbSession) -> UserResponse:
     membership = await _primary_membership(user, db)
     if payload.home_panel == "flashbot" and (membership is None or membership.role != "OWNER"):
-        raise HTTPException(status_code=403, detail="O FlashBot está disponível para o dono da operação.")
+        raise HTTPException(status_code=403, detail="O Falcon Bot está disponível para o dono da operação.")
     user.home_panel = payload.home_panel
     await db.commit()
     await db.refresh(user)

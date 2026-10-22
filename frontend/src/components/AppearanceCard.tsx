@@ -1,20 +1,16 @@
 import { useState, useSyncExternalStore } from "react";
 import { Check, Palette, RotateCcw } from "lucide-react";
 
-import { FlashBotLogo } from "@/components/FlashBotLogo";
 import {
   DEFAULT_ACCENT,
   accentPresets,
   getAccent,
-  getFlashBotLogo,
   getGalaxy,
   getMotionOff,
   setAccent,
-  setFlashBotLogo,
   setGalaxy,
   setMotionOff,
   subscribeAppearance,
-  type FlashBotLogoStyle,
 } from "@/lib/appearance";
 import { applyTheme, getTheme } from "@/lib/theme";
 
@@ -58,7 +54,6 @@ export function AppearanceCard() {
   const [accent, setAccentState] = useState(getAccent);
   const [motionOff, setMotionState] = useState(getMotionOff);
   const galaxy = useSyncExternalStore(subscribeAppearance, getGalaxy);
-  const logo = useSyncExternalStore(subscribeAppearance, getFlashBotLogo);
 
   const chooseGalaxy = (on: boolean) => {
     // The galaxy theme is a dark theme: turning it on leaves the light mode.
@@ -66,7 +61,6 @@ export function AppearanceCard() {
     setGalaxy(on, getTheme());
     if (!on) setAccent(getAccent(), getTheme());
   };
-  const chooseLogo = (style: FlashBotLogoStyle) => setFlashBotLogo(style);
 
   const choose = (hex: string) => {
     setAccent(hex, getTheme());
@@ -87,31 +81,6 @@ export function AppearanceCard() {
           <Choice active={!galaxy} hint="Escuro ou claro, com a cor que você escolher" onClick={() => chooseGalaxy(false)} preview={standardPreview} title="Padrão" />
           <Choice active={galaxy} hint="Escuro com nebulosa e neon azul, violeta e rosa" onClick={() => chooseGalaxy(true)} preview={galaxyPreview} title="Galáxia" />
         </div>
-      </div>
-
-      <div className="mt-5 border-t border-line-soft pt-4">
-        <p className="text-sm font-medium text-fg-2">Logo do FlashBot</p>
-        <div className="mt-2 grid grid-cols-2 gap-3 sm:max-w-md">
-          {(["clean", "galaxy"] as const).map((style) => (
-            <Choice
-              active={logo === style}
-              hint={style === "clean" ? "Mais simples e limpa" : "Com cores, brilho e textura"}
-              key={style}
-              onClick={() => chooseLogo(style)}
-              preview={
-                style === "clean" ? (
-                  <svg className="size-14" viewBox="0 0 64 64"><rect fill="#3f8ff2" height="64" rx="16" width="64" /><path d="M24 9H51L48 17H32.4L30.8 23H45.5L42.6 31H31.5L16 57L21.5 37H15.5Z" fill="#fff" /></svg>
-                ) : (
-                  <img alt="" className="size-14 rounded-[22%]" src="/flashbot-logo-galaxy.png" />
-                )
-              }
-              title={style === "clean" ? "Padrão" : "Galáxia"}
-            />
-          ))}
-        </div>
-        <p className="mt-2 flex items-center gap-2 text-[11px] text-muted">
-          Agora no FlashBot: <FlashBotLogo className="size-5" />
-        </p>
       </div>
 
       <div className="mt-5 border-t border-line-soft pt-4">

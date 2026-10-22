@@ -11,6 +11,8 @@
     "test:filters": "node --experimental-strip-types --test tests/accountFilter.test.ts"
   },
   "dependencies": {
+    "@fontsource-variable/space-grotesk": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@hookform/resolvers": "^5.9.1",
     "@tanstack/react-query": "^5.0.0",
     "class-variance-authority": "^0.7.1",

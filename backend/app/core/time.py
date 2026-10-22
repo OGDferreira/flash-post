@@ -1,6 +1,6 @@
 """Application calendar helpers.
 
-Every "day" in FlashPost (daily limits, daily metrics, goals) is a calendar day
+Every "day" in Falcon Post (daily limits, daily metrics, goals) is a calendar day
 in the application time zone. It defaults to America/Sao_Paulo and can be set
 with the APP_TIME_ZONE environment variable (an IANA name).
 """

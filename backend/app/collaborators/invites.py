@@ -195,7 +195,7 @@ async def invite_info(token: str, db: DbSession) -> InvitePublicInfo:
     invite = await _usable_invite(db, token)
     workspace = await db.get(Workspace, invite.workspace_id)
     return InvitePublicInfo(
-        workspace_name=workspace.name if workspace else "FlashPost",
+        workspace_name=workspace.name if workspace else "Falcon Post",
         expires_at=invite.expires_at,
     )
 

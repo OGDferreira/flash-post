@@ -1,4 +1,4 @@
-const CACHE_NAME = "flashpost-shell-v33";
+const CACHE_NAME = "flashpost-shell-v34";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -7,6 +7,8 @@ const SHELL_ASSETS = [
   "/brand/icon-512.png",
   "/brand/badge-96.png",
   "/favicon.ico",
+  "/brand/falconpost-emblem-256.webp",
+  "/brand/falconbot-emblem-256.webp",
   "/sounds/venda.mp3",
 ];
 
@@ -78,10 +80,10 @@ self.addEventListener("push", (event) => {
   } catch {
     data = { body: event.data ? event.data.text() : "" };
   }
-  const title = typeof data.title === "string" && data.title ? data.title : "FlashPost";
+  const title = typeof data.title === "string" && data.title ? data.title : "Falcon Post";
   const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/dashboard";
-  // FlashPost and FlashBot share one logo: every notice carries it.
-  const icon = "/brand/icon-192.png";
+  // Sales and commissions come from Falcon Bot (purple falcon); everything else is Falcon Post.
+  const icon = typeof data.brand === "string" && data.brand.startsWith("flashbot") ? "/brand/falconbot-icon-192.png" : "/brand/icon-192.png";
   // Tell any open FlashPost window right away, so its numbers refresh without waiting.
   const tellWindows = self.clients
     .matchAll({ type: "window", includeUncontrolled: true })
@@ -90,7 +92,7 @@ self.addEventListener("push", (event) => {
     Promise.all([tellWindows.catch(() => undefined), self.registration.showNotification(title, {
       body: typeof data.body === "string" ? data.body : "",
       icon,
-      // Android paints the badge (status bar) as a one-color silhouette: the bare F mark.
+      // Android paints the badge (status bar) as a one-color silhouette: the falcon silhouette.
       badge: "/brand/badge-96.png",
       tag: typeof data.tag === "string" ? data.tag : undefined,
       renotify: false,

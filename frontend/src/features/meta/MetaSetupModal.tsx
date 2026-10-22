@@ -13,7 +13,7 @@ const steps: { title: string; body: string }[] = [
   },
   {
     title: "Cadastre a URL de callback",
-    body: "Em Business login settings → OAuth redirect URIs, cole exatamente a URL de callback mostrada no FlashPost e salve. Ela precisa ser idêntica, inclusive o https. Confira se o painel não acrescentou uma barra no final.",
+    body: "Em Business login settings → OAuth redirect URIs, cole exatamente a URL de callback mostrada no Falcon Post e salve. Ela precisa ser idêntica, inclusive o https. Confira se o painel não acrescentou uma barra no final.",
   },
   {
     title: "Copie o App ID e o App Secret do Instagram",
@@ -28,21 +28,21 @@ const steps: { title: string; body: string }[] = [
     body: "O perfil do Instagram precisa ser Profissional (Empresa ou Criador). Perfil pessoal não é aceito pela API.",
   },
   {
-    title: "Cole os dados no FlashPost e conecte",
+    title: "Cole os dados no Falcon Post e conecte",
     body: "Salve o aplicativo aqui, volte em Contas e clique em Conectar conta. Autorize todas as permissões pedidas.",
   },
 ];
 
 const permissions: [string, string][] = [
   ["instagram_business_basic", "Ler perfil e dados básicos da conta; renova o token."],
-  ["instagram_business_content_publish", "Publicar Reels e fotos pelo FlashPost."],
+  ["instagram_business_content_publish", "Publicar Reels e fotos pelo Falcon Post."],
   ["instagram_business_manage_insights", "Ler métricas (visualizações, alcance, interações)."],
 ];
 
 export function MetaSetupModal({ open, onClose, callbackUrl }: { open: boolean; onClose: () => void; callbackUrl?: string }) {
   return (
     <Modal
-      description="Passo a passo curto para conectar contas do Instagram ao FlashPost."
+      description="Passo a passo curto para conectar contas do Instagram ao Falcon Post."
       footer={
         <button className="btn-primary" onClick={onClose} type="button">
           Entendi

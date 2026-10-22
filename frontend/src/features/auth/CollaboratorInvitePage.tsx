@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { CircleCheck, LoaderCircle } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
-import { BrandLogo } from "@/components/BrandLogo";
+import { BrandLockup } from "@/components/BrandLogo";
 import { ApiError, apiRequest } from "@/services/api";
 import { isValidPublicNickname } from "@/features/auth/nickname";
 
@@ -44,8 +44,7 @@ export function CollaboratorInvitePage() {
     <main className="grid min-h-svh place-items-center px-4 py-8">
       <div className="glass-panel w-full max-w-md p-5 sm:p-7">
         <div className="mb-5 flex items-center gap-3">
-          <BrandLogo className="size-10" />
-          <span className="text-base font-semibold tracking-[-0.03em] text-fg">FlashPost</span>
+          <BrandLockup app="post" className="h-8" />
         </div>
 
         {info.isLoading ? (

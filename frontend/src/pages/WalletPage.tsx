@@ -226,15 +226,15 @@ export function WalletPage() {
       ];
   // Only split by bot when SharkBot also sells; otherwise the month total already says it all.
   if ((data.month_shark_revenue ?? 0) > 0) {
-    cards.splice(1, 0, ["Vendas SharkBot (mês)", brl(data.month_shark_revenue ?? 0)], ["Vendas FlashBot (mês)", brl(data.month_flash_revenue ?? 0)]);
+    cards.splice(1, 0, ["Vendas SharkBot (mês)", brl(data.month_shark_revenue ?? 0)], ["Vendas Falcon Bot (mês)", brl(data.month_flash_revenue ?? 0)]);
   }
   if (!partner && (data.commission_paid ?? 0) > 0) cards.push([`Comissão paga a ${chief}`, brl(data.commission_paid ?? 0), "text-danger", "Já descontada do seu saldo"]);
   if ((data.snakepay_received ?? 0) > 0) {
-    // Commissions and FlashBot fees count here, in the SnakePay total, never in the FlashPost revenue.
+    // Commissions and Falcon Bot fees count here, in the SnakePay total, never in the Falcon Post revenue.
     const parts = [
       (data.snakepay_sales ?? 0) > 0 && `vendas ${brl(data.snakepay_sales ?? 0)}`,
       (data.snakepay_commissions ?? 0) > 0 && `comissões ${brl(data.snakepay_commissions ?? 0)}`,
-      (data.snakepay_fees ?? 0) > 0 && `taxas FlashBot ${brl(data.snakepay_fees ?? 0)}`,
+      (data.snakepay_fees ?? 0) > 0 && `taxas Falcon Bot ${brl(data.snakepay_fees ?? 0)}`,
     ].filter(Boolean);
     cards.push([
       "Faturamento SnakePay",
@@ -274,7 +274,7 @@ export function WalletPage() {
       </dl>
       {!partner && <p className="text-[11px] text-muted">
         {data.balance_source === "smokepay" ? "Saldo lido agora da SmokePay" : "Saldo estimado (SmokePay indisponível)"}
-        {data.shop_ref ? ` · subconta ${data.shop_ref}` : " · carteira principal"}. Ganho total no FlashBot (já sem taxas e comissões): {brl(data.earned)}
+        {data.shop_ref ? ` · subconta ${data.shop_ref}` : " · carteira principal"}. Ganho total no Falcon Bot (já sem taxas e comissões): {brl(data.earned)}
         {data.commissions_received > 0 && ` · inclui ${brl(data.commissions_received)} de comissões dos sócios`}.
       </p>}
 

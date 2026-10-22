@@ -34,7 +34,7 @@ async def notify_new_signup(db: AsyncSession, user: User, origin: str) -> None:
         tag = f"signup-{user.id.hex[:24]}"
         payload = {
             "title": "Novo cadastro aguardando aprovação",
-            "body": f"{user.full_name} ({origin}) quer acessar o FlashPost.",
+            "body": f"{user.full_name} ({origin}) quer acessar o Falcon Post.",
             "url": "/admin/users",
             "tag": tag,
         }

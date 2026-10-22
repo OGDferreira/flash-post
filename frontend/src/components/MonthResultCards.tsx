@@ -127,7 +127,7 @@ export function MonthResultCards({
     <>
       <MetricCard
         color="text-accent"
-        detail={data ? `${data.today.sale_count} venda(s) hoje · Sharkbot e FlashBot` : "Somando Sharkbot e FlashBot"}
+        detail={data ? `${data.today.sale_count} venda(s) hoje · Sharkbot e Falcon Bot` : "Somando Sharkbot e Falcon Bot"}
         icon={<CircleDollarSign size={16} />}
         loading={loading}
         title="Faturado hoje"

@@ -4,7 +4,7 @@ import { HandCoins } from "lucide-react";
 import { MetricCard, money } from "@/components/MonthResultCards";
 import { apiRequest, type AdminSummary } from "@/services/api";
 
-/** Super Admin: what the FlashBot fee per sale brought in today, with the Pix behind it. */
+/** Super Admin: what the Falcon Bot fee per sale brought in today, with the Pix behind it. */
 export function PlatformFeeCard() {
   const summary = useQuery({
     queryKey: ["admin", "summary"],
@@ -20,7 +20,7 @@ export function PlatformFeeCard() {
       detail={data ? `${pix(data.fee_pix_generated_today)} gerados e ${data.fee_pix_paid_today} pagos` : "Pix gerados e pagos hoje"}
       icon={<HandCoins size={16} />}
       loading={summary.isLoading}
-      title="Arrecadação FlashBot hoje"
+      title="Arrecadação Falcon Bot hoje"
       value={money(data?.transaction_fees_today)}
       valueColor="text-success"
     />

@@ -1,47 +1,51 @@
-import { useId } from "react";
+import { useSyncExternalStore } from "react";
 
-import { BRAND_GRADIENT, GLYPH_DROP_BIG, GLYPH_DROP_SMALL, GLYPH_F, GLYPH_TRANSFORM } from "@/components/brandMark";
+import { APPS, type AppId } from "@/lib/brand";
+import { getTheme } from "@/lib/theme";
 
-/** FlashPost and FlashBot share this logo. ``animated``: the F flies in, the speed drops trail
- * behind it, a shine crosses the tile, then a slow pulse (see .logo-anim in index.css). */
-export function BrandLogo({ className = "size-9", animated = false }: { className?: string; animated?: boolean }) {
-  const id = `fp-logo-${useId().replace(/:/g, "")}`;
+function subscribeTheme(listener: () => void) {
+  window.addEventListener("flashpost:theme", listener);
+  return () => window.removeEventListener("flashpost:theme", listener);
+}
+
+/** The falcon emblem of a tool (Falcon Post by default). ``animated``: the entry animation
+ * (the ring turns in, the falcon lands, a light sweep crosses it), see .falcon-anim in index.css. */
+export function BrandLogo({
+  className = "size-9",
+  animated = false,
+  app = "post",
+}: {
+  className?: string;
+  animated?: boolean;
+  app?: AppId;
+}) {
   return (
-    <svg aria-hidden="true" className={`${className}${animated ? " logo-anim logo-loop" : ""}`} viewBox="0 0 64 64">
-      <defs>
-        <linearGradient id={`${id}-g`} x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0" stopColor={BRAND_GRADIENT[0]} />
-          <stop offset=".5" stopColor={BRAND_GRADIENT[1]} />
-          <stop offset="1" stopColor={BRAND_GRADIENT[2]} />
-        </linearGradient>
-        {animated && (
-          <>
-            <linearGradient id={`${id}-s`} x1="0" x2="1" y1="0" y2="0">
-              <stop offset="0" stopColor="#fff" stopOpacity="0" />
-              <stop offset=".5" stopColor="#fff" stopOpacity=".55" />
-              <stop offset="1" stopColor="#fff" stopOpacity="0" />
-            </linearGradient>
-            <clipPath id={`${id}-c`}>
-              <rect height="64" rx="15" width="64" />
-            </clipPath>
-          </>
-        )}
-      </defs>
-      <rect className="l-bg" fill={`url(#${id}-g)`} height="64" rx="15" width="64" />
-      <g className="l-d2">
-        <path d={GLYPH_DROP_SMALL} fill="#fff" transform={GLYPH_TRANSFORM} />
-      </g>
-      <g className="l-d1">
-        <path d={GLYPH_DROP_BIG} fill="#fff" transform={GLYPH_TRANSFORM} />
-      </g>
-      <g className="l-f">
-        <path d={GLYPH_F} fill="#fff" transform={GLYPH_TRANSFORM} />
-      </g>
-      {animated && (
-        <g clipPath={`url(#${id}-c)`}>
-          <rect className="l-shine" fill={`url(#${id}-s)`} height="96" width="18" x="-30" y="-16" />
-        </g>
-      )}
-    </svg>
+    <span aria-hidden="true" className={`falcon-emblem relative inline-block shrink-0 ${className}${animated ? " falcon-anim" : ""}`}>
+      <img alt="" className="size-full object-contain" draggable={false} src={APPS[app].emblem} />
+      {animated && <span className="falcon-shine" />}
+    </span>
+  );
+}
+
+/** "FALCON POST" / "FALCON BOT" wordmark (with or without the emblem), light or dark following the theme. */
+export function BrandLockup({
+  app = "post",
+  className = "h-8",
+  kind = "lockup",
+}: {
+  app?: AppId;
+  className?: string;
+  /** lockup = emblem + name; wordmark = name only (when the emblem is already beside it). */
+  kind?: "lockup" | "wordmark";
+}) {
+  const theme = useSyncExternalStore(subscribeTheme, getTheme);
+  const name = app === "bot" ? "falconbot" : "falconpost";
+  return (
+    <img
+      alt={APPS[app].name}
+      className={`${className} w-auto object-contain`}
+      draggable={false}
+      src={`/brand/${name}-${kind}-${theme === "light" ? "light" : "dark"}.webp`}
+    />
   );
 }

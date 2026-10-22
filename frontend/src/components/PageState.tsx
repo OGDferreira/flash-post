@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
+import { appForPath } from "@/lib/brand";
 import { CircleAlert, Inbox, RotateCw } from "lucide-react";
 
 export function LoadingState({ label = "Carregando", fullscreen = false }: { label?: string; fullscreen?: boolean }) {
@@ -14,7 +15,7 @@ export function LoadingState({ label = "Carregando", fullscreen = false }: { lab
       }
       role="status"
     >
-      <BrandLogo animated className={fullscreen ? "size-[72px]" : "size-12"} />
+      <BrandLogo animated app={appForPath(window.location.pathname)} className={fullscreen ? "size-[84px]" : "size-12"} />
       {label}
     </div>
   );
