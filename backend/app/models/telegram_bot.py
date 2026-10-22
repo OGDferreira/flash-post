@@ -13,6 +13,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -224,6 +225,10 @@ class TgOrder(Base):
     partner_net: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     # Fixed when the charge is created, never changed: shared_funnel | own_funnel | main
     origin: Mapped[str | None] = mapped_column(String(16))
+    # The share rules (tg_flow_shares) the commission came from, for the audit of each sale.
+    share_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
+    # Gateways tried before the one that charged (failover), e.g. ["snakepay"].
+    gateway_attempts: Mapped[list | None] = mapped_column(JSON)
     platform_fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))  # Falcon Bot fee charged on this sale
     pix_copy_paste: Mapped[str | None] = mapped_column(Text)
@@ -347,4 +352,100 @@ class TgCampaign(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TgFlowShare(Base):
+    """The rules of one funnel shared with one partner (the seller), set by the funnel's owner.
+
+    Only the owner creates or changes them; the seller reads them. ``owner_percent`` is the
+    owner's commission and ``seller_percent`` what the seller keeps, both over the sale's
+    net after the gateway fee, summing to 100. The SnakePay ShopIDs are tied to this share
+    only: the seller never needs credentials of their own to sell this funnel.
+    """
+
+    __tablename__ = "tg_flow_shares"
+    __table_args__ = (
+        UniqueConstraint("flow_id", "partner_user_id", name="uq_tg_flow_shares_flow_partner"),
+        Index("ix_tg_flow_shares_owner", "owner_user_id", "status"),
+        Index("ix_tg_flow_shares_partner", "partner_user_id", "status"),
+        CheckConstraint("owner_percent >= 0 AND owner_percent < 100", name="ck_tg_flow_shares_owner_percent"),
+        CheckConstraint("seller_percent > 0 AND seller_percent <= 100", name="ck_tg_flow_shares_seller_percent"),
+        CheckConstraint("owner_percent + seller_percent = 100", name="ck_tg_flow_shares_total"),
+        CheckConstraint("status IN ('ACTIVE', 'REVOKED')", name="ck_tg_flow_shares_status"),
+        CheckConstraint("gateway IN ('smokepay', 'snakepay')", name="ck_tg_flow_shares_gateway"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    flow_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="CASCADE"), nullable=False
+    )
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    partner_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    gateway: Mapped[str] = mapped_column(String(16), nullable=False)
+    owner_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    seller_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    seller_shop_id: Mapped[str | None] = mapped_column(String(64))
+    owner_shop_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE", server_default="ACTIVE")
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TgGatewaySetting(Base):
+    """One gateway of an operation: on/off, its place in the order (1 = principal, then the
+    backups) and, optionally, the operation's own funnels it is limited to (None = all)."""
+
+    __tablename__ = "tg_gateway_settings"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "gateway", name="uq_tg_gateway_settings_workspace_gateway"),
+        CheckConstraint("gateway IN ('smokepay', 'snakepay')", name="ck_tg_gateway_settings_gateway"),
+        CheckConstraint("priority >= 1", name="ck_tg_gateway_settings_priority"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = _workspace_fk()
+    gateway: Mapped[str] = mapped_column(String(16), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    flow_ids: Mapped[list | None] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AuditEvent(Base):
+    """Who changed which financial rule and when. ``details`` never holds a secret: ShopIDs
+    are masked and credentials are only recorded as "changed"."""
+
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        Index("ix_audit_events_workspace_created", "workspace_id", "created_at"),
+        Index("ix_audit_events_entity", "entity", "entity_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="SET NULL")
+    )
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    action: Mapped[str] = mapped_column(String(48), nullable=False)
+    entity: Mapped[str] = mapped_column(String(32), nullable=False)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
+    details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

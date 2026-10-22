@@ -30,6 +30,7 @@ import {
   Bell,
   BellRing,
   type LucideIcon,
+  Share2,
 } from "lucide-react";
 
 import { appForPath, type AppId } from "@/lib/brand";
@@ -193,6 +194,7 @@ const botGroups: NavGroup[] = [
     items: [
       { label: "Meus funis", to: "/bot/funis", icon: GitBranch },
       { label: "Compartilhados comigo", to: "/bot/compartilhados-comigo", icon: Inbox },
+      { label: "Que compartilhei", to: "/bot/compartilhei", icon: Share2 },
     ],
   },
   {
@@ -237,7 +239,7 @@ const botGroups: NavGroup[] = [
 ];
 
 // A partner does not invite partners of their own.
-const partnerBotHidden = new Set(["/feature/affiliates"]);
+const partnerBotHidden = new Set(["/feature/affiliates", "/bot/compartilhei"]);
 
 /** direct = phone shortcuts; groups = titled sidebar and mobile sections. */
 export type NavModel = { app: AppId; direct: NavItem[]; flat: NavItem[]; groups: NavGroup[]; admin: NavItem[] };

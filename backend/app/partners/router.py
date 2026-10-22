@@ -28,6 +28,7 @@ from app.models import (
     InstagramPublicationJob,
     TgBot,
     TgFlow,
+    TgFlowShare,
     TgLead,
     TgOrder,
     User,
@@ -60,6 +61,10 @@ class ShareFlowRequest(ShareRequest):
 
 def _f(value: Decimal | None) -> float:
     return float(value or 0)
+
+
+def _pct(value: Decimal) -> str:
+    return f"{value:.2f}".rstrip("0").rstrip(".").replace(".", ",") + "%"
 
 
 async def _sales(db, workspace_id: uuid.UUID, start, end, *, chief_user_id: uuid.UUID | None = None) -> dict:
@@ -178,8 +183,18 @@ async def shared_templates(access: OwnerAccess, user: AuthenticatedUser, db: DbS
         for flow in await db.scalars(
             select(TgFlow).where(TgFlow.workspace_id == chief_workspace.id, TgFlow.shared.is_(True)).order_by(TgFlow.name)
         )
-        if service.shares_with(flow, user.id)
+        if await service.flow_offered_to(db, flow, user.id)
     ]
+    rules = {
+        rule.flow_id: rule
+        for rule in await db.scalars(
+            select(TgFlowShare).where(
+                TgFlowShare.partner_user_id == user.id, TgFlowShare.flow_id.in_([flow.id for flow in flows] or [uuid.uuid4()])
+            )
+        )
+    }
+    default_percent = min(link.participation_percent, service.MAX_COMMISSION)
+    chief_ws_gateway = chief_workspace.payment_gateway or "smokepay"
     # The partner's area of shared loops: linked copies are created/refreshed here too
     # (the periodic job does the same for partners who never open the app).
     linked = await service.sync_partner_loops(db, link) if access.workspace.owner_id == user.id else []
@@ -224,10 +239,26 @@ async def shared_templates(access: OwnerAccess, user: AuthenticatedUser, db: DbS
                 "loop_id": str(flow.shared_loop_id) if flow.shared_loop_id in loop_names else None,
                 "loop_name": loop_names.get(flow.shared_loop_id),
                 "loop_in_use": flow.shared_loop_id in used_loops or flow.shared_loop_id in linked_ids,
+                # The owner's rules, read-only for the seller (no ShopID of the owner, ever).
+                "rules": _seller_rules(rules.get(flow.id), flow, default_percent, chief_ws_gateway),
             }
             # the paired loop only counts when it is shared with this partner too
             for flow in flows
         ],
+    }
+
+
+def _seller_rules(rule: TgFlowShare | None, flow: TgFlow, default_percent: Decimal, default_gateway: str) -> dict:
+    if rule is not None:
+        return {
+            "set_by_owner": True, "gateway": rule.gateway, "seller_percent": _f(rule.seller_percent),
+            "owner_percent": _f(rule.owner_percent), "seller_shop_id": service.mask_shop_id(rule.seller_shop_id),
+            "basis": SHARE_BASIS,
+        }
+    return {
+        "set_by_owner": False, "gateway": flow.payment_gateway or default_gateway,
+        "seller_percent": _f(HUNDRED - default_percent), "owner_percent": _f(default_percent),
+        "seller_shop_id": None, "basis": SHARE_BASIS,
     }
 
 
@@ -252,7 +283,7 @@ async def use_shared_flow(flow_id: uuid.UUID, access: OwnerAccess, user: Authent
     source = await db.scalar(
         select(TgFlow).where(TgFlow.id == flow_id, TgFlow.workspace_id == chief_workspace.id, TgFlow.shared.is_(True))
     )
-    if source is None or not service.shares_with(source, user.id):
+    if source is None or not await service.flow_offered_to(db, source, user.id):
         raise HTTPException(status_code=404, detail="Funil compartilhado não encontrado.")
     # The funnel itself is never copied: the partner's bot runs it as is. The paired
     # loop (when there is one) arrives as a linked copy with zero accounts.
@@ -392,6 +423,258 @@ async def share_with_partner(
     _with_partner(item, str(link.affiliate_user_id), await service.partner_ids(db, user.id), payload.shared)
     await db.commit()
     return {"id": str(item.id), "shared": item.shared, "shared_with": _share_out(item)}
+
+
+# ------------------------------------------------------------------ share rules (owner only)
+
+SHARE_BASIS = (
+    "Base de cálculo: valor líquido da venda (bruto menos a taxa do gateway). A comissão do dono "
+    "sai dessa base pelo split do gateway; a taxa Falcon Bot por venda sai da parte do vendedor. "
+    "Vendas estornadas não geram comissão."
+)
+HUNDRED = Decimal("100")
+
+
+class FlowShareRequest(BaseModel):
+    flow_id: uuid.UUID
+    partner_id: uuid.UUID
+    gateway: Literal["smokepay", "snakepay"]
+    seller_percent: Decimal = Field(gt=0, le=100, decimal_places=2)
+    owner_percent: Decimal = Field(ge=0, lt=100, decimal_places=2)
+    # None keeps the saved ShopID (when editing); "" clears it.
+    seller_shop_id: str | None = Field(default=None, max_length=64)
+    owner_shop_id: str | None = Field(default=None, max_length=64)
+    # A loop of mine that goes out with the funnel to this partner; left out = unchanged, null = none.
+    loop_id: uuid.UUID | None = None
+
+
+def _share_rule_out(rule: TgFlowShare, flow: TgFlow, partner: User | None, stats: dict | None = None) -> dict:
+    return {
+        "id": str(rule.id), "flow_id": str(flow.id), "flow_name": flow.name,
+        "partner_id": str(rule.partner_user_id), "partner_name": (partner.full_name or partner.nickname) if partner else None,
+        "gateway": rule.gateway, "seller_percent": _f(rule.seller_percent), "owner_percent": _f(rule.owner_percent),
+        "seller_shop_id": service.mask_shop_id(rule.seller_shop_id), "owner_shop_id": service.mask_shop_id(rule.owner_shop_id),
+        "loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
+        "status": rule.status, "rule": "share", "updated_at": rule.updated_at.isoformat() if rule.updated_at else None,
+        "stats": stats or {"sales": 0, "gross": 0.0, "commission": 0.0},
+    }
+
+
+async def _share_stats(db, share_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict]:
+    if not share_ids:
+        return {}
+    rows = await db.execute(
+        select(
+            TgOrder.share_id, func.count(TgOrder.id), func.coalesce(func.sum(TgOrder.amount), 0),
+            func.coalesce(func.sum(TgOrder.split_amount), 0),
+        )
+        .where(TgOrder.share_id.in_(share_ids), TgOrder.status == "paid")
+        .group_by(TgOrder.share_id)
+    )
+    return {sid: {"sales": int(n), "gross": _f(gross), "commission": _f(commission)} for sid, n, gross, commission in rows.all()}
+
+
+async def _validate_shop_ids(db, user: User, gateway: str, owner_percent: Decimal, seller: str | None, owner: str | None) -> None:
+    from app.bots import gateways
+
+    if gateway != "snakepay":
+        return
+    if not await gateways.snakepay_available(db):
+        raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
+    platform = await gateways.platform_recipients(db)
+    if not seller:
+        raise HTTPException(status_code=422, detail="Informe o ShopID SnakePay do sócio vendedor.")
+    if not gateways.valid_recipient(seller):
+        raise HTTPException(status_code=422, detail="ShopID do vendedor inválido (começa com snakepay_).")
+    if any(gateways.same_recipient(seller, own) for own in platform):
+        raise HTTPException(status_code=422, detail="O ShopID do vendedor é o da conta da plataforma.")
+    needs_owner = owner_percent > 0 and user.platform_role != "SUPER_ADMIN"
+    if needs_owner and not owner:
+        raise HTTPException(status_code=422, detail="Informe o seu ShopID SnakePay para receber a comissão.")
+    if owner:
+        if not gateways.valid_recipient(owner):
+            raise HTTPException(status_code=422, detail="O seu ShopID é inválido (começa com snakepay_).")
+        if gateways.same_recipient(seller, owner):
+            raise HTTPException(status_code=422, detail="O ShopID do vendedor e o seu precisam ser contas diferentes.")
+        if user.platform_role != "SUPER_ADMIN" and any(gateways.same_recipient(owner, own) for own in platform):
+            raise HTTPException(status_code=422, detail="Esse é o ShopID da conta da plataforma, não o seu.")
+
+
+@router.get("/flow-shares")
+async def my_flow_shares(access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> dict:
+    """Que compartilhei: every funnel of mine shared with a partner, with its rules and sales.
+    Funnels shared before the per-partner rules show the partnership's percentage."""
+    await _owned_workspace(access, user)
+    flows = {
+        flow.id: flow
+        for flow in await db.scalars(select(TgFlow).where(TgFlow.workspace_id == access.workspace.id).order_by(TgFlow.name))
+    }
+    rules = list(
+        await db.scalars(
+            select(TgFlowShare).where(TgFlowShare.owner_user_id == user.id, TgFlowShare.flow_id.in_(list(flows) or [uuid.uuid4()]))
+        )
+    )
+    partners = {
+        link.affiliate_user_id: link
+        for link in await db.scalars(select(Affiliation).where(Affiliation.chief_user_id == user.id, Affiliation.status == "ACTIVE"))
+    }
+    users = {
+        u.id: u
+        for u in await db.scalars(select(User).where(User.id.in_([*partners, *(r.partner_user_id for r in rules)] or [uuid.uuid4()])))
+    }
+    stats = await _share_stats(db, [rule.id for rule in rules])
+    with_rules = {(rule.flow_id, rule.partner_user_id) for rule in rules}
+    items = [_share_rule_out(rule, flows[rule.flow_id], users.get(rule.partner_user_id), stats.get(rule.id)) for rule in rules]
+    for flow in flows.values():
+        if not flow.shared:
+            continue
+        targets = set(partners) if flow.shared_with is None else {uuid.UUID(str(t)) for t in flow.shared_with} & set(partners)
+        for partner_id in sorted(targets, key=str):
+            if (flow.id, partner_id) in with_rules:
+                continue
+            link = partners[partner_id]
+            percent = min(link.participation_percent, service.MAX_COMMISSION)
+            person = users.get(partner_id)
+            items.append({
+                "id": None, "flow_id": str(flow.id), "flow_name": flow.name, "partner_id": str(partner_id),
+                "partner_name": (person.full_name or person.nickname) if person else None,
+                "gateway": flow.payment_gateway or access.workspace.payment_gateway or "smokepay",
+                "seller_percent": _f(HUNDRED - percent), "owner_percent": _f(percent),
+                "seller_shop_id": None, "owner_shop_id": None, "status": "ACTIVE", "rule": "partnership",
+                "loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
+                "updated_at": None, "stats": None,
+            })
+    items.sort(key=lambda item: (item["flow_name"].lower(), item["partner_name"] or "", item["status"]))
+    return {"basis": SHARE_BASIS, "items": items}
+
+
+@router.put("/flow-shares", dependencies=[Depends(require_csrf)])
+async def save_flow_share(payload: FlowShareRequest, access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> dict:
+    """Share one of my funnels with one partner, or change the rules of that share. Only the
+    funnel's owner gets here: the funnel must be in the owner's own operation and the partner
+    must be the owner's active partner; the seller can never change these rules."""
+    await _owned_workspace(access, user)
+    if payload.seller_percent + payload.owner_percent != HUNDRED:
+        raise HTTPException(status_code=422, detail="A parte do vendedor e a comissão do dono precisam somar 100%.")
+    flow = await db.scalar(select(TgFlow).where(TgFlow.id == payload.flow_id, TgFlow.workspace_id == access.workspace.id))
+    if flow is None:
+        raise HTTPException(status_code=404, detail="Funil não encontrado.")
+    link = await db.scalar(
+        select(Affiliation).where(
+            Affiliation.chief_user_id == user.id, Affiliation.affiliate_user_id == payload.partner_id,
+            Affiliation.status == "ACTIVE",
+        )
+    )
+    if link is None:
+        raise HTTPException(status_code=422, detail="Escolha um dos seus sócios ativos.")
+    rule = await service.share_for_partner(db, flow.id, payload.partner_id)
+
+    def pick(value: str | None, saved: str | None) -> str | None:
+        if value is None:
+            return saved
+        return value.strip() or None
+
+    seller_shop = owner_shop = None
+    if payload.gateway == "snakepay":
+        seller_shop = pick(payload.seller_shop_id, rule.seller_shop_id if rule else None)
+        owner_shop = pick(payload.owner_shop_id, rule.owner_shop_id if rule else None)
+    await _validate_shop_ids(db, user, payload.gateway, payload.owner_percent, seller_shop, owner_shop)
+
+    before = None
+    if rule is None:
+        rule = TgFlowShare(flow_id=flow.id, owner_user_id=user.id, partner_user_id=payload.partner_id)
+        db.add(rule)
+    else:
+        before = {
+            "gateway": rule.gateway, "seller_percent": _f(rule.seller_percent), "owner_percent": _f(rule.owner_percent),
+            "seller_shop_id": service.mask_shop_id(rule.seller_shop_id), "owner_shop_id": service.mask_shop_id(rule.owner_shop_id),
+            "status": rule.status,
+        }
+    rule.gateway = payload.gateway
+    rule.seller_percent = payload.seller_percent
+    rule.owner_percent = payload.owner_percent
+    rule.seller_shop_id = seller_shop
+    rule.owner_shop_id = owner_shop
+    rule.status = "ACTIVE"
+    rule.updated_by_user_id = user.id
+    everyone = await service.partner_ids(db, user.id)
+    _with_partner(flow, str(payload.partner_id), everyone, True)
+    if "loop_id" in payload.model_fields_set:
+        loop = None
+        if payload.loop_id is not None:
+            loop = await db.scalar(
+                select(InstagramLoop).where(
+                    InstagramLoop.id == payload.loop_id, InstagramLoop.workspace_id == access.workspace.id,
+                    InstagramLoop.linked.is_(False),
+                )
+            )
+            if loop is None:
+                raise HTTPException(status_code=404, detail="Loop não encontrado.")
+            _with_partner(loop, str(payload.partner_id), everyone, True)
+        flow.shared_loop_id = loop.id if loop else None
+    await db.flush()
+    after = {
+        "flow": flow.name, "partner_id": str(payload.partner_id), "gateway": rule.gateway,
+        "seller_percent": _f(rule.seller_percent), "owner_percent": _f(rule.owner_percent),
+        "seller_shop_id": service.mask_shop_id(seller_shop), "owner_shop_id": service.mask_shop_id(owner_shop),
+    }
+    service.audit(
+        db, actor=user, workspace_id=access.workspace.id, action="share.updated" if before else "share.created",
+        entity="flow_share", entity_id=rule.id, details={"before": before, "after": after},
+    )
+    await db.commit()
+    await db.refresh(rule)
+    partner = await db.get(User, payload.partner_id)
+    await service.notify_user(
+        db, payload.partner_id, "share", "Funil compartilhado com você",
+        f"{flow.name}: você fica com {_pct(rule.seller_percent)} do líquido de cada venda.",
+        "/bot/compartilhados-comigo",
+    )
+    await db.commit()
+    return _share_rule_out(rule, flow, partner, (await _share_stats(db, [rule.id])).get(rule.id))
+
+
+@router.delete("/flow-shares/{share_id}", dependencies=[Depends(require_csrf)])
+async def revoke_flow_share(share_id: uuid.UUID, access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> dict:
+    """Stop sharing a funnel with one partner. The rules stay recorded for the audit and the
+    sales already made keep the rules they were charged with."""
+    await _owned_workspace(access, user)
+    rule = await db.scalar(select(TgFlowShare).where(TgFlowShare.id == share_id, TgFlowShare.owner_user_id == user.id))
+    flow = await db.get(TgFlow, rule.flow_id) if rule else None
+    if rule is None or flow is None or flow.workspace_id != access.workspace.id:
+        raise HTTPException(status_code=404, detail="Compartilhamento não encontrado.")
+    rule.status = "REVOKED"
+    rule.updated_by_user_id = user.id
+    _with_partner(flow, str(rule.partner_user_id), await service.partner_ids(db, user.id), False)
+    service.audit(
+        db, actor=user, workspace_id=access.workspace.id, action="share.revoked", entity="flow_share",
+        entity_id=rule.id, details={"flow": flow.name, "partner_id": str(rule.partner_user_id)},
+    )
+    await db.commit()
+    await db.refresh(rule)
+    return _share_rule_out(rule, flow, await db.get(User, rule.partner_user_id))
+
+
+@router.get("/flow-shares/{share_id}/history")
+async def flow_share_history(share_id: uuid.UUID, access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> dict:
+    await _owned_workspace(access, user)
+    rule = await db.scalar(select(TgFlowShare).where(TgFlowShare.id == share_id, TgFlowShare.owner_user_id == user.id))
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Compartilhamento não encontrado.")
+    from app.models import AuditEvent
+
+    events = await db.scalars(
+        select(AuditEvent)
+        .where(AuditEvent.entity == "flow_share", AuditEvent.entity_id == rule.id)
+        .order_by(AuditEvent.created_at.desc())
+        .limit(50)
+    )
+    return {
+        "items": [
+            {"action": e.action, "details": e.details, "created_at": e.created_at.isoformat() if e.created_at else None}
+            for e in events
+        ]
+    }
 
 
 async def operations_of(db, workspace_id: uuid.UUID, start, end) -> dict:

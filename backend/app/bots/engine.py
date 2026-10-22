@@ -1005,56 +1005,18 @@ async def create_order(
         order.shop_ref = route.shop_ref
         order.split_chief_user_id = route.chief_user_id
         order.split_percent = route.percent
-        qr: str | None = None
+        order.share_id = route.share_id
         timings["prepare"] = time.perf_counter() - mark
         mark = time.perf_counter()
-        if not await _charge_with_snakepay(db, bot, order, route, amount):
-            pix = dict(
-                amount=amount,
-                external_id=f"{ORDER_PREFIX}{order.id}",
-                description=f"{bot.name} · {name}",
-                webhook_url=payment_webhook_url(),
-                expiration_seconds=flow.payment.expiration_minutes * 60,
-                shop_id=route.shop_ref,
-            )
-            try:
-                try:
-                    charge = await smokepay.create_pix(**pix, splits=route.splits)
-                except smokepay.SmokepayError as refused:
-                    # A refused split (400) creates no charge: never lose the sale over the
-                    # transaction fee; charge without it and leave a trace to look into.
-                    if refused.status != 400 or not route.transaction_fee:
-                        raise
-                    logger.warning("SmokePay refused the splits with the transaction fee (%s); charging without it.", refused)
-                    route.drop_transaction_fee()
-                    charge = await smokepay.create_pix(**pix, splits=route.splits)
-            except smokepay.SmokepayError as exc:
-                order.status = "failed"
-                bot.last_error = f"Gateway: {exc}"[:500]
-                await db.commit()
-                await tg.send_message(lead.chat_id, "Não consegui gerar o Pix agora. Tente de novo em alguns instantes.")
-                await notify_owners(db, bot, "⚠️ Falha ao gerar Pix", f"@{bot.username}: {str(exc)[:120]}", "bot-gateway")
-                return None
-            order.gateway_transaction_id = charge.transaction_id or None
-            order.gateway_fee = charge.fee
-            order.net_amount = charge.net_amount
-            if route.percent is not None:
-                commission, partner = route.preview(charge.net_amount)
-                # SmokePay's preview sums every split: the transaction fee is the platform's, not the chief's
-                order.split_amount = (
-                    charge.split_total - route.transaction_fee if charge.split_total is not None else commission
-                )
-                order.partner_net = charge.owner_net if charge.owner_net is not None else partner
-                order.platform_fee = route.transaction_fee or None
-            elif route.splits:  # platform fee and/or transaction fee (the seller's own funnel)
-                fee = charge.split_total if charge.split_total is not None else route.platform_fee(charge.net_amount)
-                order.platform_fee = fee
-                if charge.owner_net is not None:
-                    order.partner_net = charge.owner_net
-                elif fee is not None and charge.net_amount is not None:
-                    order.partner_net = charge.net_amount - fee
-            order.pix_copy_paste = charge.copy_paste
-            qr = charge.qr_code_base64
+        try:
+            qr = await _charge(db, bot, order, route, amount, f"{bot.name} · {name}", flow.payment.expiration_minutes)
+        except smokepay.SmokepayError as exc:
+            order.status = "failed"
+            bot.last_error = f"Gateway: {exc}"[:500]
+            await db.commit()
+            await tg.send_message(lead.chat_id, "Não consegui gerar o Pix agora. Tente de novo em alguns instantes.")
+            await notify_owners(db, bot, "⚠️ Falha ao gerar Pix", f"@{bot.username}: {str(exc)[:120]}", "bot-gateway")
+            return None
         order.transaction_fee = route.transaction_fee or None  # after a refused split dropped it
         timings["gateway"] = time.perf_counter() - mark
         mark = time.perf_counter()
@@ -1101,24 +1063,104 @@ async def create_order(
         logger.info("pix steps: %s", " ".join(f"{k}={v * 1000:.0f}ms" for k, v in timings.items()))
 
 
+async def _charge(
+    db: AsyncSession, bot: TgBot, order: TgOrder, route, amount: Decimal, description: str, expiration_minutes: int,
+) -> str | None:
+    """Create the Pix with the operation's gateways in order (principal, then backups; see
+    ``gateways.gateway_order``). Returns SmokePay's QR image, if any.
+
+    Failover is safe: a gateway that refused or failed shows nothing to the lead, so only the
+    Pix of the gateway that answered can be paid; webhooks of any other attempt match no
+    order (SnakePay is looked up by its charge id, SmokePay only approves SmokePay orders),
+    and SmokePay is idempotent on the order id. Raises the last gateway error when none charged.
+    """
+    from app.bots import gateways
+    from app.models import Workspace
+
+    workspace = await db.get(Workspace, bot.workspace_id)
+    flow = await db.get(TgFlow, order.flow_id) if order.flow_id else None
+    order_gateways = await gateways.gateway_order(db, workspace, flow) if workspace else ["smokepay"]
+    error: smokepay.SmokepayError | None = None
+    for name in order_gateways:
+        if name == "snakepay":
+            if await _charge_with_snakepay(db, bot, order, route, amount, flow):
+                return None
+            continue
+        try:
+            return await _charge_with_smokepay(order, route, amount, description, expiration_minutes)
+        except smokepay.SmokepayError as exc:
+            error = exc
+            order.gateway_attempts = [*(order.gateway_attempts or []), "smokepay"]
+            logger.warning("SmokePay charge failed (%s) for order %s; trying the next gateway, if any.", exc, order.id)
+    raise error or smokepay.SmokepayError("Nenhum gateway disponível para esta venda.")
+
+
+async def _charge_with_smokepay(order: TgOrder, route, amount: Decimal, description: str, expiration_minutes: int) -> str | None:
+    pix = dict(
+        amount=amount,
+        external_id=f"{ORDER_PREFIX}{order.id}",
+        description=description,
+        webhook_url=payment_webhook_url(),
+        expiration_seconds=expiration_minutes * 60,
+        shop_id=route.shop_ref,
+    )
+    try:
+        charge = await smokepay.create_pix(**pix, splits=route.splits)
+    except smokepay.SmokepayError as refused:
+        # A refused split (400) creates no charge: never lose the sale over the
+        # transaction fee; charge without it and leave a trace to look into.
+        if refused.status != 400 or not route.transaction_fee:
+            raise
+        logger.warning("SmokePay refused the splits with the transaction fee (%s); charging without it.", refused)
+        route.drop_transaction_fee()
+        charge = await smokepay.create_pix(**pix, splits=route.splits)
+    order.gateway = "smokepay"
+    order.shop_ref = route.shop_ref
+    order.gateway_transaction_id = charge.transaction_id or None
+    order.gateway_fee = charge.fee
+    order.net_amount = charge.net_amount
+    if route.percent is not None:
+        commission, partner = route.preview(charge.net_amount)
+        # SmokePay's preview sums every split: the transaction fee is the platform's, not the chief's
+        order.split_amount = (
+            charge.split_total - route.transaction_fee if charge.split_total is not None else commission
+        )
+        order.partner_net = charge.owner_net if charge.owner_net is not None else partner
+        order.platform_fee = route.transaction_fee or None
+    elif route.splits:  # platform fee and/or transaction fee (the seller's own funnel)
+        fee = charge.split_total if charge.split_total is not None else route.platform_fee(charge.net_amount)
+        order.platform_fee = fee
+        if charge.owner_net is not None:
+            order.partner_net = charge.owner_net
+        elif fee is not None and charge.net_amount is not None:
+            order.partner_net = charge.net_amount - fee
+    order.pix_copy_paste = charge.copy_paste
+    return charge.qr_code_base64
+
+
 # Workspaces whose SnakePay split was just refused (bad ShopID): SmokePay charges their
 # sales for a while instead of paying for one more refused call on every Pix.
 SNAKEPAY_PAUSE_SECONDS = 600
 _snakepay_paused: dict[uuid.UUID, float] = {}
 
 
-async def _charge_with_snakepay(db: AsyncSession, bot: TgBot, order: TgOrder, route, amount: Decimal) -> bool:
-    """Charge with SnakePay when the operation chose it and every share can be paid
-    (see app/bots/gateways.py). False = use SmokePay, also when SnakePay refuses."""
+def snakepay_paused(workspace_id: uuid.UUID) -> bool:
+    return _snakepay_paused.get(workspace_id, 0.0) > time.monotonic()
+
+
+async def _charge_with_snakepay(
+    db: AsyncSession, bot: TgBot, order: TgOrder, route, amount: Decimal, flow: TgFlow | None
+) -> bool:
+    """Charge with SnakePay when every share can be paid (see app/bots/gateways.py).
+    False = try the next gateway, also when SnakePay refuses."""
     from app.bots import gateways, snakepay
     from app.models import Workspace
 
     workspace = await db.get(Workspace, bot.workspace_id)
     if workspace is None:
         return False
-    flow = await db.get(TgFlow, bot.flow_id) if bot.flow_id else None
     try:
-        plan = await gateways.snakepay_plan(db, workspace, route, amount, flow)
+        plan = await gateways.snakepay_plan(db, workspace, route, amount, flow, chosen=True)
     except RuntimeError:
         logger.exception("Could not load saved SnakePay credentials for workspace %s", workspace.id)
         bot.last_error = "SnakePay: saved credentials could not be decrypted."
@@ -1161,6 +1203,7 @@ async def _charge_with_snakepay(db: AsyncSession, bot: TgBot, order: TgOrder, ro
             exc, bot.workspace_id, len(plan.split),
         )
         bot.last_error = f"SnakePay: {exc}"[:500]
+        order.gateway_attempts = [*(order.gateway_attempts or []), "snakepay"]
         if exc.status == 400:  # bad ShopID/split: the next sales would be refused the same way
             _snakepay_paused[bot.workspace_id] = time.monotonic() + SNAKEPAY_PAUSE_SECONDS
         return False
