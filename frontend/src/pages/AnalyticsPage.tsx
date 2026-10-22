@@ -156,7 +156,7 @@ export function AnalyticsPage() {
       icon: BarChart3,
     },
     {
-      title: "Publicados pelo FlashPost",
+      title: "Publicados pelo Falcon Post",
       value: formatCount(accountMetrics?.published_posts),
       helper: "Publicações concluídas pela ferramenta",
       icon: CircleCheck,
@@ -347,7 +347,7 @@ export function AnalyticsPage() {
               </div>
               <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-4">
                 <h3 className="text-sm font-medium text-fg">
-                  Publicações feitas pelo FlashPost no período
+                  Publicações feitas pelo Falcon Post no período
                 </h3>
                 <div className="mt-4 h-[260px]">
                   <ResponsiveContainer height="100%" width="100%">

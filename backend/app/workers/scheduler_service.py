@@ -204,7 +204,7 @@ async def _run_tick_with_database_lock() -> None:
                 {"lock_key": _POSTGRES_ADVISORY_LOCK_KEY},
             )
             if not acquired:
-                logger.debug("Another FlashPost instance owns the scheduler lock.")
+                logger.debug("Another Falcon Post instance owns the scheduler lock.")
                 return
             try:
                 await run_loop_scheduler_tick()

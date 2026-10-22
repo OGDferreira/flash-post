@@ -117,8 +117,8 @@ export function InstagramAccountsPage() {
       setDisconnectMessage({
         complete: meta_revoked,
         text: meta_revoked
-          ? "Conta desconectada do FlashPost e autorização revogada no Instagram."
-          : "Conta removida do FlashPost, mas a Meta não confirmou a revogação. Remova o FlashPost dos apps conectados nas configurações do Instagram para concluir.",
+          ? "Conta desconectada do Falcon Post e autorização revogada no Instagram."
+          : "Conta removida do Falcon Post, mas a Meta não confirmou a revogação. Remova o Falcon Post dos apps conectados nas configurações do Instagram para concluir.",
       });
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
       void queryClient.invalidateQueries({ queryKey: ["loops"] });
@@ -134,8 +134,8 @@ export function InstagramAccountsPage() {
       setDisconnectMessage({
         complete: meta_revoked,
         text: meta_revoked
-          ? "A conta com erro foi removida do FlashPost e a autorização foi revogada no Instagram."
-          : "A conta com erro foi removida do FlashPost, mas a Meta não confirmou a revogação. Remova o FlashPost dos apps conectados nas configurações do Instagram.",
+          ? "A conta com erro foi removida do Falcon Post e a autorização foi revogada no Instagram."
+          : "A conta com erro foi removida do Falcon Post, mas a Meta não confirmou a revogação. Remova o Falcon Post dos apps conectados nas configurações do Instagram.",
       });
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
       void queryClient.invalidateQueries({ queryKey: ["loops"] });
@@ -535,7 +535,7 @@ export function InstagramAccountsPage() {
                         onClick={async () => {
                           if (
                             await confirmAction(
-                              `Remover @${account.username} do FlashPost? A conta e o histórico de publicações associado serão excluídos.`,
+                              `Remover @${account.username} do Falcon Post? A conta e o histórico de publicações associado serão excluídos.`,
                             )
                           ) {
                             removeErroredAccount.mutate(account.id);

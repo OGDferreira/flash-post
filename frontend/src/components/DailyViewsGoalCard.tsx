@@ -286,7 +286,7 @@ export function DailyViewsGoalCard() {
         </p>
         {availability === "ios-needs-install" ? (
           <p className="mt-2 text-sm leading-6 text-muted">
-            No iPhone e iPad, adicione o FlashPost à Tela de Início (Compartilhar → Adicionar à Tela de
+            No iPhone e iPad, adicione o Falcon Post à Tela de Início (Compartilhar → Adicionar à Tela de
             Início), abra pelo ícone e ative aqui. Requer iOS 16.4 ou superior.
           </p>
         ) : availability !== "supported" ? (

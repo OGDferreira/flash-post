@@ -13,7 +13,7 @@ class AdminSummary(BaseModel):
     owners: int
     collaborators: int
     active_users: int
-    # FlashBot today (Brazil time): paid sales of every operation and the per-sale fee they paid
+    # Falcon Bot today (Brazil time): paid sales of every operation and the per-sale fee they paid
     flashbot_sales_today: int = 0
     flashbot_revenue_today: Decimal = Decimal("0.00")
     transaction_fees_today: Decimal = Decimal("0.00")
@@ -36,7 +36,7 @@ class AdminUser(BaseModel):
     created_at: datetime
     last_login_at: datetime | None
     hierarchy: str = "independent"  # chief | partner | independent
-    transaction_fee: Decimal | None = None  # own FlashBot fee per sale; None = the default
+    transaction_fee: Decimal | None = None  # own Falcon Bot fee per sale; None = the default
     transaction_fee_effective: Decimal = Decimal("0.00")
     chief_name: str | None = None
     invited_by_name: str | None = None

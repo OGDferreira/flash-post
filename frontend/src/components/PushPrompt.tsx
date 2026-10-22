@@ -76,7 +76,7 @@ export function PushPrompt() {
         <p className="text-sm font-semibold text-fg">Receba os avisos de metas e conquistas</p>
         <p className="text-xs text-muted">
           {needsInstall
-            ? "No iPhone, adicione o FlashPost à Tela de Início e abra por lá para ativar."
+            ? "No iPhone, adicione o Falcon Post à Tela de Início e abra por lá para ativar."
             : (error ?? "Ative as notificações neste dispositivo. Leva um toque.")}
         </p>
       </div>

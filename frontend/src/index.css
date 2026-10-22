@@ -1430,3 +1430,210 @@ html[data-motion="off"] :is(.award-enter-right, .award-enter-left) { animation: 
 @media (prefers-reduced-motion: reduce) {
   :is(.award-enter-right, .award-enter-left) { animation: none; }
 }
+
+/* ============================================================
+   Falcon layer (Falcon Post + Falcon Bot). Inspired by how the Sharkbot panel organises
+   information: near-black canvas, quiet hairline cards, a display face for numbers and
+   titles, mono eyebrows and one strong brand color per tool. Overrides the glass layer.
+   ============================================================ */
+:root {
+  --font-display: "Space Grotesk Variable", "Space Grotesk", Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Falcon Post: electric blue → cyan */
+  --brand-c: #1f6bff;
+  --brand-strong-c: #3d8bff;
+  --grad-a: #0a5cff;
+  --grad-b: #00b4ef;
+  --brand-rgb: 31 107 255;
+  --brand-2-rgb: 0 214 255;
+  --accent: #6cc4ff;
+  --tx-accent: #6cc4ff;
+  --nm-bg: #08080b;
+  --glass-fill: rgb(12 12 16 / 0.92);
+  --glass-fill-solid: #0d0d12;
+  --glass-fill-strong: rgb(9 9 12 / 0.97);
+  --glass-edge: rgb(255 255 255 / 0.08);
+  --glass-edge-hover: rgb(255 255 255 / 0.16);
+  --glass-hi: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --nm-raised: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 18px 40px -24px rgb(0 0 0 / 0.9);
+  --nm-raised-sm: 0 12px 28px -20px rgb(0 0 0 / 0.9);
+  --well: rgb(255 255 255 / 0.04);
+  --muted: #a1a1aa;
+  --tx-mute: #a1a1aa;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-soft: rgb(255 255 255 / 0.06);
+  --card-sheen: linear-gradient(155deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0) 42%);
+}
+
+/* Falcon Bot: violet → magenta */
+html[data-app="bot"] {
+  --brand-c: #8f1dff;
+  --brand-strong-c: #a64bff;
+  --grad-a: #7a00ff;
+  --grad-b: #c400ff;
+  --brand-rgb: 143 29 255;
+  --brand-2-rgb: 214 0 255;
+  --accent: #d19bff;
+  --tx-accent: #d19bff;
+}
+
+html[data-theme="light"] {
+  --nm-bg: #f5f6f9;
+  --glass-fill: #ffffff;
+  --glass-fill-solid: #ffffff;
+  --glass-fill-strong: rgb(255 255 255 / 0.98);
+  --glass-edge: rgb(15 22 40 / 0.09);
+  --glass-edge-hover: rgb(15 22 40 / 0.18);
+  --glass-hi: none;
+  --nm-raised: 0 1px 2px rgb(15 22 40 / 0.05), 0 12px 30px -22px rgb(15 22 40 / 0.35);
+  --nm-raised-sm: 0 1px 2px rgb(15 22 40 / 0.05);
+  --well: rgb(15 22 40 / 0.04);
+  --muted: #52525b;
+  --tx-mute: #52525b;
+  --accent: #0b57d0;
+  --tx-accent: #0b57d0;
+  --color-line: rgb(15 22 40 / 0.09);
+  --color-line-soft: rgb(15 22 40 / 0.07);
+  --card-sheen: none;
+}
+html[data-theme="light"][data-app="bot"] { --accent: #7412d1; --tx-accent: #7412d1; }
+
+html { background: #050507; }
+html[data-theme="light"] { background: #f5f6f9; }
+
+/* One soft brand glow at the top instead of the drifting nebula. */
+body::before {
+  background:
+    radial-gradient(60vmax 38vmax at 18% -12%, rgb(var(--brand-rgb) / 0.2), transparent 62%),
+    radial-gradient(42vmax 30vmax at 100% 0%, rgb(var(--brand-2-rgb) / 0.08), transparent 60%),
+    #050507;
+  animation-duration: 60s;
+}
+html[data-theme="light"] body::before {
+  background:
+    radial-gradient(60vmax 38vmax at 18% -12%, rgb(var(--brand-rgb) / 0.1), transparent 62%),
+    #f5f6f9;
+}
+
+/* Cards: hairline border, subtle sheen, no heavy blur. */
+.glass-panel,
+.dashboard-card {
+  background: var(--card-sheen), var(--glass-fill);
+  border: 1px solid var(--glass-edge);
+  border-radius: 18px;
+  box-shadow: var(--nm-raised);
+}
+.glass-modal { background: var(--glass-fill-solid); border-color: var(--glass-edge); border-radius: 22px; }
+.glass-bar, .app-mobile-nav { background: var(--glass-fill-strong); border-color: var(--glass-edge); }
+aside.glass-bar { background: var(--glass-fill-strong); box-shadow: none; }
+@media (min-width: 768px) {
+  .glass-panel,
+  .dashboard-card { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .glass-bar, .app-mobile-nav, .glass-modal { -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%); }
+}
+@media (hover: hover) {
+  .dashboard-card:hover, .glass-panel:hover { border-color: var(--glass-edge-hover); transform: translateY(-2px); }
+}
+
+.bg-surface,
+.bg-surface-raised { background: var(--well); border-color: var(--glass-edge); box-shadow: none; }
+html[data-theme="light"] .bg-surface,
+html[data-theme="light"] .bg-surface-raised { background: #fafafb; }
+
+.btn-primary {
+  background-image: linear-gradient(135deg, var(--grad-a), var(--grad-b));
+  box-shadow: 0 10px 26px -10px rgb(var(--brand-rgb) / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.22);
+}
+.nm-active {
+  color: var(--fg);
+  background: linear-gradient(90deg, rgb(var(--brand-rgb) / 0.2), rgb(var(--brand-rgb) / 0.04));
+  border: 1px solid rgb(var(--brand-rgb) / 0.32);
+  box-shadow: none;
+}
+.nm-active svg, .nm-active img { color: var(--accent); }
+
+/* Type: display face for titles and numbers, mono for the small uppercase eyebrows. */
+h1, h2, .font-display, .dashboard-metric-value { font-family: var(--font-display); letter-spacing: -0.02em; }
+.uppercase[class*="tracking-[0.1"] { font-family: var(--font-mono); letter-spacing: 0.14em; font-weight: 500; }
+.tabular, .dashboard-metric-value { font-variant-numeric: tabular-nums; }
+
+/* ---------- Falcon emblem entry animation (splash, loaders, first open) ----------
+   The emblem turns in from a small tilted ring, lands with a little overshoot,
+   a light sweep crosses it, then it breathes slowly with a brand glow. */
+.falcon-emblem img { display: block; }
+.falcon-anim { overflow: visible; filter: drop-shadow(0 0 18px rgb(var(--brand-rgb) / 0.45)); }
+.falcon-anim img { animation: falcon-in 820ms cubic-bezier(0.2, 0.9, 0.25, 1.15) both, falcon-breathe 2.8s ease-in-out 1.2s infinite; }
+.falcon-anim::before {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  border: 2px solid rgb(var(--brand-rgb) / 0.55);
+  animation: falcon-ring 1.1s 120ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.falcon-shine {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  -webkit-mask: url("/brand/falconpost-emblem-128.webp") center / contain no-repeat;
+  mask: url("/brand/falconpost-emblem-128.webp") center / contain no-repeat;
+}
+html[data-app="bot"] .falcon-shine { -webkit-mask-image: url("/brand/falconbot-emblem-128.webp"); mask-image: url("/brand/falconbot-emblem-128.webp"); }
+.falcon-shine::after {
+  content: "";
+  position: absolute;
+  inset: -20% auto -20% -40%;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.75), transparent);
+  transform: skewX(-18deg);
+  animation: falcon-sweep 2.8s 700ms ease-in-out infinite;
+}
+@keyframes falcon-in {
+  0% { opacity: 0; transform: scale(0.55) rotate(-24deg); filter: blur(6px); }
+  60% { opacity: 1; transform: scale(1.06) rotate(3deg); filter: blur(0); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes falcon-ring {
+  0% { opacity: 0; transform: scale(0.4) rotate(-90deg); }
+  50% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.25) rotate(0deg); }
+}
+@keyframes falcon-sweep {
+  0% { left: -40%; }
+  45%, 100% { left: 120%; }
+}
+@keyframes falcon-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+@media (prefers-reduced-motion: reduce) {
+  .falcon-anim img, .falcon-anim::before, .falcon-shine::after { animation: none !important; }
+}
+
+/* ---------- Tool switcher (floating, bottom-left) ---------- */
+.app-switcher {
+  position: fixed;
+  z-index: 35;
+  left: 16px;
+  bottom: calc(env(safe-area-inset-bottom) + 18px);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 6px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--switch-rgb) / 0.45);
+  background: var(--glass-fill-strong);
+  color: var(--fg);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  box-shadow: 0 14px 34px -14px rgb(var(--switch-rgb) / 0.8);
+  transition: transform 260ms var(--ease-spring), box-shadow 260ms ease, border-color 200ms ease;
+}
+.app-switcher[data-target="bot"] { --switch-rgb: 143 29 255; }
+.app-switcher[data-target="post"] { --switch-rgb: 31 107 255; }
+.app-switcher:hover { transform: translateY(-2px); border-color: rgb(var(--switch-rgb) / 0.8); }
+.app-switcher:focus-visible { outline: 2px solid rgb(var(--switch-rgb)); outline-offset: 3px; }
+.app-switcher img { width: 32px; height: 32px; }
+@media (min-width: 1024px) { .app-switcher { left: 84px; } body[data-sidebar-pinned="1"] .app-switcher { left: 268px; } }
+@media (max-width: 1023px) {
+  .app-switcher { bottom: calc(env(safe-area-inset-bottom) + 92px); left: 12px; padding: 5px; }
+  .app-switcher .app-switcher-label { display: none; }
+}

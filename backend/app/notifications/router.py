@@ -201,7 +201,7 @@ async def send_test_push(access: WorkspaceMemberAccess, db: DbSession) -> PushTe
                 p256dh=subscription.p256dh,
                 auth=subscription.auth,
                 payload={
-                    "title": "FlashPost",
+                    "title": "Falcon Post",
                     "body": "Notificações ativadas neste dispositivo.",
                     "url": "/profile",
                     "tag": "flashpost-test",

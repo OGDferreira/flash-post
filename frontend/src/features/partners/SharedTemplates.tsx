@@ -338,7 +338,7 @@ function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onC
   );
 }
 
-/** FlashBot tab: partners pick the chief's shared funnels; owners choose what to share and with whom. */
+/** Falcon Bot tab: partners pick the chief's shared funnels; owners choose what to share and with whom. */
 export function SharedFlowsPanel() {
   const chief = useChiefLabel();
   const shared = useSharedTemplates();

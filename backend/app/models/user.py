@@ -54,10 +54,10 @@ class User(Base):
     platform_role: Mapped[str] = mapped_column(
         String(32), nullable=False, default="USER", server_default="USER"
     )
-    # FlashBot fee per sale for this user's operations; NULL = the platform default
+    # Falcon Bot fee per sale for this user's operations; NULL = the platform default
     transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     home_panel: Mapped[str | None] = mapped_column(String(16))
-    # iPhone widget (Scriptable): SHA-256 of a read-only token for today's FlashBot numbers
+    # iPhone widget (Scriptable): SHA-256 of a read-only token for today's Falcon Bot numbers
     widget_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))

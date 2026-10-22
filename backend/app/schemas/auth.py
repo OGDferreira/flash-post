@@ -120,3 +120,9 @@ class WorkspaceResponse(BaseModel):
 class MessageResponse(BaseModel):
     message: str
     csrf_token: str | None = None
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: Annotated[str, Field(min_length=1, max_length=256)]
+    new_password: Annotated[str, Field(min_length=8, max_length=256)]
+    confirm_password: Annotated[str, Field(min_length=8, max_length=256)]

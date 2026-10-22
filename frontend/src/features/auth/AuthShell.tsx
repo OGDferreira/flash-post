@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CalendarClock, ChartNoAxesColumn, Link2, Workflow } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { BrandLogo } from "@/components/BrandLogo";
+import { BrandLogo, BrandLockup } from "@/components/BrandLogo";
 
 const copy = {
   login: {
@@ -13,7 +13,7 @@ const copy = {
   register: {
     eyebrow: "Comece agora",
     title: ["Menos trabalho manual,", "mais resultado."],
-    text: "O FlashPost conecta seus perfis, publica no horário certo e automatiza a rotina da sua equipe.",
+    text: "O Falcon Post conecta seus perfis, publica no horário certo e automatiza a rotina da sua equipe.",
   },
 } as const;
 
@@ -61,8 +61,10 @@ export function AuthShell({ mode, children }: { mode: "login" | "register"; chil
             style={{ background: "radial-gradient(circle, rgb(var(--brand-rgb) / 0.55), transparent 70%)" }}
           />
           <Link to="/" className="relative flex w-fit items-center gap-2.5">
-            <BrandLogo className="size-8 sm:size-10" />
-            <span className="text-sm font-semibold tracking-[-0.03em] text-fg sm:text-base">FlashPost</span>
+            <BrandLogo animated className="size-9 sm:size-11" />
+            <BrandLockup app="post" className="h-4 sm:h-5" kind="wordmark" />
+            <span aria-hidden="true" className="text-muted">+</span>
+            <BrandLogo app="bot" className="size-7 sm:size-8" />
           </Link>
           <div className="relative max-w-md md:my-auto">
             <p className="mb-2 inline-flex rounded-full border border-line bg-brand-soft px-2.5 py-0.5 text-[11px] font-medium text-accent sm:mb-4 sm:px-3 sm:py-1 sm:text-xs">

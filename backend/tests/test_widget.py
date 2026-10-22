@@ -29,7 +29,7 @@ async def test_widget_token_reads_today_and_is_replaced_by_a_new_one(client, db_
     data = today.json()
     assert data["pix_generated"] == 1 and data["pix_paid"] == 1
     assert data["revenue"] == 19.9 and data["profit"] == 18.9  # fake SmokePay: R$ 1,00 fee
-    assert data["series"][-1] == 19.9 and data["name"] == "FlashBot"
+    assert data["series"][-1] == 19.9 and data["name"] == "Falcon Bot"
 
     # the token reads nothing else, a wrong one is refused, and a new script turns the old one off
     assert (await client.get("/api/wallet", headers={"Authorization": f"Bearer {token}"})).status_code in (401, 403)

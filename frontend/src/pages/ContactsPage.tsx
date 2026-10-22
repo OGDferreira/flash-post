@@ -51,7 +51,7 @@ export function ContactsPage() {
       <header>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Suporte</p>
         <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">Contatos</h1>
-        <p className="mt-2 text-sm text-muted">Fale com a equipe e acompanhe os canais oficiais do FlashPost.</p>
+        <p className="mt-2 text-sm text-muted">Fale com a equipe e acompanhe os canais oficiais do Falcon Post.</p>
       </header>
 
       <section className="grid gap-4 sm:grid-cols-2" aria-label="Canais oficiais">
@@ -59,7 +59,7 @@ export function ContactsPage() {
           action="Chamar no WhatsApp"
           description="Atendimento direto com a equipe para dúvidas, problemas e sugestões."
           detail={SUPPORT_WHATSAPP_LABEL}
-          href={whatsappLink("Olá! Preciso de ajuda com o FlashPost.")}
+          href={whatsappLink("Olá! Preciso de ajuda com o Falcon Post.")}
           icon={MessageCircle}
           title="WhatsApp"
         />
@@ -80,15 +80,15 @@ export function ContactsPage() {
         />
         <Channel
           action="Ver no Instagram"
-          description="Perfil oficial do FlashPost, com conteúdos criados e publicados automaticamente pela própria plataforma."
+          description="Perfil oficial do Falcon Post, com conteúdos criados e publicados automaticamente pela própria plataforma."
           detail={instagram.handle ?? undefined}
           href={instagram.url}
           icon={Instagram}
-          title="Instagram do FlashPost"
+          title="Instagram do Falcon Post"
         />
         <Channel
           action="Abrir no Telegram"
-          description="Bot do FlashPost no Telegram: tudo em um só lugar, direto no seu chat."
+          description="Bot do Falcon Post no Telegram: tudo em um só lugar, direto no seu chat."
           href={telegram.url}
           icon={Send}
           title="Bot do Telegram"

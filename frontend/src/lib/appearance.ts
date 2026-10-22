@@ -102,7 +102,7 @@ export function setMotionOff(off: boolean) {
   else delete document.documentElement.dataset.motion;
 }
 
-// ------------------------------------------------------------------ galaxy theme + FlashBot logo
+// ------------------------------------------------------------------ galaxy theme + Falcon Bot logo
 export type FlashBotLogoStyle = "clean" | "galaxy";
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((listener) => listener());

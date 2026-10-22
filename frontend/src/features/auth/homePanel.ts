@@ -5,7 +5,7 @@ export function canChooseHome(user: User | null) {
 }
 
 export function homePath(user: User) {
-  if (canChooseHome(user)) return user.home_panel === "flashbot" ? "/feature/bots" : "/dashboard";
+  if (canChooseHome(user)) return user.home_panel === "flashbot" ? "/bot" : "/dashboard";
   if (user.role === "COLLABORATOR" || user.workspace_role === "COLLABORATOR") return "/feature/accounts";
   return user.role === "SUPER_ADMIN" ? "/admin" : "/dashboard";
 }

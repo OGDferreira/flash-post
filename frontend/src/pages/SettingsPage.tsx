@@ -42,7 +42,7 @@ const sections: { id: string; title: string; icon: ReactNode; items: Item[] }[] 
         owner: true,
       },
       {
-        to: "/feature/bots?tab=gateways",
+        to: "/bot/gateways",
         title: "Gateways de pagamento",
         text: "SmokePay ou SnakePay para gerar os Pix dos robôs, por fluxo ou para todos.",
         icon: <CircleDollarSign size={18} />,
@@ -58,7 +58,7 @@ const sections: { id: string; title: string; icon: ReactNode; items: Item[] }[] 
       {
         to: "/feature/extensions",
         title: "Extensões",
-        text: "Extensão do navegador e ferramentas que conversam com o FlashPost.",
+        text: "Extensão do navegador e ferramentas que conversam com o Falcon Post.",
         icon: <Puzzle size={18} />,
       },
     ],
@@ -112,7 +112,7 @@ function ThemeSwitch() {
   );
 }
 
-/** The FlashBot sales widget for the iPhone home screen, through the free Scriptable app. */
+/** The Falcon Bot sales widget for the iPhone home screen, through the free Scriptable app. */
 const WIDGET_THEMES: { id: WidgetTheme; label: string; swatch: string; text: string }[] = [
   { id: "azul", label: "Azul", swatch: "linear-gradient(135deg,#3a5ffe,#1e9cfd 55%,#15d6fe)", text: "#fff" },
   { id: "dark", label: "Escuro", swatch: "linear-gradient(135deg,#0b1020,#10204a)", text: "#fff" },

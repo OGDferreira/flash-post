@@ -25,7 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("FlashPost page crashed", error, info.componentStack);
+    console.error("Falcon Post page crashed", error, info.componentStack);
     if (isChunkLoadError(error)) {
       if (reloadOnce()) this.setState({ recovering: true });
       return;
@@ -56,7 +56,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div className="mx-auto mt-10 max-w-md rounded-2xl border border-danger/30 bg-danger-soft/70 p-5 text-center" role="alert">
         <h2 className="text-base font-semibold text-fg">Algo deu errado nesta tela</h2>
-        <p className="mt-2 text-sm text-muted">O resto do FlashPost continua funcionando. Tente recarregar esta página.</p>
+        <p className="mt-2 text-sm text-muted">O resto do Falcon Post continua funcionando. Tente recarregar esta página.</p>
         <button className="btn-primary mx-auto mt-4" onClick={() => window.location.reload()} type="button">
           <RotateCw size={15} />
           Recarregar

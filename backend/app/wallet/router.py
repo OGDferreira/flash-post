@@ -1,6 +1,6 @@
 """Wallet: revenue, balance to withdraw, withdrawals and revenue goals.
 
-Money from FlashBot sales sits in SmokePay: the platform owner's main account
+Money from Falcon Bot sales sits in SmokePay: the platform owner's main account
 (Super Admin) or each operation's subaccount. The balance shown here is what
 the sales left for this user after fees and the partner split. Withdrawals go
 straight to SmokePay: a subaccount pays out with POST /api/shops/{ref}/withdraw
@@ -111,7 +111,7 @@ async def _workspace_for(db, user: User) -> Workspace:
 async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
     """What the sales left for this user (after fee and split) and what is free to withdraw."""
     # SnakePay sales are paid out by SnakePay itself (split to each account): only
-    # SmokePay money sits in the FlashPost wallet.
+    # SmokePay money sits in the Falcon Post wallet.
     smoke = TgOrder.gateway != "snakepay"
     own = await db.scalar(
         select(func.coalesce(func.sum(func.coalesce(TgOrder.partner_net, TgOrder.net_amount, TgOrder.amount)), 0)).where(
@@ -153,7 +153,7 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
 async def snakepay_breakdown(db, user: User, workspace_id: uuid.UUID) -> dict[str, Decimal]:
     """What SnakePay already sent to this user's own account: the shares of their sales, the
     commissions they earned and, for the Super Admin (the account that charges), the platform
-    and per-sale fees that stay in it. FlashPost revenue never counts the last two."""
+    and per-sale fees that stay in it. Falcon Post revenue never counts the last two."""
     paid_snake = (TgOrder.status == "paid", TgOrder.gateway == "snakepay")
     own = await db.scalar(
         select(func.coalesce(func.sum(func.coalesce(TgOrder.partner_net, TgOrder.net_amount)), 0)).where(
@@ -172,12 +172,12 @@ async def snakepay_breakdown(db, user: User, workspace_id: uuid.UUID) -> dict[st
 
 
 async def month_revenue(db, workspace_id: uuid.UUID) -> Decimal:
-    """Gross revenue (SharkBot + FlashBot) since the 1st of the current month, Brazil time."""
+    """Gross revenue (SharkBot + Falcon Bot) since the 1st of the current month, Brazil time."""
     return (await month_revenue_by_bot(db, workspace_id))[0]
 
 
 async def month_revenue_by_bot(db, workspace_id: uuid.UUID) -> tuple[Decimal, Decimal, Decimal]:
-    """(total, SharkBot, FlashBot) gross since the 1st of the current month, Brazil time."""
+    """(total, SharkBot, Falcon Bot) gross since the 1st of the current month, Brazil time."""
     from app.finance.router import _revenue_between
 
     now = utc_now()
@@ -203,7 +203,7 @@ def goal_progress(revenue: Decimal) -> dict:
 # ------------------------------------------------------------------ award photos
 
 AWARD_IMAGES_KEY = "award_images"
-# FlashBot award art shipped with the site (frontend/public/premiacoes); a Super Admin upload replaces it.
+# Falcon Bot award art shipped with the site (frontend/public/premiacoes); a Super Admin upload replaces it.
 DEFAULT_AWARD_IMAGES = {
     10000: "/premiacoes/flashbot-10k.webp", 50000: "/premiacoes/flashbot-50k.webp",
     100000: "/premiacoes/flashbot-100k.webp", 500000: "/premiacoes/flashbot-500k.webp",
@@ -222,7 +222,7 @@ async def award_image_paths(db) -> dict[int, str]:
 
 
 async def award_image_urls(db) -> dict[int, str]:
-    """Award photo per goal: the Super Admin's upload, else the default FlashBot art."""
+    """Award photo per goal: the Super Admin's upload, else the default Falcon Bot art."""
     return {**DEFAULT_AWARD_IMAGES, **await custom_award_image_urls(db)}
 
 

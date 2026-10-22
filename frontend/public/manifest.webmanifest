@@ -1,14 +1,14 @@
 {
   "id": "/",
-  "name": "FlashPost",
-  "short_name": "FlashPost",
-  "description": "Gestão e publicação profissional no Instagram.",
+  "name": "Falcon Post",
+  "short_name": "Falcon Post",
+  "description": "Falcon Post e Falcon Bot: publicação no Instagram e funis de venda no Telegram.",
   "lang": "pt-BR",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#070809",
-  "theme_color": "#070809",
+  "background_color": "#050507",
+  "theme_color": "#050507",
   "icons": [
     {
       "src": "/brand/icon-192.png",

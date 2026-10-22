@@ -1,4 +1,4 @@
-"""Telegram sales bots run by FlashPost itself (the in-house SharkBot alternative).
+"""Telegram sales bots run by Falcon Post itself (the in-house SharkBot alternative).
 
 A workspace connects bots (token from @BotFather) and builds flows in the panel.
 Every piece of copy, media, price and delivery lives in ``TgFlow.definition``;
@@ -225,7 +225,7 @@ class TgOrder(Base):
     # Fixed when the charge is created, never changed: shared_funnel | own_funnel | main
     origin: Mapped[str | None] = mapped_column(String(16))
     platform_fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
-    transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))  # FlashBot fee charged on this sale
+    transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))  # Falcon Bot fee charged on this sale
     pix_copy_paste: Mapped[str | None] = mapped_column(Text)
     # pending -> paid | expired | review (amount mismatch) | failed (gateway error)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")

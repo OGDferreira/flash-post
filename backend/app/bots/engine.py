@@ -1301,7 +1301,7 @@ async def notify_sale(db: AsyncSession, bot: TgBot, order: TgOrder) -> None:
             # Report the plan price, not the net payout after gateway fees and commission.
             await notify_user(
                 db, workspace.owner_id, "sale", "⚡ Nova venda!",
-                f"Venda de {brl(order.amount)} 🤑", "/feature/bots",
+                f"Venda de {brl(order.amount)} 🤑", "/bot",
             )
         if order.split_chief_user_id and order.split_amount:
             seller = await db.get(User, workspace.owner_id) if workspace else None
