@@ -12,7 +12,6 @@ import { type FlowShare, type GatewayId, brl, useMyPartners, useSaveFlowShare } 
 
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : "Não foi possível salvar. Tente de novo.");
 const SHOP_ID = /^(snakepay_[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
-const bareShop = (value: string) => value.trim().toLowerCase().replace(/^snakepay_/, "").replaceAll("-", "");
 const GATEWAY_NAMES: Record<GatewayId, string> = { smokepay: "SmokePay", snakepay: "SnakePay" };
 
 type GatewayCatalog = { gateways: { id: GatewayId; name: string; available: boolean; fee: string }[] };
@@ -57,7 +56,6 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
   const [gateway, setGateway] = useState<GatewayId>("smokepay");
   const [seller, setSeller] = useState("");
   const [owner, setOwner] = useState("");
-  const [sellerShop, setSellerShop] = useState("");
   const [ownerShop, setOwnerShop] = useState("");
   const [loopId, setLoopId] = useState<string | undefined>(undefined);
   const [takeAll, setTakeAll] = useState(false);
@@ -70,7 +68,6 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
     setGateway(initial?.gateway ?? "smokepay");
     setSeller(initial ? String(initial.seller_percent) : "");
     setOwner(initial ? String(initial.owner_percent) : "");
-    setSellerShop("");
     setOwnerShop("");
     setLoopId(undefined);
     setTakeAll(Boolean(initial?.owner_takes_all));
@@ -86,7 +83,6 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
   const partner = partnerList.find((item) => item.id === partnerId);
   const currentLoop = loopId === undefined ? (flow?.shared_loop_id ?? "") : loopId ?? "";
   // When editing, an empty ShopID field keeps the saved one (shown masked).
-  const keepsSeller = Boolean(initial?.seller_shop_id) && !sellerShop.trim() && initial?.gateway === "snakepay";
   const keepsOwner = Boolean(initial?.owner_shop_id) && !ownerShop.trim() && initial?.gateway === "snakepay";
 
   const problems = useMemo(() => {
@@ -105,16 +101,12 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
     }
     if (gateway === "snakepay") {
       if (!snakeAvailable) list.push("A SnakePay ainda não foi liberada pelo administrador.");
-      const sellerValue = sellerShop.trim();
       const ownerValue = ownerShop.trim();
-      if (!takeAll && !sellerValue && !keepsSeller) list.push("Informe o ShopID SnakePay do vendedor.");
-      if (sellerValue && !SHOP_ID.test(sellerValue)) list.push("ShopID do vendedor inválido (começa com snakepay_).");
       if (!takeAll && !Number.isNaN(o) && o > 0 && !ownerValue && !keepsOwner) list.push("Informe o seu ShopID SnakePay para receber a comissão.");
       if (ownerValue && !SHOP_ID.test(ownerValue)) list.push("O seu ShopID é inválido (começa com snakepay_).");
-      if (sellerValue && ownerValue && bareShop(sellerValue) === bareShop(ownerValue)) list.push("Vendedor e dono precisam ser contas SnakePay diferentes.");
     }
     return list;
-  }, [flowId, partnerId, seller, owner, gateway, snakeAvailable, sellerShop, ownerShop, keepsSeller, keepsOwner, takeAll]);
+  }, [flowId, partnerId, seller, owner, gateway, snakeAvailable, ownerShop, keepsOwner, takeAll]);
 
   const confirm = () => {
     // With 100% for you the saved split stays for when you turn it off (100/0 when there is none).
@@ -127,9 +119,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
       seller_percent: takeAll && !validSplit ? "100" : String(parsePercent(seller)),
       owner_percent: takeAll && !validSplit ? "0" : String(parsePercent(owner)),
       owner_takes_all: takeAll,
-      ...(gateway === "snakepay"
-        ? { seller_shop_id: sellerShop.trim() || undefined, owner_shop_id: ownerShop.trim() || undefined }
-        : {}),
+      ...(gateway === "snakepay" ? { owner_shop_id: ownerShop.trim() || undefined } : {}),
       ...(loopId !== undefined ? { loop_id: loopId || null } : {}),
     };
     save.mutate(input, { onSuccess: onClose });
@@ -270,20 +260,10 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
           {gateway === "snakepay" && (
             <div className="space-y-3 rounded-xl border border-line-soft bg-surface-inset p-3">
               <p className="text-xs leading-5 text-muted">
-                A SnakePay divide cada Pix por ShopID. Os ShopIDs ficam ligados só a este compartilhamento: o vendedor não precisa cadastrar
-                chave nem credencial dele para vender este funil.
+                {takeAll
+                  ? "Cada Pix é cobrado na sua conta SnakePay e o líquido inteiro fica com você."
+                  : "Cada venda é cobrada na conta SnakePay do sócio, que precisa configurar a própria conta para usar o funil. Só a sua comissão vem via split para o seu ShopID."}
               </p>
-              {!takeAll && <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-fg-2">ShopID SnakePay do vendedor</span>
-                <input
-                  autoComplete="off"
-                  className="field font-mono text-xs"
-                  onChange={(e) => setSellerShop(e.target.value)}
-                  placeholder={keepsSeller ? `Salvo (${initial?.seller_shop_id}) · deixe vazio para manter` : "snakepay_…"}
-                  spellCheck={false}
-                  value={sellerShop}
-                />
-              </label>}
               <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-fg-2">Seu ShopID SnakePay ({takeAll ? "recebe as vendas · não precisa se você tem chave própria" : "recebe a comissão"})</span>
                 <input
@@ -328,10 +308,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
                 ? [["Vendas", "100% para você · sócio não é avisado"]]
                 : [["Vendedor fica com", pct(s)], ["Sua comissão", pct(o)]]),
               ...(gateway === "snakepay"
-                ? [
-                    ...(takeAll ? [] : [["ShopID do vendedor", sellerShop.trim() ? `••••${sellerShop.trim().slice(-4)}` : initial?.seller_shop_id ?? "—"]]),
-                    ["Seu ShopID", ownerShop.trim() ? `••••${ownerShop.trim().slice(-4)}` : initial?.owner_shop_id ?? (o > 0 ? "—" : "não precisa")],
-                  ]
+                ? [["Seu ShopID", ownerShop.trim() ? `••••${ownerShop.trim().slice(-4)}` : initial?.owner_shop_id ?? (takeAll || o > 0 ? "—" : "não precisa")]]
                 : []),
               ["Loop junto", myLoops.find((loop) => loop.id === currentLoop)?.name ?? "Sem loop"],
             ].map(([label, value]) => (

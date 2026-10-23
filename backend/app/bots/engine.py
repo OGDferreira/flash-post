@@ -993,7 +993,13 @@ async def create_order(
         route = await billing_route(db, bot.workspace_id, bot.flow_id)
         if not route.allowed:  # a shared funnel that is no longer available to this bot
             await tg.send_message(lead.chat_id, "Esta oferta não está disponível no momento.")
-            await notify_owners(db, bot, "⚠️ Funil indisponível", f"@{bot.username}: o funil compartilhado não está mais liberado.", "bot-flow")
+            if route.needs_seller_snakepay:
+                await notify_owners(
+                    db, bot, "⚙️ Configure a SnakePay",
+                    f"@{bot.username}: configure a sua SnakePay em Gateways de pagamento para vender este funil.", "bot-gateway",
+                )
+            else:
+                await notify_owners(db, bot, "⚠️ Funil indisponível", f"@{bot.username}: o funil compartilhado não está mais liberado.", "bot-flow")
             return None
         snapshot = {
             "plan": plan.model_dump(mode="json"), "bump": bump.model_dump(mode="json") if bump else None,

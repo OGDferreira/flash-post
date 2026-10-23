@@ -22,6 +22,7 @@ type GatewayState = {
   snakepay_webhook_url: string;
   is_admin: boolean;
   needs_recipient: boolean;
+  has_own_flow: boolean;
   flows: { id: string; name: string; gateway: GatewayId | null }[];
   priority: PriorityRow[];
   // funnels shared with this operation: they follow the rules of whoever shared them
@@ -426,8 +427,10 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
         ) : (
           <>
             <p className="rounded-xl border border-line-soft px-3 py-2 text-[11px] leading-5 text-muted">
-              Com a conta SnakePay própria (abaixo), as vendas — inclusive dos funis compartilhados com você — são cobradas na sua conta e só a comissão do dono sai por split. Sem ela, os funis compartilhados usam os ShopIDs que o dono definiu.
+              Com a conta SnakePay própria (abaixo), as vendas — inclusive dos funis compartilhados com você — são cobradas na sua conta e só a comissão do dono sai por split. Para vender funis compartilhados pela SnakePay, a conta própria é obrigatória.
             </p>
+            {/* The ShopID (platform-key split) only matters for the operation's own funnels. */}
+            {(data.has_own_flow || data.snakepay_recipient_id) && (
             <div>
               <label className="block text-sm font-medium text-fg" htmlFor="snakepay-recipient">Seu ShopID SnakePay</label>
               <input
@@ -439,7 +442,7 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
                 spellCheck={false}
                 value={recipient}
               />
-              <p className="mt-1.5 text-[11px] text-muted">SnakePay → Conta → Split → Seu ShopID. Recebe as vendas dos seus funis pelo split da plataforma.</p>
+              <p className="mt-1.5 text-[11px] text-muted">SnakePay → Conta → Split → Seu ShopID. Recebe as vendas dos seus funis próprios pelo split da plataforma.</p>
               <div className="mt-2 flex items-center gap-2">
                 <Button
                   disabled={busy || (recipient.trim() || null) === (data.snakepay_recipient_id ?? null)}
@@ -453,6 +456,7 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
               </div>
               {saveRecipient.error && <p className="mt-2 text-xs text-danger">{errorText(saveRecipient.error)}</p>}
             </div>
+            )}
 
             {!data.is_admin && (
               <details className="rounded-xl border border-line-soft p-3" open={data.snakepay_account_key_set}>

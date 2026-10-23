@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronRight, CopyPlus, Folder, Infinity as InfinityIcon, Lock, RotateCcw, Share2, SlidersHorizontal } from "lucide-react";
+import { Check, ChevronRight, CopyPlus, Folder, Infinity as InfinityIcon, KeyRound, Lock, RotateCcw, Share2, SlidersHorizontal } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { CopyField } from "@/components/ui/CopyField";
 import { Modal } from "@/components/ui/Modal";
 import type { InstagramFoldersResponse, InstagramLoop, InstagramLoopAccountsPage } from "@/pages/loops/loopShared";
 import { ApiError, apiRequest } from "@/services/api";
@@ -547,6 +548,7 @@ export function SharedFlowsPanel() {
   const chief = useChiefLabel();
   const shared = useSharedTemplates();
   const use = useUseTemplate("flows");
+  const [setupFlow, setSetupFlow] = useState<string | null>(null);
   if (shared.isLoading) return <LoadingState label="Carregando funis compartilhados" />;
   if (shared.error) return <ErrorState message={errorText(shared.error)} onRetry={() => void shared.refetch()} />;
   const data = shared.data!;
@@ -567,9 +569,10 @@ export function SharedFlowsPanel() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        Funis de {chief} prontos para rodar no seu bot. Gateway, porcentagens e ShopIDs são definidos por {chief}: você não precisa
-        cadastrar credenciais para vender estes funis. Quando o funil vem com um loop, ele aparece em Loops compartilhados, sem contas:
-        conecte as suas e ele começa a postar. O conteúdo do funil é protegido; leads, vendas e métricas são seus.
+        Funis de {chief} prontos para rodar no seu bot. As regras de divisão são definidas por {chief}. Funis pela SnakePay exigem que
+        você configure a sua conta SnakePay (as vendas caem direto nela); funis pela SmokePay funcionam sem configurar nada. Quando o
+        funil vem com um loop, ele aparece em Loops compartilhados, sem contas: conecte as suas e ele começa a postar. O conteúdo do
+        funil é protegido; leads, vendas e métricas são seus.
       </p>
       {!data.accepted && <AcceptFirst />}
       {use.error && <ErrorState message={errorText(use.error)} />}
@@ -589,40 +592,121 @@ export function SharedFlowsPanel() {
                 <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
                 {flow.in_use && <Badge tone="success">No seu bot</Badge>}
               </div>
-              <dl className="grid grid-cols-3 gap-2 text-center">
-                <div className="rounded-lg bg-surface-inset px-2 py-2">
-                  <dt className="text-[10px] uppercase tracking-wide text-muted">Gateway</dt>
-                  <dd className="mt-0.5 text-sm font-semibold text-fg">{flow.rules.gateway === "snakepay" ? "SnakePay" : "SmokePay"}</dd>
-                </div>
-                <div className="rounded-lg bg-surface-inset px-2 py-2">
-                  <dt className="text-[10px] uppercase tracking-wide text-muted">Você</dt>
-                  <dd className="mt-0.5 text-sm font-semibold text-accent">{percent(flow.rules.seller_percent)}</dd>
-                </div>
-                <div className="rounded-lg bg-surface-inset px-2 py-2">
-                  <dt className="text-[10px] uppercase tracking-wide text-muted">Dono</dt>
-                  <dd className="mt-0.5 text-sm font-semibold text-fg">{percent(flow.rules.owner_percent)}</dd>
-                </div>
-              </dl>
-              <p className="flex items-start gap-1.5 text-[11px] leading-4 text-muted">
-                <Lock className="mt-0.5 shrink-0" size={12} />
-                {flow.rules.set_by_owner
-                  ? `Regras definidas por ${chief}${flow.rules.seller_shop_id ? ` · seu ShopID neste funil ${flow.rules.seller_shop_id}` : ""}. Só ${chief} altera.`
-                  : `Segue a porcentagem da sociedade com ${chief}.`}{" "}
-                Base: líquido da venda (bruto menos a taxa do gateway).
-              </p>
+              <div className="flex items-center gap-2">
+                <Badge>{flow.rules.gateway === "snakepay" ? "SnakePay" : "SmokePay"}</Badge>
+                {flow.rules.needs_setup && <Badge tone="warning">Configure a SnakePay</Badge>}
+              </div>
               <p className="text-xs text-muted">
                 {flow.loop_name ? `Loop junto: ${flow.loop_name}${flow.loop_in_use ? " · já está nos seus loops" : ""}` : "Sem loop junto"}
               </p>
-              <Button disabled={!data.accepted || use.isPending} onClick={() => use.mutate(flow.id)} size="sm" variant="primary">
-                {flow.loop_in_use || !flow.loop_name ? <Check size={14} /> : <CopyPlus size={14} />}{" "}
-                {flow.loop_name ? (flow.loop_in_use ? "Usar funil" : "Usar funil + loop") : "Usar funil"}
-              </Button>
+              {flow.rules.needs_setup ? (
+                <>
+                  <p className="flex items-start gap-1.5 text-[11px] leading-4 text-muted">
+                    <Lock className="mt-0.5 shrink-0" size={12} />
+                    Este funil cobra pela SnakePay. Configure a sua conta SnakePay para usá-lo: as vendas caem direto na sua conta.
+                  </p>
+                  <Button disabled={!data.accepted} onClick={() => setSetupFlow(flow.name)} size="sm" variant="primary">
+                    <KeyRound size={14} /> Configurar SnakePay
+                  </Button>
+                </>
+              ) : (
+                <Button disabled={!data.accepted || use.isPending} onClick={() => use.mutate(flow.id)} size="sm" variant="primary">
+                  {flow.loop_in_use || !flow.loop_name ? <Check size={14} /> : <CopyPlus size={14} />}{" "}
+                  {flow.loop_name ? (flow.loop_in_use ? "Usar funil" : "Usar funil + loop") : "Usar funil"}
+                </Button>
+              )}
             </Card>
           ))}
         </div>
       )}
+      <SnakepaySetupModal flowName={setupFlow} onClose={() => setSetupFlow(null)} />
     </div>
   );
 }
 
-const percent = (value: number) => `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+/** The seller configures their own SnakePay (key + webhook) so they can use a shared SnakePay
+ *  funnel. They never see the owner's commission, ShopID or any split detail. */
+function SnakepaySetupModal({ flowName, onClose }: { flowName: string | null; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [apiKey, setApiKey] = useState("");
+  const [secret, setSecret] = useState("");
+  const webhook = useQuery({
+    queryKey: ["payment-gateways"],
+    queryFn: () => apiRequest<{ snakepay_webhook_url: string }>("/api/payment-gateways"),
+    enabled: flowName !== null,
+  });
+  const save = useMutation({
+    mutationFn: () =>
+      apiRequest("/api/payment-gateways/snakepay/credentials", {
+        method: "PUT",
+        body: { api_key: apiKey.trim(), webhook_secret: secret.trim() },
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["partners", "shared"] }),
+        queryClient.invalidateQueries({ queryKey: ["payment-gateways"] }),
+      ]);
+      onClose();
+    },
+  });
+
+  useEffect(() => {
+    if (flowName !== null) {
+      setApiKey("");
+      setSecret("");
+      save.reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowName]);
+
+  return (
+    <Modal
+      busy={save.isPending}
+      description="As vendas deste funil caem direto na sua conta SnakePay. Suas credenciais ficam criptografadas e nunca são mostradas de novo."
+      footer={
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button onClick={onClose}>Cancelar</Button>
+          <Button disabled={!apiKey.trim() || !secret.trim() || save.isPending} onClick={() => save.mutate()} variant="primary">
+            <KeyRound size={14} /> {save.isPending ? "Salvando…" : "Salvar e liberar"}
+          </Button>
+        </div>
+      }
+      onClose={onClose}
+      open={flowName !== null}
+      title="Configurar SnakePay"
+    >
+      <div className="space-y-3">
+        {webhook.data && (
+          <CopyField
+            hint="Cadastre esta URL na área Desenvolvedor da sua conta SnakePay, junto com o segredo do webhook."
+            label="URL do webhook"
+            value={webhook.data.snakepay_webhook_url}
+          />
+        )}
+        <label className="block space-y-1.5">
+          <span className="text-xs font-medium text-fg-2">Chave secreta da API</span>
+          <input
+            autoComplete="new-password"
+            className="field font-mono text-xs"
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder="Chave da sua conta SnakePay"
+            type="password"
+            value={apiKey}
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-xs font-medium text-fg-2">Segredo do webhook</span>
+          <input
+            autoComplete="new-password"
+            className="field font-mono text-xs"
+            onChange={(event) => setSecret(event.target.value)}
+            placeholder="Segredo configurado na SnakePay"
+            type="password"
+            value={secret}
+          />
+        </label>
+        {save.error && <ErrorState message={errorText(save.error)} />}
+      </div>
+    </Modal>
+  );
+}

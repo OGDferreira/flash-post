@@ -65,11 +65,8 @@ export type GatewayId = "smokepay" | "snakepay";
 export type SellerRules = {
   set_by_owner: boolean;
   gateway: GatewayId;
-  seller_percent: number;
-  owner_percent: number;
-  /** Masked ("••••1234"). */
-  seller_shop_id: string | null;
-  basis: string;
+  /** SnakePay funnel the seller must configure their own SnakePay for before using. */
+  needs_setup: boolean;
 };
 
 /** One funnel of mine shared with one partner ("Que compartilhei"). ``rule: "partnership"``

@@ -167,6 +167,8 @@ class BillingRoute:
     share_id: uuid.UUID | None = None
     # The funnel's owner keeps the whole sale (TgFlowShare.owner_takes_all).
     owner_all: bool = False
+    # A shared SnakePay funnel the seller can only sell after saving their own SnakePay key.
+    needs_seller_snakepay: bool = False
 
     def preview(self, net: Decimal | None) -> tuple[Decimal | None, Decimal | None]:
         """(chief commission, partner net) from the net after the gateway fee."""
@@ -337,6 +339,12 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
         rule = await active_share(db, flow, workspace_id)
         if rule is not None and rule.owner_takes_all:
             return await _owner_all_route(db, link, rule)
+        if await _needs_seller_snakepay(db, workspace, flow):
+            # A shared SnakePay funnel is always charged in the seller's own account; it stays
+            # locked (no sale) until the seller saves their own SnakePay credentials.
+            route.allowed = False
+            route.needs_seller_snakepay = True
+            return route
         commission = link.participation_percent
         if rule is not None:  # the rules the owner set for this partner and funnel
             route.share_id = rule.id
@@ -370,6 +378,16 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
                 route.fee_percent = min(fee["value"], MAX_COMMISSION)
                 route.splits = [{"parent": True, "percent": float(route.fee_percent)}]
     return route
+
+
+async def _needs_seller_snakepay(db: AsyncSession, workspace: Workspace, flow: TgFlow | None) -> bool:
+    """A shared funnel set to SnakePay can only be sold after the seller saves their own SnakePay
+    credentials: the charge is always created in the seller's own account."""
+    if workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted:
+        return False
+    from app.bots import gateways
+
+    return await gateways.gateway_choice(db, workspace, flow) == "snakepay"
 
 
 async def _owner_all_route(db: AsyncSession, link: Affiliation, rule: TgFlowShare) -> BillingRoute:
