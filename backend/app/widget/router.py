@@ -65,30 +65,42 @@ async def today(
         .where(own, TgOrder.status == "paid", TgOrder.paid_at >= midnight, TgOrder.paid_at < tomorrow,
             TgOrder.gateway_transaction_id.is_not(None), TgOrder.gateway_transaction_id != "")
     )).all()
-    # commissions earned today from partners' sales count as profit too
-    commissions = await db.scalar(
-        select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
-            TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid", TgOrder.paid_at >= midnight, TgOrder.paid_at < tomorrow
+    # commissions earned today from partners' sales count as profit too (per hour, for the chart)
+    commission_rows = (await db.execute(
+        select(TgOrder.paid_at, TgOrder.split_amount).where(
+            TgOrder.split_chief_user_id == user.id, TgOrder.status == "paid",
+            TgOrder.paid_at >= midnight, TgOrder.paid_at < tomorrow, TgOrder.split_amount.is_not(None),
         )
-    ) or 0
+    )).all()
     hours = [Decimal("0")] * 24
-    revenue = profit = Decimal("0")
+    commission_hours = [Decimal("0")] * 24
+    revenue = profit = commissions = Decimal("0")
     for paid_at, amount, kept in paid_rows:
         moment = paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc)
         hours[moment.astimezone(zone).hour] += Decimal(amount)
         revenue += Decimal(amount)
         profit += Decimal(kept)
-    profit += Decimal(commissions)
-    running, series = Decimal("0"), []
-    for hour in range(now.hour + 1):  # cumulative revenue up to now
+    for paid_at, amount in commission_rows:
+        moment = paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc)
+        commission_hours[moment.astimezone(zone).hour] += Decimal(amount)
+        commissions += Decimal(amount)
+    profit += commissions
+    running = crunning = Decimal("0")
+    series, commission_series = [], []
+    for hour in range(now.hour + 1):  # cumulative up to now
         running += hours[hour]
+        crunning += commission_hours[hour]
         series.append(float(running.quantize(CENT)))
+        commission_series.append(float(crunning.quantize(CENT)))
     return {
         "name": "Falcon Bot",
         "pix_generated": generated,
         "pix_paid": len(paid_rows),
         "revenue": float(revenue.quantize(CENT)),
         "profit": float(profit.quantize(CENT)),
+        "commissions": float(commissions.quantize(CENT)),
         "series": series,
+        "commission_series": commission_series,
+        "is_admin": user.platform_role == "SUPER_ADMIN",
         "updated_at": now.strftime("%H:%M"),
     }

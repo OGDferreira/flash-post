@@ -18,18 +18,19 @@ export function scriptableWidgetScript(baseUrl: string, token: string, theme: Wi
 // Gerado em ${new Date().toLocaleDateString("pt-BR")}. Copiar o script de novo no site desliga este.
 const API = ${JSON.stringify(`${base}/api/widget/today`)};
 const TOKEN = ${JSON.stringify(token)};
-const LOGO = ${JSON.stringify(`${base}/brand/icon-192.png`)};
+const LOGO = ${JSON.stringify(`${base}/brand/falconbot-icon-192.png`)};
 const SITE = ${JSON.stringify(`${base}/bot`)};
 
-// Three looks in the Falcon Post colors. Pick one per widget in its "Parameter" field
-// (dark, white or azul); empty = the one chosen when the script was copied.
+// Three looks in the Falcon Bot colors (indigo/purple). Pick one per widget in its "Parameter"
+// field (dark, white or azul); empty = the one chosen when the script was copied. "comm" is the
+// commission tone (purple) used on the Super Admin's commission line and dotted chart.
 const THEMES = {
-  azul: { bg: ["#3a5ffe", "#1e9cfd", "#15d6fe"], text: "#ffffff", soft: ["#ffffff", 0.8], faint: ["#ffffff", 0.6],
-          pill: ["#ffffff", 0.2], line: "#ffffff", fill: 0.16, profit: "#b6ffcf", rate: "#ffffff" },
-  dark: { bg: ["#0b1020", "#0e1630", "#10204a"], text: "#ffffff", soft: ["#9fb3d9", 1], faint: ["#6b7da3", 1],
-          pill: ["#1e9cfd", 0.22], line: "#1e9cfd", fill: 0.22, profit: "#22c55e", rate: "#15d6fe" },
-  white: { bg: ["#ffffff", "#f3f7ff", "#e8f1ff"], text: "#0b1530", soft: ["#4a5a7d", 1], faint: ["#8a97b4", 1],
-           pill: ["#1e7cfd", 0.12], line: "#1e7cfd", fill: 0.14, profit: "#16a34a", rate: "#1e7cfd" },
+  azul: { bg: ["#5169f4", "#3b52e0", "#2f3fbf"], text: "#ffffff", soft: ["#ffffff", 0.82], faint: ["#ffffff", 0.62],
+          pill: ["#ffffff", 0.2], line: "#ffffff", fill: 0.16, profit: "#b6ffcf", rate: "#ffffff", comm: "#dcc4ff" },
+  dark: { bg: ["#12141c", "#191d2e", "#20264a"], text: "#ffffff", soft: ["#aab4d4", 1], faint: ["#6b7699", 1],
+          pill: ["#536dfe", 0.24], line: "#6b81ff", fill: 0.2, profit: "#22c55e", rate: "#93a3ff", comm: "#b171ff" },
+  white: { bg: ["#ffffff", "#f2f5ff", "#e7edff"], text: "#0b1530", soft: ["#495271", 1], faint: ["#8a93b4", 1],
+           pill: ["#536dfe", 0.12], line: "#3a4fd6", fill: 0.14, profit: "#16a34a", rate: "#536dfe", comm: "#8b3fd6" },
 };
 const PICK = String(args.widgetParameter || ${JSON.stringify(theme)}).trim().toLowerCase();
 const T = THEMES[PICK === "branco" ? "white" : PICK === "escuro" ? "dark" : PICK] || THEMES.azul;
@@ -37,6 +38,7 @@ const BLUE = T.bg;
 const C = {
   text: new Color(T.text), soft: new Color(...T.soft), faint: new Color(...T.faint),
   pill: new Color(...T.pill), green: new Color(T.profit), rate: new Color(T.rate), badge: new Color("#22c55e", 0.92),
+  comm: new Color(T.comm),
 };
 function rgba(hex, alpha = 1) {
   const n = parseInt(hex.slice(1), 16);
@@ -70,7 +72,7 @@ async function loadData() {
 }
 
 async function loadLogo() {
-  const path = fm.joinPath(dir, "flashbot-logo-v2.png");
+  const path = fm.joinPath(dir, "flashbot-logo-v3.png");
   if (fm.fileExists(path)) return fm.readImage(path);
   try {
     const image = await new Request(LOGO).loadImage();
@@ -177,7 +179,35 @@ function badge(stack, delta, size) {
 }
 
 // White line with a glow over a soft fill; the dot marks "now".
-function chart(series, width, height) {
+// Draw a dashed polyline (Scriptable has no native line dash), used for the commission chart.
+function dashed(ctx, pts, color, width) {
+  const dash = 5, gap = 4;
+  let on = true, remain = dash;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 0.0001;
+    const ux = dx / len, uy = dy / len;
+    let pos = 0;
+    while (pos < len) {
+      const seg = Math.min(remain, len - pos);
+      if (on) {
+        const p = new Path();
+        p.move(new Point(a.x + ux * pos, a.y + uy * pos));
+        p.addLine(new Point(a.x + ux * (pos + seg), a.y + uy * (pos + seg)));
+        ctx.addPath(p);
+        ctx.setStrokeColor(color);
+        ctx.setLineWidth(width);
+        ctx.strokePath();
+      }
+      pos += seg; remain -= seg;
+      if (remain <= 0.001) { on = !on; remain = on ? dash : gap; }
+    }
+  }
+}
+
+function chart(series, width, height, opts) {
+  opts = opts || {};
+  const hex = opts.color || T.line;
   const ctx = new DrawContext();
   ctx.size = new Size(width, height);
   ctx.opaque = false;
@@ -186,29 +216,49 @@ function chart(series, width, height) {
   const max = Math.max(...points, 1);
   const step = width / Math.max(points.length - 1, 1);
   const y = (v) => height - 4 - (v / max) * (height - 12);
-  const line = new Path();
-  line.move(new Point(0, y(points[0])));
-  points.forEach((v, i) => line.addLine(new Point(i * step, y(v))));
-  const area = new Path();
-  area.move(new Point(0, height));
-  points.forEach((v, i) => area.addLine(new Point(i * step, y(v))));
-  area.addLine(new Point((points.length - 1) * step, height));
-  area.closeSubpath();
-  ctx.addPath(area);
-  ctx.setFillColor(new Color(T.line, T.fill));
-  ctx.fillPath();
-  [[6, 0.15], [3.2, 0.3], [1.8, 1]].forEach(([w, a]) => {
-    ctx.addPath(line);
-    ctx.setStrokeColor(new Color(T.line, a));
-    ctx.setLineWidth(w);
-    ctx.strokePath();
-  });
-  const last = new Point((points.length - 1) * step, y(points[points.length - 1]));
-  ctx.setFillColor(new Color(T.line, 0.35));
+  const pts = points.map((v, i) => new Point(i * step, y(v)));
+  if (opts.dotted) {
+    // Commission chart: just a dashed line and the end dot, no filled area.
+    dashed(ctx, pts, new Color(hex, 0.95), 1.8);
+  } else {
+    const line = new Path();
+    line.move(pts[0]);
+    pts.forEach((p) => line.addLine(p));
+    const area = new Path();
+    area.move(new Point(0, height));
+    pts.forEach((p) => area.addLine(p));
+    area.addLine(new Point((points.length - 1) * step, height));
+    area.closeSubpath();
+    ctx.addPath(area);
+    ctx.setFillColor(new Color(hex, T.fill));
+    ctx.fillPath();
+    [[6, 0.15], [3.2, 0.3], [1.8, 1]].forEach(([w, a]) => {
+      ctx.addPath(line);
+      ctx.setStrokeColor(new Color(hex, a));
+      ctx.setLineWidth(w);
+      ctx.strokePath();
+    });
+  }
+  const last = pts[pts.length - 1];
+  ctx.setFillColor(new Color(hex, 0.35));
   ctx.fillEllipse(new Rect(last.x - 6, last.y - 6, 12, 12));
-  ctx.setFillColor(new Color(T.line));
+  ctx.setFillColor(new Color(hex));
   ctx.fillEllipse(new Rect(last.x - 2.5, last.y - 2.5, 5, 5));
   return ctx.getImage();
+}
+
+// Super Admin line: "+R$x em comissões · total R$y", shown below the sales.
+function commissionLine(stack, data, size) {
+  if (!data.is_admin) return;
+  const total = (data.revenue || 0) + (data.commissions || 0);
+  const row = stack.addStack();
+  row.centerAlignContent();
+  const plus = row.addText("+" + brl(data.commissions || 0) + " em comissões");
+  plus.font = Font.semiboldSystemFont(size);
+  plus.textColor = C.comm;
+  const rest = row.addText(" · total " + brl(total));
+  rest.font = Font.mediumSystemFont(size);
+  rest.textColor = C.soft;
 }
 
 function footer(stack, data, size) {
@@ -235,12 +285,22 @@ function medium(data, logo, delta) {
   conversion(left, data, 11);
   left.addSpacer(4);
   badge(left, delta, 10);
+  if (data.is_admin) { left.addSpacer(4); commissionLine(left, data, 10); }
   body.addSpacer(10);
   const right = body.addStack();
   right.layoutVertically();
   right.addSpacer();
-  const graph = right.addImage(chart(data.series || [0], 120, 56));
-  graph.imageSize = new Size(120, 56);
+  if (data.is_admin) {
+    // Revenue chart plus the dotted commission chart below it.
+    const g1 = right.addImage(chart(data.series || [0], 120, 34));
+    g1.imageSize = new Size(120, 34);
+    right.addSpacer(3);
+    const g2 = right.addImage(chart(data.commission_series || [0], 120, 22, { dotted: true, color: T.comm }));
+    g2.imageSize = new Size(120, 22);
+  } else {
+    const graph = right.addImage(chart(data.series || [0], 120, 56));
+    graph.imageSize = new Size(120, 56);
+  }
   w.addSpacer();
   footer(w, data, 9);
   return w;
@@ -284,6 +344,7 @@ function large(data, logo, delta) {
   p.textColor = C.green;
   w.addSpacer(4);
   badge(w, delta, 11);
+  if (data.is_admin) { w.addSpacer(6); commissionLine(w, data, 12); }
   w.addSpacer(8);
   const pix = w.addStack();
   pix.backgroundColor = C.pill;
@@ -293,8 +354,22 @@ function large(data, logo, delta) {
   pixText.font = Font.semiboldSystemFont(12);
   pixText.textColor = C.text;
   w.addSpacer(8);
-  const graph = w.addImage(chart(data.series || [0], 306, 120));
-  graph.imageSize = new Size(306, 120);
+  if (data.is_admin) {
+    const graph = w.addImage(chart(data.series || [0], 306, 86));
+    graph.imageSize = new Size(306, 86);
+    w.addSpacer(4);
+    const crow = w.addStack();
+    crow.centerAlignContent();
+    const tag = crow.addText("comissões");
+    tag.font = Font.mediumSystemFont(9);
+    tag.textColor = C.comm;
+    crow.addSpacer();
+    const cg = w.addImage(chart(data.commission_series || [0], 306, 30, { dotted: true, color: T.comm }));
+    cg.imageSize = new Size(306, 30);
+  } else {
+    const graph = w.addImage(chart(data.series || [0], 306, 120));
+    graph.imageSize = new Size(306, 120);
+  }
   w.addSpacer();
   footer(w, data, 10);
   return w;
