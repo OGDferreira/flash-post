@@ -77,6 +77,7 @@ export function InstagramAccountsPage() {
   const [disconnectMessage, setDisconnectMessage] = useState<
     { text: string; complete: boolean } | undefined
   >();
+  const [showAllAccounts, setShowAllAccounts] = useState(false);
   const [accountFilter, setAccountFilter] = useState<"active" | "issues">("active");
   const [accountSearch, setAccountSearch] = useState("");
   const [accountSort, setAccountSort] = useState<
@@ -232,6 +233,12 @@ export function InstagramAccountsPage() {
         ? connectedAt(second) - connectedAt(first)
         : connectedAt(first) - connectedAt(second);
     });
+
+  // Render only the first rows by default: with hundreds of accounts (each with a photo) the
+  // page would otherwise be heavy and slow. "Mostrar todas" loads the rest.
+  const ACCOUNTS_PREVIEW = 12; // 4 rows × 3 columns at the widest layout
+  const shownAccounts = showAllAccounts ? visibleAccounts : visibleAccounts.slice(0, ACCOUNTS_PREVIEW);
+  const hiddenAccountCount = visibleAccounts.length - shownAccounts.length;
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -435,7 +442,7 @@ export function InstagramAccountsPage() {
           />
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {visibleAccounts.map((account) => {
+          {shownAccounts.map((account) => {
             const active = isInstagramAccountActive(account);
             const expired = new Date(account.token_expires_at).getTime() <= Date.now();
             const label =
@@ -547,6 +554,28 @@ export function InstagramAccountsPage() {
               </article>
             );
           })}
+          </div>
+        )}
+        {hiddenAccountCount > 0 && (
+          <div className="mt-3 flex justify-center">
+            <button
+              className="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-medium text-fg-2 transition hover:border-brand hover:text-fg"
+              onClick={() => setShowAllAccounts(true)}
+              type="button"
+            >
+              Mostrar todas (+{hiddenAccountCount})
+            </button>
+          </div>
+        )}
+        {showAllAccounts && visibleAccounts.length > ACCOUNTS_PREVIEW && (
+          <div className="mt-3 flex justify-center">
+            <button
+              className="text-sm font-medium text-muted transition hover:text-fg"
+              onClick={() => setShowAllAccounts(false)}
+              type="button"
+            >
+              Mostrar menos
+            </button>
           </div>
         )}
       </section>
