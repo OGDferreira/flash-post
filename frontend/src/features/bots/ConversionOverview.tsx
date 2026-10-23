@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Activity, CalendarDays, CircleDollarSign, Handshake, Receipt, TrendingUp, Zap } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { PeriodFilter, isPeriodReady, periodParams, type MetricsPeriod } from "@/features/analytics/period";
 import { apiRequest } from "@/services/api";
@@ -22,6 +22,50 @@ const money = (value: number) => value.toLocaleString("pt-BR", { style: "currenc
 const count = (value: number) => value.toLocaleString("pt-BR");
 const weekday = (iso: string) =>
   new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+
+/** Last 7 days, one bar per day (today on the right). Tap or hover a bar: that day's leads
+ *  and leads per sale. */
+function StartsBars({ days, peak }: { days: { date: string; leads: number; sales: number }[]; peak: number }) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const index = picked ?? days.length - 1;
+  const day = days[index];
+  const dayLabel = (iso: string) =>
+    new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" }).replace(".", "");
+  return (
+    <div className="mt-auto pt-3" onMouseLeave={() => setPicked(null)}>
+      <p className="mb-1.5 min-h-4 text-[10px] text-muted" aria-live="polite">
+        {day ? (
+          <>
+            <span className="font-semibold capitalize text-fg">{index === days.length - 1 ? "Hoje" : dayLabel(day.date)}</span>
+            {" · "}
+            {count(day.leads)} leads · {day.sales ? `${count(Math.round(day.leads / day.sales))} leads por venda` : "sem vendas"}
+          </>
+        ) : null}
+      </p>
+      <div className="flex h-14 items-end gap-1.5" role="group" aria-label="Starts dos últimos 7 dias">
+        {days.map((item, i) => (
+          <button
+            aria-label={`${dayLabel(item.date)}: ${count(item.leads)} leads`}
+            aria-pressed={i === index}
+            className={`flex-1 rounded-t-[4px] transition-[height,background-color] duration-300 ${
+              i === index ? "bg-gradient-to-t from-accent/70 to-accent" : "bg-accent/30 hover:bg-accent/50"
+            }`}
+            key={item.date}
+            onClick={() => setPicked(i)}
+            onMouseEnter={() => setPicked(i)}
+            style={{ height: `${Math.max(10, (100 * item.leads) / peak)}%` }}
+            type="button"
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex gap-1.5 text-center text-[9px] uppercase text-muted">
+        {days.map((item, i) => (
+          <span className={`flex-1 ${i === index ? "font-semibold text-fg" : ""}`} key={item.date}>{weekday(item.date).slice(0, 3)}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function useBotStats(period: MetricsPeriod) {
   return useQuery({
@@ -147,18 +191,7 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
             <p className="mt-1 text-[10px] text-muted">
               <span className="font-semibold text-fg">{t && t.sales ? count(Math.round(t.leads / t.sales)) : "—"}</span> starts por venda
             </p>
-            <div className="mt-auto flex h-14 items-end gap-1.5 pt-3" aria-label="Starts dos últimos 7 dias" role="img">
-              {recent.map((day, index) => (
-                <span
-                  className={`flex-1 rounded-t-[4px] transition-[height] duration-500 ${
-                    index === recent.length - 1 ? "bg-gradient-to-t from-accent/70 to-accent" : "bg-accent/30"
-                  }`}
-                  key={day.date}
-                  style={{ height: `${Math.max(10, (100 * day.leads) / peak)}%` }}
-                  title={`${weekday(day.date)}: ${count(day.leads)} starts`}
-                />
-              ))}
-            </div>
+            <StartsBars days={recent} peak={peak} />
           </StatCard>
 
           <StatCard icon={<Receipt size={16} />} title="Ticket médio">

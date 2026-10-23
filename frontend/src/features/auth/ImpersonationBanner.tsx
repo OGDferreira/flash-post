@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { LogOut, UserRound } from "lucide-react";
 
 import { apiRequest } from "@/services/api";
 
-/** Always-visible strip while a Super Admin is inside someone else's account via "Entrar". */
-export function ImpersonationBanner({ userName, adminName }: { userName: string; adminName: string }) {
+/** While the Super Admin is inside someone's account: a round Falcon Adm button (blue and
+ *  purple) that goes back to the admin panel. On phones it sits left of the Falcon Post/Bot
+ *  switch; on computers, left of the refresh button. */
+export function ImpersonationBanner({ userName }: { userName: string; adminName: string }) {
   const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,26 +22,22 @@ export function ImpersonationBanner({ userName, adminName }: { userName: string;
     }
   }
 
+  const label = `Na conta de ${userName} · voltar ao Falcon Adm`;
   return (
-    <div
-      role="status"
-      className="fixed inset-x-3 z-[100] mx-auto flex max-w-xl flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-warning/50 bg-surface-raised px-3 py-2 text-sm text-fg shadow-lg sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2"
-      style={{ bottom: "calc(env(safe-area-inset-bottom) + 5.5rem)" }}
-    >
-      <UserRound size={16} className="shrink-0 text-warning" />
-      <span className="min-w-0 flex-1">
-        Você ({adminName}) está na conta de <strong className="font-semibold">{userName}</strong>
-      </span>
+    <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] right-[76px] z-[100] flex flex-col items-end gap-1 lg:bottom-6 lg:right-[88px] [body[data-flow-editor]_&]:hidden">
+      {error && <span className="rounded-lg bg-surface-raised px-2 py-1 text-[11px] text-danger shadow">{error}</span>}
       <button
-        className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-warning/50 px-3 text-xs font-medium text-warning hover:bg-warning-soft disabled:opacity-60"
+        aria-label={label}
+        className="falcon-adm-ring grid size-12 place-items-center rounded-full p-[2px] shadow-lg transition-transform active:scale-95 disabled:opacity-60"
         disabled={leaving}
         onClick={() => void leave()}
+        title={label}
         type="button"
       >
-        <LogOut size={13} />
-        {leaving ? "Voltando…" : "Voltar para minha conta"}
+        <span className="grid size-full place-items-center rounded-full bg-[var(--nm-bg)]">
+          <img alt="" className={`size-8 ${leaving ? "animate-pulse" : ""}`} draggable={false} src="/brand/falconadm-emblem-128.webp" />
+        </span>
       </button>
-      {error && <span className="w-full text-xs text-danger">{error}</span>}
     </div>
   );
 }
