@@ -918,7 +918,7 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
 
     assert callback.status_code == 303
     assert callback.headers["location"] == (
-        "http://testserver/feature/accounts?instagram=connected"
+        "http://testserver/feature/accounts?instagram=connected&account=flashpost_demo"
     )
     account = await db_session.scalar(
         select(InstagramAccount).where(

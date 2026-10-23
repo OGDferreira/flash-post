@@ -147,7 +147,12 @@ export function InstagramAccountsPage() {
   useEffect(() => {
     const outcome = searchParams.get("instagram");
     if (!outcome) return;
-    setCallbackMessage(callbackMessages[outcome]);
+    const account = searchParams.get("account");
+    if (outcome === "connected" && account) {
+      setCallbackMessage({ text: `@${account} conectada ao workspace.`, kind: "success" });
+    } else {
+      setCallbackMessage(callbackMessages[outcome]);
+    }
     if (outcome === "connected") {
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
       void queryClient.invalidateQueries({ queryKey: ["analytics"] });
