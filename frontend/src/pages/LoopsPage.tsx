@@ -26,7 +26,7 @@ import {
   formatConnectedDuration,
 } from "@/features/instagram/accountDates";
 import { confirmAction } from "@/lib/confirm";
-import { ShareLoopButton, SharedLoopsSection } from "@/features/partners/SharedTemplates";
+import { ConnectOnlyLoops, ShareLoopButton, SharedLoopsSection } from "@/features/partners/SharedTemplates";
 import { type InstagramMedia, type InstagramMediaResponse, type InstagramFoldersResponse, type InstagramLoop, type InstagramLoopAccountsPage, type InstagramLoopsResponse, type PublicationFailuresResponse, groupFailuresByAccount, type LoopForm, emptyForm, MAX_UPLOAD_BYTES, formatDate, apiErrorMessage, mediaFitsLoop, fileFitsLoop } from "@/pages/loops/loopShared";
 
 function LoopAccountsList({ loopId }: { loopId: string }) {
@@ -340,6 +340,20 @@ export function LoopsPage() {
     });
     setFormOpen(true);
     saveLoop.reset();
+  }
+
+  // Collaborators (and anyone who can't configure): the loops only as "Loop - name", to see
+  // the connected accounts and pick the accounts that post; nothing else can be changed.
+  if (!loops.data.can_configure) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-4">
+        <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
+          <Infinity size={27} className="text-accent" />
+          Loops
+        </h2>
+        <ConnectOnlyLoops loops={loops.data.loops.filter((loop) => !loop.linked)} />
+      </div>
+    );
   }
 
   return (

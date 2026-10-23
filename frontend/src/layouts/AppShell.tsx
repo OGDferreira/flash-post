@@ -188,11 +188,13 @@ export function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
   const notificationItems = [
-    ...(notices.data?.items ?? []).filter((item) => !item.read).slice(0, 10).map((item) => ({
+    ...(notices.data?.items ?? []).slice(0, 30).map((item) => ({
       title: item.title,
       message: item.body,
+      at: item.created_at,
     })),
     ...(analyticsNotifications.data?.disconnected_today_accounts ?? []).slice(0, 10).map((item) => ({
+      at: item.at,
       title: droppedKindTitle[item.kind] ?? "Conta desconectada",
       message:
         item.kind === "manual"
