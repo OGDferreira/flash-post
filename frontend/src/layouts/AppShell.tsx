@@ -12,7 +12,6 @@ import {
   Pin,
   PinOff,
   Share,
-  Shield,
   X,
 } from "lucide-react";
 import { buildNavigation } from "./navigation";
@@ -56,6 +55,11 @@ function snoozeInstallPrompt() {
   } catch (error) {
     console.warn("Falcon Post could not save the install-prompt preference.", error);
   }
+}
+
+/** Falcon Adm: the Falcon Post blue blended into the Falcon Bot purple. */
+function AdminEmblem({ className = "" }: { className?: string }) {
+  return <img alt="Falcon Adm" className={`${className} object-contain`} draggable={false} src="/brand/falconadm-emblem-256.webp" />;
 }
 
 export function AppShell() {
@@ -377,10 +381,12 @@ export function AppShell() {
           }
           onClick={() => setMobileOpen(false)}
         >
-          <BrandLogo app={app} className="size-9 shrink-0" />
+          {isAdminRoute ? <AdminEmblem className="size-9 shrink-0" /> : <BrandLogo app={app} className="size-9 shrink-0" />}
           <span className="max-w-[160px] overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[160px] lg:group-data-[open=true]:opacity-100">
-            <span className="block font-display text-base font-semibold leading-tight text-fg">{APPS[app].name}</span>
-            <span className="block text-[10px] text-muted">{APPS[app].tagline}</span>
+            <span className={`block font-display text-base font-semibold leading-tight ${isAdminRoute ? "falcon-adm-text" : "text-fg"}`}>
+              {isAdminRoute ? "Falcon Adm" : APPS[app].name}
+            </span>
+            <span className="block text-[10px] text-muted">{isAdminRoute ? "Administração da plataforma" : APPS[app].tagline}</span>
           </span>
         </Link>
         <button
@@ -401,15 +407,6 @@ export function AppShell() {
           {pinned ? <PinOff size={15} /> : <Pin size={15} />}
         </button>
       </div>
-
-      {isAdminRoute && (
-        <div className="mx-4 mt-5 flex items-center gap-2 overflow-hidden rounded-lg border border-line bg-surface-raised px-3 py-2 text-xs font-medium text-fg-2 lg:group-data-[open=true]:mx-3">
-          <Shield className="shrink-0 text-accent" size={14} />
-          <span className="max-w-[180px] overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[180px] lg:group-data-[open=true]:opacity-100">
-            Administração da plataforma
-          </span>
-        </div>
-      )}
 
       <nav className="app-sidebar-nav flex-1 space-y-1 overflow-y-auto px-3 py-5">
         {/* Administração (Super Admin) comes last, after the product's own sections. */}
@@ -570,8 +567,8 @@ export function AppShell() {
           <Link aria-label={APPS[app].name} className="flex min-w-0 flex-1 items-center gap-3" to={isAdminRoute ? "/admin" : APPS[app].home}>
             {isAdminRoute ? (
               <>
-                <BrandLogo app={app} className="size-8 shrink-0 lg:hidden" />
-                <span className="truncate font-display text-base font-semibold text-fg sm:text-lg">Falcon · Administração</span>
+                <AdminEmblem className="size-8 shrink-0 lg:hidden" />
+                <span className="falcon-adm-text truncate font-display text-base font-semibold sm:text-lg">Falcon Adm</span>
               </>
             ) : (
               <>
