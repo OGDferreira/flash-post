@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
@@ -22,7 +22,42 @@ type Data = {
 
 const hierarchy: Record<string, string> = { chief: "Chefe", partner: "Sócio", independent: "Independente" };
 
-function Table({ title, head, rows }: { title: string; head: string[]; rows: (string | number)[][] }) {
+/** Two taps: "Ver token" asks the server for this one bot's token, "Copiar" copies it (on the
+ *  iPhone the copy must come straight from a tap, never after a request). */
+function BotTokenCell({ botId }: { botId: string }) {
+  const [token, setToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const reveal = useMutation({
+    mutationFn: () => apiRequest<{ token: string }>(`/api/admin/bots/${botId}/token`, { method: "POST" }),
+    onSuccess: (data) => setToken(data.token),
+  });
+  if (!token) {
+    return (
+      <button className="text-accent hover:underline disabled:opacity-50" disabled={reveal.isPending} onClick={() => reveal.mutate()} type="button">
+        {reveal.isPending ? "…" : reveal.error ? "Tentar de novo" : "Ver token"}
+      </button>
+    );
+  }
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(token);
+    } catch {
+      const field = document.getElementById(`token-${botId}`) as HTMLInputElement | null;
+      field?.select();
+      document.execCommand("copy");
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <input className="w-32 rounded border border-line-soft bg-surface-inset px-1.5 py-0.5 font-mono text-[10px] text-fg" id={`token-${botId}`} readOnly value={token} />
+      <button className="text-accent hover:underline" onClick={() => void copy()} type="button">{copied ? "Copiado" : "Copiar"}</button>
+    </span>
+  );
+}
+
+function Table({ title, head, rows }: { title: string; head: string[]; rows: ReactNode[][] }) {
   return (
     <section className="glass-panel space-y-2 p-4">
       <h3 className="text-sm font-semibold text-fg">{title} ({rows.length})</h3>
@@ -121,10 +156,11 @@ export function AdminOperationsPage() {
             title="Ranking de funis por faturamento"
           />
           <Table
-            head={["Bot", "Dono", "Funil", "Leads", "Pix gerados", "Vendas", "Lead → venda", "Pix → venda", "Faturamento"]}
+            head={["Bot", "Dono", "Funil", "Leads", "Pix gerados", "Vendas", "Lead → venda", "Pix → venda", "Faturamento", "Token"]}
             rows={data.bots.map((b) => [
               `${b.name} · @${b.username} (${b.status})`, b.owner, b.flow_name ?? "—", b.leads, b.pix_generated, b.sales,
               `${b.conversion.toLocaleString("pt-BR")}%`, `${b.pix_conversion.toLocaleString("pt-BR")}%`, brl(b.revenue),
+              <BotTokenCell botId={b.id} key={`token-${b.id}`} />,
             ])}
             title="Comparação de bots"
           />

@@ -174,6 +174,22 @@ async def operations(
 # ------------------------------------------------------------------ funnels (Super Admin sees everything)
 
 
+@router.post("/bots/{bot_id}/token", dependencies=[Depends(require_csrf)])
+async def bot_token(bot_id: uuid.UUID, _admin: SuperAdminUser, db: DbSession, response: Response) -> dict:
+    """Super Admin: a user's bot token (asked one bot at a time, never listed or logged)."""
+    from app.core.crypto import decrypt_value
+
+    bot = await db.get(TgBot, bot_id)
+    if bot is None:
+        raise HTTPException(status_code=404, detail="Bot não encontrado.")
+    try:
+        token = decrypt_value(bot.encrypted_token)
+    except (RuntimeError, ValueError):
+        raise HTTPException(status_code=503, detail="Não foi possível ler o token deste bot.") from None
+    response.headers["Cache-Control"] = "no-store"
+    return {"username": bot.username, "token": token}
+
+
 @router.get("/flows")
 async def all_flows(_admin: SuperAdminUser, db: DbSession) -> dict:
     users = {u.id: u for u in await db.scalars(select(User))}

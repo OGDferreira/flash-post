@@ -828,3 +828,16 @@ async def test_only_the_super_admin_or_who_they_allow_invites_partners(client, d
     from app.affiliates.router import may_invite_partners
 
     assert may_invite_partners(super_admin)
+
+
+@pytest.mark.anyio
+async def test_super_admin_copies_a_users_bot_token(client, db_session, owner, super_admin, apis) -> None:
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    bot, _flow_out = await _setup(client, headers)
+    assert (await client.post(f"/api/admin/bots/{bot['id']}/token", headers=headers)).status_code == 403
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    got = await client.post(f"/api/admin/bots/{bot['id']}/token", headers=admin)
+    assert got.status_code == 200 and got.json()["token"] == TOKEN
+    assert got.headers["cache-control"] == "no-store"
+    # never in the listings
+    assert TOKEN not in (await client.get("/api/admin/operations")).text

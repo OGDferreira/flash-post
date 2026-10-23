@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { persistOptions } from "@/lib/queryCache";
+import { startAutoUpdate } from "@/lib/autoUpdate";
 
 import App from "./App";
 import "@fontsource-variable/space-grotesk";
@@ -73,6 +74,8 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+startAutoUpdate();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <StrictMode>
