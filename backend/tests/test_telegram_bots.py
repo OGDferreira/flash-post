@@ -315,6 +315,10 @@ async def test_full_journey_start_pix_webhook_and_vip_invite(client, db_session:
     orders = (await client.get("/api/bots/orders/list")).json()["orders"]
     assert orders[0]["status"] == "paid" and orders[0]["source"] == "ig_ana"
 
+    analytics = (await client.get("/api/bots/analytics?period=today")).json()
+    assert analytics["funis"] and analytics["funis"][0]["sales"] == 1 and analytics["funis"][0]["revenue"] == 19.9
+    assert analytics["planos"] and analytics["planos"][0]["sales"] == 1 and analytics["planos"][0]["revenue"] == 19.9
+
     # subscription end removes the member without a permanent ban
     await db_session.execute(update(TgSubscription).values(ends_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
     await db_session.execute(update(TgJob).where(TgJob.kind == "end_subscription").values(run_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
