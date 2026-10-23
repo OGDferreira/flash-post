@@ -171,6 +171,29 @@ async def snakepay_breakdown(db, user: User, workspace_id: uuid.UUID) -> dict[st
     return {"sales": _money(own), "commissions": _money(commissions), "fees": fees}
 
 
+async def _falcon_fees(db) -> dict:
+    """Super Admin: what the per-sale Falcon Bot fee (R$ 0,40 by default) brought in, month and today."""
+    now = utc_now()
+    local = now.astimezone(BRAZIL_TIME_ZONE)
+    month_start = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+    async def between(start) -> tuple[Decimal, int]:
+        total, count = (await db.execute(
+            select(func.coalesce(func.sum(TgOrder.transaction_fee), 0), func.count(TgOrder.id)).where(
+                TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.transaction_fee > 0
+            )
+        )).one()
+        return _money(total), int(count)
+
+    month, month_count = await between(month_start)
+    today, today_count = await between(day_start)
+    return {
+        "falcon_fees_month": float(month), "falcon_fees_month_count": month_count,
+        "falcon_fees_today": float(today), "falcon_fees_today_count": today_count,
+    }
+
+
 async def month_revenue(db, workspace_id: uuid.UUID) -> Decimal:
     """Gross revenue (SharkBot + Falcon Bot) since the 1st of the current month, Brazil time."""
     return (await month_revenue_by_bot(db, workspace_id))[0]
@@ -284,7 +307,8 @@ async def summary(user: AuthenticatedUser, db: DbSession) -> dict:
     workspace = await owner_workspace(db, user.id)
     if workspace is None:
         return {"available": False}
-    revenue = await month_revenue(db, workspace.id)
+    # The pill shows Falcon Bot's revenue only (SharkBot sales stay out of it).
+    _total, _shark, revenue = await month_revenue_by_bot(db, workspace.id)
     return {"available": True, "month_revenue": float(revenue), **{k: float(v) if isinstance(v, Decimal) else v for k, v in goal_progress(revenue).items() if k in ("target", "percent", "prize")}}
 
 
@@ -396,6 +420,7 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "snakepay_commissions": float(snake["commissions"]),
         "snakepay_fees": float(snake["fees"]),
         "month_flash_revenue": float(flash_revenue),
+        **(await _falcon_fees(db) if user.platform_role == "SUPER_ADMIN" else {}),
         "goal": _goals_out(revenue, await award_image_urls(db)),
         **numbers,
         "min_withdrawal": float(MIN_WITHDRAWAL),

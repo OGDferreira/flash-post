@@ -41,6 +41,11 @@ export type Wallet = {
   snakepay_commissions?: number;
   snakepay_fees?: number; // Super Admin: platform and per-sale fees kept in the charging account
   month_flash_revenue?: number;
+  /** Super Admin only: the per-sale Falcon Bot fee collected (month and today). */
+  falcon_fees_month?: number;
+  falcon_fees_month_count?: number;
+  falcon_fees_today?: number;
+  falcon_fees_today_count?: number;
   goal: Goal;
   earned: number;
   commissions_received: number;

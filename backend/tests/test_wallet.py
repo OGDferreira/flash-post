@@ -287,3 +287,15 @@ async def test_wallet_splits_month_revenue_between_sharkbot_and_flashbot(client,
     wallet = (await client.get("/api/wallet")).json()
     assert wallet["month_shark_revenue"] == 50.0 and wallet["month_flash_revenue"] == 19.9
     assert wallet["month_revenue"] == 69.9
+    # the header pill shows Falcon Bot's revenue only
+    summary = (await client.get("/api/wallet/summary")).json()
+    assert summary["month_revenue"] == 19.9
+    # only the Super Admin sees what the per-sale Falcon Bot fee brought in
+    assert "falcon_fees_month" not in wallet
+    order = await db_session.scalar(select(TgOrder))
+    order.transaction_fee = Decimal("0.40")
+    chief.platform_role = "SUPER_ADMIN"
+    await db_session.commit()
+    wallet = (await client.get("/api/wallet")).json()
+    assert wallet["falcon_fees_month"] == 0.4 and wallet["falcon_fees_month_count"] == 1
+    assert wallet["falcon_fees_today"] == 0.4 and wallet["falcon_fees_today_count"] == 1

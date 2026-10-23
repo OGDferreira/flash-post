@@ -3,7 +3,6 @@ import { ArrowDownToLine, CheckCircle2, Clock, Trophy, Wallet as WalletIcon, XCi
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Modal } from "@/components/ui/Modal";
-import { useChiefLabel } from "@/features/partners/api";
 import { AwardsCarousel } from "@/features/wallet/AwardsCarousel";
 import { brl, compact, useWallet, useWalletMutations, type Wallet, type Withdrawal } from "@/features/wallet/api";
 import { ApiError } from "@/services/api";
@@ -203,7 +202,6 @@ export function WithdrawalHistory({ items }: { items: Withdrawal[] }) {
 }
 
 export function WalletPage() {
-  const chief = useChiefLabel();
   const wallet = useWallet();
   const [open, setOpen] = useState(false);
   if (wallet.isLoading) return <LoadingState label="Carregando carteira" />;
@@ -211,39 +209,28 @@ export function WalletPage() {
   const data = wallet.data!;
   const fee = data.withdraw_fee ?? 0;
   const partner = Boolean(data.is_partner);
-  const cards: [string, string, string?, string?][] = partner
-    ? [
-        ["Faturamento do mês", brl(data.month_revenue)],
-        ["Líquido disponível para saque", brl(data.available), "text-success", `Taxa por saque ${brl(fee)} · saque até ${brl(data.withdrawable ?? data.available)}`],
-        ["Processando", brl(data.pending), "text-warning"],
-        ["Já sacado", brl(data.withdrawn)],
-      ]
-    : [
-        ["Faturamento do mês", brl(data.month_revenue)],
-        ["Disponível para sacar", brl(data.available), "text-success", `Taxa por saque ${brl(fee)} · saque até ${brl(data.withdrawable ?? data.available)}`],
-        ["Processando", brl(data.pending), "text-warning"],
-        ["Já sacado", brl(data.withdrawn)],
-      ];
-  // Only split by bot when SharkBot also sells; otherwise the month total already says it all.
-  if ((data.month_shark_revenue ?? 0) > 0) {
-    cards.splice(1, 0, ["Vendas SharkBot (mês)", brl(data.month_shark_revenue ?? 0)], ["Vendas Falcon Bot (mês)", brl(data.month_flash_revenue ?? 0)]);
-  }
-  if (!partner && (data.commission_paid ?? 0) > 0) cards.push([`Comissão paga a ${chief}`, brl(data.commission_paid ?? 0), "text-danger", "Já descontada do seu saldo"]);
-  if ((data.snakepay_received ?? 0) > 0) {
-    // Commissions and Falcon Bot fees count here, in the SnakePay total, never in the Falcon Post revenue.
-    const parts = [
-      (data.snakepay_sales ?? 0) > 0 && `vendas ${brl(data.snakepay_sales ?? 0)}`,
-      (data.snakepay_commissions ?? 0) > 0 && `comissões ${brl(data.snakepay_commissions ?? 0)}`,
-      (data.snakepay_fees ?? 0) > 0 && `taxas Falcon Bot ${brl(data.snakepay_fees ?? 0)}`,
-    ].filter(Boolean);
-    cards.push([
-      "Faturamento SnakePay",
-      brl(data.snakepay_received ?? 0),
+  // Just these: each bot's revenue, what can be withdrawn, what already was, commissions
+  // and (Super Admin) what the per-sale Falcon Bot fee brought in.
+  const cards: [string, string, string?, string?][] = [
+    ["Faturamento Falcon Bot", brl(data.month_flash_revenue ?? 0), "text-fg", "Vendas do mês no Falcon Bot"],
+    ["Faturamento Shark", brl(data.month_shark_revenue ?? 0), "text-fg", "Vendas do mês na SharkBot"],
+    [
+      partner ? "Líquido disponível para saque" : "Disponível para sacar",
+      brl(data.available),
       "text-success",
-      `${parts.length > 1 ? `${parts.join(" + ")} · ` : ""}já na sua conta SnakePay, o saque é feito lá`,
+      `Taxa por saque ${brl(fee)} · saque até ${brl(data.withdrawable ?? data.available)}`,
+    ],
+    ["Já sacado", brl(data.withdrawn)],
+    ["Comissões recebidas", brl(data.commissions_received), "text-success", "Dos sócios"],
+  ];
+  if (data.falcon_fees_month !== undefined) {
+    cards.push([
+      "Arrecadado com o Falcon Bot",
+      brl(data.falcon_fees_month),
+      "text-success",
+      `Taxa por venda · ${data.falcon_fees_month_count ?? 0} no mês · hoje ${brl(data.falcon_fees_today ?? 0)} (${data.falcon_fees_today_count ?? 0})`,
     ]);
   }
-  if (data.commissions_received > 0) cards.push(["Comissões recebidas dos sócios", brl(data.commissions_received), "text-success"]);
   return (
     <div className="mx-auto max-w-[1100px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
