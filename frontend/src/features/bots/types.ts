@@ -155,6 +155,7 @@ export type Flow = {
 
 export type Bot = {
   hidden_by_admin?: boolean;
+  taken_from?: string | null; // the user's operation this bot was taken over from (Super Admin only)
   id: string;
   username: string;
   name: string;

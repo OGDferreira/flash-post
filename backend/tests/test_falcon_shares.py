@@ -406,3 +406,153 @@ async def test_super_admin_owner_gets_the_commission_in_the_platform_account_fro
     assert auths == ["Bearer seller_sk_test"]
     assert [item["recipient_id"] for item in created["split"]] == [PLATFORM]
     assert created["split"][0]["percentage"] == 20.0
+
+
+async def _partner_sees_nothing(client, db_session, partner) -> None:
+    """The seller's panel, bots, revenue, wallet and notices know nothing of the owner's 100% sales."""
+    from app.models import AppNotification
+
+    await _as(client, "socio@example.com")
+    stats = (await client.get("/api/bots/stats?period=today")).json()["totals"]
+    assert stats["leads"] == 0 and stats["sales"] == 0 and stats["pix_generated"] == 0 and stats["revenue"] == 0
+    assert [(b["leads"], b["sales"]) for b in (await client.get("/api/bots")).json()["bots"]] == [(0, 0)]
+    assert (await client.get("/api/bots/orders/list")).json()["orders"] == []
+    assert (await client.get("/api/bots/activity")).json()["items"] == []
+    assert (await client.get("/api/finance/month")).json()["today"]["flashbot_gross"] == "0.00"
+    me = (await client.get("/api/partners/me?period=today")).json()["totals"]
+    assert me["sales"] == 0 and me["gross"] == 0 and me["net"] == 0
+    from app.wallet.router import balances, month_revenue_by_bot, snakepay_breakdown
+
+    await db_session.commit()
+    workspace = await service.owner_workspace(db_session, partner.id)
+    money = await balances(db_session, partner, workspace.id)
+    assert money["earned"] == 0 and money["available"] == 0 and money["commission_paid"] == 0
+    assert (await month_revenue_by_bot(db_session, workspace.id))[2] == 0
+    assert sum((await snakepay_breakdown(db_session, partner, workspace.id)).values()) == 0
+    assert not list(await db_session.scalars(select(AppNotification).where(AppNotification.user_id == partner.id)))
+
+
+@pytest.mark.anyio
+async def test_owner_takes_all_charges_the_whole_sale_in_the_owners_account_and_the_seller_never_knows(
+    client, db_session, owner, apis
+) -> None:
+    from app.models import AppNotification, TgLead
+
+    chief, chief_ws = owner
+    partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
+    headers = await _chief(client)
+    flow_id = await _new_flow(client, headers, "Funil Chefe")
+    saved = await client.put("/api/partners/flow-shares", headers=headers, json=_share(flow_id, partner.id, owner_takes_all=True))
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["owner_takes_all"] is True
+
+    partner_headers = await _as(client, "socio@example.com")
+    bot = (await client.post("/api/bots", headers=partner_headers, json={"token": TOKEN, "flow_id": flow_id})).json()
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    created = apis.methods("pix.create")[-1]
+    assert created["shop_id"] == f"fp-{chief_ws.id.hex}" and not created.get("splits")  # all in the owner's subaccount
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.origin == "owner_all" and order.seller_hidden is True and order.split_chief_user_id == chief.id
+    assert order.partner_net == Decimal("0.00") and order.split_amount == Decimal("18.90")  # 19.90 - 1.00 fee
+    assert (await db_session.scalar(select(TgLead))).seller_hidden is True
+    raw, sig = _signed(_paid_event(order.id))
+    assert (await client.post("/api/bots/pay/smokepay", content=raw, headers=sig)).status_code == 200
+
+    await _partner_sees_nothing(client, db_session, partner)
+    # the owner gets the notice and the money as theirs
+    notices = list(await db_session.scalars(select(AppNotification).where(AppNotification.user_id == chief.id)))
+    assert [n.kind for n in notices] == ["sale"]
+    from app.wallet.router import month_commissions
+
+    assert await month_commissions(db_session, chief_ws.id) == Decimal("18.90")
+    # the Falcon fee of the owner's 100% sales is the owner's (never the seller's)
+    chief.transaction_fee, partner.transaction_fee = Decimal("0.40"), Decimal("0.99")
+    await db_session.commit()
+    route = await service.billing_route(db_session, partner_ws.id, uuid.UUID(flow_id))
+    assert route.owner_all and route.shop_ref == f"fp-{chief_ws.id.hex}" and route.splits == [{"parent": True, "amount": 0.4}]
+
+    # turned off: the seller's next sales follow the saved percentages again
+    headers = await _chief(client)
+    off = await client.put("/api/partners/flow-shares", headers=headers, json=_share(flow_id, partner.id))
+    assert off.status_code == 200 and off.json()["owner_takes_all"] is False
+    route = await service.billing_route(db_session, partner_ws.id, uuid.UUID(flow_id))
+    assert route.owner_all is False and route.percent == Decimal("20.00")
+
+
+@pytest.mark.anyio
+async def test_owner_takes_all_with_snakepay_goes_to_the_owners_shop_id_or_the_platform_account(
+    client, db_session, owner, super_admin, snake, apis
+) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
+    await _enable(client)
+    headers = await _chief(client)
+    flow_id = await _new_flow(client, headers, "Funil Chefe")
+    # no seller ShopID needed; the owner's own is
+    rules = _share(flow_id, partner.id, gateway="snakepay", owner_takes_all=True)
+    assert (await client.put("/api/partners/flow-shares", headers=headers, json=rules)).status_code == 422
+    saved = await client.put("/api/partners/flow-shares", headers=headers, json={**rules, "owner_shop_id": CHIEF})
+    assert saved.status_code == 200, saved.text
+
+    partner_headers = await _as(client, "socio@example.com")
+    bot = (await client.post("/api/bots", headers=partner_headers, json={"token": TOKEN, "flow_id": flow_id})).json()
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    assert not apis.methods("pix.create")
+    assert apis.methods("snake.create")[-1]["split"] == [{"recipient_id": CHIEF, "percentage": 100.0}]
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.seller_hidden is True and order.partner_net == Decimal("0.00") and order.split_amount == Decimal("19.05")
+    raw, sig = _event(snake["charges"]["in_1"])
+    assert (await client.post("/api/bots/pay/snakepay", content=raw, headers=sig)).status_code == 200
+    await _partner_sees_nothing(client, db_session, partner)
+
+    # the Super Admin owner: the whole sale stays in the platform account, no split at all
+    chief.platform_role = "SUPER_ADMIN"
+    await db_session.commit()
+    other = _start()
+    other["message"]["from"]["id"] = other["message"]["chat"]["id"] = 777
+    await _send(client, db_session, bot["id"], other)
+    tap = _tap("plan:vip")
+    tap["callback_query"]["from"]["id"] = tap["callback_query"]["message"]["chat"]["id"] = 777
+    await _send(client, db_session, bot["id"], tap)
+    assert not apis.methods("snake.create")[-1].get("split")
+    await db_session.commit()
+    second = await db_session.scalar(select(TgOrder).where(TgOrder.id != order.id))
+    assert second.seller_hidden is True and second.split_amount == Decimal("19.05") and second.partner_net == Decimal("0.00")
+    assert not second.transaction_fee
+    await _partner_sees_nothing(client, db_session, partner)
+
+
+@pytest.mark.anyio
+async def test_owner_takes_all_with_the_owners_own_snakepay_key_is_charged_in_the_owners_account(
+    client, db_session, owner, super_admin, snake, apis
+) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
+    await _enable(client)
+    headers = await _chief(client)
+    assert (await client.put("/api/payment-gateways/snakepay/credentials", headers=headers,
+                             json={"api_key": "owner_sk_test", "webhook_secret": "owner_webhook_test"})).status_code == 200
+    flow_id = await _new_flow(client, headers, "Funil Chefe")
+    saved = await client.put("/api/partners/flow-shares", headers=headers, json=_share(
+        flow_id, partner.id, gateway="snakepay", owner_takes_all=True,
+    ))
+    assert saved.status_code == 200, saved.text  # no ShopID needed: the owner's own key charges
+
+    partner_headers = await _as(client, "socio@example.com")
+    bot = (await client.post("/api/bots", headers=partner_headers, json={"token": TOKEN, "flow_id": flow_id})).json()
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    assert not apis.methods("snake.create")[-1].get("split")
+    assert [call[1]["authorization"] for call in apis.calls if call[0] == "snake.auth"] == ["Bearer owner_sk_test"]
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.split_amount == Decimal("19.05") and order.partner_net == Decimal("0.00") and order.seller_hidden
+    raw, sig = _event(snake["charges"]["in_1"], "owner_webhook_test")
+    assert (await client.post("/api/bots/pay/snakepay", content=raw, headers=sig)).status_code == 200
+    await db_session.refresh(order)
+    assert order.status == "paid"
+    await _partner_sees_nothing(client, db_session, partner)

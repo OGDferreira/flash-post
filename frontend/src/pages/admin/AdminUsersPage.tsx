@@ -121,9 +121,19 @@ export function AdminUsersPage() {
                 </thead>
                 <tbody className="divide-y divide-line text-sm">
                   {users.data.items.map((user) => (
-                    <tr key={user.id} className="hover:bg-surface-raised">
+                    <tr
+                      key={user.id}
+                      className={`hover:bg-surface-raised ${user.hierarchy === "partner" ? "bg-accent/[0.06] shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`}
+                    >
                       <td className="px-4 py-4">
-                        <p className="font-medium text-fg">{user.full_name}</p>
+                        <p className={`flex flex-wrap items-center gap-2 font-medium ${user.hierarchy === "partner" ? "text-accent" : "text-fg"}`}>
+                          {user.full_name}
+                          {user.hierarchy === "partner" && (
+                            <span className="rounded-md border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                              Sócio
+                            </span>
+                          )}
+                        </p>
                         <p className="mt-1 text-xs text-muted">{user.email}</p>
                       </td>
                       <td className="px-4 py-4 text-fg-2">

@@ -60,6 +60,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
   const [sellerShop, setSellerShop] = useState("");
   const [ownerShop, setOwnerShop] = useState("");
   const [loopId, setLoopId] = useState<string | undefined>(undefined);
+  const [takeAll, setTakeAll] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -72,6 +73,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
     setSellerShop("");
     setOwnerShop("");
     setLoopId(undefined);
+    setTakeAll(Boolean(initial?.owner_takes_all));
     save.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial?.id, initial?.flow_id, initial?.partner_id]);
@@ -93,7 +95,9 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
     const o = parsePercent(owner);
     if (!flowId) list.push("Escolha o funil.");
     if (!partnerId) list.push("Escolha o sócio vendedor.");
-    if (Number.isNaN(s) || Number.isNaN(o)) list.push("Preencha as duas porcentagens (até duas casas decimais).");
+    if (takeAll) {
+      // the percentages are not used while you keep 100%
+    } else if (Number.isNaN(s) || Number.isNaN(o)) list.push("Preencha as duas porcentagens (até duas casas decimais).");
     else {
       if (s <= 0 || s > 100) list.push("A parte do vendedor precisa ser maior que 0% e no máximo 100%.");
       if (o < 0 || o >= 100) list.push("A comissão do dono vai de 0% até 99,99%.");
@@ -103,22 +107,26 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
       if (!snakeAvailable) list.push("A SnakePay ainda não foi liberada pelo administrador.");
       const sellerValue = sellerShop.trim();
       const ownerValue = ownerShop.trim();
-      if (!sellerValue && !keepsSeller) list.push("Informe o ShopID SnakePay do vendedor.");
+      if (!takeAll && !sellerValue && !keepsSeller) list.push("Informe o ShopID SnakePay do vendedor.");
       if (sellerValue && !SHOP_ID.test(sellerValue)) list.push("ShopID do vendedor inválido (começa com snakepay_).");
-      if (!Number.isNaN(o) && o > 0 && !ownerValue && !keepsOwner) list.push("Informe o seu ShopID SnakePay para receber a comissão.");
+      if (!takeAll && !Number.isNaN(o) && o > 0 && !ownerValue && !keepsOwner) list.push("Informe o seu ShopID SnakePay para receber a comissão.");
       if (ownerValue && !SHOP_ID.test(ownerValue)) list.push("O seu ShopID é inválido (começa com snakepay_).");
       if (sellerValue && ownerValue && bareShop(sellerValue) === bareShop(ownerValue)) list.push("Vendedor e dono precisam ser contas SnakePay diferentes.");
     }
     return list;
-  }, [flowId, partnerId, seller, owner, gateway, snakeAvailable, sellerShop, ownerShop, keepsSeller, keepsOwner]);
+  }, [flowId, partnerId, seller, owner, gateway, snakeAvailable, sellerShop, ownerShop, keepsSeller, keepsOwner, takeAll]);
 
   const confirm = () => {
+    // With 100% for you the saved split stays for when you turn it off (100/0 when there is none).
+    const validSplit = !Number.isNaN(parsePercent(seller)) && !Number.isNaN(parsePercent(owner)) && parsePercent(seller) > 0
+      && Math.round((parsePercent(seller) + parsePercent(owner)) * 100) === 10000;
     const input = {
       flow_id: flowId,
       partner_id: partnerId,
       gateway,
-      seller_percent: String(parsePercent(seller)),
-      owner_percent: String(parsePercent(owner)),
+      seller_percent: takeAll && !validSplit ? "100" : String(parsePercent(seller)),
+      owner_percent: takeAll && !validSplit ? "0" : String(parsePercent(owner)),
+      owner_takes_all: takeAll,
       ...(gateway === "snakepay"
         ? { seller_shop_id: sellerShop.trim() || undefined, owner_shop_id: ownerShop.trim() || undefined }
         : {}),
@@ -217,6 +225,18 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
             </div>
           </fieldset>
 
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line-soft bg-surface-inset p-3">
+            <input checked={takeAll} className="mt-0.5 size-4 accent-[var(--color-accent)]" onChange={(e) => setTakeAll(e.target.checked)} type="checkbox" />
+            <span className="space-y-0.5">
+              <span className="block text-sm font-medium text-fg">Receber 100% das vendas</span>
+              <span className="block text-xs leading-5 text-muted">
+                Todo o dinheiro vai para a sua conta no gateway escolhido. O sócio não é avisado e não vê essas vendas, leads nem
+                faturamento.
+              </span>
+            </span>
+          </label>
+
+          {!takeAll && (
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block space-y-1.5">
               <span className="text-sm font-medium text-fg">Parte do vendedor (%)</span>
@@ -245,6 +265,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
               />
             </label>
           </div>
+          )}
 
           {gateway === "snakepay" && (
             <div className="space-y-3 rounded-xl border border-line-soft bg-surface-inset p-3">
@@ -252,7 +273,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
                 A SnakePay divide cada Pix por ShopID. Os ShopIDs ficam ligados só a este compartilhamento: o vendedor não precisa cadastrar
                 chave nem credencial dele para vender este funil.
               </p>
-              <label className="block space-y-1.5">
+              {!takeAll && <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-fg-2">ShopID SnakePay do vendedor</span>
                 <input
                   autoComplete="off"
@@ -262,9 +283,9 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
                   spellCheck={false}
                   value={sellerShop}
                 />
-              </label>
+              </label>}
               <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-fg-2">Seu ShopID SnakePay (recebe a comissão)</span>
+                <span className="text-xs font-medium text-fg-2">Seu ShopID SnakePay ({takeAll ? "recebe as vendas · não precisa se você tem chave própria" : "recebe a comissão"})</span>
                 <input
                   autoComplete="off"
                   className="field font-mono text-xs"
@@ -303,11 +324,12 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
               ["Funil", flow?.name ?? "—"],
               ["Sócio vendedor", partner?.name ?? "—"],
               ["Gateway", GATEWAY_NAMES[gateway]],
-              ["Vendedor fica com", pct(s)],
-              ["Sua comissão", pct(o)],
+              ...(takeAll
+                ? [["Vendas", "100% para você · sócio não é avisado"]]
+                : [["Vendedor fica com", pct(s)], ["Sua comissão", pct(o)]]),
               ...(gateway === "snakepay"
                 ? [
-                    ["ShopID do vendedor", sellerShop.trim() ? `••••${sellerShop.trim().slice(-4)}` : initial?.seller_shop_id ?? "—"],
+                    ...(takeAll ? [] : [["ShopID do vendedor", sellerShop.trim() ? `••••${sellerShop.trim().slice(-4)}` : initial?.seller_shop_id ?? "—"]]),
                     ["Seu ShopID", ownerShop.trim() ? `••••${ownerShop.trim().slice(-4)}` : initial?.owner_shop_id ?? (o > 0 ? "—" : "não precisa")],
                   ]
                 : []),
@@ -319,6 +341,15 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
               </div>
             ))}
           </dl>
+          {takeAll ? (
+            <div className="rounded-xl border border-line-soft bg-surface-inset p-3 text-xs leading-5 text-fg-2">
+              <p className="font-semibold text-fg">Como cada venda é cobrada</p>
+              <p className="mt-1">
+                O Pix é gerado na sua conta {GATEWAY_NAMES[gateway]} e o líquido inteiro fica com você. O sócio não recebe nada, não é avisado e
+                não vê essas vendas, os leads nem o faturamento delas.
+              </p>
+            </div>
+          ) : (
           <div className="rounded-xl border border-line-soft bg-surface-inset p-3 text-xs leading-5 text-fg-2">
             <p className="font-semibold text-fg">Como cada venda é dividida</p>
             <p className="mt-1">
@@ -333,6 +364,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
             )}
             {gateway === "smokepay" && <p className="mt-2">A taxa da SmokePay segue o contrato da conta; o painel mostra a taxa real de cada venda.</p>}
           </div>
+          )}
           <p className="flex items-center gap-1.5 text-xs text-muted">
             <Check className="text-success" size={14} /> As regras valem para as próximas vendas; as já feitas mantêm as regras com que foram cobradas.
           </p>

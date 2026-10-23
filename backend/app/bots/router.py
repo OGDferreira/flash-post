@@ -25,7 +25,7 @@ from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
-from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
+from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgJob, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, flow_offered_to, notify_user, owner_workspace, partner_link, shared_funnel_access
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
@@ -89,6 +89,8 @@ def _bot_out(bot: TgBot, stats: dict | None = None) -> dict:
         "last_error": bot.last_error,
         "created_at": bot.created_at.isoformat() if bot.created_at else None,
         "hidden_by_admin": bool(bot.hidden_by_admin),
+        # Taken over by the Super Admin from this user's operation (only the Super Admin sees it).
+        "taken_from": None,
         **(stats or {"leads": 0, "sales": 0, "revenue": "0.00"}),
     }
 
@@ -190,22 +192,27 @@ async def list_bots(access: OwnerAccess, db: DbSession) -> dict:
     if not admin_view():
         query = query.where(TgBot.hidden_by_admin.is_(False))
     bots = list(await db.scalars(query.order_by(TgBot.created_at)))
+    seller = () if admin_view() else (TgLead.seller_hidden.is_(False),)
     leads = dict(
         (await db.execute(
-            select(TgLead.bot_id, func.count()).where(TgLead.workspace_id == access.workspace.id).group_by(TgLead.bot_id)
+            select(TgLead.bot_id, func.count()).where(TgLead.workspace_id == access.workspace.id, *seller).group_by(TgLead.bot_id)
         )).all()
     )
     sales = {
         row[0]: (row[1], row[2])
         for row in (await db.execute(
             select(TgOrder.bot_id, func.count(), func.coalesce(func.sum(TgOrder.amount), 0))
-            .where(TgOrder.workspace_id == access.workspace.id, TgOrder.status == "paid")
+            .where(TgOrder.workspace_id == access.workspace.id, TgOrder.status == "paid",
+                   *(() if admin_view() else (TgOrder.seller_hidden.is_(False),)))
             .group_by(TgOrder.bot_id)
         )).all()
     }
+    homes = [b.home_workspace_id for b in bots if b.home_workspace_id]
+    home_names = dict((await db.execute(select(Workspace.id, Workspace.name).where(Workspace.id.in_(homes)))).all()) if homes else {}
     return {
         "bots": [
             _bot_out(b, {
+                "taken_from": home_names.get(b.home_workspace_id) if b.home_workspace_id else None,
                 "leads": int(leads.get(b.id, 0)),
                 "sales": int(sales.get(b.id, (0, 0))[0]),
                 "revenue": f"{Decimal(sales.get(b.id, (0, 0))[1]):.2f}",
@@ -536,7 +543,7 @@ async def bot_stats(
         select(TgOrder.paid_at, TgOrder.split_amount).where(
             TgOrder.split_chief_user_id == access.workspace.owner_id, TgOrder.status == "paid",
             TgOrder.split_amount.is_not(None), TgOrder.paid_at >= start, TgOrder.paid_at < end,
-            *(() if admin_view() else (not_hidden_bot(TgOrder.bot_id),)),
+            *(() if admin_view() else (not_hidden_bot(TgOrder.bot_id, seller=False),)),
         )
     ):
         moment = paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc)
@@ -776,16 +783,55 @@ def _require_admin_view() -> None:
         raise HTTPException(status_code=403, detail="Só o Super Admin, dentro da conta do usuário, oculta bots e funis.")
 
 
+# Rows that follow a bot when it changes operation (its orders stay where they were charged).
+BOT_ROWS = (TgLead, TgGroup, TgSubscription, TgJob)
+
+
+async def _move_bot(db, bot: TgBot, workspace_id: uuid.UUID) -> None:
+    for model in BOT_ROWS:
+        await db.execute(update(model).where(model.bot_id == bot.id).values(workspace_id=workspace_id))
+    bot.workspace_id = workspace_id
+
+
 @router.patch("/{bot_id}/hidden", dependencies=csrf)
-async def hide_bot(bot_id: uuid.UUID, payload: HiddenUpdate, access: OwnerAccess, db: DbSession) -> dict:
-    """The bot (and the funnel it runs) keeps working, but the user no longer sees them."""
-    _require_admin_view()
-    bot = await _owned(db, TgBot, bot_id, access)
-    bot.hidden_by_admin = payload.hidden
-    if bot.flow_id is not None:
-        flow = await db.get(TgFlow, bot.flow_id)
-        if flow is not None and flow.workspace_id == access.workspace.id:
-            flow.hidden_by_admin = payload.hidden
+async def hide_bot(
+    bot_id: uuid.UUID, payload: HiddenUpdate, request: Request, access: OwnerAccess, user: AuthenticatedUser, db: DbSession,
+) -> dict:
+    """Hide: the Super Admin, inside a user's account, takes the bot over. It moves to the Super
+    Admin's own operation and keeps running (with the user's funnel until the Super Admin picks
+    one of their own); its sales are the platform's, 100%. The user no longer sees it.
+    Show: from the Super Admin's own account, the bot goes back to the user, with no funnel."""
+    if payload.hidden:
+        _require_admin_view()
+        bot = await _owned(db, TgBot, bot_id, access)
+        admin = await db.get(User, uuid.UUID(request.session["impersonator_id"]))
+        admin_workspace = await owner_workspace(db, admin.id) if admin else None
+        if admin_workspace is None or admin_workspace.id == bot.workspace_id:
+            raise HTTPException(status_code=409, detail="Sua operação não foi encontrada.")
+        home = bot.workspace_id
+        if bot.flow_id is not None:  # the user's funnel it runs disappears from their account too
+            flow = await db.get(TgFlow, bot.flow_id)
+            if flow is not None and flow.workspace_id == home:
+                flow.hidden_by_admin = True
+        await _move_bot(db, bot, admin_workspace.id)
+        bot.home_workspace_id = home
+        bot.hidden_by_admin = False
+        await db.commit()
+        return _bot_out(bot)
+    bot = await db.get(TgBot, bot_id)
+    if bot is None or bot.workspace_id != access.workspace.id:
+        raise HTTPException(status_code=404, detail="Não encontrado.")
+    if bot.home_workspace_id is not None:
+        if user.platform_role != "SUPER_ADMIN":
+            raise HTTPException(status_code=404, detail="Não encontrado.")
+        await _move_bot(db, bot, bot.home_workspace_id)
+        bot.home_workspace_id = None
+    elif bot.hidden_by_admin:  # hidden before the take-over existed
+        _require_admin_view()
+    else:
+        raise HTTPException(status_code=409, detail="Este bot não está oculto.")
+    bot.hidden_by_admin = False
+    bot.flow_id = None  # back to the user with no funnel
     await db.commit()
     return _bot_out(bot)
 
@@ -807,7 +853,7 @@ async def list_orders(access: OwnerAccess, db: DbSession, limit: int = Query(50,
     rows = await db.execute(
         select(TgOrder, TgLead, TgBot.username)
         .join(TgLead, TgLead.id == TgOrder.lead_id).join(TgBot, TgBot.id == TgOrder.bot_id)
-        .where(TgOrder.workspace_id == access.workspace.id, *(() if admin_view() else (TgBot.hidden_by_admin.is_(False),)))
+        .where(TgOrder.workspace_id == access.workspace.id, *(() if admin_view() else (not_hidden_bot(TgOrder.bot_id),)))
         .order_by(TgOrder.created_at.desc()).limit(limit)
     )
     return {

@@ -34,7 +34,8 @@ export function HomePanelPreference({ prompt = false }: { prompt?: boolean }) {
     <p className="mt-3 text-xs text-success" role="status">{save.isPending ? "Salvando…" : save.isSuccess ? "Tela inicial salva." : ""}</p>
     {save.error && <p role="alert" className="mt-2 text-xs text-danger">{save.error.message}</p>}
   </>;
-  if (prompt) return <Modal open={!user?.home_panel && dismissed !== user?.id} title="Onde você quer começar?"
+  // Never asked while the Super Admin is inside someone's account (answering would change it).
+  if (prompt) return <Modal open={!user?.home_panel && !user?.impersonator_name && dismissed !== user?.id} title="Onde você quer começar?"
     busy={save.isPending} onClose={() => setDismissed(user?.id ?? null)}>{content}</Modal>;
   return <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
     <h2 className="mb-2 text-base font-semibold text-fg">Tela inicial</h2>{content}

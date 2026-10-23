@@ -768,8 +768,15 @@ async def test_chief_customizes_one_partners_copy_without_touching_the_main_loop
 
 
 @pytest.mark.anyio
-async def test_super_admin_hides_a_bot_and_its_funnel_from_the_user(client, db_session, owner, super_admin, apis) -> None:
+async def test_super_admin_takes_a_hidden_bot_over_and_gives_it_back_with_no_funnel(client, db_session, owner, super_admin, apis) -> None:
+    from app.models import TgBot, Workspace, WorkspaceMember
+
     chief, chief_ws = owner
+    admin_ws = Workspace(name="Plataforma", slug="plataforma-ws", owner_id=super_admin.id, status="ACTIVE")
+    db_session.add(admin_ws)
+    await db_session.flush()
+    db_session.add(WorkspaceMember(workspace_id=admin_ws.id, user_id=super_admin.id, role="OWNER", status="ACTIVE"))
+    await db_session.commit()
     headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
     bot, flow = await _setup(client, headers)
     await _send(client, db_session, bot["id"], _start())
@@ -781,15 +788,16 @@ async def test_super_admin_hides_a_bot_and_its_funnel_from_the_user(client, db_s
     assert (await client.get("/api/finance/month")).json()["today"]["flashbot_gross"] == "19.90"
     # the user can't hide anything
     assert (await client.patch(f"/api/bots/{bot['id']}/hidden", headers=headers, json={"hidden": True})).status_code == 403
+    await db_session.commit()
+    notices = await db_session.scalar(select(func.count(AppNotification.id)).where(AppNotification.user_id == chief.id))
 
-    # the Super Admin, inside the account, hides the bot (and its funnel)
+    # the Super Admin, inside the account, hides the bot: it moves to the Super Admin's operation
     admin = await _as(client, "superadmin@example.com", "super admin password")
     assert (await client.post(f"/api/admin/users/{chief.id}/impersonate", headers=admin)).status_code == 200
     hidden = await client.patch(f"/api/bots/{bot['id']}/hidden", headers=admin, json={"hidden": True})
     assert hidden.status_code == 200, hidden.text
-    assert [b["hidden_by_admin"] for b in (await client.get("/api/bots")).json()["bots"]] == [True]
+    assert (await client.get("/api/bots")).json()["bots"] == []  # not in the user's account any more
     assert [f["hidden_by_admin"] for f in (await client.get("/api/bots/flows/list")).json()["flows"]] == [True]
-    assert (await client.get(f"/api/bots/flows/{flow['id']}")).status_code == 200
     assert (await client.post("/api/auth/impersonation/stop", headers=admin)).status_code == 200
 
     # the user sees nothing: no bot, no funnel, no leads, no sales, no revenue
@@ -803,12 +811,46 @@ async def test_super_admin_hides_a_bot_and_its_funnel_from_the_user(client, db_s
     assert (await client.get("/api/bots/orders/list")).json()["orders"] == []
     assert (await client.get("/api/bots/activity")).json()["items"] == []
     assert (await client.get("/api/finance/month")).json()["today"]["flashbot_gross"] == "0.00"
+    assert (await client.patch(f"/api/bots/{bot['id']}/hidden", headers=headers, json={"hidden": False})).status_code == 404
 
-    # but the bot keeps running
+    # the Super Admin sees it among their own bots, still running the user's funnel, and gives it one of theirs
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    mine = (await client.get("/api/bots")).json()["bots"]
+    assert [(b["id"], b["taken_from"], b["flow_id"]) for b in mine] == [(bot["id"], chief_ws.name, flow["id"])]
+    own_flow = await client.post("/api/bots/flows", headers=admin, json={"name": "Funil Adm", "definition": _flow()})
+    assert own_flow.status_code == 201, own_flow.text
+    switched = await client.patch(f"/api/bots/{bot['id']}", headers=admin, json={"flow_id": own_flow.json()["id"]})
+    assert switched.status_code == 200, switched.text
+
+    # its sales are 100% the platform's: main account, no split, no fee
     other = _start()
     other["message"]["from"]["id"] = other["message"]["chat"]["id"] = 777
     assert (await _send(client, db_session, bot["id"], other)).status_code == 200
-    assert await db_session.scalar(select(func.count(TgLead.id))) == 2
+    tap = _tap("plan:vip")
+    tap["callback_query"]["from"]["id"] = tap["callback_query"]["message"]["chat"]["id"] = 777
+    await _send(client, db_session, bot["id"], tap)
+    created = apis.methods("pix.create")[-1]
+    assert created.get("shop_id") is None and not created.get("splits")
+    await db_session.commit()
+    sale = await db_session.scalar(select(TgOrder).where(TgOrder.id != order.id))
+    assert sale.workspace_id == admin_ws.id and sale.split_chief_user_id is None and not sale.transaction_fee
+    raw, sig = _signed(_paid_event(sale.id))
+    assert (await client.post("/api/bots/pay/smokepay", content=raw, headers=sig)).status_code == 200
+    assert (await client.get("/api/finance/month")).json()["today"]["flashbot_gross"] == "19.90"
+    await db_session.commit()
+    assert await db_session.scalar(select(func.count(AppNotification.id)).where(AppNotification.user_id == chief.id)) == notices
+
+    # shown again: back to the user, with no funnel
+    shown = await client.patch(f"/api/bots/{bot['id']}/hidden", headers=admin, json={"hidden": False})
+    assert shown.status_code == 200, shown.text
+    assert (await client.get("/api/bots")).json()["bots"] == []
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    back = (await client.get("/api/bots")).json()["bots"]
+    assert [(b["id"], b["flow_id"], b["taken_from"]) for b in back] == [(bot["id"], None, None)]
+    await db_session.commit()
+    row = await db_session.get(TgBot, uuid.UUID(bot["id"]))
+    await db_session.refresh(row)
+    assert row.workspace_id == chief_ws.id and row.home_workspace_id is None
 
 
 @pytest.mark.anyio
@@ -828,3 +870,29 @@ async def test_only_the_super_admin_or_who_they_allow_invites_partners(client, d
     from app.affiliates.router import may_invite_partners
 
     assert may_invite_partners(super_admin)
+
+
+@pytest.mark.anyio
+async def test_super_admin_copies_a_users_bot_token(client, db_session, owner, super_admin, apis) -> None:
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    bot, _flow_out = await _setup(client, headers)
+    assert (await client.post(f"/api/admin/bots/{bot['id']}/token", headers=headers)).status_code == 403
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    got = await client.post(f"/api/admin/bots/{bot['id']}/token", headers=admin)
+    assert got.status_code == 200 and got.json()["token"] == TOKEN
+    assert got.headers["cache-control"] == "no-store"
+    # never in the listings
+    assert TOKEN not in (await client.get("/api/admin/operations")).text
+
+
+@pytest.mark.anyio
+async def test_partner_adds_own_meta_app_seen_only_by_them(client, db_session, owner) -> None:
+    partner, partner_ws, _ = await _partner(db_session, owner, accepted=True)
+    headers = await _as(client, "socio@example.com")
+    saved = await client.post("/api/instagram/apps", headers=headers,
+                              json={"display_name": "App do sócio", "app_id": "987654321", "app_secret": "segredo-do-socio"})
+    assert saved.status_code == 201, saved.text
+    assert [a["display_name"] for a in (await client.get("/api/instagram/apps")).json()["apps"]] == ["App do sócio"]
+    # the chief (and anyone else) never sees it
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.get("/api/instagram/apps")).json()["apps"] == []

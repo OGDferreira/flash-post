@@ -383,8 +383,39 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
   );
 }
 
-/** Partner: the accounts posting a shared loop, and which accounts and folders post it. */
-function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onClose: () => void }) {
+/** Collaborator: the operation's loops as "Loop - name", read-only; a tap shows the accounts
+ *  posting it and lets them pick accounts (schedule, media and captions stay the owner's). */
+export function ConnectOnlyLoops({ loops }: { loops: InstagramLoop[] }) {
+  const [opened, setOpened] = useState<InstagramLoop | null>(null);
+  if (loops.length === 0) return <EmptyState message="Nenhum loop nesta operação ainda." />;
+  return (
+    <section className="space-y-3">
+      <p className="text-xs text-muted">Toque no loop para ver as contas conectadas e escolher as contas que postam nele.</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {loops.map((loop) => (
+          <button
+            className="flex items-center justify-between gap-3 rounded-xl border border-line-soft bg-surface-inset p-3 text-left transition-colors hover:border-line"
+            key={loop.id}
+            onClick={() => setOpened(loop)}
+            type="button"
+          >
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium text-fg">Loop - {loop.name}</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                {loop.active_accounts_count === 0 ? "Nenhuma conta conectada" : `${loop.active_accounts_count} conta(s) conectada(s)`}
+              </span>
+            </span>
+            <ChevronRight className="shrink-0 text-muted" size={16} />
+          </button>
+        ))}
+      </div>
+      <LoopAccountsDialog loop={opened} onClose={() => setOpened(null)} withFolders={false} />
+    </section>
+  );
+}
+
+/** The accounts posting a loop, and which accounts (and, for partners, folders) post it. */
+function LoopAccountsDialog({ loop, onClose, withFolders = true }: { loop: InstagramLoop | null; onClose: () => void; withFolders?: boolean }) {
   const queryClient = useQueryClient();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [pickedFolders, setPickedFolders] = useState<Set<string>>(new Set());
@@ -401,7 +432,7 @@ function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onC
   const folders = useQuery({
     queryKey: ["instagram", "folders"],
     queryFn: () => apiRequest<InstagramFoldersResponse>("/api/instagram/folders?include_accounts=false"),
-    enabled: loop !== null,
+    enabled: loop !== null && withFolders,
   });
   useEffect(() => {
     if (!loop) {
@@ -418,7 +449,7 @@ function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onC
     mutationFn: () =>
       apiRequest(`/api/loops/${loop!.id}/accounts`, {
         method: "PUT",
-        body: { account_ids: [...picked], auto_folder_ids: [...pickedFolders] },
+        body: withFolders ? { account_ids: [...picked], auto_folder_ids: [...pickedFolders] } : { account_ids: [...picked] },
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["loops"] });
@@ -465,7 +496,7 @@ function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onC
               </ul>
             )}
           </section>
-          <section>
+          {withFolders && <section>
             <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
               <Folder size={13} /> Pastas de contas
             </h4>
@@ -484,7 +515,7 @@ function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onC
                 ))}
               </div>
             )}
-          </section>
+          </section>}
           <section>
             <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Contas</h4>
             {usable.length === 0 ? (

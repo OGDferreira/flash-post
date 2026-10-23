@@ -104,7 +104,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                   <Badge>Pausado</Badge>
                 )}
               </div>
-              <AdminHideToggle hidden={bot.hidden_by_admin} id={bot.id} kind="bot" />
+              <AdminHideToggle hidden={bot.hidden_by_admin} id={bot.id} kind="bot" takenFrom={bot.taken_from} />
               {bot.last_error && <p className="break-words text-xs text-danger">{bot.last_error}</p>}
               <dl className="grid grid-cols-4 gap-2 text-center">
                 {[

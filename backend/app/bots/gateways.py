@@ -158,6 +158,8 @@ async def snakepay_plan(
         return None
     if owner.platform_role == "SUPER_ADMIN":
         return SnakePlan()  # the platform's own sale: no split
+    if route.owner_all:
+        return await _owner_all_plan(db, route, amount)
     rule = await active_share(db, flow, workspace.id) if route.share_id else None
     own_account = bool(workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted)
     owner_shop = ""
@@ -229,6 +231,53 @@ async def snakepay_plan(
     return await _split_plan(db, route, amount, (workspace.snakepay_recipient_id or "").strip())
 
 
+async def _owner_all_plan(db: AsyncSession, route: BillingRoute, amount: Decimal) -> SnakePlan | None:
+    """The funnel's owner takes the whole sale: the Super Admin's goes to the platform account
+    (no split); another owner's is charged with their own SnakePay key (only the Falcon fee goes
+    out by split) or, without one, with the platform key splitting the net to their ShopID."""
+    chief = await db.get(User, route.chief_user_id) if route.chief_user_id else None
+    if chief is None:
+        return None
+    if chief.platform_role == "SUPER_ADMIN":
+        return SnakePlan()
+    chief_workspace = await owner_workspace(db, chief.id)
+    if chief_workspace is None:
+        return None
+    net = snakepay.expected_net(amount)
+    if net <= 0:
+        return None
+    fee_percent = Decimal("0")
+    if route.transaction_fee:
+        fee_percent = (route.transaction_fee * HUNDRED / net).quantize(Decimal("0.01"), ROUND_UP)
+    owner_percent = HUNDRED - fee_percent
+    if owner_percent <= 0:
+        return None
+    platform = [value for value in await platform_recipients(db) if valid_recipient(value)]
+    if chief_workspace.snakepay_api_key_encrypted and chief_workspace.snakepay_webhook_secret_encrypted:
+        from app.core.crypto import decrypt_value
+
+        try:
+            api_key = decrypt_value(chief_workspace.snakepay_api_key_encrypted)
+            webhook_secret = decrypt_value(chief_workspace.snakepay_webhook_secret_encrypted)
+        except (RuntimeError, ValueError) as exc:
+            raise RuntimeError("Saved SnakePay credentials could not be decrypted.") from exc
+        split = []
+        if fee_percent > 0:
+            accounts = {value.strip().lower().removeprefix("snakepay_").replace("-", "") for value in platform}
+            if len(accounts) != 1:
+                return None
+            split = [{"recipient_id": platform[0], "percentage": float(fee_percent)}]
+        return SnakePlan(split=split, chief_percent=owner_percent, api_key=api_key, webhook_secret=webhook_secret)
+    rule = await db.get(TgFlowShare, route.share_id) if route.share_id else None
+    recipient = ((rule.owner_shop_id if rule else None) or chief_workspace.snakepay_recipient_id or "").strip()
+    if not valid_recipient(recipient) or any(same_recipient(recipient, own) for own in platform):
+        return None
+    return SnakePlan(
+        split=[{"recipient_id": recipient, "percentage": float(owner_percent)}],
+        chief_recipient=recipient, chief_percent=owner_percent,
+    )
+
+
 async def _split_plan(
     db: AsyncSession, route: BillingRoute, amount: Decimal, recipient: str, rule: TgFlowShare | None = None
 ) -> SnakePlan | None:
@@ -282,6 +331,21 @@ def apply_snake_charge(order, route: BillingRoute, plan: SnakePlan, charge: snak
     order.gateway_fee = (order.amount - net).quantize(Decimal("0.01"))
     order.pix_copy_paste = charge.copy_paste
     amounts = {k.lower(): v for k, v in (charge.split_amounts or {}).items()}
+    if route.owner_all:  # the whole sale is the funnel owner's; the seller gets nothing
+        order.partner_net = Decimal("0.00")
+        if plan.chief_recipient:  # platform key: the owner's share went out by split
+            owner = amounts.get(plan.chief_recipient.lower())
+            if owner is None:
+                owner = snakepay.share(net, plan.chief_percent)
+        else:  # charged in the owner's own account: only the splits (the Falcon fee) went out
+            out = Decimal("0.00")
+            for rule in plan.split:
+                part = amounts.get(rule["recipient_id"].lower())
+                out += part if part is not None else snakepay.share(net, Decimal(str(rule["percentage"])))
+            owner = net - out
+        order.split_amount = owner
+        order.platform_fee = (net - owner).quantize(Decimal("0.01")) or None
+        return
     if plan.api_key is not None:
         split_total = Decimal("0.00")
         for rule in plan.split:

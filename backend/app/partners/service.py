@@ -148,7 +148,9 @@ class BillingRoute:
     * ``shared_funnel`` — a partner selling with the chief's shared funnel:
       the chief-set commission goes to the chief (gateway split);
     * ``own_funnel`` — a funnel of the seller's own: no chief commission; a
-      partner pays only the platform fee set by the Super Admin.
+      partner pays only the platform fee set by the Super Admin;
+    * ``owner_all`` — a shared funnel whose owner takes 100%: charged in the owner's account
+      (the platform's, for the Super Admin) and never shown to the seller.
     """
 
     shop_ref: str | None = None
@@ -163,6 +165,8 @@ class BillingRoute:
     allowed: bool = True
     # The owner-set rules this sale follows (shared funnels whose owner set them).
     share_id: uuid.UUID | None = None
+    # The funnel's owner keeps the whole sale (TgFlowShare.owner_takes_all).
+    owner_all: bool = False
 
     def preview(self, net: Decimal | None) -> tuple[Decimal | None, Decimal | None]:
         """(chief commission, partner net) from the net after the gateway fee."""
@@ -253,6 +257,12 @@ async def active_share(db: AsyncSession, flow: TgFlow | None, workspace_id: uuid
     return rule if rule is not None and rule.status == "ACTIVE" else None
 
 
+async def owner_takes_all(db: AsyncSession, flow: TgFlow | None, workspace_id: uuid.UUID) -> TgFlowShare | None:
+    """The active share rules of this funnel when its owner takes 100% of this operation's sales."""
+    rule = await active_share(db, flow, workspace_id)
+    return rule if rule is not None and rule.owner_takes_all else None
+
+
 async def _chief_copy_link(db: AsyncSession, flow: TgFlow, owner_id: uuid.UUID) -> Affiliation | None:
     """A partner's own copy of their chief's funnel (copies made before funnels were
     protected): its sales still pay the chief's commission, like the original."""
@@ -269,8 +279,11 @@ async def _chief_copy_link(db: AsyncSession, flow: TgFlow, owner_id: uuid.UUID) 
 async def billing_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.UUID | None = None) -> BillingRoute:
     route = await _base_route(db, workspace_id, flow_id)
     if route.allowed and route.shop_ref is not None:  # every operation but the Super Admin's
-        workspace = await db.get(Workspace, workspace_id)
-        owner = await db.get(User, workspace.owner_id) if workspace else None
+        if route.owner_all:  # the sale is the funnel owner's: their fee
+            owner = await db.get(User, route.chief_user_id)
+        else:
+            workspace = await db.get(Workspace, workspace_id)
+            owner = await db.get(User, workspace.owner_id) if workspace else None
         _add_transaction_fee(route, transaction_fee_for(owner))
     return route
 
@@ -304,8 +317,12 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
     owner = await db.get(User, workspace.owner_id) if workspace else None
     flow = await db.get(TgFlow, flow_id) if flow_id else None
     foreign = flow is not None and flow.workspace_id != workspace_id
-    if owner is None or owner.platform_role == "SUPER_ADMIN":
+    if owner is None:
         return BillingRoute(allowed=not foreign)
+    if owner.platform_role == "SUPER_ADMIN":
+        # The platform's own sale, no split and no fee. A foreign funnel only gets here on a bot
+        # the Super Admin took over, still running the funnel of the user it came from.
+        return BillingRoute()
     route = BillingRoute(shop_ref=shop_ref(workspace_id), origin="own_funnel")
     link = None
     if foreign:
@@ -318,6 +335,8 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
     if link is not None:
         route.origin = "shared_funnel"
         rule = await active_share(db, flow, workspace_id)
+        if rule is not None and rule.owner_takes_all:
+            return await _owner_all_route(db, link, rule)
         commission = link.participation_percent
         if rule is not None:  # the rules the owner set for this partner and funnel
             route.share_id = rule.id
@@ -350,6 +369,23 @@ async def _base_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.U
             else:
                 route.fee_percent = min(fee["value"], MAX_COMMISSION)
                 route.splits = [{"parent": True, "percent": float(route.fee_percent)}]
+    return route
+
+
+async def _owner_all_route(db: AsyncSession, link: Affiliation, rule: TgFlowShare) -> BillingRoute:
+    """The whole sale is charged in the funnel owner's account, with no split to the seller:
+    the platform's main account for the Super Admin (no fee), else the owner's subaccount."""
+    route = BillingRoute(origin="owner_all", owner_all=True, share_id=rule.id, chief_user_id=link.chief_user_id)
+    chief = await db.get(User, link.chief_user_id)
+    if chief is None:
+        route.allowed = False
+        return route
+    if chief.platform_role != "SUPER_ADMIN":
+        chief_workspace = await owner_workspace(db, chief.id)
+        if chief_workspace is None:
+            route.allowed = False
+            return route
+        route.shop_ref = shop_ref(chief_workspace.id)
     return route
 
 

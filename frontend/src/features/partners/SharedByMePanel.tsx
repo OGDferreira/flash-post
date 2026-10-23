@@ -126,11 +126,11 @@ function ShareCard({ item, onEdit, onHistory, onRevoke }: {
         </div>
         <div className="rounded-lg bg-surface-inset px-2 py-2">
           <dt className="text-[10px] uppercase tracking-wide text-muted">Vendedor</dt>
-          <dd className="mt-0.5 text-sm font-semibold text-fg">{pct(item.seller_percent)}</dd>
+          <dd className="mt-0.5 text-sm font-semibold text-fg">{item.owner_takes_all ? "0%" : pct(item.seller_percent)}</dd>
         </div>
         <div className="rounded-lg bg-surface-inset px-2 py-2">
           <dt className="text-[10px] uppercase tracking-wide text-muted">Você</dt>
-          <dd className="mt-0.5 text-sm font-semibold text-accent">{pct(item.owner_percent)}</dd>
+          <dd className="mt-0.5 text-sm font-semibold text-accent">{item.owner_takes_all ? "100%" : pct(item.owner_percent)}</dd>
         </div>
       </dl>
       {item.rule === "partnership" ? (
