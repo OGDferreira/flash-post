@@ -102,7 +102,6 @@ export function AdminNotificationsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Administração</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">Notificações</h2>
         <p className="mt-2 text-sm text-muted">
           Textos dos pushes de conquista. Variáveis: {Object.entries(data.data.placeholders)

@@ -20,9 +20,6 @@ export function FeaturePlaceholderPage() {
 
   return (
     <section className="mx-auto max-w-3xl rounded-xl border border-line-soft bg-surface p-4 sm:p-6">
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-        Próxima fase
-      </p>
       <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg">
         {title}
       </h2>

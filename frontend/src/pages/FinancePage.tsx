@@ -192,16 +192,9 @@ export function FinancePage() {
     <div className="mx-auto w-full max-w-7xl space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-            Fluxo de caixa
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">
+          <h1 className="text-2xl font-semibold text-fg sm:text-3xl">
             Financeiro
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted">
-            Entradas líquidas das vendas Smokepay, pagamentos de colaboradores e
-            saques registrados neste workspace.
-          </p>
         </div>
         <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-fg-2">
           <input

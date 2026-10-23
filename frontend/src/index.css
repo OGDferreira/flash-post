@@ -1619,3 +1619,11 @@ html[data-app="bot"] .falcon-shine { -webkit-mask-image: url("/brand/falconbot-e
 .app-switch-row:hover { border-color: rgb(var(--switch-rgb) / 0.75); background: rgb(var(--switch-rgb) / 0.16); color: var(--fg); }
 .app-switch-row:active { transform: scale(0.98); }
 .app-switch-row:focus-visible { outline: 2px solid rgb(var(--switch-rgb)); outline-offset: 2px; }
+
+/* Falcon Adm name: the same blue-to-purple blend as its emblem. */
+.falcon-adm-text {
+  background: linear-gradient(90deg, #1e9cfd 0%, #4f6bff 45%, #a020f0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}

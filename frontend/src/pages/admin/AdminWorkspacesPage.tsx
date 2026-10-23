@@ -34,15 +34,9 @@ export function AdminWorkspacesPage() {
     <div className="space-y-4">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-            Administração
-          </p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
             Workspaces
           </h2>
-          <p className="mt-2 text-sm text-muted">
-            Espaços de trabalho e seus respectivos owners.
-          </p>
         </div>
         <form onSubmit={submitSearch} className="flex w-full gap-2 sm:max-w-sm">
           <label className="relative min-w-0 flex-1">

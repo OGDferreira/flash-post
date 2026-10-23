@@ -92,16 +92,9 @@ export function NotificationsPage() {
     <div className="mx-auto max-w-[1100px] space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-            Sistema e workspace
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">
+          <h1 className="text-2xl font-semibold text-fg sm:text-3xl">
             Central de notificações
           </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            Alertas de métricas da Meta e de publicações recentes. Contas com erro
-            ou desconectadas ficam na aba oculta de erros do Hub de contas.
-          </p>
         </div>
         <button
           className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 text-sm text-fg-2 hover:bg-well"

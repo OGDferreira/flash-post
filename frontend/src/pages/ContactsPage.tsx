@@ -49,9 +49,7 @@ export function ContactsPage() {
   return (
     <div className="mx-auto max-w-[1100px] space-y-5">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Suporte</p>
-        <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">Contatos</h1>
-        <p className="mt-2 text-sm text-muted">Fale com a equipe e acompanhe os canais oficiais do Falcon Post.</p>
+        <h1 className="text-2xl font-semibold text-fg sm:text-3xl">Contatos</h1>
       </header>
 
       <section className="grid gap-4 sm:grid-cols-2" aria-label="Canais oficiais">

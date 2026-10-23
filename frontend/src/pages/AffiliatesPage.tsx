@@ -424,13 +424,9 @@ export function AffiliatesPage() {
     <div className="w-full space-y-4">
       <header className="space-y-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Rede</p>
           <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
             <Handshake className="text-accent" size={26} /> Sócios
           </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Acompanhe contas, bots, funis, vendas e a comissão recebida de cada sócio. Clique no nome para ver a operação dele e em “Compartilhados” para ver ou adicionar funis e loops.
-          </p>
         </div>
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>

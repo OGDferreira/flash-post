@@ -2,33 +2,31 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BellRing, X } from "lucide-react";
 
-import { currentSubscription, enablePush, pushAvailability, type PushConfig } from "@/lib/push";
+import { currentSubscription, enablePush, pushAvailability, savePushPreference, type PushConfig } from "@/lib/push";
 import { apiRequest } from "@/services/api";
 
-const DISMISS_KEY = "flashpost-push-prompt-dismissed";
-const DISMISS_MS = 3 * 24 * 60 * 60 * 1000;
-
-function dismissedRecently() {
-  try {
-    const at = Number(localStorage.getItem(DISMISS_KEY) ?? 0);
-    return at > 0 && Date.now() - at < DISMISS_MS;
-  } catch {
-    return false;
-  }
-}
-
-/** Asks once per device (and again every few days) to turn on push, from a tap. */
+/** Asks once per account to turn on push, from a tap. The answer is saved on the account;
+ *  afterwards the choice changes only in Configurações. When the user said yes and this
+ *  device lost its subscription (permission still granted), it is renewed silently. */
 export function PushPrompt() {
   const queryClient = useQueryClient();
   const availability = useMemo(() => pushAvailability(), []);
   const [subscribed, setSubscribed] = useState<boolean | null>(null);
-  const [hidden, setHidden] = useState(dismissedRecently);
+  const [hidden, setHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const config = useQuery({
     queryKey: ["notifications", "push", "config"],
     queryFn: () => apiRequest<PushConfig>("/api/notifications/push/config"),
     staleTime: 5 * 60_000,
   });
+
+  // Said yes before: keep this device subscribed without asking again.
+  useEffect(() => {
+    const data = config.data;
+    if (!data?.enabled || data.impersonating || !data.public_key || subscribed !== false) return;
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    void enablePush(data.public_key).then(() => setSubscribed(true)).catch(() => undefined);
+  }, [config.data, subscribed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,16 +53,13 @@ export function PushPrompt() {
 
   const needsInstall = availability === "ios-needs-install";
   const canAsk = availability === "supported" && config.data?.supported === true;
+  if (!config.data || config.data.prompt_done || config.data.impersonating) return null;
   if (hidden || subscribed !== false || (!canAsk && !needsInstall)) return null;
   if (typeof Notification !== "undefined" && Notification.permission === "denied" && !needsInstall) return null;
 
   const dismiss = () => {
-    try {
-      localStorage.setItem(DISMISS_KEY, String(Date.now()));
-    } catch {
-      /* storage unavailable */
-    }
     setHidden(true);
+    void savePushPreference({ prompt_done: true }).then((next) => queryClient.setQueryData(["notifications", "push", "config"], next));
   };
 
   return (

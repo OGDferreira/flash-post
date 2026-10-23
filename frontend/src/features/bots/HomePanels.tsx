@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, CircleDollarSign, Crown, EyeOff, Lock, QrCode, Trophy, UserPlus, Activity } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleDollarSign, Crown, Lock, QrCode, Trophy, UserPlus, Activity } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Avatar } from "@/components/Avatar";
-import { isPeriodReady, periodParams, type MetricsPeriod } from "@/features/analytics/period";
+import { isPeriodReady, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { brl, useGoals } from "@/features/wallet/api";
 import { apiRequest } from "@/services/api";
 
@@ -279,7 +279,14 @@ export function NextAward() {
 
 // ------------------------------------------------------------------ ranking
 
-function usePartnersRanking(period: MetricsPeriod) {
+/** The ranking always covers the current month (1st to today), whatever the period above. */
+function monthToDate(): MetricsPeriod {
+  const end = todayInput();
+  return { period: "custom", start: `${end.slice(0, 8)}01`, end };
+}
+
+function usePartnersRanking() {
+  const period = monthToDate();
   return useQuery({
     queryKey: ["bots", "partners-ranking", periodParams(period)],
     queryFn: () =>
@@ -298,15 +305,15 @@ const podium = [
   "border-[#d08a4a]/50 text-[#d08a4a]",
 ];
 
-/** SharkBot-style list. Positions only: the API never sends how much each partner billed. */
-export function PartnersRanking({ period }: { period: MetricsPeriod }) {
-  const ranking = usePartnersRanking(period);
+/** SharkBot-style list with each one's revenue in the month. */
+export function PartnersRanking(_props: { period?: MetricsPeriod }) {
+  const ranking = usePartnersRanking();
   const members = ranking.data?.members ?? [];
   return (
     <section className="dashboard-card flex flex-col rounded-2xl p-4">
       <PanelHeader icon={<Crown size={16} />} subtitle="Corrida de faturamento" title="Ranking dos sócios">
-        <span className="flex items-center gap-1 rounded-full bg-surface-inset px-2 py-1 text-[10px] text-muted" title="Os valores faturados ficam ocultos">
-          <EyeOff size={12} /> Valores ocultos
+        <span className="rounded-full bg-surface-inset px-2 py-1 text-[10px] capitalize text-muted">
+          {new Date().toLocaleDateString("pt-BR", { month: "long" })}
         </span>
       </PanelHeader>
       <div className="max-h-[300px] flex-1 space-y-2 overflow-y-auto pr-1">

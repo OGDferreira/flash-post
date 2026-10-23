@@ -149,9 +149,7 @@ export function AdminFlowsPage() {
   return (
     <div className="space-y-4">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Administração</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">Funis</h2>
-        <p className="mt-2 text-sm text-muted">Todos os funis de todas as contas, com copy, fotos e vídeos. Tokens nunca aparecem aqui.</p>
       </header>
       {flows.isLoading && <LoadingState label="Carregando funis" />}
       {flows.error && <ErrorState message="Não foi possível carregar." onRetry={() => void flows.refetch()} />}

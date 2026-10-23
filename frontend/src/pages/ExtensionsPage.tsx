@@ -144,13 +144,9 @@ export function ExtensionsPage() {
     <div className="mx-auto max-w-[1100px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Ferramentas</p>
           <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg">
             <Puzzle className="text-accent" size={24} /> Extensões
           </h2>
-          <p className="mt-1 text-sm text-muted">
-            {isOwner ? "Envie arquivos ZIP e libere o download para seus colaboradores." : "Baixe as extensões liberadas pelo seu chefe."}
-          </p>
         </div>
         {isOwner && (
           <button className="btn-primary" onClick={() => setEditing(null)} type="button">

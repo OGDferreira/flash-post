@@ -169,11 +169,9 @@ export function SupportPage() {
     <div className="mx-auto max-w-[900px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Suporte</p>
           <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg">
             <LifeBuoy className="text-accent" size={24} /> Dúvidas e erros
           </h2>
-          <p className="mt-1 text-sm text-muted">Registre dúvidas e problemas e acompanhe a resolução.</p>
         </div>
         <button className="btn-primary" onClick={() => setCreating(true)} type="button"><Plus size={16} /> Novo registro</button>
       </header>

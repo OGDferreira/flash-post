@@ -1,6 +1,18 @@
 import { apiRequest } from "@/services/api";
 
-export type PushConfig = { supported: boolean; public_key: string | null; devices: number };
+export type PushConfig = {
+  supported: boolean;
+  public_key: string | null;
+  devices: number;
+  enabled?: boolean; // the user's choice, saved on the account (changed only in Configurações)
+  prompt_done?: boolean; // the "ativar notificações" prompt was answered once
+  impersonating?: boolean;
+};
+
+/** Saves the push choice (or just "prompt answered") on the user's account. */
+export function savePushPreference(body: { enabled?: boolean; prompt_done?: boolean }): Promise<PushConfig> {
+  return apiRequest<PushConfig>("/api/notifications/push/preference", { method: "PUT", body });
+}
 
 export type PushAvailability =
   | "supported"

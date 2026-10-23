@@ -127,13 +127,9 @@ export function MetaAppsPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-5">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Workspace</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
           Apps Meta
         </h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-          Gerencie os aplicativos Meta usados para autorizar novas contas Instagram neste workspace.
-        </p>
       </header>
 
       <section className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5">

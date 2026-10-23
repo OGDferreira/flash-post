@@ -47,15 +47,9 @@ export function AdminOverviewPage() {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-          Plataforma
-        </p>
         <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
           Visão geral
         </h2>
-        <p className="mt-2 text-sm text-muted">
-          Vendas do Falcon Bot no dia e indicadores de usuários e workspaces.
-        </p>
       </div>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
