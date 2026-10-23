@@ -165,9 +165,9 @@ function PushSwitch() {
 
 /** The Falcon Bot sales widget for the iPhone home screen, through the free Scriptable app. */
 const WIDGET_THEMES: { id: WidgetTheme; label: string; swatch: string; text: string }[] = [
-  { id: "azul", label: "Azul", swatch: "linear-gradient(135deg,#3a5ffe,#1e9cfd 55%,#15d6fe)", text: "#fff" },
-  { id: "dark", label: "Escuro", swatch: "linear-gradient(135deg,#0b1020,#10204a)", text: "#fff" },
-  { id: "white", label: "Branco", swatch: "linear-gradient(135deg,#ffffff,#e8f1ff)", text: "#0b1530" },
+  { id: "azul", label: "Azul", swatch: "linear-gradient(135deg,#5169f4,#3b52e0 55%,#2f3fbf)", text: "#fff" },
+  { id: "dark", label: "Escuro", swatch: "linear-gradient(135deg,#12141c,#20264a)", text: "#fff" },
+  { id: "white", label: "Branco", swatch: "linear-gradient(135deg,#ffffff,#e7edff)", text: "#0b1530" },
 ];
 
 function IphoneWidgetCard() {
