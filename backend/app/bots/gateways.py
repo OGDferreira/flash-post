@@ -130,6 +130,12 @@ async def gateway_order(db: AsyncSession, workspace: Workspace, flow: TgFlow | N
     if await shared_source(db, flow, workspace.id) is not None:
         first = await gateway_choice(db, workspace, flow)
         return [first, "smokepay"] if first == "snakepay" else [first]
+    # Regular operations don't choose a gateway: SnakePay is the principal when the platform has
+    # it on, with SmokePay as the automatic backup. Whoever has no SnakePay set up still sells by
+    # SmokePay (SnakePay can't charge → it falls through). Only the Super Admin picks and orders.
+    owner = await db.get(User, workspace.owner_id)
+    if owner is not None and owner.platform_role != "SUPER_ADMIN":
+        return ["snakepay", "smokepay"] if await snakepay_available(db) else ["smokepay"]
     settings = await gateway_settings(db, workspace.id)
     if not settings:
         first = gateway_for(workspace, flow)

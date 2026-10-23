@@ -80,7 +80,13 @@ export function GatewaysPanel() {
   const data = state.data;
   const nameOf = (id: GatewayId) => data.gateways.find((g) => g.id === id)?.name ?? id;
   const statusOf = (id: GatewayId) => data.priority.find((row) => row.gateway === id);
-  const principal = data.priority.find((row) => row.enabled && row.flow_ids === null)?.gateway ?? data.current;
+  // Only the Super Admin picks and orders gateways. For everyone else SnakePay is the principal
+  // (when the platform has it on) and SmokePay the automatic backup.
+  const snakeAvailable = data.gateways.find((g) => g.id === "snakepay")?.available ?? false;
+  const autoPrincipal: GatewayId = snakeAvailable ? "snakepay" : "smokepay";
+  const principal = data.is_admin
+    ? (data.priority.find((row) => row.enabled && row.flow_ids === null)?.gateway ?? data.current)
+    : autoPrincipal;
 
   const adminCard = data.admin && (
     <div className="glass-panel p-4 sm:p-5">
@@ -184,15 +190,24 @@ export function GatewaysPanel() {
           <CreditCard className="text-accent" size={18} />
           <h2 className="text-base font-semibold text-fg">Seus gateways</h2>
         </div>
-        <p className="mt-1 text-xs text-muted">Para os seus funis próprios. Toque em um gateway para ver taxas e configurar a sua conta.</p>
+        <p className="mt-1 text-xs text-muted">
+          {data.is_admin
+            ? "Para os seus funis próprios. Toque em um gateway para ver taxas e configurar a sua conta."
+            : "Pagamento automático: SnakePay é a principal e o SmokePay entra sozinho como backup. Toque na SnakePay para configurar a sua conta."}
+        </p>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-6">
           {data.gateways.map((gateway) => {
             const row = statusOf(gateway.id);
             const status = STATUS[row?.status ?? "indisponivel"];
+            // For non-admins the order is fixed: SnakePay principal, SmokePay backup.
+            const isPrincipal = data.is_admin ? principal === gateway.id && Boolean(row?.enabled) : gateway.id === autoPrincipal;
+            const isBackup = data.is_admin
+              ? principal !== gateway.id && Boolean(row?.enabled)
+              : gateway.id !== autoPrincipal && snakeAvailable;
             return (
               <button
                 className={`flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-2xl border p-3 text-center transition hover:border-accent/60 ${
-                  principal === gateway.id ? "border-accent bg-brand/10" : "border-line-soft"
+                  isPrincipal ? "border-accent bg-brand/10" : "border-line-soft"
                 }`}
                 key={gateway.id}
                 onClick={() => setConfiguring(gateway.id)}
@@ -201,9 +216,9 @@ export function GatewaysPanel() {
                 <GatewayLogo className="size-14 sm:size-16" id={gateway.id} />
                 <span className="text-sm font-semibold text-fg">{gateway.name}</span>
                 <span className="flex flex-wrap justify-center gap-1">
-                  {principal === gateway.id && row?.enabled && <Badge tone="success">Principal</Badge>}
-                  {principal !== gateway.id && row?.enabled && <Badge>Backup</Badge>}
-                  {!row?.enabled && <Badge tone={status.tone}>{status.label}</Badge>}
+                  {isPrincipal && <Badge tone="success">Principal</Badge>}
+                  {isBackup && <Badge>Backup</Badge>}
+                  {data.is_admin && !row?.enabled && <Badge tone={status.tone}>{status.label}</Badge>}
                 </span>
                 <span className="flex items-center gap-1 text-[11px] text-muted">
                   <Settings2 size={12} /> Configurar
@@ -214,8 +229,9 @@ export function GatewaysPanel() {
         </div>
       </div>
 
-      <PriorityCard data={data} />
+      {data.is_admin && <PriorityCard data={data} />}
 
+      {data.is_admin && (
       <div className="glass-panel p-4 sm:p-5">
         <h2 className="text-base font-semibold text-fg">Gateway por funil</h2>
         <p className="mt-1 text-xs text-muted">
@@ -246,6 +262,7 @@ export function GatewaysPanel() {
         )}
         {perFlow.error && <p className="mt-2 text-xs text-danger">{errorText(perFlow.error)}</p>}
       </div>
+      )}
 
       {data.admin?.snakepay_enabled && adminCard}
       <GatewayModal data={data} gateway={configuring} onClose={() => setConfiguring(null)} />

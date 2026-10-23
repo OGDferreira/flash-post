@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import uuid
 from decimal import Decimal
 
 import httpx
@@ -12,7 +13,7 @@ from sqlalchemy import select
 
 from app.bots import engine, gateways, snakepay
 from app.core.config import get_settings
-from app.models import TgOrder
+from app.models import TgFlow, TgOrder, Workspace
 from tests.test_partners import CHIEF_PASSWORD, _as, _chief_shares_funnel, _partner
 from tests.test_telegram_bots import TOKEN, _send, _setup, _start, _tap, apis  # noqa: F401
 
@@ -325,6 +326,9 @@ async def test_only_super_admin_releases_snakepay_and_only_when_configured(clien
 
 @pytest.mark.anyio
 async def test_gateway_per_funnel_or_for_all(client, db_session, owner, super_admin, snake, apis) -> None:
+    chief, _ = owner
+    chief.platform_role = "SUPER_ADMIN"  # only the Super Admin chooses/orders gateways
+    await db_session.commit()
     await _enable(client)
     headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
     # default stays SmokePay; only this funnel uses SnakePay
@@ -351,6 +355,40 @@ async def test_gateway_per_funnel_or_for_all(client, db_session, owner, super_ad
 
     other_flow = await client.put("/api/payment-gateways/flows/00000000-0000-0000-0000-000000000000", headers=headers, json={"gateway": None})
     assert other_flow.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_regular_user_never_picks_a_gateway_snakepay_first_smokepay_backup(
+    client, db_session, owner, super_admin, snake, apis
+) -> None:
+    chief, chief_ws = owner  # a regular USER, not the Super Admin
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    bot, flow = await _setup(client, headers)
+    workspace = await db_session.get(Workspace, chief_ws.id)
+    flow_row = await db_session.get(TgFlow, uuid.UUID(flow["id"]))
+
+    # SnakePay not released by the admin yet: SmokePay only.
+    assert await gateways.gateway_order(db_session, workspace, flow_row) == ["smokepay"]
+
+    # Released: SnakePay is the principal and SmokePay the automatic backup — the user chose nothing.
+    await _enable(client)
+    assert await gateways.gateway_order(db_session, workspace, flow_row) == ["snakepay", "smokepay"]
+
+    # Without a SnakePay ShopID the sale still goes through SmokePay (SnakePay cannot charge).
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    assert apis.methods("pix.create") and not apis.methods("snake.create")
+
+    # With a ShopID saved, SnakePay charges it, splitting to the user's account.
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.put("/api/payment-gateways", headers=headers,
+                             json={"gateway": "smokepay", "snakepay_recipient_id": SELLER})).status_code == 200
+    await db_session.commit()
+    for order in await db_session.scalars(select(TgOrder)):
+        order.status = "expired"
+    await db_session.commit()
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    assert apis.methods("snake.create")
 
 
 def test_recipient_accepts_the_snakepay_shop_id() -> None:
