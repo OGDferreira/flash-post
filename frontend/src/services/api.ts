@@ -218,6 +218,7 @@ export type AdminWorkspace = {
   id: string;
   name: string;
   slug: string;
+  owner_id?: string | null;
   owner_name: string;
   owner_email: string;
   status: string;

@@ -101,6 +101,9 @@ class InstagramLoop(Base):
     template_loop_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("instagram_loops.id", ondelete="SET NULL")
     )
+    # Set when the partner customized their copy: it stops following the chief's loop
+    # (and the chief's stays untouched); cleared when they follow it again.
+    customized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

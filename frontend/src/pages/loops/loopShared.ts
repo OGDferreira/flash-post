@@ -54,6 +54,7 @@ export type InstagramLoop = {
   /** Follows a loop the chief shares: media and schedule are the chief's, accounts are the partner's. */
   linked?: boolean;
   linked_available?: boolean;
+  customized?: boolean; // the partner's copy no longer follows the chief's loop
   next_run_at: string | null;
   last_run_at: string | null;
   auto_folder_ids?: string[];

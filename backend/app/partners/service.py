@@ -633,9 +633,11 @@ async def ensure_linked_loop(db: AsyncSession, source: InstagramLoop, workspace_
         select(InstagramLoop).where(
             InstagramLoop.workspace_id == workspace_id,
             InstagramLoop.template_loop_id == source.id,
-            InstagramLoop.linked.is_(True),
-        )
+            (InstagramLoop.linked.is_(True)) | (InstagramLoop.customized_at.is_not(None)),
+        ).order_by(InstagramLoop.linked.desc())
     )
+    if copy is not None and not copy.linked:
+        return copy  # the partner customized it: it no longer follows the chief's loop
     if copy is None:
         copy = InstagramLoop(
             workspace_id=workspace_id, name=source.name[:120],
@@ -670,8 +672,12 @@ async def sync_partner_loops(db: AsyncSession, link: Affiliation) -> list[Instag
     )
     copies = [await ensure_linked_loop(db, source, partner_ws.id) for source in sources]
     kept = {copy.id for copy in copies}
+    # customized copies still post the chief's media: they stop too when the sharing ends
     for orphan in await db.scalars(
-        select(InstagramLoop).where(InstagramLoop.workspace_id == partner_ws.id, InstagramLoop.linked.is_(True))
+        select(InstagramLoop).where(
+            InstagramLoop.workspace_id == partner_ws.id,
+            (InstagramLoop.linked.is_(True)) | (InstagramLoop.customized_at.is_not(None)),
+        )
     ):
         if orphan.id not in kept:
             await pause_linked_loop(db, orphan)
@@ -679,8 +685,8 @@ async def sync_partner_loops(db: AsyncSession, link: Affiliation) -> list[Instag
 
 
 async def linked_loop_available(db: AsyncSession, loop: InstagramLoop) -> bool:
-    """A linked copy whose chief still shares the original with this partner."""
-    if not loop.linked or loop.template_loop_id is None:
+    """A linked (or customized) copy whose chief still shares the original with this partner."""
+    if not (loop.linked or loop.customized_at is not None) or loop.template_loop_id is None:
         return False
     source = await db.get(InstagramLoop, loop.template_loop_id)
     workspace = await db.get(Workspace, loop.workspace_id)

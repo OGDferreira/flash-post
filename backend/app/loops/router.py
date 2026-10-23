@@ -171,7 +171,8 @@ async def _loop_response(
         ),
         from_template=loop.template_loop_id is not None,
         linked=loop.linked,
-        linked_available=await linked_loop_available(db, loop) if loop.linked else False,
+        customized=loop.customized_at is not None,
+        linked_available=await linked_loop_available(db, loop) if loop.linked or loop.customized_at else False,
         auto_folder_ids=[uuid.UUID(str(item)) for item in (loop.auto_folder_ids or [])],
         interval_min_minutes=loop.interval_min_minutes,
         interval_max_minutes=loop.interval_max_minutes,
@@ -1303,7 +1304,7 @@ async def update_loop_status(
     )
     if loop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop not found.")
-    if payload.enabled and loop.linked and not await linked_loop_available(db, loop):
+    if payload.enabled and (loop.linked or loop.customized_at) and not await linked_loop_available(db, loop):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Seu sócio parou de compartilhar este loop, então ele não pode ser ativado.",
@@ -1441,3 +1442,44 @@ async def delete_loop(
         )
     await db.delete(loop)
     await db.commit()
+
+
+async def _partner_copy(db, access, loop_id: uuid.UUID) -> InstagramLoop:
+    loop = await db.scalar(
+        select(InstagramLoop).where(InstagramLoop.id == loop_id, InstagramLoop.workspace_id == access.workspace.id)
+    )
+    if loop is None or loop.template_loop_id is None or not (loop.linked or loop.customized_at):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loop compartilhado não encontrado.")
+    if not await linked_loop_available(db, loop):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Seu sócio parou de compartilhar este loop.")
+    return loop
+
+
+@router.post("/{loop_id}/customize", response_model=InstagramLoopResponse, dependencies=[Depends(require_csrf)])
+async def customize_shared_loop(loop_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> InstagramLoopResponse:
+    """The partner edits their own copy (schedule, limits, media): it stops following the
+    chief's loop, which stays exactly as it is. The chief's media remain protected."""
+    loop = await _partner_copy(db, access, loop_id)
+    if loop.linked:
+        loop.linked = False
+        loop.customized_at = utc_now()
+        await db.commit()
+        await db.refresh(loop)
+    return await _loop_response(loop, db, utc_now())
+
+
+@router.post("/{loop_id}/follow-owner", response_model=InstagramLoopResponse, dependencies=[Depends(require_csrf)])
+async def follow_shared_loop_again(loop_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> InstagramLoopResponse:
+    """Undo the customization: the copy follows the chief's loop again (its schedule and
+    media come back from the chief's; the partner's accounts stay)."""
+    from app.partners.service import sync_linked_loop
+
+    loop = await _partner_copy(db, access, loop_id)
+    if not loop.linked:
+        source = await db.get(InstagramLoop, loop.template_loop_id)
+        loop.linked = True
+        loop.customized_at = None
+        await sync_linked_loop(db, source, loop)
+        await db.commit()
+        await db.refresh(loop)
+    return await _loop_response(loop, db, utc_now())

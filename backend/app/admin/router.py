@@ -506,6 +506,7 @@ async def list_workspaces(
             id=workspace.id,
             name=workspace.name,
             slug=workspace.slug,
+            owner_id=owner.id,
             owner_name=owner.full_name,
             owner_email=owner.email,
             status=workspace.status,

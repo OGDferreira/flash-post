@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { AccessAccountButton } from "@/components/AccessAccountButton";
 import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 
@@ -91,6 +92,7 @@ export function AdminWorkspacesPage() {
                       <td className="px-4 py-4">
                         <p className="font-medium text-fg">{workspace.owner_name}</p>
                         <p className="mt-1 text-xs text-muted">{workspace.owner_email}</p>
+                        {workspace.owner_id && <AccessAccountButton className="mt-2" name={workspace.owner_name} userId={workspace.owner_id} />}
                       </td>
                       <td className="px-4 py-4 text-muted">
                         <p className="text-fg-2">{workspace.name}</p>
