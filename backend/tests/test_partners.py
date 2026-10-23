@@ -497,7 +497,7 @@ async def test_chief_shares_from_the_partner_row(client, db_session, owner) -> N
                               json={"kind": "loop", "id": str(loop.id), "shared": True})).status_code == 404
 
 @pytest.mark.anyio
-async def test_partners_ranking_shows_positions_but_never_revenue(client, db_session, owner) -> None:
+async def test_partners_ranking_shows_positions_and_each_ones_revenue(client, db_session, owner) -> None:
     from tests.test_wallet import _paid
 
     chief, chief_ws = owner
@@ -515,7 +515,7 @@ async def test_partners_ranking_shows_positions_but_never_revenue(client, db_ses
     members = response.json()["members"]
     assert [(m["nickname"], m["position"], m["is_me"]) for m in members][:2] == [("socio", 1, True), (chief.nickname, 2, False)]
     assert members[2]["nickname"] == "outro" and members[2]["has_sales"] is False
-    assert "19.9" not in response.text and "39.8" not in response.text and "revenue" not in response.text
+    assert [m["revenue"] for m in members] == [39.8, 19.9, 0.0]
 
     # someone outside the partnership only sees themselves
     await _make_owner(db_session, "solo")

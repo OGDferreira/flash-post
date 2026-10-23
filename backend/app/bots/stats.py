@@ -115,10 +115,10 @@ def _public_avatar(user: User) -> str | None:
 
 
 async def partners_ranking_of(db: AsyncSession, user_id: uuid.UUID, start: datetime, end: datetime) -> dict:
-    """Positions of the chief and their active partners by Falcon Bot revenue.
+    """The chief and their active partners ordered by Falcon Bot revenue, with each one's
+    revenue in the period (the owner's decision, 2026-10-23: the ranking shows the values).
 
     A partner sees their chief and sibling partners; a chief sees their partners.
-    Revenue only orders the list and never leaves this function.
     """
     link = await db.scalar(
         select(Affiliation).where(Affiliation.affiliate_user_id == user_id, Affiliation.status == "ACTIVE")
@@ -152,7 +152,7 @@ async def partners_ranking_of(db: AsyncSession, user_id: uuid.UUID, start: datet
             select(TgOrder.workspace_id, func.coalesce(func.sum(TgOrder.amount), 0))
             .where(
                 TgOrder.workspace_id.in_(list(workspace_owner)), TgOrder.status == "paid",
-                TgOrder.paid_at >= start, TgOrder.paid_at < end,
+                TgOrder.paid_at >= start, TgOrder.paid_at < end, not_hidden_bot(TgOrder.bot_id),
             )
             .group_by(TgOrder.workspace_id)
         )
@@ -173,6 +173,7 @@ async def partners_ranking_of(db: AsyncSession, user_id: uuid.UUID, start: datet
                 "is_chief": uid == chief_id and bool(partner_ids),
                 "is_me": uid == user_id,
                 "has_sales": revenue[uid] > 0,
+                "revenue": float(revenue[uid].quantize(Decimal("0.01"))),
             }
             for index, uid in enumerate(ordered, start=1)
         ],

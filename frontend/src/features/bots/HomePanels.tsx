@@ -15,6 +15,7 @@ type RankingMember = {
   is_chief: boolean;
   is_me: boolean;
   has_sales: boolean;
+  revenue?: number;
 };
 
 type ActivityItem = { kind: "lead" | "pix" | "sale"; lead: string; bot: string; amount: number | null; at: string };
@@ -313,7 +314,7 @@ export function PartnersRanking({ period }: { period: MetricsPeriod }) {
           [0, 1, 2, 3].map((key) => <div className="skeleton h-14" key={key} />)
         ) : members.length <= 1 ? (
           <p className="rounded-xl bg-surface-inset px-3 py-6 text-center text-xs text-muted">
-            Quando você tiver sócios, a posição de cada um aparece aqui (sem mostrar quanto cada um faturou).
+            Quando você tiver sócios, a posição e o faturamento de cada um aparecem aqui.
           </p>
         ) : (
           members.map((member) => {
@@ -338,7 +339,7 @@ export function PartnersRanking({ period }: { period: MetricsPeriod }) {
                 </span>
                 <span className={`flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-bold ${top ?? "border-line-soft text-muted"}`}>
                   {member.position <= 3 && <Crown size={11} />}
-                  <Lock size={10} /> ••••
+                  {(member.revenue ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 </span>
               </div>
             );

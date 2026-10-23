@@ -36,6 +36,7 @@ const EmailsPage = lazyPage(() => import("@/pages/EmailsPage"), "EmailsPage");
 const IntegrationsPage = lazyPage(() => import("@/pages/IntegrationsPage"), "IntegrationsPage");
 const ProfilePage = lazyPage(() => import("@/pages/ProfilePage"), "ProfilePage");
 const SettingsPage = lazyPage(() => import("@/pages/SettingsPage"), "SettingsPage");
+const NoticesPage = lazyPage(() => import("@/pages/NoticesPage"), "NoticesPage");
 const ProfileFoldersPage = lazyPage(() => import("@/pages/ProfileFoldersPage"), "ProfileFoldersPage");
 const MetaAppsPage = lazyPage(() => import("@/pages/MetaAppsPage"), "MetaAppsPage");
 const CollaboratorsPage = lazyPage(() => import("@/pages/CollaboratorsPage"), "CollaboratorsPage");
@@ -79,6 +80,7 @@ export default function App() {
                   <Route path="/dashboard" element={<WorkspaceDashboard />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/configuracoes" element={<SettingsPage />} />
+                  <Route path="/avisos" element={<NoticesPage />} />
                   <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
                   <Route path="/feature/loops" element={<LoopsPage />} />
                   <Route path="/feature/error-logs" element={<ErrorLogsPage />} />

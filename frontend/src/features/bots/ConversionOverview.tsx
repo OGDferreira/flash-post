@@ -110,7 +110,8 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
     ...day,
     label: (chart.data?.series.length ?? 0) <= 7 ? weekday(day.date) : `${day.date.slice(8, 10)}/${day.date.slice(5, 7)}`,
   }));
-  const recent = (stats.data?.series ?? []).slice(-7);
+  // The mini chart always shows the last 7 days (like SharkBot), whatever the period above.
+  const recent = (chart.data?.series ?? []).slice(-7);
   const showCommission = (chart.data?.totals.commission ?? 0) > 0;
   const peak = Math.max(1, ...recent.map((day) => day.leads));
 
@@ -146,12 +147,15 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
             <p className="mt-1 text-[10px] text-muted">
               <span className="font-semibold text-fg">{t && t.sales ? count(Math.round(t.leads / t.sales)) : "—"}</span> starts por venda
             </p>
-            <div className="mt-auto flex h-8 items-end gap-1 pt-2" aria-hidden="true">
+            <div className="mt-auto flex h-14 items-end gap-1.5 pt-3" aria-label="Starts dos últimos 7 dias" role="img">
               {recent.map((day, index) => (
                 <span
-                  className={`flex-1 rounded-sm ${index === recent.length - 1 ? "bg-accent" : "bg-accent/35"}`}
+                  className={`flex-1 rounded-t-[4px] transition-[height] duration-500 ${
+                    index === recent.length - 1 ? "bg-gradient-to-t from-accent/70 to-accent" : "bg-accent/30"
+                  }`}
                   key={day.date}
-                  style={{ height: `${Math.max(8, (100 * day.leads) / peak)}%` }}
+                  style={{ height: `${Math.max(10, (100 * day.leads) / peak)}%` }}
+                  title={`${weekday(day.date)}: ${count(day.leads)} starts`}
                 />
               ))}
             </div>

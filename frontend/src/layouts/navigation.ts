@@ -127,6 +127,7 @@ const postGroups: NavGroup[] = [
       { label: "Webhooks", to: "/feature/integrations", icon: Blocks },
       { label: "Extensões", to: "/feature/extensions", icon: Puzzle },
       { label: "Notificações", to: "/feature/notifications", icon: Bell },
+      { label: "Avisos", to: "/avisos", icon: Bell },
       { label: "Configurações", to: "/configuracoes", icon: Settings },
     ],
   },
@@ -149,6 +150,7 @@ const partnerPostRoutes = new Set([
   "/feature/loops",
   "/feature/ranking",
   "/configuracoes",
+  "/avisos",
   "/feature/support",
   "/feature/contacts",
 ]);
@@ -165,6 +167,7 @@ const collaboratorRoutes = new Set([
   "/feature/support",
   "/feature/contacts",
   "/configuracoes",
+  "/avisos",
 ]);
 
 // ------------------------------------------------------------------ Falcon Bot
@@ -233,6 +236,7 @@ const botGroups: NavGroup[] = [
     icon: Settings,
     items: [
       { label: "Notificações", to: "/feature/notifications", icon: Send },
+      { label: "Avisos", to: "/avisos", icon: Bell },
       { label: "Configurações", to: "/configuracoes", icon: Settings },
     ],
   },

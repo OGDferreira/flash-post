@@ -4,7 +4,6 @@ import type { DailyViewsGoal } from "@/components/DailyViewsGoalCard";
 import { useEffect, useState } from "react";
 import { CalendarDays } from "lucide-react";
 
-import { FlashBotLogo } from "@/components/FlashBotLogo";
 import { PeriodFilter, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { ConversionOverview } from "@/features/bots/ConversionOverview";
 
@@ -66,16 +65,16 @@ export function BotsPage() {
     <div className="mx-auto w-full max-w-[1500px] space-y-4">
       {!editing && (
         <>
-          <header className="flex flex-wrap items-end justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Falcon Bot · {info.eyebrow}</p>
-              <h1 className="mt-2 flex items-center gap-2.5 text-2xl font-semibold text-fg sm:text-3xl">
-                {tab === "home" && <FlashBotLogo className="size-8 shrink-0 sm:size-9" />}
-                {info.title}
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm text-muted">{info.hint}</p>
-            </div>
-          </header>
+          {/* The Painel opens straight on the numbers, like SharkBot: the top bar already shows logo and name. */}
+          {tab !== "home" && (
+            <header className="flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Falcon Bot · {info.eyebrow}</p>
+                <h1 className="mt-2 flex items-center gap-2.5 text-2xl font-semibold text-fg sm:text-3xl">{info.title}</h1>
+                <p className="mt-2 max-w-3xl text-sm text-muted">{info.hint}</p>
+              </div>
+            </header>
+          )}
           {/* Each section is its own screen: the dashboard lives in "Painel", the robots in "Meus bots". */}
           {tab === "home" && <ConversionOverview onPeriod={setPeriod} period={period} />}
           {(tab === "flows" || tab === "bots") && (

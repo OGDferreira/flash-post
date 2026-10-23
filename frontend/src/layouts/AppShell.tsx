@@ -5,17 +5,12 @@ import { RevenueBadge } from "@/features/wallet/RevenueBadge";
 import { PushPrompt } from "@/components/PushPrompt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle,
   ArrowLeftRight,
-  Bell,
   ChevronDown,
   Plus,
   LogOut,
   Pin,
   PinOff,
-  Settings,
-  Moon,
-  Sun,
   Share,
   Shield,
   X,
@@ -27,7 +22,7 @@ import { BrandLogo, BrandLockup } from "@/components/BrandLogo";
 import { APPS, appForPath, lastPath, otherApp, rememberPath, type AppId } from "@/lib/brand";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { applyTheme, getTheme, type Theme } from "@/lib/theme";
+import type { ShellContext } from "./shellContext";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { setCsrfToken, apiRequest, reportClientError } from "@/services/api";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
@@ -66,12 +61,6 @@ function snoozeInstallPrompt() {
 export function AppShell() {
   const { user } = useAuth();
   const location = useLocation();
-  const [theme, setTheme] = useState<Theme>(getTheme);
-  useEffect(() => {
-    const follow = () => setTheme(getTheme());
-    window.addEventListener("flashpost:theme", follow);
-    return () => window.removeEventListener("flashpost:theme", follow);
-  }, []);
   const [pinned, setPinned] = useState(() => {
     try {
       return localStorage.getItem("flashpost-sidebar-pinned") === "1";
@@ -121,7 +110,6 @@ export function AppShell() {
   }, [app, location.pathname, location.search]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isMobileDevice, setIsMobileDevice] = useState(false);
@@ -577,107 +565,46 @@ export function AppShell() {
       </aside>
       <div className={`transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${pinned ? "lg:pl-[252px]" : "lg:pl-[68px]"}`}>
         <header className="app-shell-header glass-bar sticky top-0 z-20 flex items-center justify-between !border-x-0 !border-t-0 px-4 sm:px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Link aria-label={APPS[app].name} className="shrink-0 lg:hidden" to={APPS[app].home}>
-              <BrandLogo app={app} className="size-8" />
-            </Link>
+          {/* Like SharkBot: the logo and the name, and the revenue pill. Theme lives in
+              Configurações and the notices in their own tab (Avisos). */}
+          <Link aria-label={APPS[app].name} className="flex min-w-0 flex-1 items-center gap-3" to={isAdminRoute ? "/admin" : APPS[app].home}>
             {isAdminRoute ? (
-              <span className="truncate font-display text-base font-semibold text-fg max-sm:hidden sm:text-lg">Falcon · Administração</span>
+              <>
+                <BrandLogo app={app} className="size-8 shrink-0 lg:hidden" />
+                <span className="truncate font-display text-base font-semibold text-fg sm:text-lg">Falcon · Administração</span>
+              </>
             ) : (
-              <BrandLockup app={app} className="h-4 max-sm:hidden sm:h-[18px]" kind="wordmark" />
+              <>
+                <BrandLockup app={app} className="h-8 lg:hidden" kind="lockup" />
+                <BrandLockup app={app} className="hidden h-[18px] lg:block" kind="wordmark" />
+              </>
             )}
-          </div>
+          </Link>
           <div className="app-header-actions flex shrink-0 items-center gap-1 pl-2">
             <RevenueBadge enabled={hasWorkspaceOwnerAccess && !isAdminRoute} />
-            <div className="relative max-sm:static">
-              <button
-                aria-label={
-                  notificationItems.length
-                    ? `Notificações, ${notificationItems.length} avisos`
-                    : "Notificações"
-                }
-                aria-expanded={notificationsOpen}
-                aria-haspopup="dialog"
-                className="app-header-btn relative"
-                onClick={() => setNotificationsOpen((open) => !open)}
-                type="button"
-              >
-                <Bell size={16} />
-                {notificationItems.length > 0 && (
-                  <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[9px] font-semibold text-white">
-                    {notificationItems.length > 9 ? "9+" : notificationItems.length}
-                  </span>
-                )}
-              </button>
-              {notificationsOpen && (
-                <section
-                  aria-label="Notificações"
-                  className="glass-modal modal-enter absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-32px))] !rounded-2xl !bg-[var(--nm-bg)] p-3 max-sm:left-4 max-sm:right-4 max-sm:top-full max-sm:mt-2 max-sm:w-auto"
-                  role="dialog"
-                >
-                  <div className="flex items-center justify-between border-b border-line-soft pb-2">
-                    <h2 className="text-sm font-semibold text-fg">Notificações</h2>
-                    <button
-                      className="text-xs text-muted hover:text-white"
-                      onClick={() => setNotificationsOpen(false)}
-                      type="button"
-                    >
-                      Fechar
-                    </button>
-                  </div>
-                  {notificationItems.length ? (
-                    <ul className="max-h-[min(60vh,420px)] divide-y divide-line-soft overflow-y-auto">
-                      {notificationItems.map((item, index) => (
-                        <li className="flex gap-2.5 py-3" key={`${item.title}-${index}`}>
-                          <AlertTriangle
-                            aria-hidden="true"
-                            className="mt-0.5 shrink-0 text-warning"
-                            size={15}
-                          />
-                          <div>
-                            <h3 className="text-xs font-medium text-warning">{item.title}</h3>
-                            <p className="mt-1 text-xs leading-5 text-fg-2">
-                              {item.message}
-                            </p>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="py-4 text-xs text-muted">
-                      Nenhum aviso no momento.
-                    </p>
-                  )}
-                </section>
-              )}
-            </div>
-            <Link aria-label="Configurações" className="app-header-btn max-sm:!hidden" title="Configurações" to="/configuracoes">
-              <Settings size={16} />
-            </Link>
-            <button
-              aria-label={theme === "light" ? "Ativar modo escuro" : "Ativar modo claro"}
-              className="app-header-btn"
-              onClick={() => {
-                const next: Theme = getTheme() === "light" ? "dark" : "light";
-                applyTheme(next, true);
-              }}
-              title={theme === "light" ? "Modo escuro" : "Modo claro"}
-              type="button"
-            >
-              {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
-            </button>
           </div>
         </header>
         <main className="app-shell-content min-h-[calc(100dvh-72px)] w-full px-4 py-4 sm:px-6 sm:py-6">
           <PushPrompt />
           <div className="page-enter" key={location.pathname}>
             <ErrorBoundary resetKey={location.pathname}>
-              <Outlet />
+              <Outlet context={{ notificationItems } satisfies ShellContext} />
             </ErrorBoundary>
           </div>
         </main>
       </div>
       <RefreshFab />
+      {hasWorkspaceOwnerAccess && !isAdminRoute && (
+        // Phones: the other tool is one tap away in the bottom-right corner (refresh sits on the left).
+        <Link
+          aria-label={`Ir para o ${APPS[other].name}`}
+          className="glass-bar fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] right-4 z-30 grid size-12 place-items-center rounded-full shadow-lg transition-transform active:scale-95 lg:hidden [body[data-bottom-tabs]_&]:hidden [body[data-flow-editor]_&]:hidden"
+          title={`Ir para o ${APPS[other].name}`}
+          to={lastPath(other)}
+        >
+          <BrandLogo app={other} className="size-8" />
+        </Link>
+      )}
       <nav
         aria-label="Navegação principal"
         className="app-mobile-nav glass-bar fixed z-30 flex gap-0.5 lg:hidden"

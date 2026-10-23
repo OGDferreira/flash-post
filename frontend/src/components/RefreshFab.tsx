@@ -22,7 +22,7 @@ export function RefreshFab() {
   return (
     <button
       aria-label="Atualizar página e métricas"
-      className="glass-bar fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] right-4 z-30 grid size-12 place-items-center rounded-full text-accent shadow-lg transition-transform hover:-translate-y-0.5 active:scale-95 lg:bottom-6 lg:right-6 [body[data-flow-editor]_&]:hidden [body[data-bottom-tabs]_&]:max-lg:hidden"
+      className="glass-bar fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] left-4 z-30 grid size-12 place-items-center rounded-full text-accent shadow-lg transition-transform hover:-translate-y-0.5 active:scale-95 lg:bottom-6 lg:left-auto lg:right-6 [body[data-flow-editor]_&]:hidden [body[data-bottom-tabs]_&]:max-lg:hidden"
       disabled={busy}
       onClick={refresh}
       title="Atualizar página e métricas"
