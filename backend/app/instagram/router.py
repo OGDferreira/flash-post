@@ -62,20 +62,21 @@ def _redirect_uri() -> str:
     return f"{get_settings().public_base_url.rstrip('/')}/api/instagram/callback"
 
 
-def _accounts_page(outcome: str) -> str:
-    return (
-        f"{get_settings().public_base_url.rstrip('/')}/feature/accounts?"
-        f"{urlencode({'instagram': outcome})}"
-    )
+def _result_params(outcome: str, account: str | None) -> str:
+    params = {"instagram": outcome}
+    if account:  # the @ of the account just connected, to show it in the success message
+        params["account"] = account
+    return urlencode(params)
 
 
-def _connection_result_page(return_to: str, outcome: str) -> str:
+def _accounts_page(outcome: str, account: str | None = None) -> str:
+    return f"{get_settings().public_base_url.rstrip('/')}/feature/accounts?{_result_params(outcome, account)}"
+
+
+def _connection_result_page(return_to: str, outcome: str, account: str | None = None) -> str:
     if return_to == "/dashboard":
-        return (
-            f"{get_settings().public_base_url.rstrip('/')}/dashboard?"
-            f"{urlencode({'instagram': outcome})}"
-        )
-    return _accounts_page(outcome)
+        return f"{get_settings().public_base_url.rstrip('/')}/dashboard?{_result_params(outcome, account)}"
+    return _accounts_page(outcome, account)
 
 
 def _utc_datetime(value: datetime) -> datetime:
@@ -793,7 +794,7 @@ async def instagram_callback(
         account.status_reason = None
         account.error_at = None
     await db.commit()
-    return RedirectResponse(_connection_result_page(return_to, "connected"), status_code=303)
+    return RedirectResponse(_connection_result_page(return_to, "connected", username), status_code=303)
 
 
 @router.delete(
