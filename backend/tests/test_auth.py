@@ -167,6 +167,34 @@ async def test_login_normalizes_email_and_auth_me_excludes_password_hash(
 
 
 @pytest.mark.anyio
+async def test_login_with_the_text_before_the_at(client: AsyncClient, db_session, owner) -> None:
+    from app.core.security import hash_password
+    from app.models import User
+    from tests.conftest import nickname_key
+
+    user, _workspace = owner  # owner@example.com
+    # Signs in with just "owner" (the part before the @) plus the password.
+    result = await login(client, " OWNER ", "correct horse battery staple")
+    assert result["user"]["id"] == str(user.id)
+
+    # When two accounts share the same local-part, the short login is ambiguous and refused.
+    db_session.add(User(
+        email="owner@other.com", nickname="owner2", nickname_normalized=nickname_key("owner2"),
+        full_name="Owner Two", password_hash=hash_password("another password"),
+        platform_role="USER", is_active=True, is_verified=True, is_approved=True,
+    ))
+    await db_session.commit()
+    token = await csrf(client)
+    clash = await client.post(
+        "/api/auth/login", headers={"X-CSRF-Token": token},
+        json={"email": "owner", "password": "correct horse battery staple"},
+    )
+    assert clash.status_code == 401
+    # the full e-mail still works for each account
+    assert (await login(client, "owner@example.com", "correct horse battery staple"))["user"]["id"] == str(user.id)
+
+
+@pytest.mark.anyio
 async def test_login_rejects_incorrect_password(client: AsyncClient, owner) -> None:
     _user, _workspace = owner
     token = await csrf(client)

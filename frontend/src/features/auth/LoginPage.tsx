@@ -13,7 +13,8 @@ import { ApiError, apiRequest, type User } from "@/services/api";
 import { claimCache } from "@/lib/queryCache";
 
 const loginSchema = z.object({
-  email: z.string().trim().email("Informe um e-mail válido."),
+  // The full e-mail or just the text before the @ (unique per account).
+  email: z.string().trim().min(1, "Informe seu e-mail ou usuário."),
   password: z.string().min(1, "Informe sua senha.").max(256),
 });
 type LoginValues = z.infer<typeof loginSchema>;
@@ -91,20 +92,19 @@ export function LoginPage() {
           >
             <div>
               <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-fg-2 sm:mb-2">
-                E-mail
+                E-mail ou usuário
               </label>
               <input
                 id="email"
-                type="email"
+                type="text"
                 autoComplete="username"
-                inputMode="email"
                 autoCapitalize="none"
                 spellCheck={false}
                 {...form.register("email")}
                 aria-invalid={Boolean(form.formState.errors.email)}
                 aria-describedby={form.formState.errors.email ? "email-error" : undefined}
                 className="h-10 w-full sm:h-11 rounded-lg border border-line bg-surface-inset px-3.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
-                placeholder="voce@empresa.com"
+                placeholder="voce@empresa.com ou só voce"
               />
               {form.formState.errors.email && (
                 <p id="email-error" className="mt-1.5 text-xs text-danger">

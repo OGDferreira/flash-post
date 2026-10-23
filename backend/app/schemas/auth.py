@@ -49,12 +49,15 @@ class NicknameAvailabilityResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # The full e-mail OR just the part before the @ (unique per account).
+    email: Annotated[str, Field(min_length=1, max_length=320)]
     password: Annotated[str, Field(min_length=1, max_length=256)]
 
     @field_validator("email", mode="before")
     @classmethod
     def normalize_email(cls, value: str) -> str:
+        if not isinstance(value, str):
+            raise ValueError("E-mail ou usuário inválido.")
         return value.strip().casefold()
 
 
