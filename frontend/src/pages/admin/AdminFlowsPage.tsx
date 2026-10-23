@@ -161,7 +161,7 @@ export function AdminFlowsPage() {
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium text-fg">{flow.name}</span>
               <span className="block truncate text-[11px] text-muted">
-                {flow.owner} · {flow.bots} robô(s) · {flow.plans} plano(s) · {flow.upsells} upsell(s) · {flow.downsells} downsell(s)
+                {flow.owner} · {flow.bots} bot(s) · {flow.plans} plano(s) · {flow.upsells} upsell(s) · {flow.downsells} downsell(s)
                 {flow.shared ? " · compartilhado" : ""}
               </span>
             </span>

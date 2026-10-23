@@ -293,7 +293,7 @@ async def update_bot(bot_id: uuid.UUID, payload: BotUpdate, access: OwnerAccess,
             select(TgGroup).where(TgGroup.bot_id == bot.id, TgGroup.chat_id == payload.delivery_group_chat_id)
         )
         if group is None:
-            raise HTTPException(status_code=422, detail="Adicione o robô como admin desse grupo primeiro.")
+            raise HTTPException(status_code=422, detail="Adicione o bot como admin desse grupo primeiro.")
         bot.delivery_group_chat_id = group.chat_id
     warm = False
     if payload.clear_cache_chat:
@@ -315,7 +315,7 @@ async def _check_cache_chat(db, bot: TgBot, chat_id: int) -> TgGroup:
     allowed to post (file_ids only work for the bot that uploaded the file)."""
     group = await db.scalar(select(TgGroup).where(TgGroup.bot_id == bot.id, TgGroup.chat_id == chat_id))
     if group is None:
-        raise HTTPException(status_code=422, detail="Adicione o robô como admin desse grupo ou canal primeiro.")
+        raise HTTPException(status_code=422, detail="Adicione o bot como admin desse grupo ou canal primeiro.")
     try:
         member = await engine.telegram(bot).get_chat_member(chat_id, bot.tg_bot_id)
     except TelegramError as exc:
@@ -324,9 +324,9 @@ async def _check_cache_chat(db, bot: TgBot, chat_id: int) -> TgGroup:
     is_admin = status == "creator" or status == "administrator"
     can_post = group.chat_type != "channel" or status == "creator" or bool(member.get("can_post_messages"))
     if not is_admin:
-        raise HTTPException(status_code=422, detail="O robô precisa ser admin desse grupo ou canal.")
+        raise HTTPException(status_code=422, detail="O bot precisa ser admin desse grupo ou canal.")
     if not can_post:
-        raise HTTPException(status_code=422, detail="Dê ao robô a permissão de publicar mensagens no canal.")
+        raise HTTPException(status_code=422, detail="Dê ao bot a permissão de publicar mensagens no canal.")
     return group
 
 
@@ -400,11 +400,11 @@ async def link_group(bot_id: uuid.UUID, payload: ChatLink, access: OwnerAccess, 
         chat = await engine.telegram(bot).get_chat(ref)
     except TelegramError as exc:
         raise HTTPException(
-            status_code=422, detail="O robô não encontrou esse grupo ou canal. Confira se ele foi adicionado lá como admin."
+            status_code=422, detail="O bot não encontrou esse grupo ou canal. Confira se ele foi adicionado lá como admin."
         ) from exc
     group = await engine.remember_chat(db, bot, chat, refresh=True)
     if group is None:
-        raise HTTPException(status_code=422, detail="O robô não é membro desse grupo ou canal. Adicione-o como admin e tente de novo.")
+        raise HTTPException(status_code=422, detail="O bot não é membro desse grupo ou canal. Adicione-o como admin e tente de novo.")
     # channel posts only reach bots whose webhook asks for them (older connections did not)
     try:
         await engine.telegram(bot).set_webhook(_telegram_webhook_url(bot), bot.webhook_secret)

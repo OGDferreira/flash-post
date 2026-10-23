@@ -22,7 +22,7 @@ export function CampaignStats({ campaign, open, onClose }: { campaign: Campaign;
     ["Público no disparo", campaign.total.toLocaleString("pt-BR")],
     ["Enviadas", campaign.sent.toLocaleString("pt-BR")],
     ["Bloquearam durante o envio", campaign.blocked.toLocaleString("pt-BR")],
-    ["Já tinham bloqueado o robô", campaign.already_blocked.toLocaleString("pt-BR")],
+    ["Já tinham bloqueado o bot", campaign.already_blocked.toLocaleString("pt-BR")],
     ["Falhas", campaign.failed.toLocaleString("pt-BR")],
     ["Ainda na fila", Math.max(0, campaign.total - handled).toLocaleString("pt-BR")],
     ["Vendas", campaign.sales.toLocaleString("pt-BR")],

@@ -81,7 +81,7 @@ function ShareDialog({ item, kind, loops, onClose }: {
       busy={toggle.isPending}
       description={
         kind === "flows"
-          ? "O sócio roda o funil no robô dele sem ver nem copiar textos, mídias ou ofertas."
+          ? "O sócio roda o funil no bot dele sem ver nem copiar textos, mídias ou ofertas."
           : "O sócio recebe o loop pronto em “Loops compartilhados”: posta as mesmas mídias, mas só depois que ele conectar as contas dele."
       }
       footer={
@@ -536,7 +536,7 @@ export function SharedFlowsPanel() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        Funis de {chief} prontos para rodar no seu robô. Gateway, porcentagens e ShopIDs são definidos por {chief}: você não precisa
+        Funis de {chief} prontos para rodar no seu bot. Gateway, porcentagens e ShopIDs são definidos por {chief}: você não precisa
         cadastrar credenciais para vender estes funis. Quando o funil vem com um loop, ele aparece em Loops compartilhados, sem contas:
         conecte as suas e ele começa a postar. O conteúdo do funil é protegido; leads, vendas e métricas são seus.
       </p>
@@ -545,7 +545,7 @@ export function SharedFlowsPanel() {
       {use.data && (
         <p className="text-xs text-success">
           Pronto! {use.data.loop ? `O loop “${use.data.loop.name}” está em Loops compartilhados (conecte suas contas nele). ` : ""}
-          Agora vá em “Meus robôs” e escolha “{use.data.name}” no seu robô, junto com o seu grupo de entrega.
+          Agora vá em “Meus bots” e escolha “{use.data.name}” no seu bot, junto com o seu grupo de entrega.
         </p>
       )}
       {data.flows.length === 0 ? (
@@ -556,7 +556,7 @@ export function SharedFlowsPanel() {
             <Card className="space-y-3" key={flow.id}>
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
-                {flow.in_use && <Badge tone="success">No seu robô</Badge>}
+                {flow.in_use && <Badge tone="success">No seu bot</Badge>}
               </div>
               <dl className="grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg bg-surface-inset px-2 py-2">

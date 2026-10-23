@@ -173,7 +173,7 @@ const collaboratorRoutes = new Set([
 const botDirect: NavItem[] = [
   { label: "Painel", to: "/bot", icon: LayoutDashboard },
   { label: "Funis", to: "/bot/funis", icon: GitBranch },
-  { label: "Robôs", to: "/bot/robos", icon: Bot },
+  { label: "Bots", to: "/bot/robos", icon: Bot },
   { label: "Vendas", to: "/bot/vendas", icon: Receipt },
   { label: "Carteira", to: "/carteira", icon: Wallet },
 ];
@@ -199,10 +199,10 @@ const botGroups: NavGroup[] = [
   },
   {
     id: "bot-operacao",
-    title: "Robôs e leads",
+    title: "Bots e leads",
     icon: Bot,
     items: [
-      { label: "Meus robôs", to: "/bot/robos", icon: Bot },
+      { label: "Meus bots", to: "/bot/robos", icon: Bot },
       { label: "Remarketing", to: "/bot/remarketing", icon: Megaphone },
     ],
   },

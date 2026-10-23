@@ -20,12 +20,12 @@ import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "
 
 /** Each Falcon Bot section has its own address (the sidebar links to them). */
 export const BOT_SECTIONS = {
-  home: { slug: "", title: "Painel", eyebrow: "Visão geral", hint: "Leads, starts, vendas e conversão dos seus robôs no período." },
-  bots: { slug: "robos", title: "Meus robôs", eyebrow: "Robôs e leads", hint: "Conecte robôs do Telegram e escolha o funil (ou a pasta de funis) de cada um." },
+  home: { slug: "", title: "Painel", eyebrow: "Visão geral", hint: "Leads, starts, vendas e conversão dos seus bots no período." },
+  bots: { slug: "robos", title: "Meus bots", eyebrow: "Bots e leads", hint: "Conecte bots do Telegram e escolha o funil (ou a pasta de funis) de cada um." },
   flows: { slug: "funis", title: "Meus funis", eyebrow: "Funis", hint: "Funis criados por você: conteúdo, planos, entregas e o gateway de cada um." },
-  remarketing: { slug: "remarketing", title: "Remarketing", eyebrow: "Robôs e leads", hint: "Disparos para os leads de um funil, pelos próprios robôs." },
+  remarketing: { slug: "remarketing", title: "Remarketing", eyebrow: "Bots e leads", hint: "Disparos para os leads de um funil, pelos próprios bots." },
   sharedByMe: { slug: "compartilhei", title: "Que compartilhei", eyebrow: "Funis", hint: "Seus funis compartilhados com cada sócio: gateway, a parte do vendedor, a sua comissão e as vendas. Só você altera essas regras." },
-  shared: { slug: "compartilhados-comigo", title: "Compartilhados comigo", eyebrow: "Funis", hint: "Funis de outro proprietário que você pode usar nos seus robôs. Gateway e comissão são definidos por quem compartilhou." },
+  shared: { slug: "compartilhados-comigo", title: "Compartilhados comigo", eyebrow: "Funis", hint: "Funis de outro proprietário que você pode usar nos seus bots. Gateway e comissão são definidos por quem compartilhou." },
   sales: { slug: "vendas", title: "Leads, starts e vendas", eyebrow: "Vendas e financeiro", hint: "Cada Pix gerado e pago, com taxas, comissões e o líquido de cada venda." },
   gateways: { slug: "gateways", title: "Gateways de pagamento", eyebrow: "Configuração", hint: "Configure os gateways dos seus funis próprios. Funis compartilhados com você usam o gateway de quem compartilhou." },
 } as const;
@@ -76,7 +76,7 @@ export function BotsPage() {
               <p className="mt-2 max-w-3xl text-sm text-muted">{info.hint}</p>
             </div>
           </header>
-          {/* Each section is its own screen: the dashboard lives in "Painel", the robots in "Meus robôs". */}
+          {/* Each section is its own screen: the dashboard lives in "Painel", the robots in "Meus bots". */}
           {tab === "home" && <ConversionOverview onPeriod={setPeriod} period={period} />}
           {(tab === "flows" || tab === "bots") && (
             <div className="dashboard-card flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3">

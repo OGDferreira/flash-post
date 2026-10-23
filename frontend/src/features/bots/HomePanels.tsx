@@ -75,7 +75,7 @@ export function ActivityLog() {
           [0, 1, 2, 3].map((key) => <div className="skeleton h-12" key={key} />)
         ) : items.length === 0 ? (
           <p className="rounded-xl bg-surface-inset px-3 py-6 text-center text-xs text-muted">
-            Quando um lead der /start no seu robô, ele aparece aqui na hora.
+            Quando um lead der /start no seu bot, ele aparece aqui na hora.
           </p>
         ) : (
           items.map((item, index) => {

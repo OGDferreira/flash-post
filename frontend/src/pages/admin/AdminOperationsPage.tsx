@@ -100,7 +100,7 @@ export function AdminOperationsPage() {
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Administração</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">Operações</h2>
-          <p className="mt-2 text-sm text-muted">Faturamento, comissões, robôs, funis e loops de todos os usuários. Tokens nunca aparecem aqui.</p>
+          <p className="mt-2 text-sm text-muted">Faturamento, comissões, bots, funis e loops de todos os usuários. Tokens nunca aparecem aqui.</p>
         </div>
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>
@@ -123,12 +123,12 @@ export function AdminOperationsPage() {
             title="Ranking de funis por faturamento"
           />
           <Table
-            head={["Robô", "Dono", "Funil", "Leads", "Pix gerados", "Vendas", "Lead → venda", "Pix → venda", "Faturamento"]}
+            head={["Bot", "Dono", "Funil", "Leads", "Pix gerados", "Vendas", "Lead → venda", "Pix → venda", "Faturamento"]}
             rows={data.bots.map((b) => [
               `${b.name} · @${b.username} (${b.status})`, b.owner, b.flow_name ?? "—", b.leads, b.pix_generated, b.sales,
               `${b.conversion.toLocaleString("pt-BR")}%`, `${b.pix_conversion.toLocaleString("pt-BR")}%`, brl(b.revenue),
             ])}
-            title="Comparação de robôs"
+            title="Comparação de bots"
           />
           <Table
             head={["Loop", "Dono", "Status", "Contas", "Posts no período", "Origem"]}
