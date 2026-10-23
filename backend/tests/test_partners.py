@@ -841,3 +841,16 @@ async def test_super_admin_copies_a_users_bot_token(client, db_session, owner, s
     assert got.headers["cache-control"] == "no-store"
     # never in the listings
     assert TOKEN not in (await client.get("/api/admin/operations")).text
+
+
+@pytest.mark.anyio
+async def test_partner_adds_own_meta_app_seen_only_by_them(client, db_session, owner) -> None:
+    partner, partner_ws, _ = await _partner(db_session, owner, accepted=True)
+    headers = await _as(client, "socio@example.com")
+    saved = await client.post("/api/instagram/apps", headers=headers,
+                              json={"display_name": "App do sócio", "app_id": "987654321", "app_secret": "segredo-do-socio"})
+    assert saved.status_code == 201, saved.text
+    assert [a["display_name"] for a in (await client.get("/api/instagram/apps")).json()["apps"]] == ["App do sócio"]
+    # the chief (and anyone else) never sees it
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.get("/api/instagram/apps")).json()["apps"] == []

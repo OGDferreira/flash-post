@@ -147,6 +147,7 @@ const postGroups: NavGroup[] = [
 const partnerPostRoutes = new Set([
   "/dashboard",
   "/feature/accounts",
+  "/feature/meta-apps", // their own Meta apps, to connect their own accounts (only they see them)
   "/feature/loops",
   "/feature/ranking",
   "/configuracoes",
