@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, apiRequest, type User } from "@/services/api";
 import { ImpersonationBanner } from "@/features/auth/ImpersonationBanner";
+import { claimCache } from "@/lib/queryCache";
 
 type AuthState = {
   user: User | null;
@@ -27,7 +28,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [queryClient]);
   const auth = useQuery({
     queryKey: ["auth", "me"],
-    queryFn: () => apiRequest<User>("/api/auth/me"),
+    queryFn: async () => {
+      const me = await apiRequest<User>("/api/auth/me");
+      claimCache(queryClient, me.id); // never show data cached for another login
+      return me;
+    },
     retry: (failureCount, error) =>
       !(error instanceof ApiError && error.status === 401) && failureCount < 1,
     staleTime: 30_000,

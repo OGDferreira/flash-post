@@ -22,6 +22,8 @@ import { APPS, appForPath, lastPath, otherApp, rememberPath, type AppId } from "
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import type { ShellContext } from "./shellContext";
+import { forgetCache } from "@/lib/queryCache";
+import { useWarmup } from "@/lib/warmup";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { setCsrfToken, apiRequest, reportClientError } from "@/services/api";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
@@ -106,6 +108,8 @@ export function AppShell() {
   const switchApps: AppId[] = !hasWorkspaceOwnerAccess
     ? isAdminRoute ? ["post"] : []
     : isAdminRoute ? ["post", "bot"] : [other];
+  // Pre-loads the heavy screens in the background right after login (instant tabs).
+  useWarmup(Boolean(user) && hasWorkspaceOwnerAccess && !isAdminRoute, app);
   const partnerMe = usePartnerMe({ period: "today" }, hasWorkspaceOwnerAccess && !isAdminRoute);
   const isPartner = partnerMe.data?.role === "partner";
   useEffect(() => {
@@ -235,7 +239,7 @@ export function AppShell() {
       // cached query. Clearing everything left the screen holding the old user.
       void queryClient.cancelQueries();
       queryClient.setQueryData(["auth", "me"], null);
-      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "auth" });
+      forgetCache(queryClient); // also erases what was saved on this device
       setMobileOpen(false);
       navigate("/login", { replace: true });
     },

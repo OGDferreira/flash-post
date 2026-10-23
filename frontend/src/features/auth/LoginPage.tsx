@@ -10,6 +10,7 @@ import { z } from "zod";
 import { AuthShell } from "@/features/auth/AuthShell";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ApiError, apiRequest, type User } from "@/services/api";
+import { claimCache } from "@/lib/queryCache";
 
 const loginSchema = z.object({
   email: z.string().trim().email("Informe um e-mail válido."),
@@ -37,6 +38,7 @@ export function LoginPage() {
         body: values,
       }),
     onSuccess: ({ user: signedInUser }) => {
+      claimCache(queryClient, signedInUser.id); // drops data saved on this device for another login
       queryClient.setQueryData(["auth", "me"], signedInUser);
       const requestedPath = (location.state as { from?: string } | null)?.from;
       const destination =
