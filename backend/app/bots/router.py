@@ -26,7 +26,7 @@ from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
 from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgJob, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
-from app.partners.service import accepted, flow_offered_to, notify_user, owner_workspace, partner_link, shared_funnel_access
+from app.partners.service import accepted, billing_route, flow_offered_to, notify_user, owner_workspace, partner_link, shared_funnel_access
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
 from app.core.time import utc_now
@@ -145,6 +145,11 @@ async def _usable_flow(db, flow_id: uuid.UUID, access) -> TgFlow:
         raise HTTPException(status_code=404, detail="Não encontrado.")
     if flow.hidden_by_admin and not admin_view():
         raise HTTPException(status_code=404, detail="Não encontrado.")
+    if (await billing_route(db, access.workspace.id, flow.id)).needs_seller_snakepay:
+        raise HTTPException(
+            status_code=409,
+            detail="Configure a sua SnakePay em Gateways de pagamento para usar este funil compartilhado.",
+        )
     return flow
 
 

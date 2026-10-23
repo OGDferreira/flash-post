@@ -67,33 +67,34 @@ async def test_owner_shares_a_funnel_with_rules_and_shop_ids_and_the_seller_cann
     share = created.json()
     assert share["seller_percent"] == 80.0 and share["owner_percent"] == 20.0 and share["gateway"] == "smokepay"
 
-    # SnakePay needs the ShopIDs of both sides, checked before saving
+    # SnakePay: the seller charges in their own account, so only the owner's ShopID is needed
+    # (to receive the commission). No seller ShopID is asked for.
     await _enable(client)
     headers = await _chief(client)
     snake_rules = _share(flow_id, partner.id, gateway="snakepay")
-    assert (await client.put("/api/partners/flow-shares", headers=headers, json=snake_rules)).status_code == 422
-    for seller, owner_id in (("meu-email", CHIEF), (SELLER, ""), (SELLER, SELLER), (PLATFORM, CHIEF), (SELLER, PLATFORM)):
-        bad = await client.put("/api/partners/flow-shares", headers=headers, json={**snake_rules, "seller_shop_id": seller, "owner_shop_id": owner_id})
-        assert bad.status_code == 422, (seller, owner_id, bad.text)
-    saved = await client.put("/api/partners/flow-shares", headers=headers, json={**snake_rules, "seller_shop_id": SELLER, "owner_shop_id": CHIEF})
+    assert (await client.put("/api/partners/flow-shares", headers=headers, json=snake_rules)).status_code == 422  # owner ShopID missing
+    for owner_id in ("meu-email", PLATFORM):
+        bad = await client.put("/api/partners/flow-shares", headers=headers, json={**snake_rules, "owner_shop_id": owner_id})
+        assert bad.status_code == 422, (owner_id, bad.text)
+    saved = await client.put("/api/partners/flow-shares", headers=headers, json={**snake_rules, "owner_shop_id": CHIEF})
     assert saved.status_code == 200, saved.text
     assert saved.json()["id"] == share["id"]  # same share, new rules
-    assert saved.json()["seller_shop_id"] == "••••5555" and CHIEF not in saved.text  # never the whole ShopID back
+    assert saved.json()["owner_shop_id"] == "••••eeee" and CHIEF not in saved.text  # never the whole ShopID back
     listing = (await client.get("/api/partners/flow-shares")).json()
     assert [item["rule"] for item in listing["items"]] == ["share"] and "líquido" in listing["basis"]
-    # editing without retyping the ShopIDs keeps them
+    # editing without retyping the ShopID keeps it
     kept = await client.put("/api/partners/flow-shares", headers=headers, json={**snake_rules, "seller_percent": "75", "owner_percent": "25"})
     assert kept.status_code == 200 and kept.json()["owner_percent"] == 25.0
     rule = await db_session.get(TgFlowShare, uuid.UUID(share["id"]))
     await db_session.refresh(rule)
-    assert rule.seller_shop_id == SELLER and rule.owner_shop_id == CHIEF
+    assert rule.owner_shop_id == CHIEF
 
-    # the seller sees the rules read-only and cannot change or revoke them
+    # the seller sees only the gateway and that they must set up SnakePay — never the split or any ShopID
     partner_headers = await _as(client, "socio@example.com")
     shared = (await client.get("/api/partners/shared")).json()
     rules = shared["flows"][0]["rules"]
-    assert rules == {**rules, "set_by_owner": True, "gateway": "snakepay", "seller_percent": 75.0, "owner_percent": 25.0}
-    assert CHIEF not in str(shared) and "owner_shop_id" not in rules
+    assert rules == {"set_by_owner": True, "gateway": "snakepay", "needs_setup": True}
+    assert CHIEF not in str(shared) and "percent" not in str(rules) and "shop_id" not in str(rules)
     attempts = [
         await client.put("/api/partners/flow-shares", headers=partner_headers, json=_share(flow_id, partner.id, seller_percent="100", owner_percent="0")),
         await client.delete(f"/api/partners/flow-shares/{share['id']}", headers=partner_headers),
@@ -123,7 +124,7 @@ async def test_owner_shares_a_funnel_with_rules_and_shop_ids_and_the_seller_cann
 
 
 @pytest.mark.anyio
-async def test_seller_sells_a_shared_funnel_with_the_shares_shop_ids_and_no_credentials(
+async def test_a_snakepay_shared_funnel_is_locked_until_the_seller_sets_up_their_own_snakepay(
     client, db_session, owner, super_admin, snake, apis
 ) -> None:
     chief, chief_ws = owner
@@ -132,30 +133,39 @@ async def test_seller_sells_a_shared_funnel_with_the_shares_shop_ids_and_no_cred
     headers = await _chief(client)
     flow_id = await _new_flow(client, headers, "Funil Chefe")
     saved = await client.put("/api/partners/flow-shares", headers=headers, json=_share(
-        flow_id, partner.id, gateway="snakepay", seller_percent="80", owner_percent="20", seller_shop_id=SELLER, owner_shop_id=CHIEF,
+        flow_id, partner.id, gateway="snakepay", seller_percent="80", owner_percent="20", owner_shop_id=CHIEF,
     ))
     assert saved.status_code == 200, saved.text
 
-    # the seller never set a ShopID or credentials of their own
+    # the seller has no SnakePay of their own: the funnel is locked and tells them to set it up
     partner_headers = await _as(client, "socio@example.com")
-    state = (await client.get("/api/payment-gateways")).json()
-    assert state["snakepay_recipient_id"] is None and not state["snakepay_account_key_set"]
+    shared = (await client.get("/api/partners/shared")).json()
+    assert shared["flows"][0]["rules"] == {"set_by_owner": True, "gateway": "snakepay", "needs_setup": True}
+    assert (await client.post(f"/api/partners/shared/flows/{flow_id}/use", headers=partner_headers)).status_code == 409
+    blocked = await client.post("/api/bots", headers=partner_headers, json={"token": TOKEN, "flow_id": flow_id})
+    assert blocked.status_code == 409 and "SnakePay" in blocked.text
+
+    # the seller saves their own SnakePay key: the funnel unlocks
+    assert (await client.put("/api/payment-gateways/snakepay/credentials", headers=partner_headers,
+                             json={"api_key": "seller_sk_test", "webhook_secret": "seller_webhook_test"})).status_code == 200
+    shared = (await client.get("/api/partners/shared")).json()
+    assert shared["flows"][0]["rules"] == {"set_by_owner": True, "gateway": "snakepay", "needs_setup": False}
     bot = (await client.post("/api/bots", headers=partner_headers, json={"token": TOKEN, "flow_id": flow_id})).json()
     await _send(client, db_session, bot["id"], _start())
     await _send(client, db_session, bot["id"], _tap("plan:vip"))
+
+    # the charge is created in the seller's account; only the owner's 20% commission goes out by split
     assert not apis.methods("pix.create")
     created = apis.methods("snake.create")[-1]
-    assert created["split"] == [{"recipient_id": SELLER, "percentage": 80.0}, {"recipient_id": CHIEF, "percentage": 20.0}]
+    assert created["split"] == [{"recipient_id": CHIEF, "percentage": 20.0}]
+    assert [call[1]["authorization"] for call in apis.calls if call[0] == "snake.auth"] == ["Bearer seller_sk_test"]
     await db_session.commit()
     order = await db_session.scalar(select(TgOrder))
-    # net 19.05 (19.90 - 3% - 0.25): the owner gets 20% = 3.81, the seller 80% = 15.24
     assert order.share_id == uuid.UUID(saved.json()["id"]) and order.origin == "shared_funnel"
     assert order.split_percent == Decimal("20.00") and order.split_amount == Decimal("3.81")
-    assert order.partner_net == Decimal("15.24") and order.gateway_fee == Decimal("0.85")
-    state = (await client.get("/api/payment-gateways")).json()
-    assert state["shared_flows"] == [{**state["shared_flows"][0], "set_by_owner": True, "seller_percent": 80.0, "shop_id_ready": True}]
+    assert order.partner_net == Decimal("15.24")
 
-    raw, sig = _event(snake["charges"]["in_1"])
+    raw, sig = _event(snake["charges"]["in_1"], "seller_webhook_test")
     assert (await client.post("/api/bots/pay/snakepay", content=raw, headers=sig)).status_code == 200
     me = (await client.get("/api/partners/me?period=today")).json()
     assert me["totals"]["sales"] == 1 and me["totals"]["net"] == 15.24 and me["totals"]["commission"] == 3.81

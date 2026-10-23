@@ -196,8 +196,10 @@ async def shared_templates(access: OwnerAccess, user: AuthenticatedUser, db: DbS
             )
         )
     }
-    default_percent = min(link.participation_percent, service.MAX_COMMISSION)
     chief_ws_gateway = chief_workspace.payment_gateway or "smokepay"
+    seller_has_snakepay = bool(
+        access.workspace.snakepay_api_key_encrypted and access.workspace.snakepay_webhook_secret_encrypted
+    )
     # The partner's area of shared loops: linked copies are created/refreshed here too
     # (the periodic job does the same for partners who never open the app).
     linked = await service.sync_partner_loops(db, link) if access.workspace.owner_id == user.id else []
@@ -242,8 +244,9 @@ async def shared_templates(access: OwnerAccess, user: AuthenticatedUser, db: DbS
                 "loop_id": str(flow.shared_loop_id) if flow.shared_loop_id in loop_names else None,
                 "loop_name": loop_names.get(flow.shared_loop_id),
                 "loop_in_use": flow.shared_loop_id in used_loops or flow.shared_loop_id in linked_ids,
-                # The owner's rules, read-only for the seller (no ShopID of the owner, ever).
-                "rules": _seller_rules(rules.get(flow.id), flow, default_percent, chief_ws_gateway),
+                # The seller only sees the gateway and whether they must set up SnakePay — never
+                # the owner's commission, their own cut or any ShopID.
+                "rules": _seller_rules(rules.get(flow.id), flow, chief_ws_gateway, seller_has_snakepay),
             }
             # the paired loop only counts when it is shared with this partner too
             for flow in flows
@@ -251,18 +254,14 @@ async def shared_templates(access: OwnerAccess, user: AuthenticatedUser, db: DbS
     }
 
 
-def _seller_rules(rule: TgFlowShare | None, flow: TgFlow, default_percent: Decimal, default_gateway: str) -> dict:
-    if rule is not None:
-        return {
-            "set_by_owner": True, "gateway": rule.gateway, "seller_percent": _f(rule.seller_percent),
-            "owner_percent": _f(rule.owner_percent), "seller_shop_id": service.mask_shop_id(rule.seller_shop_id),
-            "basis": SHARE_BASIS,
-        }
-    return {
-        "set_by_owner": False, "gateway": flow.payment_gateway or default_gateway,
-        "seller_percent": _f(HUNDRED - default_percent), "owner_percent": _f(default_percent),
-        "seller_shop_id": None, "basis": SHARE_BASIS,
-    }
+def _seller_rules(rule: TgFlowShare | None, flow: TgFlow, default_gateway: str, seller_has_snakepay: bool) -> dict:
+    """What the seller may see about a shared funnel: the gateway and whether they still need to
+    configure their SnakePay. Never the commission, their cut or any ShopID."""
+    gateway = rule.gateway if rule is not None else (flow.payment_gateway or default_gateway)
+    owner_takes_all = bool(rule is not None and rule.owner_takes_all)
+    # SnakePay funnels are charged in the seller's own account: locked until they configure it.
+    needs_setup = gateway == "snakepay" and not owner_takes_all and not seller_has_snakepay
+    return {"set_by_owner": rule is not None, "gateway": gateway, "needs_setup": needs_setup}
 
 
 @router.post("/shared/loops/{loop_id}/use", status_code=201, dependencies=[Depends(require_csrf)])
@@ -288,6 +287,11 @@ async def use_shared_flow(flow_id: uuid.UUID, access: OwnerAccess, user: Authent
     )
     if source is None or not await service.flow_offered_to(db, source, user.id):
         raise HTTPException(status_code=404, detail="Funil compartilhado não encontrado.")
+    if (await service.billing_route(db, access.workspace.id, source.id)).needs_seller_snakepay:
+        raise HTTPException(
+            status_code=409,
+            detail="Configure a sua SnakePay em Gateways de pagamento para usar este funil compartilhado.",
+        )
     # The funnel itself is never copied: the partner's bot runs it as is. The paired
     # loop (when there is one) arrives as a linked copy with zero accounts.
     loop_out = None
@@ -595,20 +599,14 @@ async def _validate_shop_ids(
         if any(gateways.same_recipient(owner, own) for own in platform):
             raise HTTPException(status_code=422, detail="Esse é o ShopID da conta da plataforma, não o seu.")
         return
-    if not seller:
-        raise HTTPException(status_code=422, detail="Informe o ShopID SnakePay do sócio vendedor.")
-    if not gateways.valid_recipient(seller):
-        raise HTTPException(status_code=422, detail="ShopID do vendedor inválido (começa com snakepay_).")
-    if any(gateways.same_recipient(seller, own) for own in platform):
-        raise HTTPException(status_code=422, detail="O ShopID do vendedor é o da conta da plataforma.")
+    # Normal share: the seller charges in their own SnakePay account (set up on their side); the
+    # owner only needs their own ShopID to receive the commission. No seller ShopID is used.
     needs_owner = owner_percent > 0 and user.platform_role != "SUPER_ADMIN"
     if needs_owner and not owner:
         raise HTTPException(status_code=422, detail="Informe o seu ShopID SnakePay para receber a comissão.")
     if owner:
         if not gateways.valid_recipient(owner):
             raise HTTPException(status_code=422, detail="O seu ShopID é inválido (começa com snakepay_).")
-        if gateways.same_recipient(seller, owner):
-            raise HTTPException(status_code=422, detail="O ShopID do vendedor e o seu precisam ser contas diferentes.")
         if user.platform_role != "SUPER_ADMIN" and any(gateways.same_recipient(owner, own) for own in platform):
             raise HTTPException(status_code=422, detail="Esse é o ShopID da conta da plataforma, não o seu.")
 
