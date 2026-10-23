@@ -10,6 +10,7 @@ import { Modal } from "@/components/ui/Modal";
 import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 import type { MetricsPeriod } from "@/features/analytics/period";
+import { AdminHideToggle } from "./AdminHideToggle";
 import { BotAvatar } from "./BotAvatar";
 import { useBotStats } from "./ConversionOverview";
 import { brl, type Bot, type BotGroup, type Flow, type SharedFlowOption } from "./types";
@@ -103,6 +104,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                   <Badge>Pausado</Badge>
                 )}
               </div>
+              <AdminHideToggle hidden={bot.hidden_by_admin} id={bot.id} kind="bot" />
               {bot.last_error && <p className="break-words text-xs text-danger">{bot.last_error}</p>}
               <dl className="grid grid-cols-4 gap-2 text-center">
                 {[

@@ -47,6 +47,8 @@ class TgFlow(Base):
     definition: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Hidden by the Super Admin: runs, but the operation never sees it (only the admin, inside the account).
+    hidden_by_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Who it is shared with: None = every partner, else a list of partner user ids.
     shared_with: Mapped[list | None] = mapped_column(JSON)
     template_flow_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -80,6 +82,8 @@ class TgBot(Base):
         Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="SET NULL")
     )
     tg_bot_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Hidden by the Super Admin: keeps running, but the operation never sees it, its leads or its sales.
+    hidden_by_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     username: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     encrypted_token: Mapped[str] = mapped_column(String(4096), nullable=False)

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, require_csrf
 from app.core.time import day_bounds_utc
@@ -53,7 +53,9 @@ async def today(
     zone = await user_time_zone(db, workspace.id, user.id)
     now = datetime.now(zone)
     midnight, tomorrow = day_bounds_utc(now.date(), zone)
-    own = TgOrder.workspace_id == workspace.id
+    from app.bots.hidden import not_hidden_bot
+
+    own = and_(TgOrder.workspace_id == workspace.id, not_hidden_bot(TgOrder.bot_id))
     generated = await db.scalar(
         select(func.count(TgOrder.id)).where(own, TgOrder.created_at >= midnight, TgOrder.created_at < tomorrow,
             TgOrder.gateway_transaction_id.is_not(None), TgOrder.gateway_transaction_id != "")

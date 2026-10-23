@@ -34,6 +34,8 @@ from app.schemas.finance import (
     FinancialWithdrawalResponse,
 )
 
+from app.bots.hidden import not_hidden_bot  # noqa: E402
+
 router = APIRouter(prefix="/api/finance", tags=["Finance"])
 CENT = Decimal("0.01")
 
@@ -80,6 +82,7 @@ async def _revenue_between(
                 TgOrder.workspace_id == workspace_id,
                 TgOrder.status == "paid",
                 TgOrder.paid_at.is_not(None),
+                not_hidden_bot(TgOrder.bot_id),
                 *window(TgOrder.paid_at),
             )
         )
@@ -130,7 +133,7 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
     day_flash_sales = await db.scalar(
         select(func.count(TgOrder.id)).where(
             TgOrder.workspace_id == workspace_id, TgOrder.status == "paid",
-            TgOrder.paid_at >= day_start, TgOrder.paid_at < day_end,
+            TgOrder.paid_at >= day_start, TgOrder.paid_at < day_end, not_hidden_bot(TgOrder.bot_id),
         )
     ) or 0
 

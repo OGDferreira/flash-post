@@ -15,6 +15,7 @@ from app.models import (
     InstagramLoopMedia,
     InstagramMedia,
     TgFlow,
+    TgLead,
     TgMedia,
     TgOrder,
     User,
@@ -759,3 +760,47 @@ async def test_chief_customizes_one_partners_copy_without_touching_the_main_loop
     assert reset.status_code == 200, reset.text
     assert reset.json()["customized"] is False
     assert (reset.json()["interval_min_minutes"], reset.json()["daily_limit_per_account"]) == (main[0], 7)
+
+
+@pytest.mark.anyio
+async def test_super_admin_hides_a_bot_and_its_funnel_from_the_user(client, db_session, owner, super_admin, apis) -> None:
+    chief, chief_ws = owner
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    bot, flow = await _setup(client, headers)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    raw, sig = _signed(_paid_event(order.id))
+    assert (await client.post("/api/bots/pay/smokepay", content=raw, headers=sig)).status_code == 200
+    assert (await client.get("/api/finance/month")).json()["today"]["flashbot_gross"] == "19.90"
+    # the user can't hide anything
+    assert (await client.patch(f"/api/bots/{bot['id']}/hidden", headers=headers, json={"hidden": True})).status_code == 403
+
+    # the Super Admin, inside the account, hides the bot (and its funnel)
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    assert (await client.post(f"/api/admin/users/{chief.id}/impersonate", headers=admin)).status_code == 200
+    hidden = await client.patch(f"/api/bots/{bot['id']}/hidden", headers=admin, json={"hidden": True})
+    assert hidden.status_code == 200, hidden.text
+    assert [b["hidden_by_admin"] for b in (await client.get("/api/bots")).json()["bots"]] == [True]
+    assert [f["hidden_by_admin"] for f in (await client.get("/api/bots/flows/list")).json()["flows"]] == [True]
+    assert (await client.get(f"/api/bots/flows/{flow['id']}")).status_code == 200
+    assert (await client.post("/api/auth/impersonation/stop", headers=admin)).status_code == 200
+
+    # the user sees nothing: no bot, no funnel, no leads, no sales, no revenue
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.get("/api/bots")).json()["bots"] == []
+    assert (await client.get("/api/bots/flows/list")).json()["flows"] == []
+    assert (await client.get(f"/api/bots/flows/{flow['id']}")).status_code == 404
+    assert (await client.patch(f"/api/bots/{bot['id']}", headers=headers, json={"clear_flow": True})).status_code == 404
+    stats = (await client.get("/api/bots/stats?period=today")).json()["totals"]
+    assert stats["leads"] == 0 and stats["sales"] == 0 and stats["pix_generated"] == 0
+    assert (await client.get("/api/bots/orders/list")).json()["orders"] == []
+    assert (await client.get("/api/bots/activity")).json()["items"] == []
+    assert (await client.get("/api/finance/month")).json()["today"]["flashbot_gross"] == "0.00"
+
+    # but the bot keeps running
+    other = _start()
+    other["message"]["from"]["id"] = other["message"]["chat"]["id"] = 777
+    assert (await _send(client, db_session, bot["id"], other)).status_code == 200
+    assert await db_session.scalar(select(func.count(TgLead.id))) == 2

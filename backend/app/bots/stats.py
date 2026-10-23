@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bots.hidden import not_hidden_bot
 from app.core.time import BRAZIL_TIME_ZONE, as_utc
 from app.models import Affiliation, TgBot, TgLead, TgOrder, User, Workspace, WorkspaceMember
 
@@ -30,11 +31,16 @@ def _rate(buyers: int, leads: int) -> float:
     return round(min(100.0, 100 * buyers / leads), 1) if leads else 0.0
 
 
-async def conversion_stats(db: AsyncSession, workspace_id: uuid.UUID, start: datetime, end: datetime, zone: ZoneInfo = BRAZIL_TIME_ZONE) -> dict:
+async def conversion_stats(
+    db: AsyncSession, workspace_id: uuid.UUID, start: datetime, end: datetime, zone: ZoneInfo = BRAZIL_TIME_ZONE, *, hide: bool = False
+) -> dict:
+    """``hide``: leave out bots the Super Admin hid from this operation."""
+    lead_shown = (not_hidden_bot(TgLead.bot_id),) if hide else ()
+    order_shown = (not_hidden_bot(TgOrder.bot_id),) if hide else ()
     lead_rows = (
         await db.execute(
             select(TgLead.id, TgLead.bot_id, TgLead.flow_id, TgLead.created_at).where(
-                TgLead.workspace_id == workspace_id, TgLead.created_at >= start, TgLead.created_at < end
+                TgLead.workspace_id == workspace_id, TgLead.created_at >= start, TgLead.created_at < end, *lead_shown
             )
         )
     ).all()
@@ -42,7 +48,7 @@ async def conversion_stats(db: AsyncSession, workspace_id: uuid.UUID, start: dat
         await db.execute(
             select(TgOrder.lead_id, TgOrder.bot_id, TgOrder.flow_id, TgOrder.amount, TgOrder.paid_at).where(
                 TgOrder.workspace_id == workspace_id, TgOrder.status == "paid",
-                TgOrder.paid_at >= start, TgOrder.paid_at < end,
+                TgOrder.paid_at >= start, TgOrder.paid_at < end, *order_shown,
             )
         )
     ).all()
@@ -50,7 +56,7 @@ async def conversion_stats(db: AsyncSession, workspace_id: uuid.UUID, start: dat
     pix_generated = await db.scalar(
         select(func.count(TgOrder.id)).where(
             TgOrder.workspace_id == workspace_id, TgOrder.created_at >= start, TgOrder.created_at < end,
-            TgOrder.gateway_transaction_id.is_not(None), TgOrder.gateway_transaction_id != "",
+            TgOrder.gateway_transaction_id.is_not(None), TgOrder.gateway_transaction_id != "", *order_shown,
         )
     )
 
@@ -60,7 +66,7 @@ async def conversion_stats(db: AsyncSession, workspace_id: uuid.UUID, start: dat
     pix_paid = await db.scalar(select(func.count(TgOrder.id)).where(
         TgOrder.workspace_id == workspace_id, TgOrder.status == "paid",
         TgOrder.paid_at >= start, TgOrder.paid_at < end,
-        TgOrder.gateway_transaction_id.is_not(None), TgOrder.gateway_transaction_id != "",
+        TgOrder.gateway_transaction_id.is_not(None), TgOrder.gateway_transaction_id != "", *order_shown,
     )) or 0
 
     def bucket():
@@ -173,13 +179,15 @@ async def partners_ranking_of(db: AsyncSession, user_id: uuid.UUID, start: datet
     }
 
 
-async def recent_activity(db: AsyncSession, workspace_id: uuid.UUID, limit: int = 30) -> list[dict]:
-    """Latest leads, Pix generated and approved sales of one operation, newest first."""
+async def recent_activity(db: AsyncSession, workspace_id: uuid.UUID, limit: int = 30, *, hide: bool = False) -> list[dict]:
+    """Latest leads, Pix generated and approved sales of one operation, newest first.
+    ``hide``: leave out bots the Super Admin hid from this operation."""
+    shown = (TgBot.hidden_by_admin.is_(False),) if hide else ()
     leads = (
         await db.execute(
             select(TgLead.first_name, TgLead.username, TgLead.created_at, TgBot.username)
             .join(TgBot, TgBot.id == TgLead.bot_id)
-            .where(TgLead.workspace_id == workspace_id)
+            .where(TgLead.workspace_id == workspace_id, *shown)
             .order_by(TgLead.created_at.desc())
             .limit(limit)
         )
@@ -189,7 +197,7 @@ async def recent_activity(db: AsyncSession, workspace_id: uuid.UUID, limit: int 
         await db.execute(
             select(*order_cols, TgOrder.created_at)
             .join(TgLead, TgLead.id == TgOrder.lead_id).join(TgBot, TgBot.id == TgOrder.bot_id)
-            .where(TgOrder.workspace_id == workspace_id)
+            .where(TgOrder.workspace_id == workspace_id, *shown)
             .order_by(TgOrder.created_at.desc())
             .limit(limit)
         )
@@ -198,7 +206,7 @@ async def recent_activity(db: AsyncSession, workspace_id: uuid.UUID, limit: int 
         await db.execute(
             select(*order_cols, TgOrder.paid_at)
             .join(TgLead, TgLead.id == TgOrder.lead_id).join(TgBot, TgBot.id == TgOrder.bot_id)
-            .where(TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at.is_not(None))
+            .where(TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at.is_not(None), *shown)
             .order_by(TgOrder.paid_at.desc())
             .limit(limit)
         )

@@ -148,11 +148,13 @@ export type Flow = {
   shared_with?: string[] | null;
   shared_loop_id?: string | null;
   from_template?: boolean;
+  hidden_by_admin?: boolean; // only the Super Admin, inside the account, ever sees it true
   /** Copy received from a chief: runs in the bot, but its content is never sent here. */
   protected?: boolean;
 };
 
 export type Bot = {
+  hidden_by_admin?: boolean;
   id: string;
   username: string;
   name: string;

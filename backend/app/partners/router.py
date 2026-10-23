@@ -34,6 +34,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.bots.hidden import not_hidden_bot
 from app.partners import service
 
 router = APIRouter(prefix="/api/partners", tags=["Partners"])
@@ -69,7 +70,8 @@ def _pct(value: Decimal) -> str:
 
 async def _sales(db, workspace_id: uuid.UUID, start, end, *, chief_user_id: uuid.UUID | None = None) -> dict:
     """Paid Falcon Bot sales of a workspace with fee, commission and partner net."""
-    where = [TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end]
+    where = [TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end,
+             not_hidden_bot(TgOrder.bot_id)]
     if chief_user_id is not None:
         where.append(TgOrder.split_chief_user_id == chief_user_id)
     row = (
@@ -97,7 +99,8 @@ def _order_out(order: TgOrder) -> dict:
 async def _recent_orders(db, workspace_id: uuid.UUID, start, end, limit: int = 50) -> list[dict]:
     rows = await db.scalars(
         select(TgOrder)
-        .where(TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end)
+        .where(TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end,
+               not_hidden_bot(TgOrder.bot_id))
         .order_by(TgOrder.paid_at.desc())
         .limit(limit)
     )

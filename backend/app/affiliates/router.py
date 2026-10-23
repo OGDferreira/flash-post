@@ -23,6 +23,8 @@ from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bots.hidden import not_hidden_bot
+
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
 from app.core.config import get_settings
@@ -462,18 +464,20 @@ async def _bot_numbers(db: AsyncSession, workspace_id, chief_user_id, start, end
                 ),
             ).where(
                 TgOrder.workspace_id == workspace_id, TgOrder.status == "paid",
-                TgOrder.paid_at >= start, TgOrder.paid_at < end,
+                TgOrder.paid_at >= start, TgOrder.paid_at < end, not_hidden_bot(TgOrder.bot_id),
             )
         )
     ).one()
     leads = await db.scalar(
         select(func.count(TgLead.id)).where(
-            TgLead.workspace_id == workspace_id, TgLead.created_at >= start, TgLead.created_at < end
+            TgLead.workspace_id == workspace_id, TgLead.created_at >= start, TgLead.created_at < end,
+            not_hidden_bot(TgLead.bot_id),
         )
     )
     pix = await db.scalar(
         select(func.count(TgOrder.id)).where(
-            TgOrder.workspace_id == workspace_id, TgOrder.created_at >= start, TgOrder.created_at < end
+            TgOrder.workspace_id == workspace_id, TgOrder.created_at >= start, TgOrder.created_at < end,
+            not_hidden_bot(TgOrder.bot_id),
         )
     )
     return {

@@ -9,6 +9,7 @@ import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 import type { MetricsPeriod } from "@/features/analytics/period";
 import { useBotStats } from "./ConversionOverview";
+import { AdminHideToggle } from "./AdminHideToggle";
 import { FlowEditor } from "./FlowEditor";
 import { ImportFlowModal, downloadFlow } from "./FlowPortability";
 import { brl, type Flow } from "./types";
@@ -104,6 +105,7 @@ export function FlowsPanel({
                   </span>
                 </div>
                 <p className="truncate font-semibold text-fg">{flow.name}</p>
+                <AdminHideToggle hidden={flow.hidden_by_admin} id={flow.id} kind="flow" />
                 {flow.protected || !flow.definition ? (
                   <p className="flex items-center gap-1.5 text-xs text-warning">
                     <Lock size={13} /> Funil de {chief} protegido: roda no seu bot, mas não pode ser aberto, copiado ou exportado.
