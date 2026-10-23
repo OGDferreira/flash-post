@@ -385,8 +385,17 @@ export function WalletPage() {
   // and (Super Admin) what the per-sale Falcon Bot fee brought in.
   // Every gateway's balance together; the "Sacar" pop-up splits it again, one card per gateway.
   const gateways = data.gateways ?? [];
-  const totalAvailable = gateways.length ? gateways.reduce((sum, item) => sum + item.available, 0) : data.available;
-  const perGateway = gateways.map((item) => `${GATEWAY_NAMES[item.gateway]} ${brl(item.available)}${item.estimated ? " (estimado)" : ""}`).join(" · ");
+  // "Disponível para sacar" = only the confirmed SmokePay wallet balance. SnakePay has no balance
+  // API, so its figure is an estimate kept out of the headline and shown apart.
+  const smoke = gateways.find((item) => item.gateway === "smokepay");
+  const confirmedAvailable = smoke ? smoke.available : data.available;
+  const otherGateways = gateways.filter((item) => item.gateway !== "smokepay");
+  // The "Sacar" pop-up handles each gateway on its own, so allow it whenever any has a balance.
+  const canWithdraw = gateways.length ? gateways.some((item) => item.available > 0) : data.available > 0;
+  const perGateway = [
+    `SmokePay ${brl(confirmedAvailable)}${smoke?.estimated ? " (estimado)" : ""}`,
+    ...otherGateways.map((item) => `${GATEWAY_NAMES[item.gateway]} ${brl(item.available)}${item.estimated ? " (estimado · fora do total)" : ""}`),
+  ].join(" · ");
   const commissions = data.month_commissions ?? 0;
   const cards: [string, string, string?, string?][] = [
     [
@@ -398,7 +407,7 @@ export function WalletPage() {
     ...(!partner || (data.month_shark_revenue ?? 0) > 0
       ? [["Faturamento Shark", brl(data.month_shark_revenue ?? 0), "text-fg", "Vendas do mês na SharkBot"] as [string, string, string, string]]
       : []),
-    [partner ? "Disponível para saque" : "Disponível para sacar", brl(totalAvailable), "text-success", perGateway || `Taxa por saque ${brl(fee)}`],
+    [partner ? "Disponível para saque" : "Disponível para sacar", brl(confirmedAvailable), "text-success", perGateway || `Taxa por saque ${brl(fee)}`],
     ["Já sacado", brl(data.withdrawn)],
     ...(!partner ? [["Comissões recebidas", brl(commissions), "text-success", "Dos sócios, no mês (todas as gateways)"] as [string, string, string, string]] : []),
   ];
@@ -418,7 +427,7 @@ export function WalletPage() {
             <WalletIcon className="text-accent" size={26} /> Carteira
           </h1>
         </div>
-        <button className="btn-primary" disabled={Boolean(data.withdrawals_blocked) || totalAvailable <= 0} onClick={() => setOpen(true)} type="button">
+        <button className="btn-primary" disabled={Boolean(data.withdrawals_blocked) || !canWithdraw} onClick={() => setOpen(true)} type="button">
           <ArrowDownToLine size={16} /> Sacar
         </button>
       </header>
