@@ -101,15 +101,9 @@ export function CollaboratorsPage() {
   return (
     <div className="mx-auto max-w-[1320px] space-y-5">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-          Workspace
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">
+        <h1 className="text-2xl font-semibold text-fg sm:text-3xl">
           Gestão de colaboradores
         </h1>
-        <p className="mt-2 text-sm text-muted">
-          Gerencie acessos, metas, remuneração e os pagamentos registrados para a equipe.
-        </p>
       </header>
 
       <CollaboratorInvitesPanel pending={report.data.pending ?? []} />

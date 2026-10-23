@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { disablePush, enablePush, savePushPreference, type PushConfig } from "@/lib/push";
 import { Link } from "react-router-dom";
 import {
   Bell,
@@ -107,7 +108,57 @@ function ThemeSwitch() {
           </button>
         ))}
       </div>
-      <p className="mt-2 text-xs text-muted">Também dá para trocar pelo botão de sol/lua no topo da tela.</p>
+    </section>
+  );
+}
+
+/** Push notifications: the user's choice, saved on the account. This is the only place it changes. */
+function PushSwitch() {
+  const queryClient = useQueryClient();
+  const config = useQuery({
+    queryKey: ["notifications", "push", "config"],
+    queryFn: () => apiRequest<PushConfig>("/api/notifications/push/config"),
+    staleTime: 5 * 60_000,
+  });
+  const toggle = useMutation({
+    mutationFn: async (on: boolean) => {
+      if (on) {
+        const key = config.data?.public_key;
+        if (!key) throw new Error("Notificações indisponíveis no servidor.");
+        await enablePush(key);
+      } else {
+        await disablePush();
+      }
+      return savePushPreference({ enabled: on });
+    },
+    onSuccess: (next) => queryClient.setQueryData(["notifications", "push", "config"], next),
+  });
+  const on = Boolean(config.data?.enabled);
+  const blocked = config.data?.impersonating;
+  return (
+    <section className="flex flex-wrap items-center gap-3 rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
+      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-accent"><Bell size={18} /></span>
+      <div className="min-w-0 flex-1">
+        <h2 className="text-base font-semibold text-fg">Notificações no celular</h2>
+        <p className="text-xs text-muted">
+          {blocked
+            ? "Você está na conta de outro usuário: as notificações dele não mudam daqui."
+            : on
+              ? "Ativadas. Ficam salvas na sua conta até você desligar aqui."
+              : "Desativadas. Ative para receber vendas, comissões e metas."}
+        </p>
+        {toggle.error && <p className="mt-1 text-xs text-danger">{toggle.error instanceof Error ? toggle.error.message : "Não foi possível mudar."}</p>}
+      </div>
+      <button
+        aria-checked={on}
+        className={`relative h-7 w-12 shrink-0 rounded-full transition ${on ? "bg-brand" : "bg-well"} disabled:opacity-50`}
+        disabled={!config.data || blocked || toggle.isPending}
+        onClick={() => toggle.mutate(!on)}
+        role="switch"
+        type="button"
+      >
+        <span className={`absolute top-1 size-5 rounded-full bg-white shadow transition-[left] ${on ? "left-6" : "left-1"}`} />
+      </button>
     </section>
   );
 }
@@ -211,11 +262,9 @@ export function SettingsPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-5">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Ajustes</p>
-        <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
+        <h1 className="flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
           <Settings className="text-accent" size={26} /> Configurações
         </h1>
-        <p className="mt-2 text-sm text-muted">Tema e aparência, conta, avisos e as integrações com API, webhooks e gateways.</p>
       </header>
 
       <HomePanelPreference />
@@ -226,6 +275,7 @@ export function SettingsPage() {
         </h2>
         <ThemeSwitch />
         <AppearanceCard />
+        <PushSwitch />
       </div>
 
       {owner && <IphoneWidgetCard />}

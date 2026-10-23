@@ -236,15 +236,11 @@ export function InstagramAccountsPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Workspace</p>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
               Hub de Contas
             </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-              Acompanhe as contas profissionais conectadas e o estado de cada autorização.
-            </p>
           </div>
           {accounts.data.can_connect && (
             <div className="flex flex-col items-end gap-2">

@@ -35,6 +35,7 @@ from app.schemas.notifications import (
     DailyViewsGoalsResponse,
     DailyViewsGoalUpdate,
     PushConfigResponse,
+    PushPreferenceRequest,
     PushSubscriptionRequest,
     PushTestResponse,
     PushUnsubscribeRequest,
@@ -66,15 +67,45 @@ async def _device_count(db: DbSession, user_id: uuid.UUID, workspace_id: uuid.UU
 
 
 @router.get("/push/config", response_model=PushConfigResponse)
-async def push_config(access: WorkspaceMemberAccess, db: DbSession) -> PushConfigResponse:
+async def push_config_route(request: Request, access: WorkspaceMemberAccess, db: DbSession) -> PushConfigResponse:
+    return await push_config(access, db, request)
+
+
+async def push_config(access, db, request: Request | None = None) -> PushConfigResponse:
+    from app.admin.impersonation import is_impersonating
+
     devices = await _device_count(db, access.membership.user_id, access.workspace.id)
+    user = await db.get(User, access.membership.user_id)
+    choice = {
+        "enabled": bool(user and user.push_enabled),
+        "prompt_done": bool(user and user.push_prompt_done),
+        "impersonating": bool(request is not None and is_impersonating(request)),
+    }
     if not _push_supported():
-        return PushConfigResponse(supported=False, public_key=None, devices=devices)
+        return PushConfigResponse(supported=False, public_key=None, devices=devices, **choice)
     try:
         keys = await get_vapid_keys(db)
     except (WebPushError, RuntimeError, ValueError):
-        return PushConfigResponse(supported=False, public_key=None, devices=devices)
-    return PushConfigResponse(supported=True, public_key=keys.public_key_b64, devices=devices)
+        return PushConfigResponse(supported=False, public_key=None, devices=devices, **choice)
+    return PushConfigResponse(supported=True, public_key=keys.public_key_b64, devices=devices, **choice)
+
+
+@router.put("/push/preference", response_model=PushConfigResponse, dependencies=[Depends(require_csrf)])
+async def push_preference(
+    payload: PushPreferenceRequest, request: Request, access: WorkspaceMemberAccess, db: DbSession
+) -> PushConfigResponse:
+    """The user's push choice, saved on the account (Configurações), and "prompt answered"."""
+    from app.admin.impersonation import is_impersonating
+
+    if not is_impersonating(request):  # the Super Admin inside an account never changes it
+        user = await db.get(User, access.membership.user_id)
+        if payload.enabled is not None:
+            user.push_enabled = payload.enabled
+            user.push_prompt_done = True
+        if payload.prompt_done:
+            user.push_prompt_done = True
+        await db.commit()
+    return await push_config(access, db, request)
 
 
 @router.post(
@@ -88,6 +119,11 @@ async def subscribe_push(
     access: WorkspaceMemberAccess,
     db: DbSession,
 ) -> PushConfigResponse:
+    from app.admin.impersonation import is_impersonating
+
+    if is_impersonating(request):
+        # the Super Admin's device must never receive (or reveal) the owner's notifications
+        raise HTTPException(status_code=409, detail="Você está na conta de outro usuário: as notificações dele não são ativadas aqui.")
     if not is_allowed_push_endpoint(payload.endpoint):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -126,6 +162,10 @@ async def subscribe_push(
         existing.auth = payload.keys.auth
         existing.user_agent = user_agent
         existing.failure_count = 0
+    owner = await db.get(User, user_id)
+    if owner is not None:  # turning it on is the user's saved choice
+        owner.push_enabled = True
+        owner.push_prompt_done = True
     await db.flush()
     stale = (
         await db.scalars(
@@ -141,7 +181,7 @@ async def subscribe_push(
     if stale:
         await db.execute(delete(PushSubscription).where(PushSubscription.id.in_(stale)))
     await db.commit()
-    return await push_config(access, db)
+    return await push_config(access, db, request)
 
 
 @router.delete(
@@ -151,9 +191,14 @@ async def subscribe_push(
 )
 async def unsubscribe_push(
     payload: PushUnsubscribeRequest,
+    request: Request,
     access: WorkspaceMemberAccess,
     db: DbSession,
 ) -> Response:
+    from app.admin.impersonation import is_impersonating
+
+    if is_impersonating(request):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     await db.execute(
         delete(PushSubscription).where(
             PushSubscription.endpoint == payload.endpoint,

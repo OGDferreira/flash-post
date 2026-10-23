@@ -69,9 +69,7 @@ export function BotsPage() {
           {tab !== "home" && (
             <header className="flex flex-wrap items-end justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Falcon Bot · {info.eyebrow}</p>
-                <h1 className="mt-2 flex items-center gap-2.5 text-2xl font-semibold text-fg sm:text-3xl">{info.title}</h1>
-                <p className="mt-2 max-w-3xl text-sm text-muted">{info.hint}</p>
+                <h1 className="flex items-center gap-2.5 text-2xl font-semibold text-fg sm:text-3xl">{info.title}</h1>
               </div>
             </header>
           )}

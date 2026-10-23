@@ -387,9 +387,6 @@ export function DashboardPage() {
       <AlertsBanner />
       <header className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-            Período das métricas
-          </p>
           <Link className="btn-primary" to="/feature/accounts?connect=1">
             <Link2 size={16} />
             Conectar conta

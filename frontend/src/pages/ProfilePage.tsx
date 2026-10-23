@@ -142,15 +142,9 @@ export function ProfilePage() {
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <div>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-          Conta
-        </p>
         <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
           Perfil
         </h2>
-        <p className="mt-2 text-sm text-muted">
-          Consulte seus dados, atualize nome, apelido e foto e altere sua senha.
-        </p>
       </div>
 
       <AppearanceCard />

@@ -20,7 +20,7 @@ export function AccessAccountButton({ userId, name, className = "" }: { userId: 
         onClick={async () => {
           if (
             await confirmAction(
-              `Acessar a conta de ${name}? Você vai ver e poder alterar tudo como se fosse ele. O acesso fica registrado e você volta pela faixa "Voltar para minha conta".`,
+              `Acessar a conta de ${name}? Você vai ver e poder alterar tudo como se fosse ele. Ele não é avisado e você volta pela faixa "Voltar para minha conta".`,
             )
           ) {
             enter.mutate();

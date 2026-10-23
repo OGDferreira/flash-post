@@ -346,9 +346,6 @@ export function LoopsPage() {
     <div className="mx-auto max-w-5xl space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-            Publicação automatizada
-          </p>
           <h2 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
             <Infinity size={27} className="text-accent" />
             Loops

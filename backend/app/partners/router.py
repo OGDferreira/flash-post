@@ -12,7 +12,7 @@ from datetime import date
 from typing import Literal
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 
@@ -890,7 +890,11 @@ async def notifications(user: AuthenticatedUser, db: DbSession) -> dict:
 
 
 @router.post("/notifications/read", status_code=204, dependencies=[Depends(require_csrf)])
-async def mark_read(user: AuthenticatedUser, db: DbSession) -> None:
+async def mark_read(request: Request, user: AuthenticatedUser, db: DbSession) -> None:
+    from app.admin.impersonation import is_impersonating
+
+    if is_impersonating(request):
+        return  # the owner still sees them as new
     await db.execute(
         update(AppNotification)
         .where(AppNotification.user_id == user.id, AppNotification.read_at.is_(None))

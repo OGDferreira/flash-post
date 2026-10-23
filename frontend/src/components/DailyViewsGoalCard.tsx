@@ -1,11 +1,10 @@
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, BellOff, RefreshCw, Send, Target } from "lucide-react";
 
 import {
   currentSubscription,
-  disablePush,
-  enablePush,
   pushAvailability,
   type PushConfig,
 } from "@/lib/push";
@@ -111,27 +110,6 @@ export function DailyViewsGoalCard() {
     mutationFn: () =>
       apiRequest<DailyViewsGoal>("/api/notifications/goals/me/refresh", { method: "POST" }),
     onSuccess: (data) => queryClient.setQueryData(["notifications", "goal", "me"], data),
-    onError: (error) => setFeedback({ kind: "error", text: errorMessage(error) }),
-  });
-  const togglePush = useMutation({
-    mutationFn: async () => {
-      if (subscribedHere) {
-        await disablePush();
-        return false;
-      }
-      const key = pushConfig.data?.public_key;
-      if (!key) throw new Error("Notificações push indisponíveis no servidor.");
-      await enablePush(key);
-      return true;
-    },
-    onSuccess: (active) => {
-      setSubscribedHere(active);
-      void queryClient.invalidateQueries({ queryKey: ["notifications", "push", "config"] });
-      setFeedback({
-        kind: "ok",
-        text: active ? "Notificações ativadas neste dispositivo." : "Notificações desativadas neste dispositivo.",
-      });
-    },
     onError: (error) => setFeedback({ kind: "error", text: errorMessage(error) }),
   });
   const testPush = useMutation({
@@ -299,19 +277,11 @@ export function DailyViewsGoalCard() {
           </p>
         ) : (
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              className={subscribedHere ? "btn-secondary" : "btn-primary"}
-              disabled={togglePush.isPending || subscribedHere === null || !pushConfig.data}
-              onClick={() => togglePush.mutate()}
-              type="button"
-            >
+            {/* The on/off choice lives only in Configurações (saved on the account). */}
+            <Link className={subscribedHere ? "btn-secondary" : "btn-primary"} to="/configuracoes">
               {subscribedHere ? <BellOff size={16} /> : <Bell size={16} />}
-              {togglePush.isPending
-                ? "Aguarde..."
-                : subscribedHere
-                  ? "Desativar neste dispositivo"
-                  : "Ativar notificações"}
-            </button>
+              {subscribedHere ? "Notificações ativas · mudar em Configurações" : "Ativar em Configurações"}
+            </Link>
             {subscribedHere && (
               <button
                 className="btn-ghost"

@@ -60,6 +60,10 @@ class User(Base):
     withdrawals_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Only the Super Admin invites partners, unless they give this permission to a user.
     can_invite_partners: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Push notifications: what the user chose (changed only in Configurações) and whether the
+    # "ativar notificações" prompt was already answered (it shows once).
+    push_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    push_prompt_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     home_panel: Mapped[str | None] = mapped_column(String(16))
     # iPhone widget (Scriptable): SHA-256 of a read-only token for today's Falcon Bot numbers
     widget_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)

@@ -56,15 +56,9 @@ export function RankingPage() {
   return (
     <div className="mx-auto max-w-[1320px] space-y-4">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-          Equipe
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold text-fg sm:text-3xl">
+        <h1 className="text-2xl font-semibold text-fg sm:text-3xl">
           Ranking de conexões
         </h1>
-        <p className="mt-2 text-sm text-muted">
-          Compare as contas conectadas pelo chefe e pelos colaboradores.
-        </p>
       </header>
 
       <nav

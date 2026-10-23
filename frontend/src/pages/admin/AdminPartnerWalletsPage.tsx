@@ -82,12 +82,7 @@ export function AdminPartnerWalletsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Administração</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">Saques dos sócios</h2>
-        <p className="mt-2 max-w-2xl text-sm text-muted">
-          Faturamento, líquido disponível para saque, o que já foi sacado e o histórico de cada sócio. Só você vê e faz esses
-          saques; o sócio vê apenas o faturamento, o líquido disponível e o total já sacado.
-        </p>
       </div>
       {data && (
         <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3 ${data.withdrawals_blocked ? "border-warning/40 bg-warning-soft" : "border-line-soft bg-surface-inset"}`}>

@@ -90,16 +90,9 @@ export function ErrorLogsPage() {
     <div className="mx-auto max-w-6xl space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-            Diagnóstico
-          </p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg">
             Log de erros
           </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Erros JavaScript e do console do navegador, respostas 5xx da API e erros
-            inesperados registrados pelo servidor deste workspace.
-          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button

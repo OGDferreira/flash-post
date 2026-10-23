@@ -346,10 +346,7 @@ export function FeedPage() {
 function FeedHeading() {
   return (
     <header>
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-        Perfis &amp; Métricas
-      </p>
-      <h1 className="mt-1 text-2xl font-semibold tracking-[-0.045em] text-fg">
+      <h1 className="text-2xl font-semibold tracking-[-0.045em] text-fg">
         Veja seguidores, posts e mídias de cada perfil.
       </h1>
     </header>

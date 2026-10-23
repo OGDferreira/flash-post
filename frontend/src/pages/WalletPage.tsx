@@ -414,15 +414,9 @@ export function WalletPage() {
     <div className="mx-auto max-w-[1100px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Financeiro</p>
-          <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
+          <h1 className="flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
             <WalletIcon className="text-accent" size={26} /> Carteira
           </h1>
-          <p className="mt-1 text-sm text-muted">
-            {partner
-              ? "Seu faturamento, o líquido disponível para saque e o que já foi sacado. O saque cai na sua chave Pix."
-              : "Seu faturamento, o que tem para sacar, o que já sacou e suas metas."}
-          </p>
         </div>
         <button className="btn-primary" disabled={Boolean(data.withdrawals_blocked) || totalAvailable <= 0} onClick={() => setOpen(true)} type="button">
           <ArrowDownToLine size={16} /> Sacar

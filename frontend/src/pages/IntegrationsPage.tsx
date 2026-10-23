@@ -122,17 +122,10 @@ export function IntegrationsPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-          Conexões externas
-        </p>
-        <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
+        <h1 className="flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
           <PlugZap className="text-accent" size={25} />
           Integrações
         </h1>
-        <p className="mt-2 text-sm text-muted">
-          Crie um endpoint por operação e configure a parte da venda que fica
-          como faturamento líquido.
-        </p>
       </header>
 
       <h2 className="text-lg font-semibold text-fg">Smokepay</h2>

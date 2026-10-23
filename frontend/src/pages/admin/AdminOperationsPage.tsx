@@ -98,9 +98,7 @@ export function AdminOperationsPage() {
     <div className="space-y-4">
       <header className="space-y-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Administração</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">Operações</h2>
-          <p className="mt-2 text-sm text-muted">Faturamento, comissões, bots, funis e loops de todos os usuários. Tokens nunca aparecem aqui.</p>
         </div>
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>

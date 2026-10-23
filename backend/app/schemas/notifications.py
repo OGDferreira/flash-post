@@ -8,6 +8,14 @@ class PushConfigResponse(BaseModel):
     supported: bool
     public_key: str | None
     devices: int
+    enabled: bool = False  # the user's choice, saved on the account
+    prompt_done: bool = False  # the "ativar notificações" prompt was answered once
+    impersonating: bool = False
+
+
+class PushPreferenceRequest(BaseModel):
+    enabled: bool | None = None
+    prompt_done: bool | None = None
 
 
 class PushSubscriptionKeys(BaseModel):

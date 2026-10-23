@@ -229,14 +229,9 @@ export function AnalyticsPage() {
     <div className="tab-host mx-auto max-w-[1440px] space-y-4">
       <header className="space-y-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Métricas</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
             Analytics
           </h2>
-          <p className="mt-2 text-sm leading-6 text-muted">
-            Métricas reais por conta, publicações em alta, ranking de engajamento e vendas por bot. O
-            período vale para todas as abas.
-          </p>
         </div>
         <nav aria-label="Seções de métricas" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
           {tabs.map((item) => (

@@ -324,16 +324,10 @@ export function EmailsPage() {
     <div className="mx-auto max-w-[1600px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">
-            Workspace
-          </p>
-          <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
+          <h1 className="flex items-center gap-2 text-2xl font-semibold text-fg sm:text-3xl">
             <Mail className="text-accent" size={25} />
             Controle de E-mails
           </h1>
-          <p className="mt-2 text-sm text-muted">
-            Contas, responsáveis, status e registros de erro do workspace.
-          </p>
         </div>
         <a
           className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-brand-soft px-4 text-sm font-semibold text-accent hover:bg-brand-soft"
