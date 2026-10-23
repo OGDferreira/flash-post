@@ -420,13 +420,9 @@ export function AppShell() {
       )}
 
       <nav className="app-sidebar-nav flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        {[sidebarDirect, navigation.flat, navigation.admin].filter((links) => links.length > 0).map((links, index) => (
+        {/* Administração (Super Admin) comes last, after the product's own sections. */}
+        {[sidebarDirect, navigation.flat].filter((links) => links.length > 0).map((links, index) => (
         <div className={index ? "mt-4 space-y-1 border-t border-line-soft pt-3" : "space-y-1"} key={index}>
-          {links === navigation.admin && (
-            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted lg:opacity-0 lg:group-data-[open=true]:opacity-100">
-              Administração
-            </p>
-          )}
           {links.map(({ label, to, icon: Icon }) => (
             <NavLink
               end={to === "/admin" || to === "/dashboard"}
@@ -475,6 +471,31 @@ export function AppShell() {
             ))}
           </section>
         ))}
+        {navigation.admin.length > 0 && (
+          <div className="mt-4 space-y-1 border-t border-line-soft pt-3">
+            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted lg:opacity-0 lg:group-data-[open=true]:opacity-100">
+              Administração
+            </p>
+            {navigation.admin.map(({ label, to, icon: Icon }) => (
+              <NavLink
+                end={to === "/admin"}
+                key={to}
+                to={to}
+                title={label}
+                className={({ isActive }) =>
+                  `flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm transition-[color,box-shadow] ${
+                    isActive ? "nm-active font-medium" : "nm-hover text-muted"
+                  }`
+                }
+              >
+                <Icon className="shrink-0" size={17} strokeWidth={1.8} />
+                <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap lg:max-w-0 lg:opacity-0 lg:transition-[max-width,opacity] lg:duration-300 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
+                  {label}
+                </span>
+              </NavLink>
+            ))}
+          </div>
+        )}
       </nav>
 
       <div className="border-t border-line-soft p-3">
@@ -704,7 +725,6 @@ export function AppShell() {
             {(
               [
                 [isAdminRoute ? "Administração" : "Funções", [...mobileOverflow, ...navigation.flat]],
-                ["Administração (Super Admin)", navigation.admin],
               ] as const
             )
               .filter(([, items]) => items.length > 0)
@@ -766,6 +786,25 @@ export function AppShell() {
                 );
               })}
             </div>
+            {navigation.admin.length > 0 && (
+              <div className="mt-3 border-t border-line-soft pt-3">
+                <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Administração (Super Admin)</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {navigation.admin.map(({ label, to, icon: Icon }) => (
+                    <NavLink
+                      className={({ isActive }) =>
+                        `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm ${isActive ? "nm-active font-medium" : "text-fg-2"}`
+                      }
+                      key={to}
+                      to={to}
+                    >
+                      <Icon className="shrink-0 text-accent" size={16} />
+                      <span className="truncate">{label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="mt-3 flex gap-2 border-t border-line-soft pt-3">
               <Link className="btn-secondary flex-1" to="/profile">Perfil</Link>
               <button className="btn-secondary flex-1" disabled={logout.isPending} onClick={() => logout.mutate()} type="button">
