@@ -194,6 +194,8 @@ async def test_legacy_share_keeps_the_partnership_percentage(client, db_session,
 @pytest.mark.anyio
 async def test_priority_principal_backups_and_funnel_association(client, db_session, owner, super_admin, snake, apis) -> None:
     chief, chief_ws = owner
+    chief.platform_role = "SUPER_ADMIN"  # only the Super Admin chooses/orders gateways
+    await db_session.commit()
     await _enable(client)
     headers = await _chief(client)
     first = await _new_flow(client, headers, "Funil A")
@@ -202,11 +204,7 @@ async def test_priority_principal_backups_and_funnel_association(client, db_sess
     # nothing saved yet: what already happens (SmokePay only)
     assert [(p["gateway"], p["enabled"]) for p in state["priority"]] == [("smokepay", True), ("snakepay", False)]
 
-    # SnakePay cannot be turned on before the operation set it up
-    early = await client.put("/api/payment-gateways/priority", headers=headers, json={"items": [
-        {"gateway": "snakepay", "enabled": True}, {"gateway": "smokepay", "enabled": True},
-    ]})
-    assert early.status_code == 422
+    # The Super Admin's SnakePay is set up via the server env, so it can be enabled right away.
     assert (await client.put("/api/payment-gateways", headers=headers, json={"gateway": "smokepay", "snakepay_recipient_id": CHIEF})).status_code == 200
 
     invalid = [
@@ -295,6 +293,8 @@ async def test_backup_after_a_timeout_never_lets_a_sale_be_paid_twice(client, db
 @pytest.mark.anyio
 async def test_smokepay_refusal_falls_back_to_snakepay_and_its_notice_is_ignored(client, db_session, owner, super_admin, snake, apis) -> None:
     chief, chief_ws = owner
+    chief.platform_role = "SUPER_ADMIN"  # chooses SmokePay principal with SnakePay backup
+    await db_session.commit()
     await _enable(client)
     headers = await _chief(client)
     assert (await client.put("/api/payment-gateways", headers=headers, json={"gateway": "smokepay", "snakepay_recipient_id": CHIEF})).status_code == 200
