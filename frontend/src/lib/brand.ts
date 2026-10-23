@@ -25,12 +25,15 @@ export function appForPath(pathname: string): AppId {
   return BOT_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ? "bot" : "post";
 }
 
+const isAdminPath = (path: string) => path === "/admin" || path.startsWith("/admin/") || path.startsWith("/admin?");
+
 export const otherApp = (app: AppId): AppId => (app === "bot" ? "post" : "bot");
 
 const LAST_KEY = "falcon-last-path-";
 
 /** Where the switcher sends you back to: the last screen you used in that tool. */
 export function rememberPath(app: AppId, path: string) {
+  if (isAdminPath(path)) return; // Falcon Adm screens belong to neither tool
   try {
     sessionStorage.setItem(LAST_KEY + app, path);
   } catch {
@@ -41,7 +44,7 @@ export function rememberPath(app: AppId, path: string) {
 export function lastPath(app: AppId): string {
   try {
     const saved = sessionStorage.getItem(LAST_KEY + app);
-    if (saved && appForPath(saved) === app) return saved;
+    if (saved && !isAdminPath(saved) && appForPath(saved) === app) return saved;
   } catch {
     /* storage unavailable */
   }

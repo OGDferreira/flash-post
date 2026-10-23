@@ -4,7 +4,7 @@ import {
   useEffect,
   type PropsWithChildren,
 } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsRestoring, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, apiRequest, type User } from "@/services/api";
 import { ImpersonationBanner } from "@/features/auth/ImpersonationBanner";
@@ -38,12 +38,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     staleTime: 30_000,
   });
 
+  const restoring = useIsRestoring();
   const isUnauthorized = auth.error instanceof ApiError && auth.error.status === 401;
   const user = isUnauthorized ? null : (auth.data ?? null);
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading: auth.isLoading && !isUnauthorized }}
+      // While the saved cache is being restored the session query hasn't started yet (pending
+      // but not fetching): still loading, never "logged out" (that bounced deep links to /login).
+      value={{ user, isLoading: (auth.isPending || restoring) && !isUnauthorized }}
     >
       {children}
       {user?.impersonator_name && (

@@ -1627,3 +1627,8 @@ html[data-app="bot"] .falcon-shine { -webkit-mask-image: url("/brand/falconbot-e
   background-clip: text;
   color: transparent;
 }
+
+/* The "back to Falcon Adm" button: blue-to-purple ring like the Falcon Adm emblem. */
+.falcon-adm-ring {
+  background: linear-gradient(135deg, #1e9cfd 0%, #4f6bff 45%, #a020f0 100%);
+}
