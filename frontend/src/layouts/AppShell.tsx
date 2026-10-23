@@ -24,7 +24,7 @@ import { buildNavigation } from "./navigation";
 import { RefreshFab } from "@/components/RefreshFab";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrandLogo, BrandLockup } from "@/components/BrandLogo";
-import { APPS, appForPath, lastPath, otherApp, rememberPath } from "@/lib/brand";
+import { APPS, appForPath, lastPath, otherApp, rememberPath, type AppId } from "@/lib/brand";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { applyTheme, getTheme, type Theme } from "@/lib/theme";
@@ -109,6 +109,10 @@ export function AppShell() {
   // its menu, its palette and its logo. Collaborators only use Falcon Post.
   const app = isAdminRoute || !hasWorkspaceOwnerAccess ? "post" : appForPath(location.pathname);
   const other = otherApp(app);
+  // Tool switch inside the menu: the other tool, or both tools from the admin panel.
+  const switchApps: AppId[] = !hasWorkspaceOwnerAccess
+    ? isAdminRoute ? ["post"] : []
+    : isAdminRoute ? ["post", "bot"] : [other];
   const partnerMe = usePartnerMe({ period: "today" }, hasWorkspaceOwnerAccess && !isAdminRoute);
   const isPartner = partnerMe.data?.role === "partner";
   useEffect(() => {
@@ -499,6 +503,27 @@ export function AppShell() {
       </nav>
 
       <div className="border-t border-line-soft p-3">
+        {switchApps.length > 0 && (
+          <div className="mb-2 space-y-1 border-b border-line-soft pb-2">
+            {switchApps.map((target) => (
+              <Link
+                aria-label={`Ir para o ${APPS[target].name}`}
+                className="app-switch-row flex min-h-11 items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium text-fg-2 lg:px-0 lg:group-data-[open=true]:justify-start lg:group-data-[open=true]:px-3"
+                data-target={target}
+                key={target}
+                onClick={() => setMobileOpen(false)}
+                title={`Ir para o ${APPS[target].name} (mesma sessão)`}
+                to={lastPath(target)}
+              >
+                <BrandLogo app={target} className="size-8 shrink-0" />
+                <span className="max-w-[150px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[150px] lg:group-data-[open=true]:opacity-100">
+                  {APPS[target].name}
+                </span>
+                <ArrowLeftRight className="hidden shrink-0 text-muted lg:group-data-[open=true]:block" size={14} />
+              </Link>
+            ))}
+          </div>
+        )}
         <Link
           to="/profile"
           onClick={() => setMobileOpen(false)}
@@ -653,19 +678,6 @@ export function AppShell() {
         </main>
       </div>
       <RefreshFab />
-      {hasWorkspaceOwnerAccess && !isAdminRoute && (
-        <Link
-          aria-label={`Ir para o ${APPS[other].name}`}
-          className="app-switcher [body[data-flow-editor]_&]:hidden"
-          data-target={other}
-          title={`Ir para o ${APPS[other].name} (mesma sessão)`}
-          to={lastPath(other)}
-        >
-          <BrandLogo app={other} className="size-8" />
-          <span className="app-switcher-label">{APPS[other].name}</span>
-          <ArrowLeftRight className="app-switcher-label text-muted" size={14} />
-        </Link>
-      )}
       <nav
         aria-label="Navegação principal"
         className="app-mobile-nav glass-bar fixed z-30 flex gap-0.5 lg:hidden"
@@ -722,6 +734,23 @@ export function AppShell() {
             role="dialog"
           >
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line" />
+            {switchApps.length > 0 && (
+              <div className={`mb-3 grid gap-2 ${switchApps.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                {switchApps.map((target) => (
+                  <Link
+                    className="app-switch-row flex min-h-14 items-center gap-3 rounded-xl px-3 text-sm font-medium text-fg"
+                    data-target={target}
+                    key={target}
+                    onClick={() => setMobileOpen(false)}
+                    to={lastPath(target)}
+                  >
+                    <BrandLogo app={target} className="size-9 shrink-0" />
+                    <span className="flex-1 truncate">{APPS[target].name}</span>
+                    {switchApps.length === 1 && <ArrowLeftRight className="shrink-0 text-muted" size={14} />}
+                  </Link>
+                ))}
+              </div>
+            )}
             {(
               [
                 [isAdminRoute ? "Administração" : "Funções", [...mobileOverflow, ...navigation.flat]],
@@ -747,9 +776,6 @@ export function AppShell() {
                   </div>
                 </div>
               ))}
-            {isAdminRoute && (
-              <Link className="btn-secondary mt-3 w-full" to="/dashboard">Voltar ao Falcon Post</Link>
-            )}
             <div className="mt-1 space-y-1">
               {navigation.groups.map((group) => {
                 const open = Boolean(openGroups[group.id]);

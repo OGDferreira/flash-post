@@ -1608,32 +1608,14 @@ html[data-app="bot"] .falcon-shine { -webkit-mask-image: url("/brand/falconbot-e
   .falcon-anim img, .falcon-anim::before, .falcon-shine::after { animation: none !important; }
 }
 
-/* ---------- Tool switcher (floating, bottom-left) ---------- */
-.app-switcher {
-  position: fixed;
-  z-index: 35;
-  left: 16px;
-  bottom: calc(env(safe-area-inset-bottom) + 18px);
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 14px 6px 6px;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--switch-rgb) / 0.45);
-  background: var(--glass-fill-strong);
-  color: var(--fg);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  box-shadow: 0 14px 34px -14px rgb(var(--switch-rgb) / 0.8);
-  transition: transform 260ms var(--ease-spring), box-shadow 260ms ease, border-color 200ms ease;
+/* ---------- Tool switch (inside the menu) ---------- */
+.app-switch-row {
+  border: 1px solid rgb(var(--switch-rgb) / 0.35);
+  background: rgb(var(--switch-rgb) / 0.08);
+  transition: transform 260ms var(--ease-spring), border-color 200ms ease, background-color 200ms ease;
 }
-.app-switcher[data-target="bot"] { --switch-rgb: 143 29 255; }
-.app-switcher[data-target="post"] { --switch-rgb: 31 107 255; }
-.app-switcher:hover { transform: translateY(-2px); border-color: rgb(var(--switch-rgb) / 0.8); }
-.app-switcher:focus-visible { outline: 2px solid rgb(var(--switch-rgb)); outline-offset: 3px; }
-.app-switcher img { width: 32px; height: 32px; }
-@media (min-width: 1024px) { .app-switcher { left: 84px; } body[data-sidebar-pinned="1"] .app-switcher { left: 268px; } }
-@media (max-width: 1023px) {
-  .app-switcher { bottom: calc(env(safe-area-inset-bottom) + 92px); left: 12px; padding: 5px; }
-  .app-switcher .app-switcher-label { display: none; }
-}
+.app-switch-row[data-target="bot"] { --switch-rgb: 143 29 255; }
+.app-switch-row[data-target="post"] { --switch-rgb: 31 107 255; }
+.app-switch-row:hover { border-color: rgb(var(--switch-rgb) / 0.75); background: rgb(var(--switch-rgb) / 0.16); color: var(--fg); }
+.app-switch-row:active { transform: scale(0.98); }
+.app-switch-row:focus-visible { outline: 2px solid rgb(var(--switch-rgb)); outline-offset: 2px; }
