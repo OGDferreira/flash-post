@@ -129,7 +129,8 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
     )
     commission_paid = await db.scalar(
         select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
-            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.split_chief_user_id.is_not(None), smoke
+            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.split_chief_user_id.is_not(None), smoke,
+            TgOrder.seller_hidden.is_(False),
         )
     )
     sums: dict[tuple[str, str], object] = {
@@ -223,7 +224,7 @@ async def month_commissions(db, workspace_id: uuid.UUID) -> Decimal:
     return _money(await db.scalar(
         select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
             TgOrder.split_chief_user_id == workspace.owner_id, TgOrder.status == "paid",
-            TgOrder.paid_at >= start, TgOrder.paid_at < now, not_hidden_bot(TgOrder.bot_id),
+            TgOrder.paid_at >= start, TgOrder.paid_at < now, not_hidden_bot(TgOrder.bot_id, seller=False),
         )
     ))
 

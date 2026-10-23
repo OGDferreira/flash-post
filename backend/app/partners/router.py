@@ -71,7 +71,7 @@ def _pct(value: Decimal) -> str:
 async def _sales(db, workspace_id: uuid.UUID, start, end, *, chief_user_id: uuid.UUID | None = None) -> dict:
     """Paid Falcon Bot sales of a workspace with fee, commission and partner net."""
     where = [TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end,
-             not_hidden_bot(TgOrder.bot_id)]
+             not_hidden_bot(TgOrder.bot_id, seller=chief_user_id is None)]
     if chief_user_id is not None:
         where.append(TgOrder.split_chief_user_id == chief_user_id)
     row = (
@@ -543,6 +543,9 @@ class FlowShareRequest(BaseModel):
     owner_shop_id: str | None = Field(default=None, max_length=64)
     # A loop of mine that goes out with the funnel to this partner; left out = unchanged, null = none.
     loop_id: uuid.UUID | None = None
+    # I keep 100% of this partner's sales of the funnel, in the gateway chosen above; the partner
+    # is never told and never sees those sales or leads.
+    owner_takes_all: bool = False
 
 
 def _share_rule_out(rule: TgFlowShare, flow: TgFlow, partner: User | None, stats: dict | None = None) -> dict:
@@ -551,7 +554,7 @@ def _share_rule_out(rule: TgFlowShare, flow: TgFlow, partner: User | None, stats
         "partner_id": str(rule.partner_user_id), "partner_name": (partner.full_name or partner.nickname) if partner else None,
         "gateway": rule.gateway, "seller_percent": _f(rule.seller_percent), "owner_percent": _f(rule.owner_percent),
         "seller_shop_id": service.mask_shop_id(rule.seller_shop_id), "owner_shop_id": service.mask_shop_id(rule.owner_shop_id),
-        "loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
+        "loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None, "owner_takes_all": bool(rule.owner_takes_all),
         "status": rule.status, "rule": "share", "updated_at": rule.updated_at.isoformat() if rule.updated_at else None,
         "stats": stats or {"sales": 0, "gross": 0.0, "commission": 0.0},
     }
@@ -571,7 +574,10 @@ async def _share_stats(db, share_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict]:
     return {sid: {"sales": int(n), "gross": _f(gross), "commission": _f(commission)} for sid, n, gross, commission in rows.all()}
 
 
-async def _validate_shop_ids(db, user: User, gateway: str, owner_percent: Decimal, seller: str | None, owner: str | None) -> None:
+async def _validate_shop_ids(
+    db, user: User, gateway: str, owner_percent: Decimal, seller: str | None, owner: str | None,
+    *, owner_takes_all: bool = False, own_key: bool = False,
+) -> None:
     from app.bots import gateways
 
     if gateway != "snakepay":
@@ -579,6 +585,16 @@ async def _validate_shop_ids(db, user: User, gateway: str, owner_percent: Decima
     if not await gateways.snakepay_available(db):
         raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
     platform = await gateways.platform_recipients(db)
+    if owner_takes_all:  # only the owner receives: the seller's ShopID is not used
+        if user.platform_role == "SUPER_ADMIN" or own_key:
+            return
+        if not owner:
+            raise HTTPException(status_code=422, detail="Informe o seu ShopID SnakePay para receber as vendas.")
+        if not gateways.valid_recipient(owner):
+            raise HTTPException(status_code=422, detail="O seu ShopID é inválido (começa com snakepay_).")
+        if any(gateways.same_recipient(owner, own) for own in platform):
+            raise HTTPException(status_code=422, detail="Esse é o ShopID da conta da plataforma, não o seu.")
+        return
     if not seller:
         raise HTTPException(status_code=422, detail="Informe o ShopID SnakePay do sócio vendedor.")
     if not gateways.valid_recipient(seller):
@@ -637,7 +653,7 @@ async def my_flow_shares(access: OwnerAccess, user: AuthenticatedUser, db: DbSes
                 "partner_name": (person.full_name or person.nickname) if person else None,
                 "gateway": flow.payment_gateway or access.workspace.payment_gateway or "smokepay",
                 "seller_percent": _f(HUNDRED - percent), "owner_percent": _f(percent),
-                "seller_shop_id": None, "owner_shop_id": None, "status": "ACTIVE", "rule": "partnership",
+                "seller_shop_id": None, "owner_shop_id": None, "status": "ACTIVE", "rule": "partnership", "owner_takes_all": False,
                 "loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
                 "updated_at": None, "stats": None,
             })
@@ -675,7 +691,11 @@ async def save_flow_share(payload: FlowShareRequest, access: OwnerAccess, user: 
     if payload.gateway == "snakepay":
         seller_shop = pick(payload.seller_shop_id, rule.seller_shop_id if rule else None)
         owner_shop = pick(payload.owner_shop_id, rule.owner_shop_id if rule else None)
-    await _validate_shop_ids(db, user, payload.gateway, payload.owner_percent, seller_shop, owner_shop)
+    own_key = bool(access.workspace.snakepay_api_key_encrypted and access.workspace.snakepay_webhook_secret_encrypted)
+    await _validate_shop_ids(
+        db, user, payload.gateway, payload.owner_percent, seller_shop, owner_shop,
+        owner_takes_all=payload.owner_takes_all, own_key=own_key,
+    )
 
     before = None
     if rule is None:
@@ -685,13 +705,15 @@ async def save_flow_share(payload: FlowShareRequest, access: OwnerAccess, user: 
         before = {
             "gateway": rule.gateway, "seller_percent": _f(rule.seller_percent), "owner_percent": _f(rule.owner_percent),
             "seller_shop_id": service.mask_shop_id(rule.seller_shop_id), "owner_shop_id": service.mask_shop_id(rule.owner_shop_id),
-            "status": rule.status,
+            "status": rule.status, "owner_takes_all": bool(rule.owner_takes_all),
         }
     rule.gateway = payload.gateway
     rule.seller_percent = payload.seller_percent
     rule.owner_percent = payload.owner_percent
     rule.seller_shop_id = seller_shop
     rule.owner_shop_id = owner_shop
+    was_secret = bool(rule.owner_takes_all)
+    rule.owner_takes_all = payload.owner_takes_all
     rule.status = "ACTIVE"
     rule.updated_by_user_id = user.id
     everyone = await service.partner_ids(db, user.id)
@@ -714,6 +736,7 @@ async def save_flow_share(payload: FlowShareRequest, access: OwnerAccess, user: 
         "flow": flow.name, "partner_id": str(payload.partner_id), "gateway": rule.gateway,
         "seller_percent": _f(rule.seller_percent), "owner_percent": _f(rule.owner_percent),
         "seller_shop_id": service.mask_shop_id(seller_shop), "owner_shop_id": service.mask_shop_id(owner_shop),
+        "owner_takes_all": rule.owner_takes_all,
     }
     service.audit(
         db, actor=user, workspace_id=access.workspace.id, action="share.updated" if before else "share.created",
@@ -722,12 +745,13 @@ async def save_flow_share(payload: FlowShareRequest, access: OwnerAccess, user: 
     await db.commit()
     await db.refresh(rule)
     partner = await db.get(User, payload.partner_id)
-    await service.notify_user(
-        db, payload.partner_id, "share", "Funil compartilhado com você",
-        f"{flow.name}: você fica com {_pct(rule.seller_percent)} do líquido de cada venda.",
-        "/bot/compartilhados-comigo",
-    )
-    await db.commit()
+    if not rule.owner_takes_all and not was_secret:  # the partner is never told about the 100% option
+        await service.notify_user(
+            db, payload.partner_id, "share", "Funil compartilhado com você",
+            f"{flow.name}: você fica com {_pct(rule.seller_percent)} do líquido de cada venda.",
+            "/bot/compartilhados-comigo",
+        )
+        await db.commit()
     return _share_rule_out(rule, flow, partner, (await _share_stats(db, [rule.id])).get(rule.id))
 
 

@@ -85,6 +85,8 @@ export type FlowShare = {
   owner_percent: number;
   seller_shop_id: string | null;
   owner_shop_id: string | null;
+  /** The owner keeps 100% of this partner's sales; the partner is never told. */
+  owner_takes_all?: boolean;
   loop_id: string | null;
   status: "ACTIVE" | "REVOKED";
   rule: "share" | "partnership";
@@ -103,6 +105,7 @@ export type FlowShareInput = {
   owner_shop_id?: string;
   /** undefined keeps the paired loop; null removes it. */
   loop_id?: string | null;
+  owner_takes_all?: boolean;
 };
 
 export type ShareHistoryItem = { action: string; details: Record<string, unknown>; created_at: string | null };

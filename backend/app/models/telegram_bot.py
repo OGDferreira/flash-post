@@ -84,6 +84,11 @@ class TgBot(Base):
     tg_bot_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # Hidden by the Super Admin: keeps running, but the operation never sees it, its leads or its sales.
     hidden_by_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Taken over by the Super Admin: the bot runs in the Super Admin's operation (their funnels,
+    # sales 100% to the platform) and this is the user's operation it came from and goes back to.
+    home_workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="SET NULL")
+    )
     username: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     encrypted_token: Mapped[str] = mapped_column(String(4096), nullable=False)
@@ -179,6 +184,8 @@ class TgLead(Base):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     stage: Mapped[str] = mapped_column(String(32), nullable=False, default="new", server_default="new")
+    # Came in through a funnel whose owner takes 100% of the sales: never shown to the seller.
+    seller_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -235,6 +242,8 @@ class TgOrder(Base):
     gateway_attempts: Mapped[list | None] = mapped_column(JSON)
     platform_fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))  # Falcon Bot fee charged on this sale
+    # The funnel's owner took 100% of this sale (TgFlowShare.owner_takes_all): the seller never sees it.
+    seller_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     pix_copy_paste: Mapped[str | None] = mapped_column(Text)
     # pending -> paid | expired | review (amount mismatch) | failed (gateway error)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")
@@ -395,6 +404,10 @@ class TgFlowShare(Base):
     seller_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     seller_shop_id: Mapped[str | None] = mapped_column(String(64))
     owner_shop_id: Mapped[str | None] = mapped_column(String(64))
+    # The owner keeps 100% of these sales in the gateway account they chose; the seller is never
+    # told and never sees them (nor the leads that came in through this funnel). The percents stay
+    # saved for when the option is turned off.
+    owner_takes_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE", server_default="ACTIVE")
     updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")

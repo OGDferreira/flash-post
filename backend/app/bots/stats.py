@@ -183,12 +183,13 @@ async def partners_ranking_of(db: AsyncSession, user_id: uuid.UUID, start: datet
 async def recent_activity(db: AsyncSession, workspace_id: uuid.UUID, limit: int = 30, *, hide: bool = False) -> list[dict]:
     """Latest leads, Pix generated and approved sales of one operation, newest first.
     ``hide``: leave out bots the Super Admin hid from this operation."""
-    shown = (TgBot.hidden_by_admin.is_(False),) if hide else ()
+    lead_shown = (not_hidden_bot(TgLead.bot_id),) if hide else ()
+    shown = (not_hidden_bot(TgOrder.bot_id),) if hide else ()
     leads = (
         await db.execute(
             select(TgLead.first_name, TgLead.username, TgLead.created_at, TgBot.username)
             .join(TgBot, TgBot.id == TgLead.bot_id)
-            .where(TgLead.workspace_id == workspace_id, *shown)
+            .where(TgLead.workspace_id == workspace_id, *lead_shown)
             .order_by(TgLead.created_at.desc())
             .limit(limit)
         )

@@ -730,6 +730,11 @@ async def upsert_lead(db: AsyncSession, bot: TgBot, user: dict, chat_id: int) ->
     lead = await db.scalar(select(TgLead).where(TgLead.bot_id == bot.id, TgLead.tg_user_id == user["id"]))
     if lead is None:
         lead = TgLead(workspace_id=bot.workspace_id, bot_id=bot.id, flow_id=bot.flow_id, tg_user_id=user["id"], chat_id=chat_id)
+        if bot.flow_id is not None:
+            from app.partners.service import owner_takes_all
+
+            flow = await db.get(TgFlow, bot.flow_id)
+            lead.seller_hidden = await owner_takes_all(db, flow, bot.workspace_id) is not None
         db.add(lead)
     lead.first_name = (user.get("first_name") or "")[:255] or None
     lead.username = (user.get("username") or "")[:64] or None
@@ -1006,6 +1011,7 @@ async def create_order(
         order.split_chief_user_id = route.chief_user_id
         order.split_percent = route.percent
         order.share_id = route.share_id
+        order.seller_hidden = route.owner_all
         timings["prepare"] = time.perf_counter() - mark
         mark = time.perf_counter()
         try:
@@ -1015,7 +1021,8 @@ async def create_order(
             bot.last_error = f"Gateway: {exc}"[:500]
             await db.commit()
             await tg.send_message(lead.chat_id, "Não consegui gerar o Pix agora. Tente de novo em alguns instantes.")
-            await notify_owners(db, bot, "⚠️ Falha ao gerar Pix", f"@{bot.username}: {str(exc)[:120]}", "bot-gateway")
+            if not route.owner_all:  # the seller never hears about the owner's 100% funnel
+                await notify_owners(db, bot, "⚠️ Falha ao gerar Pix", f"@{bot.username}: {str(exc)[:120]}", "bot-gateway")
             return None
         order.transaction_fee = route.transaction_fee or None  # after a refused split dropped it
         timings["gateway"] = time.perf_counter() - mark
@@ -1119,7 +1126,15 @@ async def _charge_with_smokepay(order: TgOrder, route, amount: Decimal, descript
     order.gateway_transaction_id = charge.transaction_id or None
     order.gateway_fee = charge.fee
     order.net_amount = charge.net_amount
-    if route.percent is not None:
+    if route.owner_all:  # the whole sale is the funnel owner's; the seller gets nothing
+        fee = route.transaction_fee
+        order.partner_net = Decimal("0.00")
+        if charge.owner_net is not None:
+            order.split_amount = charge.owner_net
+        elif charge.net_amount is not None:
+            order.split_amount = charge.net_amount - fee
+        order.platform_fee = fee or None
+    elif route.percent is not None:
         commission, partner = route.preview(charge.net_amount)
         # SmokePay's preview sums every split: the transaction fee is the platform's, not the chief's
         order.split_amount = (
@@ -1342,6 +1357,13 @@ async def notify_sale(db: AsyncSession, bot: TgBot, order: TgOrder) -> None:
         return  # hidden by the Super Admin: the operation never hears about it
     try:
         workspace = await db.get(Workspace, bot.workspace_id)
+        if order.seller_hidden:  # the funnel's owner took 100%: only the owner hears about it
+            if order.split_chief_user_id:
+                await notify_user(
+                    db, order.split_chief_user_id, "sale", "⚡ Nova venda!", f"Venda de {brl(order.amount)} 🤑", "/carteira",
+                )
+                await db.commit()
+            return
         if workspace is not None:
             # Report the plan price, not the net payout after gateway fees and commission.
             await notify_user(
