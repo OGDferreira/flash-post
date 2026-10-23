@@ -5,7 +5,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, SuperAdminUser, require_csrf
 from app.bots import engine, gateways, snakepay
@@ -79,6 +79,18 @@ async def _smokepay_fee_text(db) -> str:
     return f"≈ {percent}% por venda (média das últimas vendas) · {withdraw}"
 
 
+async def _has_own_flow(db, workspace_id) -> bool:
+    """Whether the operation has a funnel of its own (not a copy received from a chief)."""
+    own_ids = select(TgFlow.id).where(TgFlow.workspace_id == workspace_id)
+    row = await db.scalar(
+        select(TgFlow.id).where(
+            TgFlow.workspace_id == workspace_id,
+            or_(TgFlow.template_flow_id.is_(None), TgFlow.template_flow_id.in_(own_ids)),
+        ).limit(1)
+    )
+    return row is not None
+
+
 async def _state(db, user, workspace) -> dict:
     admin = user.platform_role == "SUPER_ADMIN"
     enabled = await gateways.snakepay_enabled(db)
@@ -102,6 +114,9 @@ async def _state(db, user, workspace) -> dict:
         "needs_recipient": not admin and not (
             workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted
         ),
+        # The ShopID (platform-key split) only matters for the operation's own funnels; a partner
+        # that only runs the chief's shared funnels never needs it.
+        "has_own_flow": admin or await _has_own_flow(db, workspace.id),
         "gateways": [
             {
                 "id": "smokepay", "name": "SmokePay", "available": _smokepay_configured(),
