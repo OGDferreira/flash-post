@@ -637,7 +637,9 @@ async def ensure_linked_loop(db: AsyncSession, source: InstagramLoop, workspace_
         ).order_by(InstagramLoop.linked.desc())
     )
     if copy is not None and not copy.linked:
-        return copy  # the partner customized it: it no longer follows the chief's loop
+        # Partners no longer customize shared loops: a copy customized earlier follows the chief again.
+        copy.linked = True
+        copy.customized_at = None
     if copy is None:
         copy = InstagramLoop(
             workspace_id=workspace_id, name=source.name[:120],

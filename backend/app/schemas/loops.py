@@ -232,7 +232,15 @@ class InstagramLoopStatusRequest(BaseModel):
 
 
 class InstagramLoopAccountsUpdateRequest(BaseModel):
-    account_ids: Annotated[list[UUID], Field(min_length=1, max_length=1000)]
+    account_ids: Annotated[list[UUID], Field(max_length=1000)]
+    # Sent (even empty) to also set the folders whose accounts join the loop.
+    auto_folder_ids: Annotated[list[UUID], Field(max_length=100)] | None = None
+
+    @model_validator(mode="after")
+    def needs_accounts(self) -> "InstagramLoopAccountsUpdateRequest":
+        if not self.account_ids and self.auto_folder_ids is None:
+            raise ValueError("Select at least one account.")
+        return self
 
     @field_validator("account_ids")
     @classmethod

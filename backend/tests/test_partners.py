@@ -657,7 +657,12 @@ async def test_super_admin_sets_a_users_fee_and_sees_todays_fees(client, db_sess
 
 
 @pytest.mark.anyio
-async def test_partner_customizes_their_shared_loop_without_touching_the_chiefs(foreign_keys, client, db_session, owner, storage) -> None:
+async def test_partner_only_picks_accounts_and_folders_of_a_shared_loop(foreign_keys, client, db_session, owner, storage) -> None:
+    from datetime import timedelta
+
+    from app.core.crypto import encrypt_value
+    from app.models import InstagramAccount, InstagramLoopAccount, InstagramProfileFolder
+
     chief, chief_ws = owner
     partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
     loop = await _chief_loop(db_session, chief_ws, videos=("1.mp4", "2.mp4"))
@@ -668,42 +673,43 @@ async def test_partner_customizes_their_shared_loop_without_touching_the_chiefs(
     await client.get("/api/partners/shared")
     copy_id = (await client.get("/api/loops")).json()["loops"][0]["id"]
 
-    # "Personalizar só o meu": the copy becomes editable
-    customized = await client.post(f"/api/loops/{copy_id}/customize", headers=headers)
-    assert customized.status_code == 200, customized.text
-    assert customized.json()["linked"] is False and customized.json()["customized"] is True
-    media_ids = [m["id"] for m in customized.json().get("media", [])] or [
-        str(m) for m in await db_session.scalars(select(InstagramLoopMedia.media_id).where(InstagramLoopMedia.loop_id == uuid.UUID(copy_id)))
-    ]
-    from app.models import InstagramProfileFolder
+    # the partner can neither customize nor edit the shared loop
+    assert (await client.post(f"/api/loops/{copy_id}/customize", headers=headers)).status_code == 403
+    edit = {"name": "Meu loop", "interval_min_minutes": 90, "interval_max_minutes": 120, "post_type": "reels", "account_ids": [],
+            "auto_folder_ids": []}
+    assert (await client.put(f"/api/loops/{copy_id}", headers=headers, json=edit)).status_code in (409, 422)
 
+    # but picks a folder: its connected accounts post the loop
     folder = InstagramProfileFolder(workspace_id=partner_ws.id, name="Minhas contas", color="#123456")
     db_session.add(folder)
+    await db_session.flush()
+    account = InstagramAccount(
+        workspace_id=partner_ws.id, connected_by_user_id=partner.id, first_connected_at=utc_now(),
+        instagram_user_id="partner-ig-1", username="conta_do_socio", encrypted_access_token=encrypt_value("t"),
+        token_expires_at=utc_now() + timedelta(days=30), status="connected", profile_folder_id=folder.id,
+    )
+    db_session.add(account)
     await db_session.commit()
-    edit = {"name": "Meu loop", "interval_min_minutes": 90, "interval_max_minutes": 120, "daily_limit_per_account": 3,
-            "post_type": "reels", "media_ids": media_ids, "account_ids": [], "auto_folder_ids": [str(folder.id)]}
-    put = await client.put(f"/api/loops/{copy_id}", headers=headers, json=edit)
-    assert put.status_code == 200, put.text
+    saved = await client.put(f"/api/loops/{copy_id}/accounts", headers=headers, json={"account_ids": [], "auto_folder_ids": [str(folder.id)]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["auto_folder_ids"] == [str(folder.id)] and saved.json()["linked"] is True
+    members = set(await db_session.scalars(select(InstagramLoopAccount.account_id).where(InstagramLoopAccount.loop_id == uuid.UUID(copy_id))))
+    assert members == {account.id}
 
-    # the chief's loop is untouched, and syncing neither overwrites the copy nor makes a new one
+    # the chief's loop is untouched and the copy keeps following it
     await db_session.refresh(loop)
     assert (loop.interval_min_minutes, loop.interval_max_minutes) == chief_interval
     await service.sync_all_shared_loops(db_session)
-    copies = list(await db_session.scalars(select(InstagramLoop).where(InstagramLoop.workspace_id == partner_ws.id)))
-    assert len(copies) == 1 and (copies[0].interval_min_minutes, copies[0].interval_max_minutes) == (90, 120)
+    copy = await db_session.get(InstagramLoop, uuid.UUID(copy_id), populate_existing=True)
+    assert copy.linked and (copy.interval_min_minutes, copy.interval_max_minutes) == chief_interval
+    assert copy.auto_folder_ids == [str(folder.id)]
 
-    # following the chief again brings the chief's schedule back
-    back = await client.post(f"/api/loops/{copy_id}/follow-owner", headers=headers)
-    assert back.status_code == 200 and back.json()["linked"] is True and back.json()["customized"] is False
-    assert (back.json()["interval_min_minutes"], back.json()["interval_max_minutes"]) == chief_interval
-
-    # a customized copy still posts the chief's media: it stops when the sharing ends
-    await client.post(f"/api/loops/{copy_id}/customize", headers=headers)
-    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
-    await client.post(f"/api/partners/loops/{loop.id}/share", headers=headers, json={"shared": False})
+    # a copy customized before this change follows the chief again
+    copy.linked, copy.customized_at, copy.interval_max_minutes = False, utc_now(), 1440
+    await db_session.commit()
     await service.sync_all_shared_loops(db_session)
     copy = await db_session.get(InstagramLoop, uuid.UUID(copy_id), populate_existing=True)
-    assert copy.status == "paused"
-    headers = await _as(client, "socio@example.com")
-    assert (await client.patch(f"/api/loops/{copy_id}/status", headers=headers, json={"enabled": True})).status_code == 409
-    assert (await client.post(f"/api/loops/{copy_id}/follow-owner", headers=headers)).status_code == 409
+    assert copy.linked and copy.customized_at is None and copy.interval_max_minutes == chief_interval[1]
+
+    # without accounts nor folders the request is refused
+    assert (await client.put(f"/api/loops/{copy_id}/accounts", headers=headers, json={"account_ids": []})).status_code == 422

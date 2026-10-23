@@ -1254,12 +1254,18 @@ async def update_loop_accounts(
             )
         ).all()
     )
-    accounts = await _validate_selected_accounts(
-        access.workspace.id,
-        payload.account_ids,
-        db,
-        editing=True,
-    )
+    if payload.auto_folder_ids is not None:
+        # Folders whose accounts join this loop (also new ones filed there later).
+        accounts, loop.auto_folder_ids = await _selected_with_folders(
+            access.workspace.id, payload.account_ids, payload.auto_folder_ids, db, editing=True
+        )
+    else:
+        accounts = await _validate_selected_accounts(
+            access.workspace.id,
+            payload.account_ids,
+            db,
+            editing=True,
+        )
     kept_account_ids = await _kept_unavailable_accounts(loop, previous_account_ids, accounts, db)
     await db.execute(
         InstagramLoopAccount.__table__.delete().where(
@@ -1457,15 +1463,13 @@ async def _partner_copy(db, access, loop_id: uuid.UUID) -> InstagramLoop:
 
 @router.post("/{loop_id}/customize", response_model=InstagramLoopResponse, dependencies=[Depends(require_csrf)])
 async def customize_shared_loop(loop_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> InstagramLoopResponse:
-    """The partner edits their own copy (schedule, limits, media): it stops following the
-    chief's loop, which stays exactly as it is. The chief's media remain protected."""
-    loop = await _partner_copy(db, access, loop_id)
-    if loop.linked:
-        loop.linked = False
-        loop.customized_at = utc_now()
-        await db.commit()
-        await db.refresh(loop)
-    return await _loop_response(loop, db, utc_now())
+    """Turned off: a partner only picks the accounts and folders that post a shared loop;
+    its schedule, limits and media stay the chief's."""
+    await _partner_copy(db, access, loop_id)
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="O loop compartilhado é do seu sócio: você escolhe só as contas e pastas que postam nele.",
+    )
 
 
 @router.post("/{loop_id}/follow-owner", response_model=InstagramLoopResponse, dependencies=[Depends(require_csrf)])
