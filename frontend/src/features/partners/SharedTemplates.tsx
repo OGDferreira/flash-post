@@ -1,15 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CopyPlus, Infinity as InfinityIcon, Lock, Pause, Play, RotateCcw, Share2, SlidersHorizontal, UserPlus } from "lucide-react";
+import { Check, ChevronRight, CopyPlus, Folder, Infinity as InfinityIcon, Lock, RotateCcw, Share2, SlidersHorizontal } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
-import type { InstagramLoop, InstagramLoopAccountsPage } from "@/pages/loops/loopShared";
-import { confirmAction } from "@/lib/confirm";
+import type { InstagramFoldersResponse, InstagramLoop, InstagramLoopAccountsPage } from "@/pages/loops/loopShared";
 import { ApiError, apiRequest } from "@/services/api";
 import { type PartnerOption, useChiefLabel, useMyPartners, useShareToggle, useSharedTemplates, useUseTemplate } from "./api";
 
@@ -82,7 +81,7 @@ function ShareDialog({ item, kind, loops, onClose }: {
       busy={toggle.isPending}
       description={
         kind === "flows"
-          ? "O sócio roda o funil no robô dele sem ver nem copiar textos, mídias ou ofertas."
+          ? "O sócio roda o funil no bot dele sem ver nem copiar textos, mídias ou ofertas."
           : "O sócio recebe o loop pronto em “Loops compartilhados”: posta as mesmas mídias, mas só depois que ele conectar as contas dele."
       }
       footer={
@@ -150,6 +149,7 @@ function ShareDialog({ item, kind, loops, onClose }: {
 /** Chief: share a loop with every partner or with specific ones. */
 export function ShareLoopButton({ loop }: { loop: InstagramLoop }) {
   const [open, setOpen] = useState(false);
+  const [copiesOpen, setCopiesOpen] = useState(false);
   const partners = useMyPartners();
   if (loop.from_template || loop.linked) return null;
   const label = shareLabel(loop, partners.data?.partners ?? []);
@@ -168,17 +168,169 @@ export function ShareLoopButton({ loop }: { loop: InstagramLoop }) {
         <Share2 size={15} />
       </button>
       <ShareDialog item={open ? loop : null} kind="loops" onClose={() => setOpen(false)} />
+      {loop.shared && (
+        <>
+          <button
+            aria-label={`Ajustar o loop ${loop.name} de cada sócio`}
+            className="grid size-9 place-items-center rounded-lg border border-line text-fg-2 hover:bg-surface-raised"
+            onClick={() => setCopiesOpen(true)}
+            title="Ajustar o loop de um sócio (sem mudar o seu)"
+            type="button"
+          >
+            <SlidersHorizontal size={15} />
+          </button>
+          <PartnerCopiesDialog loop={copiesOpen ? loop : null} onClose={() => setCopiesOpen(false)} />
+        </>
+      )}
     </>
   );
 }
 
-/** Partner: the area with the loops the chief shared. Each one posts the chief's media and
- *  only starts once the partner adds their own accounts to it. */
+type LoopCopy = {
+  id: string;
+  partner_name: string;
+  customized: boolean;
+  interval_min_minutes: number;
+  interval_max_minutes: number;
+  daily_limit_per_account: number;
+  caption_mode: "per_media" | "all";
+  caption: string | null;
+  accounts_count: number;
+  status: string;
+};
+
+/** Chief: each partner's copy of a shared loop. Changing one changes only that partner's
+ *  loop (schedule, daily limit, caption); the main loop and the other partners stay as they are. */
+function PartnerCopiesDialog({ loop, onClose }: { loop: InstagramLoop | null; onClose: () => void }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const copies = useQuery({
+    queryKey: ["partners", "loop-copies", loop?.id],
+    queryFn: () => apiRequest<{ copies: LoopCopy[] }>(`/api/partners/loops/${loop!.id}/copies`),
+    enabled: loop !== null,
+  });
+  if (!loop) return null;
+  const list = copies.data?.copies ?? [];
+  return (
+    <Modal
+      description="Mude o loop de um sócio sem alterar o seu loop principal nem o dos outros sócios. As mídias continuam vindo do seu loop."
+      onClose={() => {
+        setEditing(null);
+        onClose();
+      }}
+      open
+      title={`Loop dos sócios - ${loop.name}`}
+    >
+      {copies.isLoading ? (
+        <LoadingState label="Carregando os loops dos sócios" />
+      ) : copies.error ? (
+        <ErrorState message={errorText(copies.error)} onRetry={() => void copies.refetch()} />
+      ) : list.length === 0 ? (
+        <EmptyState message="Nenhum sócio abriu este loop ainda. Ele aparece aqui assim que o sócio entrar em Loops." />
+      ) : (
+        <div className="space-y-2">
+          {list.map((copy) => (
+            <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={copy.id}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-fg">{copy.partner_name}</p>
+                  <p className="mt-0.5 text-[11px] text-muted">
+                    a cada {copy.interval_min_minutes}–{copy.interval_max_minutes} min · até {copy.daily_limit_per_account}/dia por conta ·{" "}
+                    {copy.accounts_count} conta(s)
+                  </p>
+                </div>
+                {copy.customized ? <Badge tone="brand">Personalizado</Badge> : <Badge>Igual ao seu</Badge>}
+              </div>
+              {editing === copy.id ? (
+                <CopyForm copy={copy} loopId={loop.id} onDone={() => setEditing(null)} />
+              ) : (
+                <Button className="mt-2" onClick={() => setEditing(copy.id)} size="sm">
+                  <SlidersHorizontal size={14} /> Personalizar o loop deste sócio
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function CopyForm({ copy, loopId, onDone }: { copy: LoopCopy; loopId: string; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const [min, setMin] = useState(String(copy.interval_min_minutes));
+  const [max, setMax] = useState(String(copy.interval_max_minutes));
+  const [limit, setLimit] = useState(String(copy.daily_limit_per_account));
+  const [captionAll, setCaptionAll] = useState(copy.customized && copy.caption_mode === "all");
+  const [caption, setCaption] = useState(copy.caption_mode === "all" ? copy.caption ?? "" : "");
+  const url = `/api/partners/loops/${loopId}/copies/${copy.id}`;
+  const done = () => {
+    void queryClient.invalidateQueries({ queryKey: ["partners", "loop-copies", loopId] });
+    onDone();
+  };
+  const save = useMutation({
+    mutationFn: () =>
+      apiRequest(url, {
+        method: "PUT",
+        body: {
+          interval_min_minutes: Number(min),
+          interval_max_minutes: Number(max),
+          daily_limit_per_account: Number(limit),
+          caption_mode: captionAll ? "all" : null,
+          caption: captionAll ? caption : null,
+        },
+      }),
+    onSuccess: done,
+  });
+  const reset = useMutation({ mutationFn: () => apiRequest(`${url}/customization`, { method: "DELETE" }), onSuccess: done });
+  return (
+    <div className="mt-3 space-y-3 border-t border-line-soft pt-3">
+      <div className="grid grid-cols-3 gap-2">
+        <label className="text-[11px] text-muted">
+          Mínimo (min)
+          <input className="field mt-1" inputMode="numeric" max={1440} min={1} onChange={(e) => setMin(e.target.value)} type="number" value={min} />
+        </label>
+        <label className="text-[11px] text-muted">
+          Máximo (min)
+          <input className="field mt-1" inputMode="numeric" max={1440} min={1} onChange={(e) => setMax(e.target.value)} type="number" value={max} />
+        </label>
+        <label className="text-[11px] text-muted">
+          Posts/dia por conta
+          <input className="field mt-1" inputMode="numeric" max={100} min={1} onChange={(e) => setLimit(e.target.value)} type="number" value={limit} />
+        </label>
+      </div>
+      <label className="flex items-center gap-2 text-sm text-fg">
+        <input checked={captionAll} onChange={(e) => setCaptionAll(e.target.checked)} type="checkbox" />
+        Usar uma legenda só para este sócio em todos os posts
+      </label>
+      {captionAll && (
+        <textarea className="field min-h-20" maxLength={2200} onChange={(e) => setCaption(e.target.value)} placeholder="Legenda dos posts deste sócio" value={caption} />
+      )}
+      {(save.error || reset.error) && <ErrorState message={errorText(save.error ?? reset.error)} />}
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={save.isPending} onClick={() => save.mutate()} size="sm" variant="primary">
+          Salvar só para {copy.partner_name.split(/\s+/)[0]}
+        </Button>
+        {copy.customized && (
+          <Button disabled={reset.isPending} onClick={() => reset.mutate()} size="sm">
+            <RotateCcw size={14} /> Voltar a seguir o seu loop
+          </Button>
+        )}
+        <Button onClick={onDone} size="sm" variant="ghost">
+          Cancelar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Partner: the loops the chief shared, as "Loop - name". The partner doesn't open or edit
+ *  the loop itself (media, schedule and limits are the chief's): a tap shows the accounts
+ *  posting it and lets them pick accounts and account folders. */
 export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
   const chief = useChiefLabel();
   const queryClient = useQueryClient();
   const shared = useSharedTemplates();
-  const [editing, setEditing] = useState<InstagramLoop | null>(null);
+  const [opened, setOpened] = useState<InstagramLoop | null>(null);
   const linked = loops.filter((loop) => loop.linked || loop.customized);
   const sharedCount = shared.data?.loops.length ?? 0;
   const availableCount = linked.filter((loop) => loop.linked_available).length;
@@ -187,18 +339,6 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
     if (sharedCount > availableCount) void queryClient.invalidateQueries({ queryKey: ["loops"] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shared.dataUpdatedAt]);
-  const status = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      apiRequest(`/api/loops/${id}/status`, { method: "PATCH", body: { enabled } }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
-  });
-  // "Personalizar só o meu": the partner's copy stops following the chief's loop (the chief's
-  // stays as it is); "Voltar a seguir" undoes it.
-  const follow = useMutation({
-    mutationFn: ({ id, customize }: { id: string; customize: boolean }) =>
-      apiRequest(`/api/loops/${id}/${customize ? "customize" : "follow-owner"}`, { method: "POST" }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
-  });
   if (!shared.data?.available || (linked.length === 0 && sharedCount === 0)) return null;
   return (
     <section className="glass-panel space-y-3 p-4">
@@ -207,98 +347,47 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
           <InfinityIcon className="text-accent" size={17} /> Loops compartilhados por {chief}
         </h3>
         <p className="mt-1 text-xs text-muted">
-          Já vêm prontos: postam as mesmas mídias e seguem os mesmos horários dos loops de {chief}. Eles começam sem nenhuma
-          conta e só postam depois que você conectar as suas. Fila, posts e métricas são só seus.
+          Toque no loop para ver as contas conectadas e escolher as contas ou pastas que postam nele.
         </p>
       </div>
       {!shared.data.accepted && <AcceptFirst />}
-      {status.error && <ErrorState message={errorText(status.error)} />}
-      {follow.error && <ErrorState message={errorText(follow.error)} />}
       {linked.length === 0 ? (
         <LoadingState label="Preparando os loops compartilhados" />
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">
           {linked.map((loop) => (
-            <div className="space-y-2 rounded-xl border border-line-soft bg-surface-inset p-3" key={loop.id}>
-              <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 truncate text-sm font-medium text-fg">{loop.name}</p>
-                {!loop.linked_available ? (
-                  <Badge tone="warning">Parou de ser compartilhado</Badge>
-                ) : loop.customized ? (
-                  <Badge tone="brand">Personalizado por você</Badge>
-                ) : loop.active_accounts_count === 0 ? (
-                  <Badge tone="warning">Sem contas</Badge>
-                ) : loop.status === "active" ? (
-                  <Badge tone="success">Postando</Badge>
-                ) : (
-                  <Badge>Pausado</Badge>
-                )}
-              </div>
-              <p className="text-[11px] text-muted">
-                {loop.media_count} mídia(s) · a cada {loop.interval_min_minutes}–{loop.interval_max_minutes} min · até{" "}
-                {loop.daily_limit_per_account}/dia por conta
-              </p>
-              <p className="text-xs text-fg-2">
-                {loop.active_accounts_count === 0
-                  ? "Nenhuma conta conectada neste loop ainda."
-                  : `${loop.active_accounts_count} conta(s) conectada(s).`}
-              </p>
-              {loop.linked_available && (
-                <div className="flex flex-wrap gap-2">
-                  <Button disabled={!shared.data!.accepted} onClick={() => setEditing(loop)} size="sm" variant="primary">
-                    <UserPlus size={14} /> {loop.active_accounts_count === 0 ? "Conectar contas" : "Trocar contas"}
-                  </Button>
-                  <Button
-                    disabled={status.isPending}
-                    onClick={() => status.mutate({ id: loop.id, enabled: loop.status !== "active" })}
-                    size="sm"
-                  >
-                    {loop.status === "active" ? <Pause size={14} /> : <Play size={14} />}
-                    {loop.status === "active" ? "Pausar" : "Ativar"}
-                  </Button>
-                  {loop.customized ? (
-                    <Button
-                      disabled={follow.isPending}
-                      onClick={async () => {
-                        if (await confirmAction(`Voltar a seguir o loop de ${chief}? Horários, limites e mídias voltam a ser os dele; as mudanças que você fez saem. Suas contas continuam.`)) {
-                          follow.mutate({ id: loop.id, customize: false });
-                        }
-                      }}
-                      size="sm"
-                    >
-                      <RotateCcw size={14} /> Voltar a seguir {chief}
-                    </Button>
-                  ) : (
-                    <Button
-                      disabled={follow.isPending}
-                      onClick={async () => {
-                        if (await confirmAction(`Personalizar só o seu loop? Você passa a editar horários, limites, legendas e mídias do SEU loop, e ele para de acompanhar as mudanças de ${chief}. O loop de ${chief} não muda. Dá para voltar a seguir quando quiser.`)) {
-                          follow.mutate({ id: loop.id, customize: true });
-                        }
-                      }}
-                      size="sm"
-                    >
-                      <SlidersHorizontal size={14} /> Personalizar só o meu
-                    </Button>
-                  )}
-                </div>
-              )}
-              {loop.customized && loop.linked_available && (
-                <p className="text-[11px] text-muted">Edite este loop na sua lista de loops, como os seus.</p>
-              )}
-            </div>
+            <button
+              className="flex items-center justify-between gap-3 rounded-xl border border-line-soft bg-surface-inset p-3 text-left transition-colors hover:border-line disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!shared.data!.accepted || !loop.linked_available}
+              key={loop.id}
+              onClick={() => setOpened(loop)}
+              type="button"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-fg">Loop - {loop.name}</span>
+                <span className="mt-0.5 block text-xs text-muted">
+                  {!loop.linked_available
+                    ? "Parou de ser compartilhado"
+                    : loop.active_accounts_count === 0
+                      ? "Nenhuma conta conectada"
+                      : `${loop.active_accounts_count} conta(s) conectada(s)`}
+                </span>
+              </span>
+              <ChevronRight className="shrink-0 text-muted" size={16} />
+            </button>
           ))}
         </div>
       )}
-      <LoopAccountsDialog loop={editing} onClose={() => setEditing(null)} />
+      <LoopAccountsDialog loop={opened} onClose={() => setOpened(null)} />
     </section>
   );
 }
 
-/** Partner: pick which of their own accounts post a shared loop. */
+/** Partner: the accounts posting a shared loop, and which accounts and folders post it. */
 function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [pickedFolders, setPickedFolders] = useState<Set<string>>(new Set());
   const [initializedLoopId, setInitializedLoopId] = useState<string | null>(null);
   const accounts = useQuery({
     queryKey: ["loops", "accounts", "shared", loop?.id],
@@ -309,6 +398,11 @@ function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onC
     enabled: loop !== null,
     retry: false,
   });
+  const folders = useQuery({
+    queryKey: ["instagram", "folders"],
+    queryFn: () => apiRequest<InstagramFoldersResponse>("/api/instagram/folders?include_accounts=false"),
+    enabled: loop !== null,
+  });
   useEffect(() => {
     if (!loop) {
       setInitializedLoopId(null);
@@ -316,11 +410,16 @@ function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onC
     }
     if (accounts.data && initializedLoopId !== loop.id) {
       setPicked(new Set(accounts.data.selected_ids));
+      setPickedFolders(new Set(loop.auto_folder_ids ?? []));
       setInitializedLoopId(loop.id);
     }
   }, [accounts.data, initializedLoopId, loop]);
   const save = useMutation({
-    mutationFn: () => apiRequest(`/api/loops/${loop!.id}/accounts`, { method: "PUT", body: { account_ids: [...picked] } }),
+    mutationFn: () =>
+      apiRequest(`/api/loops/${loop!.id}/accounts`, {
+        method: "PUT",
+        body: { account_ids: [...picked], auto_folder_ids: [...pickedFolders] },
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["loops"] });
       onClose();
@@ -328,50 +427,85 @@ function LoopAccountsDialog({ loop, onClose }: { loop: InstagramLoop | null; onC
   });
   if (!loop) return null;
   const usable = accounts.data?.accounts ?? [];
+  const connected = usable.filter((account) => accounts.data?.selected_ids.includes(account.id));
+  const toggle = (set: (fn: (current: Set<string>) => Set<string>) => void, id: string) =>
+    set((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   return (
     <Modal
       busy={save.isPending}
-      description="Só as contas que você marcar postam este loop. As mídias e os horários continuam vindo do seu sócio."
       footer={
         <Button disabled={save.isPending || accounts.isLoading || Boolean(accounts.error)} onClick={() => save.mutate()} variant="primary">
-          Salvar contas
+          Salvar
         </Button>
       }
       onClose={onClose}
       open
-      title={`Contas de “${loop.name}”`}
+      title={`Loop - ${loop.name}`}
     >
-      <div className="space-y-2">
-        {accounts.isLoading ? (
-          <LoadingState label="Carregando contas conectadas" />
-        ) : accounts.error ? (
-          <ErrorState message={errorText(accounts.error)} />
-        ) : usable.length === 0 ? (
-          <p className="text-sm text-muted">
-            Você ainda não tem contas do Instagram conectadas.{" "}
-            <Link className="text-accent underline" to="/feature/accounts">Conecte uma conta</Link> e volte aqui.
-          </p>
-        ) : (
-          usable.map((account) => (
-            <label className="flex items-center gap-2 text-sm text-fg" key={account.id}>
-              <input
-                checked={picked.has(account.id)}
-                onChange={() =>
-                  setPicked((current) => {
-                    const next = new Set(current);
-                    if (next.has(account.id)) next.delete(account.id);
-                    else next.add(account.id);
-                    return next;
-                  })
-                }
-                type="checkbox"
-              />
-              @{account.username}
-            </label>
-          ))
-        )}
-        {save.error && <ErrorState message={errorText(save.error)} />}
-      </div>
+      {accounts.isLoading ? (
+        <LoadingState label="Carregando contas conectadas" />
+      ) : accounts.error ? (
+        <ErrorState message={errorText(accounts.error)} />
+      ) : (
+        <div className="space-y-4">
+          <section>
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Contas conectadas ({connected.length})</h4>
+            {connected.length === 0 ? (
+              <p className="mt-1 text-sm text-muted">Nenhuma conta postando neste loop ainda.</p>
+            ) : (
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {connected.map((account) => (
+                  <li className="rounded-full bg-surface-inset px-2.5 py-1 text-xs text-fg" key={account.id}>@{account.username}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section>
+            <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+              <Folder size={13} /> Pastas de contas
+            </h4>
+            <p className="mt-1 text-[11px] text-muted">As contas das pastas marcadas postam neste loop, inclusive as que entrarem depois.</p>
+            {(folders.data?.folders ?? []).length === 0 ? (
+              <p className="mt-1 text-sm text-muted">
+                Você ainda não tem pastas. <Link className="text-accent underline" to="/feature/accounts">Crie em Contas</Link>.
+              </p>
+            ) : (
+              <div className="mt-2 space-y-1.5">
+                {folders.data!.folders.map((folder) => (
+                  <label className="flex items-center gap-2 text-sm text-fg" key={folder.id}>
+                    <input checked={pickedFolders.has(folder.id)} onChange={() => toggle(setPickedFolders, folder.id)} type="checkbox" />
+                    <Folder size={13} style={{ color: folder.color }} /> {folder.name}
+                  </label>
+                ))}
+              </div>
+            )}
+          </section>
+          <section>
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Contas</h4>
+            {usable.length === 0 ? (
+              <p className="mt-1 text-sm text-muted">
+                Você ainda não tem contas do Instagram conectadas.{" "}
+                <Link className="text-accent underline" to="/feature/accounts">Conecte uma conta</Link> e volte aqui.
+              </p>
+            ) : (
+              <div className="mt-2 space-y-1.5">
+                {usable.map((account) => (
+                  <label className="flex items-center gap-2 text-sm text-fg" key={account.id}>
+                    <input checked={picked.has(account.id)} onChange={() => toggle(setPicked, account.id)} type="checkbox" />
+                    @{account.username}
+                  </label>
+                ))}
+              </div>
+            )}
+          </section>
+          {save.error && <ErrorState message={errorText(save.error)} />}
+        </div>
+      )}
     </Modal>
   );
 }
@@ -402,7 +536,7 @@ export function SharedFlowsPanel() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        Funis de {chief} prontos para rodar no seu robô. Gateway, porcentagens e ShopIDs são definidos por {chief}: você não precisa
+        Funis de {chief} prontos para rodar no seu bot. Gateway, porcentagens e ShopIDs são definidos por {chief}: você não precisa
         cadastrar credenciais para vender estes funis. Quando o funil vem com um loop, ele aparece em Loops compartilhados, sem contas:
         conecte as suas e ele começa a postar. O conteúdo do funil é protegido; leads, vendas e métricas são seus.
       </p>
@@ -411,7 +545,7 @@ export function SharedFlowsPanel() {
       {use.data && (
         <p className="text-xs text-success">
           Pronto! {use.data.loop ? `O loop “${use.data.loop.name}” está em Loops compartilhados (conecte suas contas nele). ` : ""}
-          Agora vá em “Meus robôs” e escolha “{use.data.name}” no seu robô, junto com o seu grupo de entrega.
+          Agora vá em “Meus bots” e escolha “{use.data.name}” no seu bot, junto com o seu grupo de entrega.
         </p>
       )}
       {data.flows.length === 0 ? (
@@ -422,7 +556,7 @@ export function SharedFlowsPanel() {
             <Card className="space-y-3" key={flow.id}>
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 truncate font-medium text-fg">{flow.name}</p>
-                {flow.in_use && <Badge tone="success">No seu robô</Badge>}
+                {flow.in_use && <Badge tone="success">No seu bot</Badge>}
               </div>
               <dl className="grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg bg-surface-inset px-2 py-2">

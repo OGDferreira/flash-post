@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -40,6 +40,13 @@ class FinancialWithdrawal(Base):
     # Pix end-to-end id from SmokePay: the bank receipt that traces where the money went.
     gateway_e2e_id: Mapped[str | None] = mapped_column(String(64))
     fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    # Which gateway pays it out: smokepay (subaccount) or snakepay (Cash Out of the account's key).
+    gateway: Mapped[str] = mapped_column(String(16), nullable=False, default="smokepay", server_default="smokepay")
+    # SnakePay idempotency key: saved before the first call and reused on every retry.
+    request_id: Mapped[str | None] = mapped_column(String(36), unique=True)
+    # "Sacar tudo": SnakePay withdraws everything available (``amount`` is our estimate until it answers).
+    requested_max: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     processed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")

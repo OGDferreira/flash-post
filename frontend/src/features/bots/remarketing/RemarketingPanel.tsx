@@ -100,7 +100,7 @@ export function RemarketingPanel({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm text-muted">Cada funil tem o próprio remarketing: a campanha vai para os leads daquele funil, pelo robô onde cada um entrou.</p>
+          <p className="text-sm text-muted">Cada funil tem o próprio remarketing: a campanha vai para os leads daquele funil, pelo bot onde cada um entrou.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <select aria-label="Funil" className="field !min-h-10 !w-auto" value={flowId ?? ""} onChange={(event) => onFlowChange(event.target.value || null)}>

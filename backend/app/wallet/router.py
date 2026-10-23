@@ -27,6 +27,7 @@ from app.core.config import get_settings
 from app.models import FinancialWithdrawal, TgOrder, User, Workspace
 from app.models import Affiliation
 from app.partners.service import owner_workspace, partner_link, shop_ref
+from app.wallet import snake_withdrawals
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/wallet", tags=["Wallet"])
@@ -50,7 +51,10 @@ def _money(value: object) -> Decimal:
 
 
 class WithdrawalRequest(BaseModel):
-    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    # None only with ``withdraw_all`` on SnakePay ("MAX": everything available).
+    amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    gateway: Literal["smokepay", "snakepay"] = "smokepay"
+    withdraw_all: bool = False
     pix_key_type: Literal["cpf", "cnpj", "email", "phone", "random"] | None = None
     pix_key: str | None = Field(default=None, max_length=140)
     note: str | None = Field(default=None, max_length=240)
@@ -128,25 +132,29 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
             TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.split_chief_user_id.is_not(None), smoke
         )
     )
-    sums = dict(
-        (
+    sums: dict[tuple[str, str], object] = {
+        (gateway, status): total
+        for gateway, status, total in (
             await db.execute(
-                select(FinancialWithdrawal.status, func.coalesce(func.sum(FinancialWithdrawal.amount), 0))
+                select(FinancialWithdrawal.gateway, FinancialWithdrawal.status, func.coalesce(func.sum(FinancialWithdrawal.amount), 0))
                 .where(FinancialWithdrawal.workspace_id == workspace_id)
-                .group_by(FinancialWithdrawal.status)
+                .group_by(FinancialWithdrawal.gateway, FinancialWithdrawal.status)
             )
         ).all()
-    )
+    }
+
+    def total(statuses: tuple[str, ...], gateway: str | None = None) -> Decimal:
+        return sum((_money(v) for (g, st), v in sums.items() if st in statuses and gateway in (None, g)), Decimal("0.00"))
+
     earned = _money(own) + _money(commissions)
-    withdrawn = _money(sums.get("PAID"))
-    pending = _money(sums.get("PROCESSING")) + _money(sums.get("REQUESTED"))
+    smoke_out = total(("PAID", "PROCESSING", "REQUESTED"), "smokepay")
     return {
         "earned": earned,
         "commissions_received": _money(commissions),
         "commission_paid": _money(commission_paid),
-        "withdrawn": withdrawn,
-        "pending": pending,
-        "available": max(Decimal("0.00"), earned - withdrawn - pending),
+        "withdrawn": total(("PAID",)),  # every gateway
+        "pending": total(("PROCESSING", "REQUESTED")),
+        "available": max(Decimal("0.00"), earned - smoke_out),  # SmokePay estimate
     }
 
 
@@ -171,21 +179,65 @@ async def snakepay_breakdown(db, user: User, workspace_id: uuid.UUID) -> dict[st
     return {"sales": _money(own), "commissions": _money(commissions), "fees": fees}
 
 
+async def _falcon_fees(db) -> dict:
+    """Super Admin: what the per-sale Falcon Bot fee (R$ 0,40 by default) brought in, month and today."""
+    now = utc_now()
+    local = now.astimezone(BRAZIL_TIME_ZONE)
+    month_start = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+    async def between(start) -> tuple[Decimal, int]:
+        total, count = (await db.execute(
+            select(func.coalesce(func.sum(TgOrder.transaction_fee), 0), func.count(TgOrder.id)).where(
+                TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.transaction_fee > 0
+            )
+        )).one()
+        return _money(total), int(count)
+
+    month, month_count = await between(month_start)
+    today, today_count = await between(day_start)
+    return {
+        "falcon_fees_month": float(month), "falcon_fees_month_count": month_count,
+        "falcon_fees_today": float(today), "falcon_fees_today_count": today_count,
+    }
+
+
 async def month_revenue(db, workspace_id: uuid.UUID) -> Decimal:
     """Gross revenue (SharkBot + Falcon Bot) since the 1st of the current month, Brazil time."""
     return (await month_revenue_by_bot(db, workspace_id))[0]
 
 
+def _month_start():
+    now = utc_now()
+    return now.astimezone(BRAZIL_TIME_ZONE).replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc), now
+
+
+async def month_commissions(db, workspace_id: uuid.UUID) -> Decimal:
+    """Commissions the workspace's owner received this month from partners' sales (any gateway)."""
+    from app.bots.hidden import not_hidden_bot
+
+    workspace = await db.get(Workspace, workspace_id)
+    if workspace is None:
+        return Decimal("0.00")
+    start, now = _month_start()
+    return _money(await db.scalar(
+        select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
+            TgOrder.split_chief_user_id == workspace.owner_id, TgOrder.status == "paid",
+            TgOrder.paid_at >= start, TgOrder.paid_at < now, not_hidden_bot(TgOrder.bot_id),
+        )
+    ))
+
+
 async def month_revenue_by_bot(db, workspace_id: uuid.UUID) -> tuple[Decimal, Decimal, Decimal]:
-    """(total, SharkBot, Falcon Bot) gross since the 1st of the current month, Brazil time."""
+    """(total, SharkBot, Falcon Bot) since the 1st of the current month, Brazil time. Falcon Bot =
+    the operation's own sales plus the commissions received from partners' sales."""
     from app.finance.router import _revenue_between
 
-    now = utc_now()
-    month_start = (
-        now.astimezone(BRAZIL_TIME_ZONE).replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
-    )
-    gross, _net, _sales, _no_amount, flash = await _revenue_between(db, workspace_id, month_start, now)
-    return _money(gross), _money(gross) - _money(flash), _money(flash)
+    start, now = _month_start()
+    gross, _net, _sales, _no_amount, flash = await _revenue_between(db, workspace_id, start, now)
+    commissions = await month_commissions(db, workspace_id)
+    shark = _money(gross) - _money(flash)
+    return _money(gross) + commissions, shark, _money(flash) + commissions
 
 
 def goal_progress(revenue: Decimal) -> dict:
@@ -263,12 +315,13 @@ async def goals(user: AuthenticatedUser, db: DbSession) -> dict:
     workspace = await owner_workspace(db, user.id)
     if workspace is None:
         return {"available": False}
-    revenue = await month_revenue(db, workspace.id)
+    _total, _shark, revenue = await month_revenue_by_bot(db, workspace.id)  # goals count Falcon Bot sales only
     return {"available": True, "month_revenue": float(revenue), **_goals_out(revenue, await award_image_urls(db))}
 
 
 def _withdrawal_out(item: FinancialWithdrawal, owner: str | None = None) -> dict:
     return {
+        "gateway": item.gateway,
         "id": str(item.id), "amount": float(item.amount), "status": item.status, "note": item.note,
         "pix_key_type": item.pix_key_type, "pix_key": item.pix_key, "owner": owner,
         "fee": float(item.fee) if item.fee is not None else None,
@@ -284,7 +337,8 @@ async def summary(user: AuthenticatedUser, db: DbSession) -> dict:
     workspace = await owner_workspace(db, user.id)
     if workspace is None:
         return {"available": False}
-    revenue = await month_revenue(db, workspace.id)
+    # The pill shows Falcon Bot's revenue only (SharkBot sales stay out of it).
+    _total, _shark, revenue = await month_revenue_by_bot(db, workspace.id)
     return {"available": True, "month_revenue": float(revenue), **{k: float(v) if isinstance(v, Decimal) else v for k, v in goal_progress(revenue).items() if k in ("target", "percent", "prize")}}
 
 
@@ -310,6 +364,7 @@ async def _reconcile(db, workspace_id: uuid.UUID, shop: str | None) -> None:
         await db.scalars(
             select(FinancialWithdrawal).where(
                 FinancialWithdrawal.workspace_id == workspace_id,
+                FinancialWithdrawal.gateway == "smokepay",
                 FinancialWithdrawal.gateway_withdrawal_id.is_not(None),
                 (FinancialWithdrawal.status == "PROCESSING")
                 | (
@@ -351,7 +406,13 @@ async def _is_partner(db, user: User) -> bool:
 
 
 async def _wallet_numbers(db, user: User, workspace: Workspace, shop: str | None) -> dict:
+    """``user`` = the workspace's owner (whose wallet this is)."""
     await _reconcile(db, workspace.id, shop)
+    try:
+        await snake_withdrawals.reconcile(db, workspace)
+    except Exception:  # a status check must never break the wallet
+        await db.rollback()
+        logger.exception("SnakePay withdrawal check failed")
     balance = await balances(db, user, workspace.id)
     gateway = await _gateway_balance(shop)
     out = {k: float(v) for k, v in balance.items()}
@@ -362,6 +423,20 @@ async def _wallet_numbers(db, user: User, workspace: Workspace, shop: str | None
     # what can actually leave: SmokePay debits the fee from the balance too
     out["withdrawable"] = float(max(Decimal("0.00"), Decimal(str(out["available"])) - fee))
     out["balance_source"] = "smokepay" if gateway is not None else "estimate"
+    # One card per gateway in the "Sacar" pop-up.
+    snake_received = sum((await snakepay_breakdown(db, user, workspace.id)).values(), Decimal("0.00"))
+    snake_balance = await snake_withdrawals.estimated_balance(db, workspace.id, snake_received)
+    snake_ready = await snake_withdrawals.credentials(db, workspace) is not None
+    out["gateways"] = [
+        {"gateway": "smokepay", "available": out["available"], "withdrawable": out["withdrawable"], "fee": float(fee),
+         "ready": True, "estimated": gateway is None, "min": float(MIN_WITHDRAWAL)},
+    ]
+    if snake_received > 0 or snake_ready:
+        out["gateways"].append({
+            "gateway": "snakepay", "available": float(snake_balance), "withdrawable": float(snake_balance), "fee": None,
+            "ready": snake_ready, "estimated": True, "min": float(snake_withdrawals.cashout.MIN_AMOUNT),
+        })
+    out["withdrawals_blocked"] = await withdrawals_blocked_for(db, user)
     return out
 
 
@@ -396,7 +471,9 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "snakepay_commissions": float(snake["commissions"]),
         "snakepay_fees": float(snake["fees"]),
         "month_flash_revenue": float(flash_revenue),
-        "goal": _goals_out(revenue, await award_image_urls(db)),
+        "month_commissions": float(await month_commissions(db, workspace.id)),
+        **(await _falcon_fees(db) if user.platform_role == "SUPER_ADMIN" else {}),
+        "goal": _goals_out(flash_revenue, await award_image_urls(db)),  # goals count Falcon Bot sales only
         **numbers,
         "min_withdrawal": float(MIN_WITHDRAWAL),
         "withdrawals": await _history(db, workspace.id),
@@ -422,12 +499,52 @@ def _gateway_message(exc: smokepay.SmokepayError) -> tuple[int, str]:
     return 502, "A SmokePay não conseguiu processar o saque agora. Tente de novo em alguns minutos."
 
 
+WITHDRAWALS_BLOCKED_KEY = "withdrawals_blocked"
+
+
+async def all_withdrawals_blocked(db) -> bool:
+    from app.models import SystemSetting
+
+    setting = await db.get(SystemSetting, WITHDRAWALS_BLOCKED_KEY)
+    return bool(setting and isinstance(setting.value, dict) and setting.value.get("blocked"))
+
+
+async def withdrawals_blocked_for(db, user: User) -> bool:
+    """The Super Admin blocks one user's withdrawals or everyone's; never their own."""
+    if user.platform_role == "SUPER_ADMIN":
+        return False
+    return bool(user.withdrawals_blocked) or await all_withdrawals_blocked(db)
+
+
 @router.post("/withdrawals", status_code=201, dependencies=[Depends(require_csrf)])
 async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser, db: DbSession) -> dict:
     # Partners withdraw their own subaccount too (owner's decision, 2026-10-19); the
     # Super Admin still sees every payout in "Saques dos sócios".
+    if await withdrawals_blocked_for(db, user):
+        raise HTTPException(status_code=403, detail="Os saques estão bloqueados pelo administrador.")
     workspace = await _workspace_for(db, user)
-    return await _withdraw(db, user, workspace, _shop_for(user, workspace), payload)
+    return await _dispatch(db, user, user, workspace, payload)
+
+
+async def _dispatch(db, actor: User, owner: User, workspace: Workspace, payload: WithdrawalRequest) -> dict:
+    """``actor`` asked for it; ``owner`` owns the money (the same, or a partner for the Super Admin)."""
+    if payload.gateway == "snakepay":
+        if not payload.pix_key or not payload.pix_key_type:
+            raise HTTPException(status_code=422, detail="Informe a chave Pix que vai receber.")
+        pix_key = normalize_pix_key(payload.pix_key_type, payload.pix_key)
+        if not payload.withdraw_all and payload.amount is None:
+            raise HTTPException(status_code=422, detail="Informe o valor do saque.")
+        received = sum((await snakepay_breakdown(db, owner, workspace.id)).values(), Decimal("0.00"))
+        estimate = await snake_withdrawals.estimated_balance(db, workspace.id, received)
+        item = await snake_withdrawals.withdraw(
+            db, actor, workspace, amount=None if payload.withdraw_all else payload.amount.quantize(CENT),
+            pix_key=pix_key, key_type=payload.pix_key_type, estimate=estimate,
+        )
+        await db.refresh(item)
+        return _withdrawal_out(item)
+    if payload.amount is None:
+        raise HTTPException(status_code=422, detail="Informe o valor do saque.")
+    return await _withdraw(db, actor, workspace, _shop_for(owner, workspace), payload)
 
 
 async def _withdraw(db, user: User, workspace: Workspace, shop: str | None, payload: WithdrawalRequest) -> dict:
@@ -441,7 +558,7 @@ async def _withdraw(db, user: User, workspace: Workspace, shop: str | None, payl
     if await db.scalar(
         select(FinancialWithdrawal.id).where(
             FinancialWithdrawal.workspace_id == workspace.id, FinancialWithdrawal.status == "PROCESSING",
-            FinancialWithdrawal.gateway_withdrawal_id.is_(None),
+            FinancialWithdrawal.gateway == "smokepay", FinancialWithdrawal.gateway_withdrawal_id.is_(None),
             FinancialWithdrawal.created_at > utc_now() - timedelta(minutes=10),
         )
     ):
@@ -527,6 +644,7 @@ async def partner_wallets(_admin: SuperAdminUser, db: DbSession) -> dict:
         numbers = await _wallet_numbers(db, partner, workspace, shop_ref(workspace.id))
         chief = users.get(link.chief_user_id)
         items.append({
+            "withdrawals_blocked": bool(partner.withdrawals_blocked),
             "user_id": str(partner.id),
             "name": partner.full_name,
             "email": partner.email,
@@ -537,7 +655,7 @@ async def partner_wallets(_admin: SuperAdminUser, db: DbSession) -> dict:
             "withdrawals": await _history(db, workspace.id, limit=20),
         })
     items.sort(key=lambda item: item["available"], reverse=True)
-    return {"items": items, "min_withdrawal": float(MIN_WITHDRAWAL)}
+    return {"items": items, "min_withdrawal": float(MIN_WITHDRAWAL), "withdrawals_blocked": await all_withdrawals_blocked(db)}
 
 
 @admin_router.get("/{user_id}/gateway-withdrawals")
@@ -566,5 +684,5 @@ async def partner_gateway_withdrawals(user_id: uuid.UUID, _admin: SuperAdminUser
 async def partner_withdrawal(
     user_id: uuid.UUID, payload: WithdrawalRequest, admin: SuperAdminUser, db: DbSession
 ) -> dict:
-    _partner, workspace = await _partner_workspace(db, user_id)
-    return await _withdraw(db, admin, workspace, shop_ref(workspace.id), payload)
+    partner, workspace = await _partner_workspace(db, user_id)
+    return await _dispatch(db, admin, partner, workspace, payload)  # the Super Admin is never blocked

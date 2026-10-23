@@ -25,10 +25,11 @@ from app.bots import engine
 from app.bots.flow_schema import ButtonStyle, Delivery, FlowDefinition, LinkButton, MediaList3, Money, OrderBump, Plan, Text, _Model
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.time import BRAZIL_TIME_ZONE
+from app.bots.hidden import admin_view, mark_admin_view
 from app.models import TgBot, TgCampaign, TgFlow, TgLead, TgMedia, TgOrder, TgSubscription
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/bots/campaigns", tags=["Bots"])
+router = APIRouter(prefix="/api/bots/campaigns", tags=["Bots"], dependencies=[Depends(mark_admin_view)])
 csrf = [Depends(require_csrf)]
 
 BATCH = 25
@@ -304,7 +305,7 @@ class ScheduleIn(BaseModel):
 
 async def _flow(db: AsyncSession, flow_id: uuid.UUID, access) -> TgFlow:
     flow = await db.get(TgFlow, flow_id)
-    if flow is None or flow.workspace_id != access.workspace.id:
+    if flow is None or flow.workspace_id != access.workspace.id or (flow.hidden_by_admin and not admin_view()):
         raise HTTPException(status_code=404, detail="Funil não encontrado.")
     return flow
 
@@ -383,6 +384,8 @@ async def list_campaigns(access: OwnerAccess, db: DbSession, flow_id: uuid.UUID 
     query = select(TgCampaign).where(TgCampaign.workspace_id == access.workspace.id).order_by(TgCampaign.created_at.desc())
     if flow_id is not None:
         query = query.where(TgCampaign.flow_id == flow_id)
+    if not admin_view():
+        query = query.where(TgCampaign.flow_id.not_in(select(TgFlow.id).where(TgFlow.hidden_by_admin.is_(True))))
     campaigns = list(await db.scalars(query))
     names = dict((await db.execute(select(TgFlow.id, TgFlow.name).where(TgFlow.workspace_id == access.workspace.id))).all())
     sales = await _sales(db, campaigns)

@@ -10,6 +10,7 @@ import { Modal } from "@/components/ui/Modal";
 import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 import type { MetricsPeriod } from "@/features/analytics/period";
+import { AdminHideToggle } from "./AdminHideToggle";
 import { BotAvatar } from "./BotAvatar";
 import { useBotStats } from "./ConversionOverview";
 import { brl, type Bot, type BotGroup, type Flow, type SharedFlowOption } from "./types";
@@ -60,26 +61,26 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
     onSuccess: refresh,
   });
 
-  if (bots.isLoading) return <LoadingState label="Carregando robôs" />;
+  if (bots.isLoading) return <LoadingState label="Carregando bots" />;
   if (bots.error || !bots.data) {
-    return <ErrorState message={errorText(bots.error, "Não foi possível carregar os robôs.")} onRetry={() => void bots.refetch()} />;
+    return <ErrorState message={errorText(bots.error, "Não foi possível carregar os bots.")} onRetry={() => void bots.refetch()} />;
   }
   const mutationError = update.error ?? reconnect.error ?? remove.error ?? checkCache.error;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">Cada robô segue um fluxo. Troque o fluxo a qualquer momento: vale para os próximos /start.</p>
+        <p className="text-sm text-muted">Cada bot segue um fluxo. Troque o fluxo a qualquer momento: vale para os próximos /start.</p>
         <Button variant="primary" onClick={() => setConnectOpen(true)}>
-          <Plus size={16} /> Conectar robô
+          <Plus size={16} /> Conectar bot
         </Button>
       </div>
       {mutationError && <ErrorState message={errorText(mutationError, "A ação não pôde ser concluída.")} />}
       {bots.data.bots.length === 0 ? (
         <EmptyState
           icon={<BotIcon size={18} />}
-          message="Nenhum robô conectado ainda. Crie um no @BotFather do Telegram e cole o token aqui."
-          action={<Button variant="primary" onClick={() => setConnectOpen(true)}>Conectar o primeiro robô</Button>}
+          message="Nenhum bot conectado ainda. Crie um no @BotFather do Telegram e cole o token aqui."
+          action={<Button variant="primary" onClick={() => setConnectOpen(true)}>Conectar o primeiro bot</Button>}
         />
       ) : (
         <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
@@ -103,6 +104,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                   <Badge>Pausado</Badge>
                 )}
               </div>
+              <AdminHideToggle hidden={bot.hidden_by_admin} id={bot.id} kind="bot" />
               {bot.last_error && <p className="break-words text-xs text-danger">{bot.last_error}</p>}
               <dl className="grid grid-cols-4 gap-2 text-center">
                 {[
@@ -130,7 +132,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                     })
                   }
                 >
-                  <option value="">Sem fluxo (o robô não responde)</option>
+                  <option value="">Sem fluxo (o bot não responde)</option>
                   {flows.data?.flows.map((flow) => (
                     <option key={flow.id} value={flow.id}>
                       {flow.name}
@@ -147,7 +149,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
               </label>
               {bot.flow_id && sharedIds.has(bot.flow_id) && (
                 <label className="grid gap-1.5 text-sm text-fg-2">
-                  Grupo de entrega deste robô
+                  Grupo de entrega deste bot
                   <select
                     className="field"
                     disabled={update.isPending}
@@ -166,7 +168,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                       </option>
                     ))}
                   </select>
-                  <span className="text-[11px] text-muted">O funil é de {chief}; quem compra entra no seu grupo. Adicione o robô como admin dele.</span>
+                  <span className="text-[11px] text-muted">O funil é de {chief}; quem compra entra no seu grupo. Adicione o bot como admin dele.</span>
                 </label>
               )}
               <div className="grid gap-1.5 text-sm text-fg-2">
@@ -204,7 +206,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                 <span className="text-[11px] text-muted">
                   {bot.cache_chat_id
                     ? cacheInfo[bot.id] ?? "Configurado. As mídias do fluxo ficam salvas nesse chat e são reenviadas pelo ID do Telegram."
-                    : "Crie um canal ou grupo, adicione o robô como admin e escolha aqui. Ele vira o backup das mídias e deixa o envio instantâneo."}
+                    : "Crie um canal ou grupo, adicione o bot como admin e escolha aqui. Ele vira o backup das mídias e deixa o envio instantâneo."}
                 </span>
                 <LinkGroup botId={bot.id} onLinked={() => void groups.refetch()} />
               </div>
@@ -260,7 +262,7 @@ export function ConnectBotModal({
   return (
     <Modal
       open={open}
-      title="Conectar robô do Telegram"
+      title="Conectar bot do Telegram"
       onClose={onClose}
       busy={connect.isPending}
       footer={
@@ -283,10 +285,10 @@ export function ConnectBotModal({
           </li>
           <li>Escolha o nome e o usuário (precisa terminar em “bot”).</li>
           <li>Copie o token que ele responder (algo como <code>123456:ABC-...</code>) e cole abaixo.</li>
-          <li>Para entregar acesso a um grupo VIP, adicione o robô como administrador do grupo com permissão de convidar.</li>
+          <li>Para entregar acesso a um grupo VIP, adicione o bot como administrador do grupo com permissão de convidar.</li>
         </ol>
         <label className="grid gap-1.5 text-sm text-fg-2">
-          Token do robô
+          Token do bot
           <input
             autoComplete="off"
             className="field font-mono"
@@ -336,7 +338,7 @@ function LinkGroup({ botId, onLinked }: { botId: string; onLinked: () => void })
   return (
     <div className="grid gap-2 rounded-xl border border-line-soft bg-surface-inset p-3 text-[11px] leading-5 text-muted">
       <p>
-        Se o robô já estava no grupo antes de ser conectado aqui, o Telegram não avisa. Envie qualquer mensagem no grupo (ou publique algo no canal) e
+        Se o bot já estava no grupo antes de ser conectado aqui, o Telegram não avisa. Envie qualquer mensagem no grupo (ou publique algo no canal) e
         atualize a página, ou informe abaixo o @, o link t.me/… ou o ID do grupo/canal.
       </p>
       <form

@@ -23,6 +23,8 @@ from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bots.hidden import not_hidden_bot
+
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
 from app.core.config import get_settings
@@ -105,6 +107,16 @@ async def chief_chain_contains(db: AsyncSession, start_user_id: UUID, target_use
     return True  # absurdly deep chain: refuse
 
 
+def may_invite_partners(user: User) -> bool:
+    """Only the Super Admin invites partners, unless they gave this user the permission."""
+    return user.platform_role == "SUPER_ADMIN" or bool(user.can_invite_partners)
+
+
+def _require_invite_permission(user: User) -> None:
+    if not may_invite_partners(user):
+        raise HTTPException(status_code=403, detail="Convidar sócios é liberado só pelo administrador da plataforma.")
+
+
 async def find_chief(db: AsyncSession, code: str) -> User:
     normalized = normalize_code(code)
     chief = await db.scalar(select(User).where(User.invite_code == normalized)) if normalized else None
@@ -116,6 +128,8 @@ async def find_chief(db: AsyncSession, code: str) -> User:
 async def link_affiliate(db: AsyncSession, code: str, affiliate: User) -> Affiliation:
     """Create the link or raise a 4xx. The caller commits."""
     chief = await find_chief(db, code)
+    if not may_invite_partners(chief):
+        raise HTTPException(status_code=422, detail="Este código não pode criar uma sociedade.")
     if chief.id == affiliate.id:
         raise HTTPException(status_code=422, detail="Você não pode usar o seu próprio código de convite.")
     if await db.scalar(select(Affiliation.id).where(Affiliation.affiliate_user_id == affiliate.id)):
@@ -266,6 +280,7 @@ class AffiliateDetail(AffiliateRow):
 # --------------------------------------------------------------- invite
 @router.get("/invite", response_model=InviteResponse)
 async def get_invite(access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> InviteResponse:
+    _require_invite_permission(user)
     code = await ensure_invite_code(db, user)
     await db.commit()
     return _invite(code)
@@ -274,6 +289,7 @@ async def get_invite(access: OwnerAccess, user: AuthenticatedUser, db: DbSession
 @router.post("/invite/rotate", response_model=InviteResponse, dependencies=[Depends(require_csrf)])
 async def rotate_invite(access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> InviteResponse:
     # Existing affiliates stay linked; only new sign-ups need the new code.
+    _require_invite_permission(user)
     code = await ensure_invite_code(db, user, rotate=True)
     await db.commit()
     return _invite(code)
@@ -291,6 +307,7 @@ async def invite_link_with_percent(
 ) -> InviteResponse:
     """Invite link that already carries the commission: whoever signs up through it
     agrees to that percent on the sign-up screen, so no separate acceptance is asked."""
+    _require_invite_permission(user)
     code = await ensure_invite_code(db, user)
     await db.commit()
     percent = payload.percent.quantize(Decimal("0.01"))
@@ -462,18 +479,20 @@ async def _bot_numbers(db: AsyncSession, workspace_id, chief_user_id, start, end
                 ),
             ).where(
                 TgOrder.workspace_id == workspace_id, TgOrder.status == "paid",
-                TgOrder.paid_at >= start, TgOrder.paid_at < end,
+                TgOrder.paid_at >= start, TgOrder.paid_at < end, not_hidden_bot(TgOrder.bot_id),
             )
         )
     ).one()
     leads = await db.scalar(
         select(func.count(TgLead.id)).where(
-            TgLead.workspace_id == workspace_id, TgLead.created_at >= start, TgLead.created_at < end
+            TgLead.workspace_id == workspace_id, TgLead.created_at >= start, TgLead.created_at < end,
+            not_hidden_bot(TgLead.bot_id),
         )
     )
     pix = await db.scalar(
         select(func.count(TgOrder.id)).where(
-            TgOrder.workspace_id == workspace_id, TgOrder.created_at >= start, TgOrder.created_at < end
+            TgOrder.workspace_id == workspace_id, TgOrder.created_at >= start, TgOrder.created_at < end,
+            not_hidden_bot(TgOrder.bot_id),
         )
     )
     return {

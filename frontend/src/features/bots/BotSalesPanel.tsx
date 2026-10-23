@@ -45,7 +45,7 @@ export function BotSalesPanel() {
   return (
     <div className="space-y-4">
       {config.data && !(config.data.smokepay_configured && config.data.smokepay_webhook_configured) && (
-        <ErrorState message="SmokePay não configurado no servidor: defina SMOKEPAY_API_KEY e SMOKEPAY_WEBHOOK_SECRET. Sem isso o robô não gera Pix." />
+        <ErrorState message="SmokePay não configurado no servidor: defina SMOKEPAY_API_KEY e SMOKEPAY_WEBHOOK_SECRET. Sem isso o bot não gera Pix." />
       )}
       <div className="inline-flex gap-1 rounded-full bg-well p-1" role="tablist" aria-label="Período">
         {periods.map((period) => (
@@ -99,7 +99,7 @@ export function BotSalesPanel() {
                   <th className="py-2 pr-3 font-medium">Plano</th>
                   <th className="py-2 pr-3 font-medium">Valor</th>
                   <th className="py-2 pr-3 font-medium">Status</th>
-                  <th className="py-2 pr-3 font-medium">Robô / origem</th>
+                  <th className="py-2 pr-3 font-medium">Bot / origem</th>
                   <th className="py-2 font-medium">Criado</th>
                 </tr>
               </thead>
@@ -133,7 +133,7 @@ export function BotSalesPanel() {
           <CopyField
             label="URL de notificação do SmokePay (configurada automaticamente em cada Pix)"
             value={config.data.payment_webhook_url}
-            hint="Não precisa cadastrar: o robô envia essa URL junto de cada cobrança."
+            hint="Não precisa cadastrar: o bot envia essa URL junto de cada cobrança."
           />
         </Card>
       )}

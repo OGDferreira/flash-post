@@ -117,12 +117,17 @@ async def test_cycles_are_rejected(client: AsyncClient, db_session: AsyncSession
     code_a = (await client.get("/api/affiliates/invite")).json()["code"]
     await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
     await _login(client, "bravo@example.com", PASSWORD)
-    code_b = await _code(client)
+    # only the Super Admin (or who they allow) gets an invite: bravo's old code can't make partners
+    assert (await client.get("/api/affiliates/invite")).status_code == 403
+    from app.affiliates.router import ensure_invite_code
+
+    code_b = await ensure_invite_code(db_session, b)
+    await db_session.commit()
     assert (await _join(client, code_a)).status_code == 200
     await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
     await _login(client, "charlie@example.com", PASSWORD)
     partner_code = await _join(client, code_b)
-    assert partner_code.status_code == 422 and "sócio" in partner_code.json()["detail"]
+    assert partner_code.status_code == 422
     await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
 
     # a tries to join c's chief chain the other way round: a <- b <- a

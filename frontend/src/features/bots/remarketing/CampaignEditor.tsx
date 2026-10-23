@@ -337,12 +337,12 @@ export function CampaignEditor({
                   <Field label="Nome da campanha *">
                     <input className="field" maxLength={120} placeholder="Ex.: Volta dos não pagantes" value={name} onChange={(event) => setName(event.target.value)} />
                   </Field>
-                  <Field label="Fluxo *" hint="A campanha vai para os leads deste fluxo, cada um pelo robô onde entrou.">
+                  <Field label="Fluxo *" hint="A campanha vai para os leads deste fluxo, cada um pelo bot onde entrou.">
                     <select className="field" value={flowId} onChange={(event) => setFlowId(event.target.value)}>
                       {flows.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.name}
-                          {item.bots ? ` · ${item.bots} robô(s)` : ""}
+                          {item.bots ? ` · ${item.bots} bot(s)` : ""}
                         </option>
                       ))}
                     </select>
@@ -361,7 +361,7 @@ export function CampaignEditor({
                       <span className="text-2xl font-semibold text-fg">{estimate.data ? estimate.data.reach.toLocaleString("pt-BR") : "…"}</span>{" "}
                       <span className="text-sm text-muted">leads</span>
                       {estimate.data && estimate.data.blocked > 0 && (
-                        <span className="block text-xs text-muted">{estimate.data.blocked.toLocaleString("pt-BR")} já bloquearam o robô e ficam de fora</span>
+                        <span className="block text-xs text-muted">{estimate.data.blocked.toLocaleString("pt-BR")} já bloquearam o bot e ficam de fora</span>
                       )}
                     </span>
                   </div>

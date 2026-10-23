@@ -2,8 +2,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiRequest } from "@/services/api";
 
+export type GatewayBalance = {
+  gateway: "smokepay" | "snakepay";
+  available: number;
+  withdrawable: number;
+  fee: number | null;
+  ready: boolean; // SnakePay: the account's key and Cash Out secret are saved
+  estimated: boolean;
+  min: number;
+};
+
 export type Withdrawal = {
   id: string;
+  gateway?: "smokepay" | "snakepay";
   amount: number;
   status: "PAID" | "REQUESTED" | "REJECTED" | "PROCESSING" | "FAILED";
   fee?: number | null;
@@ -41,6 +52,14 @@ export type Wallet = {
   snakepay_commissions?: number;
   snakepay_fees?: number; // Super Admin: platform and per-sale fees kept in the charging account
   month_flash_revenue?: number;
+  month_commissions?: number;
+  gateways?: GatewayBalance[];
+  withdrawals_blocked?: boolean;
+  /** Super Admin only: the per-sale Falcon Bot fee collected (month and today). */
+  falcon_fees_month?: number;
+  falcon_fees_month_count?: number;
+  falcon_fees_today?: number;
+  falcon_fees_today_count?: number;
   goal: Goal;
   earned: number;
   commissions_received: number;
@@ -93,7 +112,7 @@ export function useWalletMutations() {
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["wallet"] });
   return {
     request: useMutation({
-      mutationFn: (body: { amount: string; pix_key_type?: string; pix_key?: string; note?: string }) =>
+      mutationFn: (body: { amount?: string; gateway?: string; withdraw_all?: boolean; pix_key_type?: string; pix_key?: string; note?: string }) =>
         apiRequest<Withdrawal>("/api/wallet/withdrawals", { method: "POST", body }),
       onSuccess: refresh,
     }),
@@ -130,6 +149,8 @@ export function useAwards() {
 
 export type PartnerWallet = {
   user_id: string;
+  gateways?: GatewayBalance[];
+  withdrawals_blocked?: boolean;
   name: string;
   email: string;
   chief: string | null;
@@ -152,13 +173,13 @@ export function usePartnerWallets() {
   return {
     list: useQuery({
       queryKey: ["admin", "partner-wallets"],
-      queryFn: () => apiRequest<{ items: PartnerWallet[]; min_withdrawal: number }>("/api/admin/partner-wallets"),
+      queryFn: () => apiRequest<{ items: PartnerWallet[]; min_withdrawal: number; withdrawals_blocked?: boolean }>("/api/admin/partner-wallets"),
       staleTime: 15_000,
       refetchInterval: (query) =>
         query.state.data?.items.some((item) => item.withdrawals.some((w) => w.status === "PROCESSING")) ? 5_000 : false,
     }),
     withdraw: useMutation({
-      mutationFn: ({ userId, ...body }: { userId: string; amount: string; pix_key_type: string; pix_key: string; note?: string }) =>
+      mutationFn: ({ userId, ...body }: { userId: string; amount?: string; gateway?: string; withdraw_all?: boolean; pix_key_type: string; pix_key: string; note?: string }) =>
         apiRequest<Withdrawal>(`/api/admin/partner-wallets/${userId}/withdrawals`, { method: "POST", body }),
       onSuccess: refresh,
     }),

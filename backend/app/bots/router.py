@@ -32,7 +32,9 @@ from app.bots.stats import conversion_stats, partners_ranking_of, recent_activit
 from app.core.time import utc_now
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/bots", tags=["Bots"])
+from app.bots.hidden import admin_view, mark_admin_view, not_hidden_bot  # noqa: E402
+
+router = APIRouter(prefix="/api/bots", tags=["Bots"], dependencies=[Depends(mark_admin_view)])
 csrf = [Depends(require_csrf)]
 
 MEDIA_TYPES = {
@@ -86,6 +88,7 @@ def _bot_out(bot: TgBot, stats: dict | None = None) -> dict:
         "status": bot.status,
         "last_error": bot.last_error,
         "created_at": bot.created_at.isoformat() if bot.created_at else None,
+        "hidden_by_admin": bool(bot.hidden_by_admin),
         **(stats or {"leads": 0, "sales": 0, "revenue": "0.00"}),
     }
 
@@ -112,6 +115,7 @@ def _flow_out(flow: TgFlow, bots: int = 0, protected: bool = False) -> dict:
         "shared_with": [str(t) for t in flow.shared_with] if flow.shared and flow.shared_with is not None else None,
         "shared_loop_id": str(flow.shared_loop_id) if flow.shared_loop_id else None,
         "from_template": flow.template_flow_id is not None,
+        "hidden_by_admin": bool(flow.hidden_by_admin),
     }
 
 
@@ -137,6 +141,8 @@ async def _usable_flow(db, flow_id: uuid.UUID, access) -> TgFlow:
         raise HTTPException(status_code=404, detail="Não encontrado.")
     if flow.workspace_id != access.workspace.id and await shared_funnel_access(db, flow, access.workspace.id) is None:
         raise HTTPException(status_code=404, detail="Não encontrado.")
+    if flow.hidden_by_admin and not admin_view():
+        raise HTTPException(status_code=404, detail="Não encontrado.")
     return flow
 
 
@@ -144,6 +150,8 @@ async def _owned(db, model, item_id: uuid.UUID, access) -> Any:
     item = await db.get(model, item_id)
     if item is None or item.workspace_id != access.workspace.id:
         raise HTTPException(status_code=404, detail="Não encontrado.")
+    if getattr(item, "hidden_by_admin", False) and not admin_view():
+        raise HTTPException(status_code=404, detail="Não encontrado.")  # hidden by the Super Admin
     return item
 
 
@@ -178,7 +186,10 @@ async def bots_config(access: OwnerAccess) -> dict:
 
 @router.get("")
 async def list_bots(access: OwnerAccess, db: DbSession) -> dict:
-    bots = list(await db.scalars(select(TgBot).where(TgBot.workspace_id == access.workspace.id).order_by(TgBot.created_at)))
+    query = select(TgBot).where(TgBot.workspace_id == access.workspace.id)
+    if not admin_view():
+        query = query.where(TgBot.hidden_by_admin.is_(False))
+    bots = list(await db.scalars(query.order_by(TgBot.created_at)))
     leads = dict(
         (await db.execute(
             select(TgLead.bot_id, func.count()).where(TgLead.workspace_id == access.workspace.id).group_by(TgLead.bot_id)
@@ -293,7 +304,7 @@ async def update_bot(bot_id: uuid.UUID, payload: BotUpdate, access: OwnerAccess,
             select(TgGroup).where(TgGroup.bot_id == bot.id, TgGroup.chat_id == payload.delivery_group_chat_id)
         )
         if group is None:
-            raise HTTPException(status_code=422, detail="Adicione o robô como admin desse grupo primeiro.")
+            raise HTTPException(status_code=422, detail="Adicione o bot como admin desse grupo primeiro.")
         bot.delivery_group_chat_id = group.chat_id
     warm = False
     if payload.clear_cache_chat:
@@ -315,7 +326,7 @@ async def _check_cache_chat(db, bot: TgBot, chat_id: int) -> TgGroup:
     allowed to post (file_ids only work for the bot that uploaded the file)."""
     group = await db.scalar(select(TgGroup).where(TgGroup.bot_id == bot.id, TgGroup.chat_id == chat_id))
     if group is None:
-        raise HTTPException(status_code=422, detail="Adicione o robô como admin desse grupo ou canal primeiro.")
+        raise HTTPException(status_code=422, detail="Adicione o bot como admin desse grupo ou canal primeiro.")
     try:
         member = await engine.telegram(bot).get_chat_member(chat_id, bot.tg_bot_id)
     except TelegramError as exc:
@@ -324,9 +335,9 @@ async def _check_cache_chat(db, bot: TgBot, chat_id: int) -> TgGroup:
     is_admin = status == "creator" or status == "administrator"
     can_post = group.chat_type != "channel" or status == "creator" or bool(member.get("can_post_messages"))
     if not is_admin:
-        raise HTTPException(status_code=422, detail="O robô precisa ser admin desse grupo ou canal.")
+        raise HTTPException(status_code=422, detail="O bot precisa ser admin desse grupo ou canal.")
     if not can_post:
-        raise HTTPException(status_code=422, detail="Dê ao robô a permissão de publicar mensagens no canal.")
+        raise HTTPException(status_code=422, detail="Dê ao bot a permissão de publicar mensagens no canal.")
     return group
 
 
@@ -400,11 +411,11 @@ async def link_group(bot_id: uuid.UUID, payload: ChatLink, access: OwnerAccess, 
         chat = await engine.telegram(bot).get_chat(ref)
     except TelegramError as exc:
         raise HTTPException(
-            status_code=422, detail="O robô não encontrou esse grupo ou canal. Confira se ele foi adicionado lá como admin."
+            status_code=422, detail="O bot não encontrou esse grupo ou canal. Confira se ele foi adicionado lá como admin."
         ) from exc
     group = await engine.remember_chat(db, bot, chat, refresh=True)
     if group is None:
-        raise HTTPException(status_code=422, detail="O robô não é membro desse grupo ou canal. Adicione-o como admin e tente de novo.")
+        raise HTTPException(status_code=422, detail="O bot não é membro desse grupo ou canal. Adicione-o como admin e tente de novo.")
     # channel posts only reach bots whose webhook asks for them (older connections did not)
     try:
         await engine.telegram(bot).set_webhook(_telegram_webhook_url(bot), bot.webhook_secret)
@@ -433,10 +444,13 @@ async def list_groups(access: OwnerAccess, db: DbSession) -> dict:
 
 @router.get("/flows/list")
 async def list_flows(access: OwnerAccess, db: DbSession) -> dict:
-    flows = list(await db.scalars(select(TgFlow).where(TgFlow.workspace_id == access.workspace.id).order_by(TgFlow.created_at)))
-    usage = dict((await db.execute(
-        select(TgBot.flow_id, func.count()).where(TgBot.workspace_id == access.workspace.id).group_by(TgBot.flow_id)
-    )).all())
+    query = select(TgFlow).where(TgFlow.workspace_id == access.workspace.id)
+    using = select(TgBot.flow_id, func.count()).where(TgBot.workspace_id == access.workspace.id)
+    if not admin_view():
+        query = query.where(TgFlow.hidden_by_admin.is_(False))
+        using = using.where(TgBot.hidden_by_admin.is_(False))
+    flows = list(await db.scalars(query.order_by(TgFlow.created_at)))
+    usage = dict((await db.execute(using.group_by(TgBot.flow_id))).all())
     shared = []
     link = await partner_link(db, access.workspace.owner_id)
     if accepted(link):
@@ -512,7 +526,7 @@ async def bot_stats(
     start, end = period_bounds(period, start_date, end_date, utc_now(), zone)
     if start is None or end is None:
         raise HTTPException(status_code=422, detail="Escolha um período limitado para o painel.")
-    data = await conversion_stats(db, access.workspace.id, start, end, zone)
+    data = await conversion_stats(db, access.workspace.id, start, end, zone, hide=not admin_view())
     data["period_label"] = period_label(start, end, zone)
     data["time_zone"] = zone.key
     # Partner commissions use the same local calendar as the daily revenue series.
@@ -522,6 +536,7 @@ async def bot_stats(
         select(TgOrder.paid_at, TgOrder.split_amount).where(
             TgOrder.split_chief_user_id == access.workspace.owner_id, TgOrder.status == "paid",
             TgOrder.split_amount.is_not(None), TgOrder.paid_at >= start, TgOrder.paid_at < end,
+            *(() if admin_view() else (not_hidden_bot(TgOrder.bot_id),)),
         )
     ):
         moment = paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc)
@@ -536,7 +551,7 @@ async def bot_stats(
 @router.get("/activity")
 async def bot_activity(access: OwnerAccess, db: DbSession, limit: int = Query(30, ge=1, le=100)) -> dict:
     """Live log of the operation: new leads, Pix generated and approved sales."""
-    return {"items": await recent_activity(db, access.workspace.id, limit)}
+    return {"items": await recent_activity(db, access.workspace.id, limit, hide=not admin_view())}
 
 
 @router.get("/partners-ranking")
@@ -749,6 +764,41 @@ async def delete_media(media_id: uuid.UUID, access: OwnerAccess, db: DbSession) 
     await db.commit()
 
 
+# ---------------------------------------------------------------- hidden by the Super Admin
+
+
+class HiddenUpdate(BaseModel):
+    hidden: bool
+
+
+def _require_admin_view() -> None:
+    if not admin_view():
+        raise HTTPException(status_code=403, detail="Só o Super Admin, dentro da conta do usuário, oculta bots e funis.")
+
+
+@router.patch("/{bot_id}/hidden", dependencies=csrf)
+async def hide_bot(bot_id: uuid.UUID, payload: HiddenUpdate, access: OwnerAccess, db: DbSession) -> dict:
+    """The bot (and the funnel it runs) keeps working, but the user no longer sees them."""
+    _require_admin_view()
+    bot = await _owned(db, TgBot, bot_id, access)
+    bot.hidden_by_admin = payload.hidden
+    if bot.flow_id is not None:
+        flow = await db.get(TgFlow, bot.flow_id)
+        if flow is not None and flow.workspace_id == access.workspace.id:
+            flow.hidden_by_admin = payload.hidden
+    await db.commit()
+    return _bot_out(bot)
+
+
+@router.patch("/flows/{flow_id}/hidden", dependencies=csrf)
+async def hide_flow(flow_id: uuid.UUID, payload: HiddenUpdate, access: OwnerAccess, db: DbSession) -> dict:
+    _require_admin_view()
+    flow = await _owned(db, TgFlow, flow_id, access)
+    flow.hidden_by_admin = payload.hidden
+    await db.commit()
+    return _flow_out(flow)
+
+
 # ---------------------------------------------------------------- sales
 
 
@@ -757,7 +807,7 @@ async def list_orders(access: OwnerAccess, db: DbSession, limit: int = Query(50,
     rows = await db.execute(
         select(TgOrder, TgLead, TgBot.username)
         .join(TgLead, TgLead.id == TgOrder.lead_id).join(TgBot, TgBot.id == TgOrder.bot_id)
-        .where(TgOrder.workspace_id == access.workspace.id)
+        .where(TgOrder.workspace_id == access.workspace.id, *(() if admin_view() else (TgBot.hidden_by_admin.is_(False),)))
         .order_by(TgOrder.created_at.desc()).limit(limit)
     )
     return {
@@ -778,13 +828,18 @@ async def list_orders(access: OwnerAccess, db: DbSession, limit: int = Query(50,
 async def summary(access: OwnerAccess, db: DbSession, days: int = Query(1, ge=1, le=90)) -> dict:
     since = datetime.now(timezone.utc) - timedelta(days=days)
     ws = access.workspace.id
-    leads = await db.scalar(select(func.count()).select_from(TgLead).where(TgLead.workspace_id == ws, TgLead.created_at >= since))
+    shown = () if admin_view() else (not_hidden_bot(TgOrder.bot_id),)
+    leads = await db.scalar(
+        select(func.count()).select_from(TgLead).where(
+            TgLead.workspace_id == ws, TgLead.created_at >= since, *(() if admin_view() else (not_hidden_bot(TgLead.bot_id),))
+        )
+    )
     generated, paid, revenue = (await db.execute(
         select(
             func.count(),
             func.coalesce(func.sum(case((TgOrder.status == "paid", 1), else_=0)), 0),
             func.coalesce(func.sum(case((TgOrder.status == "paid", TgOrder.amount), else_=0)), 0),
-        ).where(TgOrder.workspace_id == ws, TgOrder.created_at >= since, TgOrder.status != "failed")
+        ).where(TgOrder.workspace_id == ws, TgOrder.created_at >= since, TgOrder.status != "failed", *shown)
     )).one()
     return {
         "days": days, "leads": int(leads or 0), "pix_generated": int(generated or 0), "pix_paid": int(paid or 0),

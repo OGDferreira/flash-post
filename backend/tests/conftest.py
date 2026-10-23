@@ -185,6 +185,7 @@ async def owner(db_session: AsyncSession):
         platform_role="USER",
         is_active=True,
         is_verified=True,
+        can_invite_partners=True,  # the chief in partnership tests (by default only the Super Admin invites)
     )
     db_session.add(user)
     await db_session.flush()

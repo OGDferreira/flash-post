@@ -18,6 +18,7 @@ type GatewayState = {
   snakepay_recipient_id: string | null;
   snakepay_account_key_set: boolean;
   snakepay_account_secret_set: boolean;
+  snakepay_cashout_secret_set?: boolean;
   snakepay_webhook_url: string;
   is_admin: boolean;
   needs_recipient: boolean;
@@ -377,6 +378,7 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
   const [recipient, setRecipient] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [secret, setSecret] = useState("");
+  const [cashoutSecret, setCashoutSecret] = useState("");
   useEffect(() => {
     if (!gateway) return;
     setRecipient(data.snakepay_recipient_id ?? "");
@@ -393,12 +395,13 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
     onSuccess: (next) => queryClient.setQueryData(KEY, next),
   });
   const saveAccount = useMutation({
-    mutationFn: (body: { api_key?: string; webhook_secret?: string; clear?: boolean }) =>
+    mutationFn: (body: { api_key?: string; webhook_secret?: string; cashout_secret?: string; clear?: boolean }) =>
       apiRequest<GatewayState>("/api/payment-gateways/snakepay/credentials", { method: "PUT", body }),
     onSuccess: (next) => {
       queryClient.setQueryData(KEY, next);
       setApiKey("");
       setSecret("");
+      setCashoutSecret("");
     },
   });
   const info = data.gateways.find((g) => g.id === gateway);
@@ -423,7 +426,7 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
         ) : (
           <>
             <p className="rounded-xl border border-line-soft px-3 py-2 text-[11px] leading-5 text-muted">
-              Vale só para os seus funis próprios. Funis compartilhados com você usam os ShopIDs que o dono definiu no compartilhamento.
+              Com a conta SnakePay própria (abaixo), as vendas — inclusive dos funis compartilhados com você — são cobradas na sua conta e só a comissão do dono sai por split. Sem ela, os funis compartilhados usam os ShopIDs que o dono definiu.
             </p>
             <div>
               <label className="block text-sm font-medium text-fg" htmlFor="snakepay-recipient">Seu ShopID SnakePay</label>
@@ -484,11 +487,29 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
                       value={secret}
                     />
                   </label>
+                  <label className="text-xs font-medium text-fg-2 sm:col-span-2" htmlFor="snakepay-cashout-secret">
+                    Segredo de saque (Cash Out) — para sacar a SnakePay pela Carteira
+                    <input
+                      autoComplete="new-password"
+                      className="field mt-1 font-mono text-xs"
+                      id="snakepay-cashout-secret"
+                      onChange={(event) => setCashoutSecret(event.target.value)}
+                      placeholder={data.snakepay_cashout_secret_set ? "Já configurado · deixe vazio para manter" : "Segredo de Cash Out da sua conta SnakePay"}
+                      type="password"
+                      value={cashoutSecret}
+                    />
+                  </label>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Button
-                    disabled={busy || (!apiKey.trim() && !secret.trim())}
-                    onClick={() => saveAccount.mutate({ api_key: apiKey.trim() || undefined, webhook_secret: secret.trim() || undefined })}
+                    disabled={busy || (!apiKey.trim() && !secret.trim() && !cashoutSecret.trim())}
+                    onClick={() =>
+                      saveAccount.mutate({
+                        api_key: apiKey.trim() || undefined,
+                        webhook_secret: secret.trim() || undefined,
+                        cashout_secret: cashoutSecret.trim() || undefined,
+                      })
+                    }
                     size="sm"
                     variant="primary"
                   >
@@ -500,7 +521,9 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
                     </Button>
                   )}
                   {data.snakepay_account_key_set && data.snakepay_account_secret_set && (
-                    <span className="text-xs text-success">Conta pronta para cobrar diretamente.</span>
+                    <span className="text-xs text-success">
+                      Conta pronta para cobrar diretamente{data.snakepay_cashout_secret_set ? " e sacar pela Carteira" : ""}.
+                    </span>
                   )}
                 </div>
                 <div className="mt-3">

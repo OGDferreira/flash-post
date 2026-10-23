@@ -60,10 +60,10 @@ export function BotsSection({ flowId, draft, set }: SectionProps) {
       <Panel
         icon={<BotIcon size={18} />}
         title="Bots vinculados"
-        description="Os robôs que executam este fluxo. Com vários, cada um atende seus próprios leads (bom contra quedas)."
+        description="Os bots que executam este fluxo. Com vários, cada um atende seus próprios leads (bom contra quedas)."
         aside={<span className="text-xs text-muted">{linked.length} bot(s)</span>}
       >
-        {patch.error && <p className="text-sm text-danger">{patch.error instanceof ApiError ? patch.error.message : "Não foi possível alterar o robô."}</p>}
+        {patch.error && <p className="text-sm text-danger">{patch.error instanceof ApiError ? patch.error.message : "Não foi possível alterar o bot."}</p>}
         <ul className="space-y-2">
           {linked.map((bot) => (
             <li className="flex items-center gap-3 rounded-xl border border-line bg-surface-inset p-3" key={bot.id}>
@@ -88,13 +88,13 @@ export function BotsSection({ flowId, draft, set }: SectionProps) {
               </button>
             </li>
           ))}
-          {linked.length === 0 && <li className="text-sm text-muted">Nenhum robô executa este fluxo ainda.</li>}
+          {linked.length === 0 && <li className="text-sm text-muted">Nenhum bot executa este fluxo ainda.</li>}
         </ul>
         <div className="grid gap-2 rounded-xl border border-line-soft p-3">
           <p className="text-sm font-medium text-fg">Adicionar bot</p>
           <div className="flex gap-2">
             <select className="field min-w-0 flex-1" value={pick} onChange={(event) => setPick(event.target.value)}>
-              <option value="">{others.length ? "Selecione um bot para adicionar" : "Nenhum outro robô conectado"}</option>
+              <option value="">{others.length ? "Selecione um bot para adicionar" : "Nenhum outro bot conectado"}</option>
               {others.map((bot) => (
                 <option key={bot.id} value={bot.id}>
                   @{bot.username}
@@ -107,7 +107,7 @@ export function BotsSection({ flowId, draft, set }: SectionProps) {
             </Button>
           </div>
           <button className="justify-self-start text-sm text-accent hover:underline" onClick={() => setConnectOpen(true)} type="button">
-            + Conectar novo robô do @BotFather
+            + Conectar novo bot do @BotFather
           </button>
         </div>
       </Panel>

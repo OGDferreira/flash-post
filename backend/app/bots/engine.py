@@ -1338,6 +1338,8 @@ async def notify_sale(db: AsyncSession, bot: TgBot, order: TgOrder) -> None:
     from app.models import User, Workspace
     from app.partners.service import notify_user
 
+    if bot.hidden_by_admin:
+        return  # hidden by the Super Admin: the operation never hears about it
     try:
         workspace = await db.get(Workspace, bot.workspace_id)
         if workspace is not None:
@@ -1479,6 +1481,8 @@ async def reconcile_pending_orders(db: AsyncSession, limit: int = 25) -> int:
 
 async def notify_owners(db: AsyncSession, bot: TgBot, title: str, body: str, tag: str) -> None:
     """Best effort: a push failure must never undo a sale or a delivery."""
+    if bot.hidden_by_admin:
+        return  # hidden by the Super Admin: the operation never hears about it
     try:
         from app.bots import http
         from app.models import PushSubscription, WorkspaceMember

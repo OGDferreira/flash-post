@@ -9,6 +9,7 @@ import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 import type { MetricsPeriod } from "@/features/analytics/period";
 import { useBotStats } from "./ConversionOverview";
+import { AdminHideToggle } from "./AdminHideToggle";
 import { FlowEditor } from "./FlowEditor";
 import { ImportFlowModal, downloadFlow } from "./FlowPortability";
 import { brl, type Flow } from "./types";
@@ -68,7 +69,7 @@ export function FlowsPanel({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">O fluxo define tudo que o robô envia: boas-vindas, oferta, planos, Pix e entrega.</p>
+        <p className="text-sm text-muted">O fluxo define tudo que o bot envia: boas-vindas, oferta, planos, Pix e entrega.</p>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setImportOpen(true)}>
             <Upload size={16} /> Importar funil
@@ -87,7 +88,7 @@ export function FlowsPanel({
       )}
       {error && <ErrorState message={error instanceof ApiError ? error.message : "A ação não pôde ser concluída."} />}
       {flows.data.flows.length === 0 ? (
-        <EmptyState icon={<GitBranch size={18} />} message="Crie seu primeiro fluxo e depois ligue-o a um robô." />
+        <EmptyState icon={<GitBranch size={18} />} message="Crie seu primeiro fluxo e depois ligue-o a um bot." />
       ) : (
         <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
           {flows.data.flows.map((flow) => (
@@ -100,13 +101,14 @@ export function FlowsPanel({
                   <span className="flex flex-wrap justify-end gap-1">
                     {flow.protected ? <Badge tone="warning">Protegido</Badge> : flow.from_template && <Badge tone="warning">Modelo de {chief}</Badge>}
                     {flow.shared && <Badge tone="success">Compartilhado</Badge>}
-                    <Badge tone={flow.bots ? "brand" : "neutral"}>{flow.bots ? `${flow.bots} robô(s)` : "Sem robô"}</Badge>
+                    <Badge tone={flow.bots ? "brand" : "neutral"}>{flow.bots ? `${flow.bots} bot(s)` : "Sem bot"}</Badge>
                   </span>
                 </div>
                 <p className="truncate font-semibold text-fg">{flow.name}</p>
+                <AdminHideToggle hidden={flow.hidden_by_admin} id={flow.id} kind="flow" />
                 {flow.protected || !flow.definition ? (
                   <p className="flex items-center gap-1.5 text-xs text-warning">
-                    <Lock size={13} /> Funil de {chief} protegido: roda no seu robô, mas não pode ser aberto, copiado ou exportado.
+                    <Lock size={13} /> Funil de {chief} protegido: roda no seu bot, mas não pode ser aberto, copiado ou exportado.
                   </p>
                 ) : (
                   <p className="text-xs text-muted">
@@ -170,7 +172,7 @@ export function FlowsPanel({
                 <button
                   className="btn-ghost !min-h-9 !px-2.5 text-xs text-danger"
                   onClick={async () => {
-                    const warning = flow.bots ? " Os robôs ligados a ele param de responder até você escolher outro fluxo." : "";
+                    const warning = flow.bots ? " Os bots ligados a ele param de responder até você escolher outro fluxo." : "";
                     if (await confirmAction(`Excluir o fluxo “${flow.name}”? As campanhas de remarketing dele também são excluídas.${warning}`)) remove.mutate(flow.id);
                   }}
                   type="button"

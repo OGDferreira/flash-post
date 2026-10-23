@@ -35,6 +35,8 @@ class SnakepaySwitch(BaseModel):
 class SnakepayCredentials(BaseModel):
     api_key: str | None = Field(default=None, max_length=512)
     webhook_secret: str | None = Field(default=None, max_length=512)
+    # Signs the account's withdrawals (Cash Out); optional, saved on its own too.
+    cashout_secret: str | None = Field(default=None, max_length=512)
     clear: bool = False
 
 
@@ -85,6 +87,9 @@ async def _state(db, user, workspace) -> dict:
         "snakepay_recipient_id": workspace.snakepay_recipient_id,
         "snakepay_account_key_set": bool(workspace.snakepay_api_key_encrypted),
         "snakepay_account_secret_set": bool(workspace.snakepay_webhook_secret_encrypted),
+        "snakepay_cashout_secret_set": bool(workspace.snakepay_cashout_secret_encrypted),
+        # The platform's own withdrawals use the server settings.
+        "snakepay_platform_cashout_configured": admin and bool(get_settings().snakepay_cashout_secret),
         "snakepay_webhook_url": f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/snakepay",
         "is_admin": admin,
         "flows": [
@@ -342,15 +347,17 @@ async def save_snakepay_credentials(
         raise HTTPException(status_code=403, detail="Use a configuração de servidor da SnakePay.")
     workspace = access.workspace
     if payload.clear:
-        if payload.api_key or payload.webhook_secret:
+        if payload.api_key or payload.webhook_secret or payload.cashout_secret:
             raise HTTPException(status_code=422, detail="Não envie credenciais junto com a solicitação para remover.")
         workspace.snakepay_api_key_encrypted = None
         workspace.snakepay_webhook_secret_encrypted = None
+        workspace.snakepay_cashout_secret_encrypted = None
     else:
         api_key = payload.api_key.strip() if payload.api_key and payload.api_key.strip() else None
         webhook_secret = payload.webhook_secret.strip() if payload.webhook_secret and payload.webhook_secret.strip() else None
-        if api_key is None and webhook_secret is None:
-            raise HTTPException(status_code=422, detail="Informe a chave API e/ou o segredo de webhook.")
+        cashout_secret = payload.cashout_secret.strip() if payload.cashout_secret and payload.cashout_secret.strip() else None
+        if api_key is None and webhook_secret is None and cashout_secret is None:
+            raise HTTPException(status_code=422, detail="Informe a chave API, o segredo de webhook ou o segredo de saque.")
         if not (workspace.snakepay_api_key_encrypted or api_key) or not (
             workspace.snakepay_webhook_secret_encrypted or webhook_secret
         ):
@@ -360,6 +367,8 @@ async def save_snakepay_credentials(
                 workspace.snakepay_api_key_encrypted = encrypt_value(api_key)
             if webhook_secret:
                 workspace.snakepay_webhook_secret_encrypted = encrypt_value(webhook_secret)
+            if cashout_secret:
+                workspace.snakepay_cashout_secret_encrypted = encrypt_value(cashout_secret)
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail="A criptografia de credenciais não está configurada.") from exc
     audit(

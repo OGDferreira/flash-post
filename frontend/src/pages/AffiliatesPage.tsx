@@ -165,7 +165,7 @@ function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) 
             </button>
           </div>
           {invite.isLoading && <div aria-busy="true" className="skeleton h-12" />}
-          {invite.error && <ErrorState message="Não foi possível carregar o código." onRetry={() => void invite.refetch()} />}
+          {invite.error && <ErrorState message={errorText(invite.error)} onRetry={() => void invite.refetch()} />}
           {invite.data && (
             <div className="grid gap-3 md:grid-cols-2">
               <CopyField label="Código" value={invite.data.code} />
@@ -380,7 +380,7 @@ function PartnerOperations({ id, period }: { id: string; period: MetricsPeriod }
     <div className="space-y-4">
       <h4 className="text-sm font-semibold text-fg">Operação do sócio (Falcon Bot)</h4>
       {data.totals && <TotalsGrid commissionLabel="Sua comissão" netLabel="Líquido do sócio" totals={data.totals} />}
-      {list("Robôs", data.bots.map((b) => ({
+      {list("Bots", data.bots.map((b) => ({
         key: b.id, left: `${b.name} · @${b.username}`,
         right: `${b.is_active ? b.status : "pausado"} · ${b.flow_name ?? "sem funil"} · ${b.leads} leads · ${b.sales} vendas · ${brl(b.revenue)}`,
       })))}
@@ -429,7 +429,7 @@ export function AffiliatesPage() {
             <Handshake className="text-accent" size={26} /> Sócios
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Acompanhe contas, robôs, funis, vendas e a comissão recebida de cada sócio. Clique no nome para ver a operação dele e em “Compartilhados” para ver ou adicionar funis e loops.
+            Acompanhe contas, bots, funis, vendas e a comissão recebida de cada sócio. Clique no nome para ver a operação dele e em “Compartilhados” para ver ou adicionar funis e loops.
           </p>
         </div>
         <PeriodFilter onChange={setPeriod} value={period} />

@@ -127,6 +127,7 @@ const postGroups: NavGroup[] = [
       { label: "Webhooks", to: "/feature/integrations", icon: Blocks },
       { label: "Extensões", to: "/feature/extensions", icon: Puzzle },
       { label: "Notificações", to: "/feature/notifications", icon: Bell },
+      { label: "Avisos", to: "/avisos", icon: Bell },
       { label: "Configurações", to: "/configuracoes", icon: Settings },
     ],
   },
@@ -149,6 +150,7 @@ const partnerPostRoutes = new Set([
   "/feature/loops",
   "/feature/ranking",
   "/configuracoes",
+  "/avisos",
   "/feature/support",
   "/feature/contacts",
 ]);
@@ -165,6 +167,7 @@ const collaboratorRoutes = new Set([
   "/feature/support",
   "/feature/contacts",
   "/configuracoes",
+  "/avisos",
 ]);
 
 // ------------------------------------------------------------------ Falcon Bot
@@ -173,7 +176,7 @@ const collaboratorRoutes = new Set([
 const botDirect: NavItem[] = [
   { label: "Painel", to: "/bot", icon: LayoutDashboard },
   { label: "Funis", to: "/bot/funis", icon: GitBranch },
-  { label: "Robôs", to: "/bot/robos", icon: Bot },
+  { label: "Bots", to: "/bot/robos", icon: Bot },
   { label: "Vendas", to: "/bot/vendas", icon: Receipt },
   { label: "Carteira", to: "/carteira", icon: Wallet },
 ];
@@ -199,10 +202,10 @@ const botGroups: NavGroup[] = [
   },
   {
     id: "bot-operacao",
-    title: "Robôs e leads",
+    title: "Bots e leads",
     icon: Bot,
     items: [
-      { label: "Meus robôs", to: "/bot/robos", icon: Bot },
+      { label: "Meus bots", to: "/bot/robos", icon: Bot },
       { label: "Remarketing", to: "/bot/remarketing", icon: Megaphone },
     ],
   },
@@ -233,6 +236,7 @@ const botGroups: NavGroup[] = [
     icon: Settings,
     items: [
       { label: "Notificações", to: "/feature/notifications", icon: Send },
+      { label: "Avisos", to: "/avisos", icon: Bell },
       { label: "Configurações", to: "/configuracoes", icon: Settings },
     ],
   },

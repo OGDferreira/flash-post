@@ -39,7 +39,7 @@ export function DeliveryEditor({
       <div className="grid gap-3">
         <TypeTabs types={shownTypes} value={value.type} onPick={(type) => set({ type })} />
         <p className="rounded-xl border border-line-soft bg-surface-inset p-3 text-sm leading-6 text-muted">
-          Depois do pagamento o robô não entrega conteúdo: ele começa direto a <b className="text-fg">sequência de upsell</b> configurada na seção Upsell.
+          Depois do pagamento o bot não entrega conteúdo: ele começa direto a <b className="text-fg">sequência de upsell</b> configurada na seção Upsell.
         </p>
       </div>
     );
@@ -57,7 +57,7 @@ export function DeliveryEditor({
         <>
           <Field
             label="Grupo ou canal"
-            hint="Aparecem os grupos onde um robô seu é administrador com permissão de convidar. O comprador recebe um convite de uso único e sai sozinho quando o plano vence."
+            hint="Aparecem os grupos onde um bot seu é administrador com permissão de convidar. O comprador recebe um convite de uso único e sai sozinho quando o plano vence."
           >
             <select
               className="field"

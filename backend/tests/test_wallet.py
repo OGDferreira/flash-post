@@ -287,3 +287,34 @@ async def test_wallet_splits_month_revenue_between_sharkbot_and_flashbot(client,
     wallet = (await client.get("/api/wallet")).json()
     assert wallet["month_shark_revenue"] == 50.0 and wallet["month_flash_revenue"] == 19.9
     assert wallet["month_revenue"] == 69.9
+    # the header pill shows Falcon Bot's revenue only
+    summary = (await client.get("/api/wallet/summary")).json()
+    assert summary["month_revenue"] == 19.9
+    # only the Super Admin sees what the per-sale Falcon Bot fee brought in
+    assert "falcon_fees_month" not in wallet
+    order = await db_session.scalar(select(TgOrder))
+    order.transaction_fee = Decimal("0.40")
+    chief.platform_role = "SUPER_ADMIN"
+    await db_session.commit()
+    wallet = (await client.get("/api/wallet")).json()
+    assert wallet["falcon_fees_month"] == 0.4 and wallet["falcon_fees_month_count"] == 1
+    assert wallet["falcon_fees_today"] == 0.4 and wallet["falcon_fees_today_count"] == 1
+    # goals and awards count Falcon Bot sales only
+    assert wallet["goal"]["percent"] == (await client.get("/api/wallet/goals")).json()["percent"]
+    assert (await client.get("/api/wallet/goals")).json()["month_revenue"] == 19.9
+
+
+@pytest.mark.anyio
+async def test_commissions_count_as_the_chiefs_falcon_bot_revenue(client, db_session, owner, smoke) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws = await _make_owner(db_session, "socio")
+    await _paid(db_session, partner_ws, chief.id, partner_net="13.23", commission="5.67")  # the partner's sale
+    await _paid(db_session, chief_ws)  # the chief's own sale: 19.90
+    await _as(client, "owner@example.com", "correct horse battery staple")
+    wallet = (await client.get("/api/wallet")).json()
+    assert wallet["month_commissions"] == 5.67
+    assert wallet["month_flash_revenue"] == 25.57  # 19.90 own + 5.67 commission
+    assert (await client.get("/api/wallet/summary")).json()["month_revenue"] == 25.57
+    # the partner's revenue is their sale
+    await _as(client, "socio@example.com")
+    assert (await client.get("/api/wallet")).json()["month_flash_revenue"] == 19.9

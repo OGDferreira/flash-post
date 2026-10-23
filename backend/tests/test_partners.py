@@ -15,6 +15,7 @@ from app.models import (
     InstagramLoopMedia,
     InstagramMedia,
     TgFlow,
+    TgLead,
     TgMedia,
     TgOrder,
     User,
@@ -272,7 +273,12 @@ async def test_own_funnel_pays_only_the_platform_fee(client, db_session, owner, 
 async def test_partner_invite_waits_for_approval_without_partnership(client, db_session, owner) -> None:
     partner, _ws, _link = await _partner(db_session, owner, accepted=True)
     await _as(client, "socio@example.com")
-    code = (await client.get("/api/affiliates/invite")).json()["code"]
+    # a partner can't invite partners (only the Super Admin, or who they allow)
+    assert (await client.get("/api/affiliates/invite")).status_code == 403
+    from app.affiliates.router import ensure_invite_code
+
+    code = await ensure_invite_code(db_session, partner)  # a code made before the rule
+    await db_session.commit()
     await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
     created = await client.post("/api/auth/register", headers={"X-CSRF-Token": await _csrf(client)}, json={
         "full_name": "Indicado", "email": "novo@example.com", "nickname": "novo",
@@ -491,7 +497,7 @@ async def test_chief_shares_from_the_partner_row(client, db_session, owner) -> N
                               json={"kind": "loop", "id": str(loop.id), "shared": True})).status_code == 404
 
 @pytest.mark.anyio
-async def test_partners_ranking_shows_positions_but_never_revenue(client, db_session, owner) -> None:
+async def test_partners_ranking_shows_positions_and_each_ones_revenue(client, db_session, owner) -> None:
     from tests.test_wallet import _paid
 
     chief, chief_ws = owner
@@ -509,7 +515,7 @@ async def test_partners_ranking_shows_positions_but_never_revenue(client, db_ses
     members = response.json()["members"]
     assert [(m["nickname"], m["position"], m["is_me"]) for m in members][:2] == [("socio", 1, True), (chief.nickname, 2, False)]
     assert members[2]["nickname"] == "outro" and members[2]["has_sales"] is False
-    assert "19.9" not in response.text and "39.8" not in response.text and "revenue" not in response.text
+    assert [m["revenue"] for m in members] == [39.8, 19.9, 0.0]
 
     # someone outside the partnership only sees themselves
     await _make_owner(db_session, "solo")
@@ -657,7 +663,12 @@ async def test_super_admin_sets_a_users_fee_and_sees_todays_fees(client, db_sess
 
 
 @pytest.mark.anyio
-async def test_partner_customizes_their_shared_loop_without_touching_the_chiefs(foreign_keys, client, db_session, owner, storage) -> None:
+async def test_partner_only_picks_accounts_and_folders_of_a_shared_loop(foreign_keys, client, db_session, owner, storage) -> None:
+    from datetime import timedelta
+
+    from app.core.crypto import encrypt_value
+    from app.models import InstagramAccount, InstagramLoopAccount, InstagramProfileFolder
+
     chief, chief_ws = owner
     partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
     loop = await _chief_loop(db_session, chief_ws, videos=("1.mp4", "2.mp4"))
@@ -668,42 +679,152 @@ async def test_partner_customizes_their_shared_loop_without_touching_the_chiefs(
     await client.get("/api/partners/shared")
     copy_id = (await client.get("/api/loops")).json()["loops"][0]["id"]
 
-    # "Personalizar só o meu": the copy becomes editable
-    customized = await client.post(f"/api/loops/{copy_id}/customize", headers=headers)
-    assert customized.status_code == 200, customized.text
-    assert customized.json()["linked"] is False and customized.json()["customized"] is True
-    media_ids = [m["id"] for m in customized.json().get("media", [])] or [
-        str(m) for m in await db_session.scalars(select(InstagramLoopMedia.media_id).where(InstagramLoopMedia.loop_id == uuid.UUID(copy_id)))
-    ]
-    from app.models import InstagramProfileFolder
+    # the partner can neither customize nor edit the shared loop
+    assert (await client.post(f"/api/loops/{copy_id}/customize", headers=headers)).status_code == 403
+    edit = {"name": "Meu loop", "interval_min_minutes": 90, "interval_max_minutes": 120, "post_type": "reels", "account_ids": [],
+            "auto_folder_ids": []}
+    assert (await client.put(f"/api/loops/{copy_id}", headers=headers, json=edit)).status_code in (409, 422)
 
+    # but picks a folder: its connected accounts post the loop
     folder = InstagramProfileFolder(workspace_id=partner_ws.id, name="Minhas contas", color="#123456")
     db_session.add(folder)
+    await db_session.flush()
+    account = InstagramAccount(
+        workspace_id=partner_ws.id, connected_by_user_id=partner.id, first_connected_at=utc_now(),
+        instagram_user_id="partner-ig-1", username="conta_do_socio", encrypted_access_token=encrypt_value("t"),
+        token_expires_at=utc_now() + timedelta(days=30), status="connected", profile_folder_id=folder.id,
+    )
+    db_session.add(account)
     await db_session.commit()
-    edit = {"name": "Meu loop", "interval_min_minutes": 90, "interval_max_minutes": 120, "daily_limit_per_account": 3,
-            "post_type": "reels", "media_ids": media_ids, "account_ids": [], "auto_folder_ids": [str(folder.id)]}
-    put = await client.put(f"/api/loops/{copy_id}", headers=headers, json=edit)
-    assert put.status_code == 200, put.text
+    saved = await client.put(f"/api/loops/{copy_id}/accounts", headers=headers, json={"account_ids": [], "auto_folder_ids": [str(folder.id)]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["auto_folder_ids"] == [str(folder.id)] and saved.json()["linked"] is True
+    members = set(await db_session.scalars(select(InstagramLoopAccount.account_id).where(InstagramLoopAccount.loop_id == uuid.UUID(copy_id))))
+    assert members == {account.id}
 
-    # the chief's loop is untouched, and syncing neither overwrites the copy nor makes a new one
+    # the chief's loop is untouched and the copy keeps following it
     await db_session.refresh(loop)
     assert (loop.interval_min_minutes, loop.interval_max_minutes) == chief_interval
     await service.sync_all_shared_loops(db_session)
-    copies = list(await db_session.scalars(select(InstagramLoop).where(InstagramLoop.workspace_id == partner_ws.id)))
-    assert len(copies) == 1 and (copies[0].interval_min_minutes, copies[0].interval_max_minutes) == (90, 120)
+    copy = await db_session.get(InstagramLoop, uuid.UUID(copy_id), populate_existing=True)
+    assert copy.linked and (copy.interval_min_minutes, copy.interval_max_minutes) == chief_interval
+    assert copy.auto_folder_ids == [str(folder.id)]
 
-    # following the chief again brings the chief's schedule back
-    back = await client.post(f"/api/loops/{copy_id}/follow-owner", headers=headers)
-    assert back.status_code == 200 and back.json()["linked"] is True and back.json()["customized"] is False
-    assert (back.json()["interval_min_minutes"], back.json()["interval_max_minutes"]) == chief_interval
-
-    # a customized copy still posts the chief's media: it stops when the sharing ends
-    await client.post(f"/api/loops/{copy_id}/customize", headers=headers)
-    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
-    await client.post(f"/api/partners/loops/{loop.id}/share", headers=headers, json={"shared": False})
+    # a copy customized before this change follows the chief again
+    copy.linked, copy.customized_at, copy.interval_max_minutes = False, utc_now(), 1440
+    await db_session.commit()
     await service.sync_all_shared_loops(db_session)
     copy = await db_session.get(InstagramLoop, uuid.UUID(copy_id), populate_existing=True)
-    assert copy.status == "paused"
-    headers = await _as(client, "socio@example.com")
-    assert (await client.patch(f"/api/loops/{copy_id}/status", headers=headers, json={"enabled": True})).status_code == 409
-    assert (await client.post(f"/api/loops/{copy_id}/follow-owner", headers=headers)).status_code == 409
+    assert copy.linked and copy.customized_at is None and copy.interval_max_minutes == chief_interval[1]
+
+    # without accounts nor folders the request is refused
+    assert (await client.put(f"/api/loops/{copy_id}/accounts", headers=headers, json={"account_ids": []})).status_code == 422
+
+
+@pytest.mark.anyio
+async def test_chief_customizes_one_partners_copy_without_touching_the_main_loop(foreign_keys, client, db_session, owner, storage) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
+    loop = await _chief_loop(db_session, chief_ws, videos=("1.mp4",))
+    main = (loop.interval_min_minutes, loop.interval_max_minutes, loop.daily_limit_per_account)
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    await client.post(f"/api/partners/loops/{loop.id}/share", headers=headers, json={"shared": True, "partner_ids": [str(partner.id)]})
+    await service.sync_all_shared_loops(db_session)
+
+    copies = (await client.get(f"/api/partners/loops/{loop.id}/copies")).json()["copies"]
+    assert len(copies) == 1 and copies[0]["customized"] is False
+    copy_id = copies[0]["id"]
+    url = f"/api/partners/loops/{loop.id}/copies/{copy_id}"
+    bad = {"interval_min_minutes": 50, "interval_max_minutes": 40, "daily_limit_per_account": 3}
+    assert (await client.put(url, headers=headers, json=bad)).status_code == 422
+    saved = await client.put(url, headers=headers, json={
+        "interval_min_minutes": 90, "interval_max_minutes": 120, "daily_limit_per_account": 3, "caption_mode": "all", "caption": " Oi ",
+    })
+    assert saved.status_code == 200, saved.text
+    out = saved.json()
+    assert out["customized"] and (out["interval_min_minutes"], out["interval_max_minutes"], out["daily_limit_per_account"]) == (90, 120, 3)
+    assert out["caption_mode"] == "all" and out["caption"] == "Oi"
+
+    # the main loop is untouched, and the periodic sync keeps the partner's settings
+    await db_session.refresh(loop)
+    assert (loop.interval_min_minutes, loop.interval_max_minutes, loop.daily_limit_per_account) == main
+    loop.daily_limit_per_account = 7  # the chief edits the main loop later
+    await db_session.commit()
+    await service.sync_all_shared_loops(db_session)
+    copy = await db_session.get(InstagramLoop, uuid.UUID(copy_id), populate_existing=True)
+    assert (copy.interval_min_minutes, copy.interval_max_minutes, copy.daily_limit_per_account) == (90, 120, 3)
+    assert copy.linked and copy.caption == "Oi"
+
+    # the partner can't use the chief's tool
+    partner_headers = await _as(client, "socio@example.com")
+    assert (await client.put(url, headers=partner_headers, json=bad | {"interval_max_minutes": 60})).status_code in (403, 404)
+
+    # back to following the main loop
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    reset = await client.delete(f"{url}/customization", headers=headers)
+    assert reset.status_code == 200, reset.text
+    assert reset.json()["customized"] is False
+    assert (reset.json()["interval_min_minutes"], reset.json()["daily_limit_per_account"]) == (main[0], 7)
+
+
+@pytest.mark.anyio
+async def test_super_admin_hides_a_bot_and_its_funnel_from_the_user(client, db_session, owner, super_admin, apis) -> None:
+    chief, chief_ws = owner
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    bot, flow = await _setup(client, headers)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    raw, sig = _signed(_paid_event(order.id))
+    assert (await client.post("/api/bots/pay/smokepay", content=raw, headers=sig)).status_code == 200
+    assert (await client.get("/api/finance/month")).json()["today"]["flashbot_gross"] == "19.90"
+    # the user can't hide anything
+    assert (await client.patch(f"/api/bots/{bot['id']}/hidden", headers=headers, json={"hidden": True})).status_code == 403
+
+    # the Super Admin, inside the account, hides the bot (and its funnel)
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    assert (await client.post(f"/api/admin/users/{chief.id}/impersonate", headers=admin)).status_code == 200
+    hidden = await client.patch(f"/api/bots/{bot['id']}/hidden", headers=admin, json={"hidden": True})
+    assert hidden.status_code == 200, hidden.text
+    assert [b["hidden_by_admin"] for b in (await client.get("/api/bots")).json()["bots"]] == [True]
+    assert [f["hidden_by_admin"] for f in (await client.get("/api/bots/flows/list")).json()["flows"]] == [True]
+    assert (await client.get(f"/api/bots/flows/{flow['id']}")).status_code == 200
+    assert (await client.post("/api/auth/impersonation/stop", headers=admin)).status_code == 200
+
+    # the user sees nothing: no bot, no funnel, no leads, no sales, no revenue
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.get("/api/bots")).json()["bots"] == []
+    assert (await client.get("/api/bots/flows/list")).json()["flows"] == []
+    assert (await client.get(f"/api/bots/flows/{flow['id']}")).status_code == 404
+    assert (await client.patch(f"/api/bots/{bot['id']}", headers=headers, json={"clear_flow": True})).status_code == 404
+    stats = (await client.get("/api/bots/stats?period=today")).json()["totals"]
+    assert stats["leads"] == 0 and stats["sales"] == 0 and stats["pix_generated"] == 0
+    assert (await client.get("/api/bots/orders/list")).json()["orders"] == []
+    assert (await client.get("/api/bots/activity")).json()["items"] == []
+    assert (await client.get("/api/finance/month")).json()["today"]["flashbot_gross"] == "0.00"
+
+    # but the bot keeps running
+    other = _start()
+    other["message"]["from"]["id"] = other["message"]["chat"]["id"] = 777
+    assert (await _send(client, db_session, bot["id"], other)).status_code == 200
+    assert await db_session.scalar(select(func.count(TgLead.id))) == 2
+
+
+@pytest.mark.anyio
+async def test_only_the_super_admin_or_who_they_allow_invites_partners(client, db_session, owner, super_admin) -> None:
+    from tests.test_affiliates import _make_owner
+
+    user, _ws = await _make_owner(db_session, "ana")
+    headers = await _as(client, "ana@example.com")
+    assert (await client.post("/api/affiliates/invite/link", headers=headers, json={"percent": "20"})).status_code == 403
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    allowed = await client.put(f"/api/admin/users/{user.id}/invite-partners", headers=admin, json={"allowed": True})
+    assert allowed.status_code == 200 and allowed.json()["can_invite_partners"] is True
+    headers = await _as(client, "ana@example.com")
+    link = await client.post("/api/affiliates/invite/link", headers=headers, json={"percent": "20"})
+    assert link.status_code == 200, link.text
+    # the Super Admin always can
+    from app.affiliates.router import may_invite_partners
+
+    assert may_invite_partners(super_admin)

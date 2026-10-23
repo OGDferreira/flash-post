@@ -34,6 +34,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.bots.hidden import not_hidden_bot
 from app.partners import service
 
 router = APIRouter(prefix="/api/partners", tags=["Partners"])
@@ -69,7 +70,8 @@ def _pct(value: Decimal) -> str:
 
 async def _sales(db, workspace_id: uuid.UUID, start, end, *, chief_user_id: uuid.UUID | None = None) -> dict:
     """Paid Falcon Bot sales of a workspace with fee, commission and partner net."""
-    where = [TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end]
+    where = [TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end,
+             not_hidden_bot(TgOrder.bot_id)]
     if chief_user_id is not None:
         where.append(TgOrder.split_chief_user_id == chief_user_id)
     row = (
@@ -97,7 +99,8 @@ def _order_out(order: TgOrder) -> dict:
 async def _recent_orders(db, workspace_id: uuid.UUID, start, end, limit: int = 50) -> list[dict]:
     rows = await db.scalars(
         select(TgOrder)
-        .where(TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end)
+        .where(TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end,
+               not_hidden_bot(TgOrder.bot_id))
         .order_by(TgOrder.paid_at.desc())
         .limit(limit)
     )
@@ -344,6 +347,100 @@ async def share_loop(loop_id: uuid.UUID, payload: ShareRequest, access: OwnerAcc
     loop.shared = payload.shared
     await db.commit()
     return {"id": str(loop.id), "shared": loop.shared, "shared_with": _share_out(loop)}
+
+
+class LoopCopyOverrides(BaseModel):
+    """What the chief changes on one partner's copy; the main loop stays as it is."""
+
+    interval_min_minutes: int = Field(ge=1, le=1440)
+    interval_max_minutes: int = Field(ge=1, le=1440)
+    daily_limit_per_account: int = Field(ge=1, le=100)
+    caption_mode: Literal["per_media", "all"] | None = None  # None = follow the main loop's caption
+    caption: str | None = Field(default=None, max_length=2200)
+
+
+def _copy_out(copy: InstagramLoop, partner: User | None, accounts: int) -> dict:
+    return {
+        "id": str(copy.id),
+        "partner_id": str(partner.id) if partner else None,
+        "partner_name": (partner.full_name or partner.nickname or "Sócio") if partner else "Sócio",
+        "customized": bool(copy.owner_overrides),
+        "interval_min_minutes": copy.interval_min_minutes,
+        "interval_max_minutes": copy.interval_max_minutes,
+        "daily_limit_per_account": copy.daily_limit_per_account,
+        "caption_mode": copy.caption_mode,
+        "caption": copy.caption,
+        "accounts_count": accounts,
+        "status": copy.status,
+    }
+
+
+async def _chief_loop(db, access, user: User, loop_id: uuid.UUID) -> InstagramLoop:
+    await _owned_workspace(access, user)
+    loop = await db.scalar(select(InstagramLoop).where(InstagramLoop.id == loop_id, InstagramLoop.workspace_id == access.workspace.id))
+    if loop is None or loop.linked:
+        raise HTTPException(status_code=404, detail="Loop não encontrado.")
+    return loop
+
+
+async def _partner_copies(db, loop: InstagramLoop, copy_id: uuid.UUID | None = None) -> list[dict]:
+    query = (
+        select(InstagramLoop, User)
+        .join(Workspace, Workspace.id == InstagramLoop.workspace_id)
+        .join(User, User.id == Workspace.owner_id)
+        .where(InstagramLoop.template_loop_id == loop.id, InstagramLoop.linked.is_(True))
+        .order_by(User.full_name)
+    )
+    if copy_id is not None:
+        query = query.where(InstagramLoop.id == copy_id)
+    out = []
+    for copy, partner in (await db.execute(query)).all():
+        accounts = await db.scalar(select(func.count()).select_from(InstagramLoopAccount).where(InstagramLoopAccount.loop_id == copy.id)) or 0
+        out.append(_copy_out(copy, partner, int(accounts)))
+    return out
+
+
+@router.get("/loops/{loop_id}/copies")
+async def loop_copies(loop_id: uuid.UUID, access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> dict:
+    """The partners' copies of a shared loop, each with what the chief changed for that partner."""
+    loop = await _chief_loop(db, access, user, loop_id)
+    return {"copies": await _partner_copies(db, loop)}
+
+
+@router.put("/loops/{loop_id}/copies/{copy_id}", dependencies=[Depends(require_csrf)])
+async def customize_loop_copy(
+    loop_id: uuid.UUID, copy_id: uuid.UUID, payload: LoopCopyOverrides, access: OwnerAccess, user: AuthenticatedUser, db: DbSession
+) -> dict:
+    """Change one partner's copy only (schedule, daily limit, caption). The main loop and the
+    other partners don't change; media keep following the main loop."""
+    if payload.interval_max_minutes < payload.interval_min_minutes:
+        raise HTTPException(status_code=422, detail="O intervalo máximo precisa ser maior ou igual ao mínimo.")
+    overrides = payload.model_dump(exclude={"caption_mode", "caption"})
+    if payload.caption_mode is not None:
+        caption = (payload.caption or "").strip() or None
+        if payload.caption_mode == "all" and caption is None:
+            raise HTTPException(status_code=422, detail="Escreva a legenda usada em todos os posts.")
+        overrides.update(caption_mode=payload.caption_mode, caption=caption)
+    return await _set_overrides(db, access, user, loop_id, copy_id, overrides)
+
+
+@router.delete("/loops/{loop_id}/copies/{copy_id}/customization", dependencies=[Depends(require_csrf)])
+async def reset_loop_copy(loop_id: uuid.UUID, copy_id: uuid.UUID, access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> dict:
+    """The partner's copy follows the main loop again."""
+    return await _set_overrides(db, access, user, loop_id, copy_id, None)
+
+
+async def _set_overrides(db, access, user: User, loop_id: uuid.UUID, copy_id: uuid.UUID, overrides: dict | None) -> dict:
+    loop = await _chief_loop(db, access, user, loop_id)
+    copy = await db.scalar(
+        select(InstagramLoop).where(InstagramLoop.id == copy_id, InstagramLoop.template_loop_id == loop.id, InstagramLoop.linked.is_(True))
+    )
+    if copy is None:
+        raise HTTPException(status_code=404, detail="Este sócio não tem cópia deste loop.")
+    copy.owner_overrides = overrides
+    await service.sync_linked_loop(db, loop, copy)
+    await db.commit()
+    return (await _partner_copies(db, loop, copy.id))[0]
 
 
 @router.post("/flows/{flow_id}/share", dependencies=[Depends(require_csrf)])

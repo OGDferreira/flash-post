@@ -44,7 +44,7 @@ const sections: { id: string; title: string; icon: ReactNode; items: Item[] }[] 
       {
         to: "/bot/gateways",
         title: "Gateways de pagamento",
-        text: "SmokePay ou SnakePay para gerar os Pix dos robôs, por fluxo ou para todos.",
+        text: "SmokePay ou SnakePay para gerar os Pix dos bots, por fluxo ou para todos.",
         icon: <CircleDollarSign size={18} />,
         owner: true,
       },

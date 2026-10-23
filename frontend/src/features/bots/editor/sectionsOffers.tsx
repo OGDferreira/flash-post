@@ -564,7 +564,7 @@ export function PreviewsSection({ draft, set }: SectionProps) {
         <div className="grid gap-4">
           <MediaGrid max={10} title="Mídias das prévias" value={previews.media_ids} onChange={(media_ids) => setPreviews({ media_ids })} />
           {previews.media_ids.length === 0 && <p className="text-xs text-warning">Adicione pelo menos uma mídia para o botão aparecer.</p>}
-          <Field label="Apagar depois de" hint="O Telegram só deixa o robô apagar mensagens com até 48 horas.">
+          <Field label="Apagar depois de" hint="O Telegram só deixa o bot apagar mensagens com até 48 horas.">
             <div className="grid gap-2">
               <div className="flex flex-wrap gap-2">
                 {PREVIEW_TIMES.map(([value, label]) => (

@@ -40,6 +40,8 @@ class AdminUser(BaseModel):
     transaction_fee_effective: Decimal = Decimal("0.00")
     chief_name: str | None = None
     invited_by_name: str | None = None
+    withdrawals_blocked: bool = False
+    can_invite_partners: bool = False
 
 
 class AdminUserAccessRequest(BaseModel):

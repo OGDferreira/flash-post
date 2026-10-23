@@ -5,6 +5,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -171,6 +172,8 @@ async def list_users(
             invited_by_name=names.get(user.invited_by_user_id),
             transaction_fee=user.transaction_fee,
             transaction_fee_effective=transaction_fee_for(user),
+            withdrawals_blocked=user.withdrawals_blocked,
+            can_invite_partners=user.can_invite_partners,
         )
         for user, resolved_role, workspace in rows
     ]
@@ -224,7 +227,48 @@ async def _admin_user(db: AsyncSession, user: User) -> AdminUser:
         last_login_at=user.last_login_at,
         transaction_fee=user.transaction_fee,
         transaction_fee_effective=transaction_fee_for(user),
+        withdrawals_blocked=user.withdrawals_blocked,
+        can_invite_partners=user.can_invite_partners,
     )
+
+
+class _Flag(BaseModel):
+    blocked: bool | None = None
+    allowed: bool | None = None
+
+
+@router.put("/users/{user_id}/withdrawals-blocked", response_model=AdminUser, dependencies=[Depends(require_csrf)])
+async def set_withdrawals_blocked(user_id: uuid.UUID, payload: _Flag, admin: SuperAdminUser, db: DbSession) -> AdminUser:
+    """Block (or free) this user's own withdrawals. The Super Admin can still withdraw for them."""
+    user = await _target_user(db, admin, user_id, "bloquear saques do seu")
+    user.withdrawals_blocked = bool(payload.blocked)
+    await db.commit()
+    return await _admin_user(db, user)
+
+
+@router.put("/withdrawals-blocked", dependencies=[Depends(require_csrf)])
+async def set_all_withdrawals_blocked(payload: _Flag, admin: SuperAdminUser, db: DbSession) -> dict:
+    """Block (or free) every user's withdrawals at once."""
+    from app.models import SystemSetting
+    from app.wallet.router import WITHDRAWALS_BLOCKED_KEY
+
+    setting = await db.get(SystemSetting, WITHDRAWALS_BLOCKED_KEY)
+    value = {"blocked": bool(payload.blocked)}
+    if setting is None:
+        db.add(SystemSetting(key=WITHDRAWALS_BLOCKED_KEY, value=value, updated_by_user_id=admin.id))
+    else:
+        setting.value, setting.updated_by_user_id = value, admin.id
+    await db.commit()
+    return value
+
+
+@router.put("/users/{user_id}/invite-partners", response_model=AdminUser, dependencies=[Depends(require_csrf)])
+async def set_invite_partners(user_id: uuid.UUID, payload: _Flag, admin: SuperAdminUser, db: DbSession) -> AdminUser:
+    """Permission: this user may invite partners (by default only the Super Admin does)."""
+    user = await _target_user(db, admin, user_id, "mudar a permissão do seu")
+    user.can_invite_partners = bool(payload.allowed)
+    await db.commit()
+    return await _admin_user(db, user)
 
 
 @router.put(
