@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Check, LogIn, LockOpen, Search, Trash2 } from "lucide-react";
+import { Ban, Check, LockOpen, Search, Trash2 } from "lucide-react";
 
+import { AccessAccountButton } from "@/components/AccessAccountButton";
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest, type AdminUser, type Page } from "@/services/api";
 import { confirmAction } from "@/lib/confirm";
@@ -33,13 +34,7 @@ export function AdminUsersPage() {
       void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
     },
   });
-  const impersonate = useMutation({
-    mutationFn: (userId: string) =>
-      apiRequest<{ message: string }>(`/api/admin/users/${userId}/impersonate`, { method: "POST" }),
-    // Full reload so the app starts fresh as the chosen user.
-    onSuccess: () => window.location.assign("/"),
-  });
-  const actionError = [approveUser.error, setAccess.error, impersonate.error].find(Boolean);
+  const actionError = [approveUser.error, setAccess.error].find(Boolean);
   const deleteUser = useMutation({
     mutationFn: (userId: string) =>
       apiRequest<void>(`/api/admin/users/${userId}`, { method: "DELETE" }),
@@ -192,24 +187,7 @@ export function AdminUsersPage() {
                             </button>
                           )}
                           {user.role !== "SUPER_ADMIN" && user.status === "ACTIVE" && (
-                            <button
-                              aria-label={`Entrar na conta de ${user.full_name}`}
-                              className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-brand px-2.5 text-xs font-medium text-white hover:bg-brand disabled:opacity-50"
-                              disabled={impersonate.isPending}
-                              onClick={async () => {
-                                if (
-                                  await confirmAction(
-                                    `Entrar na conta de ${user.full_name}? Você vai ver e poder alterar tudo como se fosse ele. O acesso fica registrado e você volta pela faixa "Voltar para minha conta".`,
-                                  )
-                                ) {
-                                  impersonate.mutate(user.id);
-                                }
-                              }}
-                              type="button"
-                            >
-                              <LogIn size={13} />
-                              Entrar
-                            </button>
+                            <AccessAccountButton name={user.full_name} userId={user.id} />
                           )}
                           {user.role !== "SUPER_ADMIN" && (
                             user.status === "BLOCKED" ? (

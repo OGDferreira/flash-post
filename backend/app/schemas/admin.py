@@ -67,6 +67,7 @@ class AdminWorkspace(BaseModel):
     id: UUID
     name: str
     slug: str
+    owner_id: UUID | None = None
     owner_name: str
     owner_email: EmailStr
     status: str

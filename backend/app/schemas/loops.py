@@ -118,6 +118,7 @@ class InstagramLoopResponse(BaseModel):
     from_template: bool = False
     # follows a loop the chief shares: media and schedule come from the chief, accounts are the partner's
     linked: bool = False
+    customized: bool = False  # a partner's copy that stopped following the chief's loop
     linked_available: bool = False
     next_run_at: datetime | None
     last_run_at: datetime | None

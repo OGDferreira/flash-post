@@ -654,3 +654,56 @@ async def test_super_admin_sets_a_users_fee_and_sees_todays_fees(client, db_sess
     admin = await _as(client, "superadmin@example.com", "super admin password")
     reset = await client.put(f"/api/admin/users/{chief.id}/transaction-fee", headers=admin, json={"transaction_fee": None})
     assert reset.json()["transaction_fee"] is None and Decimal(str(reset.json()["transaction_fee_effective"])) == Decimal("0.40")
+
+
+@pytest.mark.anyio
+async def test_partner_customizes_their_shared_loop_without_touching_the_chiefs(foreign_keys, client, db_session, owner, storage) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
+    loop = await _chief_loop(db_session, chief_ws, videos=("1.mp4", "2.mp4"))
+    chief_interval = (loop.interval_min_minutes, loop.interval_max_minutes)
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    await client.post(f"/api/partners/loops/{loop.id}/share", headers=headers, json={"shared": True, "partner_ids": [str(partner.id)]})
+    headers = await _as(client, "socio@example.com")
+    await client.get("/api/partners/shared")
+    copy_id = (await client.get("/api/loops")).json()["loops"][0]["id"]
+
+    # "Personalizar só o meu": the copy becomes editable
+    customized = await client.post(f"/api/loops/{copy_id}/customize", headers=headers)
+    assert customized.status_code == 200, customized.text
+    assert customized.json()["linked"] is False and customized.json()["customized"] is True
+    media_ids = [m["id"] for m in customized.json().get("media", [])] or [
+        str(m) for m in await db_session.scalars(select(InstagramLoopMedia.media_id).where(InstagramLoopMedia.loop_id == uuid.UUID(copy_id)))
+    ]
+    from app.models import InstagramProfileFolder
+
+    folder = InstagramProfileFolder(workspace_id=partner_ws.id, name="Minhas contas", color="#123456")
+    db_session.add(folder)
+    await db_session.commit()
+    edit = {"name": "Meu loop", "interval_min_minutes": 90, "interval_max_minutes": 120, "daily_limit_per_account": 3,
+            "post_type": "reels", "media_ids": media_ids, "account_ids": [], "auto_folder_ids": [str(folder.id)]}
+    put = await client.put(f"/api/loops/{copy_id}", headers=headers, json=edit)
+    assert put.status_code == 200, put.text
+
+    # the chief's loop is untouched, and syncing neither overwrites the copy nor makes a new one
+    await db_session.refresh(loop)
+    assert (loop.interval_min_minutes, loop.interval_max_minutes) == chief_interval
+    await service.sync_all_shared_loops(db_session)
+    copies = list(await db_session.scalars(select(InstagramLoop).where(InstagramLoop.workspace_id == partner_ws.id)))
+    assert len(copies) == 1 and (copies[0].interval_min_minutes, copies[0].interval_max_minutes) == (90, 120)
+
+    # following the chief again brings the chief's schedule back
+    back = await client.post(f"/api/loops/{copy_id}/follow-owner", headers=headers)
+    assert back.status_code == 200 and back.json()["linked"] is True and back.json()["customized"] is False
+    assert (back.json()["interval_min_minutes"], back.json()["interval_max_minutes"]) == chief_interval
+
+    # a customized copy still posts the chief's media: it stops when the sharing ends
+    await client.post(f"/api/loops/{copy_id}/customize", headers=headers)
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    await client.post(f"/api/partners/loops/{loop.id}/share", headers=headers, json={"shared": False})
+    await service.sync_all_shared_loops(db_session)
+    copy = await db_session.get(InstagramLoop, uuid.UUID(copy_id), populate_existing=True)
+    assert copy.status == "paused"
+    headers = await _as(client, "socio@example.com")
+    assert (await client.patch(f"/api/loops/{copy_id}/status", headers=headers, json={"enabled": True})).status_code == 409
+    assert (await client.post(f"/api/loops/{copy_id}/follow-owner", headers=headers)).status_code == 409

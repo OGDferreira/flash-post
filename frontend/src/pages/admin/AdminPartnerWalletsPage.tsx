@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AccessAccountButton } from "@/components/AccessAccountButton";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownToLine, Info } from "lucide-react";
 
@@ -90,14 +91,17 @@ export function AdminPartnerWalletsPage() {
                     {item.email} · sócio de {item.chief ?? "—"} · subconta {item.shop_ref}
                   </p>
                 </div>
-                <button
-                  className="btn-primary !min-h-9 text-xs"
-                  disabled={item.withdrawable <= 0}
-                  onClick={() => setPaying(item)}
-                  type="button"
-                >
-                  <ArrowDownToLine size={14} /> Sacar
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <AccessAccountButton name={item.name} userId={item.user_id} />
+                  <button
+                    className="btn-primary !min-h-9 text-xs"
+                    disabled={item.withdrawable <= 0}
+                    onClick={() => setPaying(item)}
+                    type="button"
+                  >
+                    <ArrowDownToLine size={14} /> Sacar
+                  </button>
+                </div>
               </div>
               <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[

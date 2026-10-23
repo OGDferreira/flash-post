@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CopyPlus, Infinity as InfinityIcon, Lock, Pause, Play, Share2, UserPlus } from "lucide-react";
+import { Check, CopyPlus, Infinity as InfinityIcon, Lock, Pause, Play, RotateCcw, Share2, SlidersHorizontal, UserPlus } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import type { InstagramLoop, InstagramLoopAccountsPage } from "@/pages/loops/loopShared";
+import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 import { type PartnerOption, useChiefLabel, useMyPartners, useShareToggle, useSharedTemplates, useUseTemplate } from "./api";
 
@@ -178,7 +179,7 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
   const queryClient = useQueryClient();
   const shared = useSharedTemplates();
   const [editing, setEditing] = useState<InstagramLoop | null>(null);
-  const linked = loops.filter((loop) => loop.linked);
+  const linked = loops.filter((loop) => loop.linked || loop.customized);
   const sharedCount = shared.data?.loops.length ?? 0;
   const availableCount = linked.filter((loop) => loop.linked_available).length;
   // Opening the area creates the partner's copies on the server; refresh the list once they exist.
@@ -189,6 +190,13 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
   const status = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       apiRequest(`/api/loops/${id}/status`, { method: "PATCH", body: { enabled } }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
+  });
+  // "Personalizar só o meu": the partner's copy stops following the chief's loop (the chief's
+  // stays as it is); "Voltar a seguir" undoes it.
+  const follow = useMutation({
+    mutationFn: ({ id, customize }: { id: string; customize: boolean }) =>
+      apiRequest(`/api/loops/${id}/${customize ? "customize" : "follow-owner"}`, { method: "POST" }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["loops"] }),
   });
   if (!shared.data?.available || (linked.length === 0 && sharedCount === 0)) return null;
@@ -205,6 +213,7 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
       </div>
       {!shared.data.accepted && <AcceptFirst />}
       {status.error && <ErrorState message={errorText(status.error)} />}
+      {follow.error && <ErrorState message={errorText(follow.error)} />}
       {linked.length === 0 ? (
         <LoadingState label="Preparando os loops compartilhados" />
       ) : (
@@ -215,6 +224,8 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
                 <p className="min-w-0 truncate text-sm font-medium text-fg">{loop.name}</p>
                 {!loop.linked_available ? (
                   <Badge tone="warning">Parou de ser compartilhado</Badge>
+                ) : loop.customized ? (
+                  <Badge tone="brand">Personalizado por você</Badge>
                 ) : loop.active_accounts_count === 0 ? (
                   <Badge tone="warning">Sem contas</Badge>
                 ) : loop.status === "active" ? (
@@ -245,7 +256,35 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
                     {loop.status === "active" ? <Pause size={14} /> : <Play size={14} />}
                     {loop.status === "active" ? "Pausar" : "Ativar"}
                   </Button>
+                  {loop.customized ? (
+                    <Button
+                      disabled={follow.isPending}
+                      onClick={async () => {
+                        if (await confirmAction(`Voltar a seguir o loop de ${chief}? Horários, limites e mídias voltam a ser os dele; as mudanças que você fez saem. Suas contas continuam.`)) {
+                          follow.mutate({ id: loop.id, customize: false });
+                        }
+                      }}
+                      size="sm"
+                    >
+                      <RotateCcw size={14} /> Voltar a seguir {chief}
+                    </Button>
+                  ) : (
+                    <Button
+                      disabled={follow.isPending}
+                      onClick={async () => {
+                        if (await confirmAction(`Personalizar só o seu loop? Você passa a editar horários, limites, legendas e mídias do SEU loop, e ele para de acompanhar as mudanças de ${chief}. O loop de ${chief} não muda. Dá para voltar a seguir quando quiser.`)) {
+                          follow.mutate({ id: loop.id, customize: true });
+                        }
+                      }}
+                      size="sm"
+                    >
+                      <SlidersHorizontal size={14} /> Personalizar só o meu
+                    </Button>
+                  )}
                 </div>
+              )}
+              {loop.customized && loop.linked_available && (
+                <p className="text-[11px] text-muted">Edite este loop na sua lista de loops, como os seus.</p>
               )}
             </div>
           ))}
