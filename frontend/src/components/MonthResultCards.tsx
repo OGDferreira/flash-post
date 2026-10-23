@@ -26,6 +26,8 @@ export type FinanceMonth = {
     gross_revenue: Money;
     net_revenue: Money;
     sale_count: number;
+    flashbot_gross?: Money;
+    flashbot_sale_count?: number;
     collaborator_earnings: Money;
     expenses_total: Money;
     profit: Money;
@@ -33,6 +35,7 @@ export type FinanceMonth = {
   history_days: number | null;
   history_per_day: {
     gross_revenue: Money;
+    flashbot_gross?: Money;
     net_revenue: Money;
     collaborator_earnings: Money;
     expenses_total: Money;
@@ -127,16 +130,20 @@ export function MonthResultCards({
     <>
       <MetricCard
         color="text-accent"
-        detail={data ? `${data.today.sale_count} venda(s) hoje · Sharkbot e Falcon Bot` : "Somando Sharkbot e Falcon Bot"}
+        detail={data ? `${data.today.flashbot_sale_count ?? 0} venda(s) hoje no Falcon` : "Só as vendas do Falcon"}
         icon={<CircleDollarSign size={16} />}
         loading={loading}
         title="Faturado hoje"
         trend={
           showTrend && data && history ? (
-            <TrendBadge average={Number(history.gross_revenue)} averageLabel={`${money(history.gross_revenue)}/dia`} current={Number(data.today.gross_revenue)} />
+            <TrendBadge
+              average={Number(history.flashbot_gross ?? 0)}
+              averageLabel={`${money(history.flashbot_gross ?? 0)}/dia`}
+              current={Number(data.today.flashbot_gross ?? 0)}
+            />
           ) : undefined
         }
-        value={money(data?.today.gross_revenue)}
+        value={money(data?.today.flashbot_gross ?? 0)}
         valueColor="text-fg"
       />
       {!hideCollaboratorDue && (

@@ -126,7 +126,13 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
     day_start, day_end = _day_bounds(today)
 
     gross, net, sales, without_amount, flashbot_gross = await _revenue_between(db, workspace_id, start, end)
-    day_gross, day_net, day_sales, _, _ = await _revenue_between(db, workspace_id, day_start, day_end)
+    day_gross, day_net, day_sales, _, day_flash = await _revenue_between(db, workspace_id, day_start, day_end)
+    day_flash_sales = await db.scalar(
+        select(func.count(TgOrder.id)).where(
+            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid",
+            TgOrder.paid_at >= day_start, TgOrder.paid_at < day_end,
+        )
+    ) or 0
 
     members = (
         await db.execute(
@@ -166,7 +172,7 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
     history = None
     if history_start is not None:
         history_days = (today - history_start.astimezone(BRAZIL_TIME_ZONE).date()).days + 1
-        all_gross, all_net, _, _, _ = await _revenue_between(db, workspace_id, None, day_end)
+        all_gross, all_net, _, _, all_flash = await _revenue_between(db, workspace_id, None, day_end)
         all_expenses = await _expenses_between(db, workspace_id, None, day_end)
         # Connection pay over the whole history (monthly bonuses are not included here).
         all_earnings = Decimal("0")
@@ -178,6 +184,7 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
         per_day = lambda value: _money(Decimal(value) / history_days)  # noqa: E731
         history = FinanceHistoryPerDay(
             gross_revenue=per_day(all_gross),
+            flashbot_gross=per_day(all_flash),
             net_revenue=per_day(all_net),
             collaborator_earnings=per_day(all_earnings),
             expenses_total=per_day(all_expenses),
@@ -209,6 +216,8 @@ async def get_month_result(access: OwnerAccess, db: DbSession) -> FinanceMonthRe
             gross_revenue=day_gross,
             net_revenue=day_net,
             sale_count=day_sales,
+            flashbot_gross=day_flash,
+            flashbot_sale_count=int(day_flash_sales),
             collaborator_earnings=_money(earnings_today),
             expenses_total=expenses_today,
             profit=_money(day_net - earnings_today - expenses_today),

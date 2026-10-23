@@ -713,3 +713,49 @@ async def test_partner_only_picks_accounts_and_folders_of_a_shared_loop(foreign_
 
     # without accounts nor folders the request is refused
     assert (await client.put(f"/api/loops/{copy_id}/accounts", headers=headers, json={"account_ids": []})).status_code == 422
+
+
+@pytest.mark.anyio
+async def test_chief_customizes_one_partners_copy_without_touching_the_main_loop(foreign_keys, client, db_session, owner, storage) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
+    loop = await _chief_loop(db_session, chief_ws, videos=("1.mp4",))
+    main = (loop.interval_min_minutes, loop.interval_max_minutes, loop.daily_limit_per_account)
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    await client.post(f"/api/partners/loops/{loop.id}/share", headers=headers, json={"shared": True, "partner_ids": [str(partner.id)]})
+    await service.sync_all_shared_loops(db_session)
+
+    copies = (await client.get(f"/api/partners/loops/{loop.id}/copies")).json()["copies"]
+    assert len(copies) == 1 and copies[0]["customized"] is False
+    copy_id = copies[0]["id"]
+    url = f"/api/partners/loops/{loop.id}/copies/{copy_id}"
+    bad = {"interval_min_minutes": 50, "interval_max_minutes": 40, "daily_limit_per_account": 3}
+    assert (await client.put(url, headers=headers, json=bad)).status_code == 422
+    saved = await client.put(url, headers=headers, json={
+        "interval_min_minutes": 90, "interval_max_minutes": 120, "daily_limit_per_account": 3, "caption_mode": "all", "caption": " Oi ",
+    })
+    assert saved.status_code == 200, saved.text
+    out = saved.json()
+    assert out["customized"] and (out["interval_min_minutes"], out["interval_max_minutes"], out["daily_limit_per_account"]) == (90, 120, 3)
+    assert out["caption_mode"] == "all" and out["caption"] == "Oi"
+
+    # the main loop is untouched, and the periodic sync keeps the partner's settings
+    await db_session.refresh(loop)
+    assert (loop.interval_min_minutes, loop.interval_max_minutes, loop.daily_limit_per_account) == main
+    loop.daily_limit_per_account = 7  # the chief edits the main loop later
+    await db_session.commit()
+    await service.sync_all_shared_loops(db_session)
+    copy = await db_session.get(InstagramLoop, uuid.UUID(copy_id), populate_existing=True)
+    assert (copy.interval_min_minutes, copy.interval_max_minutes, copy.daily_limit_per_account) == (90, 120, 3)
+    assert copy.linked and copy.caption == "Oi"
+
+    # the partner can't use the chief's tool
+    partner_headers = await _as(client, "socio@example.com")
+    assert (await client.put(url, headers=partner_headers, json=bad | {"interval_max_minutes": 60})).status_code in (403, 404)
+
+    # back to following the main loop
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    reset = await client.delete(f"{url}/customization", headers=headers)
+    assert reset.status_code == 200, reset.text
+    assert reset.json()["customized"] is False
+    assert (reset.json()["interval_min_minutes"], reset.json()["daily_limit_per_account"]) == (main[0], 7)

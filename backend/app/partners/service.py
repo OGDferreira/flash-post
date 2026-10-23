@@ -556,14 +556,15 @@ async def pause_linked_loop(db: AsyncSession, loop: InstagramLoop) -> None:
 async def sync_linked_loop(db: AsyncSession, source: InstagramLoop, copy: InstagramLoop) -> None:
     """Make the partner's linked copy match the chief's loop: settings and media.
     New media are copied (locked) into the partner's workspace; removed ones leave the playlist."""
+    overrides = copy.owner_overrides or {}  # what the chief changed for this partner only
     copy.name = source.name[:120]
-    interval_changed = (copy.interval_min_minutes, copy.interval_max_minutes) != (
-        source.interval_min_minutes,
-        source.interval_max_minutes,
+    interval = (
+        overrides.get("interval_min_minutes", source.interval_min_minutes),
+        overrides.get("interval_max_minutes", source.interval_max_minutes),
     )
-    copy.interval_min_minutes = source.interval_min_minutes
-    copy.interval_max_minutes = source.interval_max_minutes
-    copy.daily_limit_per_account = source.daily_limit_per_account
+    interval_changed = (copy.interval_min_minutes, copy.interval_max_minutes) != interval
+    copy.interval_min_minutes, copy.interval_max_minutes = interval
+    copy.daily_limit_per_account = overrides.get("daily_limit_per_account", source.daily_limit_per_account)
     copy.post_type = source.post_type
     copy.repeat_media = source.repeat_media
     if interval_changed:
@@ -593,6 +594,9 @@ async def sync_linked_loop(db: AsyncSession, source: InstagramLoop, copy: Instag
         {source.cover_media_id, *(media.cover_media_id for media in wanted.values())}, pairs,
     )
     _copy_post_settings(source, copy, covers)
+    if "caption_mode" in overrides:
+        copy.caption_mode = overrides["caption_mode"]
+        copy.caption = overrides.get("caption")
     for media in have:  # captions and covers the chief edited later follow too
         source_media = wanted.get(media.template_media_id)
         if source_media is not None:

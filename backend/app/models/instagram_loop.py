@@ -104,6 +104,9 @@ class InstagramLoop(Base):
     # Set when the partner customized their copy: it stops following the chief's loop
     # (and the chief's stays untouched); cleared when they follow it again.
     customized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # On a partner's linked copy: settings the chief changed for this partner only
+    # (schedule, daily limit, caption); everything else keeps following the chief's loop.
+    owner_overrides: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

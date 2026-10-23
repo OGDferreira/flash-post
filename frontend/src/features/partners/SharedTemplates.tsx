@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronRight, CopyPlus, Folder, Infinity as InfinityIcon, Lock, Share2 } from "lucide-react";
+import { Check, ChevronRight, CopyPlus, Folder, Infinity as InfinityIcon, Lock, RotateCcw, Share2, SlidersHorizontal } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
@@ -149,6 +149,7 @@ function ShareDialog({ item, kind, loops, onClose }: {
 /** Chief: share a loop with every partner or with specific ones. */
 export function ShareLoopButton({ loop }: { loop: InstagramLoop }) {
   const [open, setOpen] = useState(false);
+  const [copiesOpen, setCopiesOpen] = useState(false);
   const partners = useMyPartners();
   if (loop.from_template || loop.linked) return null;
   const label = shareLabel(loop, partners.data?.partners ?? []);
@@ -167,7 +168,158 @@ export function ShareLoopButton({ loop }: { loop: InstagramLoop }) {
         <Share2 size={15} />
       </button>
       <ShareDialog item={open ? loop : null} kind="loops" onClose={() => setOpen(false)} />
+      {loop.shared && (
+        <>
+          <button
+            aria-label={`Ajustar o loop ${loop.name} de cada sócio`}
+            className="grid size-9 place-items-center rounded-lg border border-line text-fg-2 hover:bg-surface-raised"
+            onClick={() => setCopiesOpen(true)}
+            title="Ajustar o loop de um sócio (sem mudar o seu)"
+            type="button"
+          >
+            <SlidersHorizontal size={15} />
+          </button>
+          <PartnerCopiesDialog loop={copiesOpen ? loop : null} onClose={() => setCopiesOpen(false)} />
+        </>
+      )}
     </>
+  );
+}
+
+type LoopCopy = {
+  id: string;
+  partner_name: string;
+  customized: boolean;
+  interval_min_minutes: number;
+  interval_max_minutes: number;
+  daily_limit_per_account: number;
+  caption_mode: "per_media" | "all";
+  caption: string | null;
+  accounts_count: number;
+  status: string;
+};
+
+/** Chief: each partner's copy of a shared loop. Changing one changes only that partner's
+ *  loop (schedule, daily limit, caption); the main loop and the other partners stay as they are. */
+function PartnerCopiesDialog({ loop, onClose }: { loop: InstagramLoop | null; onClose: () => void }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const copies = useQuery({
+    queryKey: ["partners", "loop-copies", loop?.id],
+    queryFn: () => apiRequest<{ copies: LoopCopy[] }>(`/api/partners/loops/${loop!.id}/copies`),
+    enabled: loop !== null,
+  });
+  if (!loop) return null;
+  const list = copies.data?.copies ?? [];
+  return (
+    <Modal
+      description="Mude o loop de um sócio sem alterar o seu loop principal nem o dos outros sócios. As mídias continuam vindo do seu loop."
+      onClose={() => {
+        setEditing(null);
+        onClose();
+      }}
+      open
+      title={`Loop dos sócios - ${loop.name}`}
+    >
+      {copies.isLoading ? (
+        <LoadingState label="Carregando os loops dos sócios" />
+      ) : copies.error ? (
+        <ErrorState message={errorText(copies.error)} onRetry={() => void copies.refetch()} />
+      ) : list.length === 0 ? (
+        <EmptyState message="Nenhum sócio abriu este loop ainda. Ele aparece aqui assim que o sócio entrar em Loops." />
+      ) : (
+        <div className="space-y-2">
+          {list.map((copy) => (
+            <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={copy.id}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-fg">{copy.partner_name}</p>
+                  <p className="mt-0.5 text-[11px] text-muted">
+                    a cada {copy.interval_min_minutes}–{copy.interval_max_minutes} min · até {copy.daily_limit_per_account}/dia por conta ·{" "}
+                    {copy.accounts_count} conta(s)
+                  </p>
+                </div>
+                {copy.customized ? <Badge tone="brand">Personalizado</Badge> : <Badge>Igual ao seu</Badge>}
+              </div>
+              {editing === copy.id ? (
+                <CopyForm copy={copy} loopId={loop.id} onDone={() => setEditing(null)} />
+              ) : (
+                <Button className="mt-2" onClick={() => setEditing(copy.id)} size="sm">
+                  <SlidersHorizontal size={14} /> Personalizar o loop deste sócio
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function CopyForm({ copy, loopId, onDone }: { copy: LoopCopy; loopId: string; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const [min, setMin] = useState(String(copy.interval_min_minutes));
+  const [max, setMax] = useState(String(copy.interval_max_minutes));
+  const [limit, setLimit] = useState(String(copy.daily_limit_per_account));
+  const [captionAll, setCaptionAll] = useState(copy.customized && copy.caption_mode === "all");
+  const [caption, setCaption] = useState(copy.caption_mode === "all" ? copy.caption ?? "" : "");
+  const url = `/api/partners/loops/${loopId}/copies/${copy.id}`;
+  const done = () => {
+    void queryClient.invalidateQueries({ queryKey: ["partners", "loop-copies", loopId] });
+    onDone();
+  };
+  const save = useMutation({
+    mutationFn: () =>
+      apiRequest(url, {
+        method: "PUT",
+        body: {
+          interval_min_minutes: Number(min),
+          interval_max_minutes: Number(max),
+          daily_limit_per_account: Number(limit),
+          caption_mode: captionAll ? "all" : null,
+          caption: captionAll ? caption : null,
+        },
+      }),
+    onSuccess: done,
+  });
+  const reset = useMutation({ mutationFn: () => apiRequest(`${url}/customization`, { method: "DELETE" }), onSuccess: done });
+  return (
+    <div className="mt-3 space-y-3 border-t border-line-soft pt-3">
+      <div className="grid grid-cols-3 gap-2">
+        <label className="text-[11px] text-muted">
+          Mínimo (min)
+          <input className="field mt-1" inputMode="numeric" max={1440} min={1} onChange={(e) => setMin(e.target.value)} type="number" value={min} />
+        </label>
+        <label className="text-[11px] text-muted">
+          Máximo (min)
+          <input className="field mt-1" inputMode="numeric" max={1440} min={1} onChange={(e) => setMax(e.target.value)} type="number" value={max} />
+        </label>
+        <label className="text-[11px] text-muted">
+          Posts/dia por conta
+          <input className="field mt-1" inputMode="numeric" max={100} min={1} onChange={(e) => setLimit(e.target.value)} type="number" value={limit} />
+        </label>
+      </div>
+      <label className="flex items-center gap-2 text-sm text-fg">
+        <input checked={captionAll} onChange={(e) => setCaptionAll(e.target.checked)} type="checkbox" />
+        Usar uma legenda só para este sócio em todos os posts
+      </label>
+      {captionAll && (
+        <textarea className="field min-h-20" maxLength={2200} onChange={(e) => setCaption(e.target.value)} placeholder="Legenda dos posts deste sócio" value={caption} />
+      )}
+      {(save.error || reset.error) && <ErrorState message={errorText(save.error ?? reset.error)} />}
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={save.isPending} onClick={() => save.mutate()} size="sm" variant="primary">
+          Salvar só para {copy.partner_name.split(/\s+/)[0]}
+        </Button>
+        {copy.customized && (
+          <Button disabled={reset.isPending} onClick={() => reset.mutate()} size="sm">
+            <RotateCcw size={14} /> Voltar a seguir o seu loop
+          </Button>
+        )}
+        <Button onClick={onDone} size="sm" variant="ghost">
+          Cancelar
+        </Button>
+      </div>
+    </div>
   );
 }
 

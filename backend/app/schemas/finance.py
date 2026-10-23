@@ -116,6 +116,9 @@ class FinanceDay(BaseModel):
     gross_revenue: Decimal
     net_revenue: Decimal
     sale_count: int
+    # Falcon's own sales (Falcon Bot), without SharkBot: what the "Faturado hoje" card shows.
+    flashbot_gross: Decimal = Decimal("0")
+    flashbot_sale_count: int = 0
     collaborator_earnings: Decimal
     expenses_total: Decimal
     profit: Decimal
@@ -123,6 +126,7 @@ class FinanceDay(BaseModel):
 
 class FinanceHistoryPerDay(BaseModel):
     gross_revenue: Decimal
+    flashbot_gross: Decimal = Decimal("0")
     net_revenue: Decimal
     collaborator_earnings: Decimal
     expenses_total: Decimal
