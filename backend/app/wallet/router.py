@@ -286,7 +286,7 @@ async def goals(user: AuthenticatedUser, db: DbSession) -> dict:
     workspace = await owner_workspace(db, user.id)
     if workspace is None:
         return {"available": False}
-    revenue = await month_revenue(db, workspace.id)
+    _total, _shark, revenue = await month_revenue_by_bot(db, workspace.id)  # goals count Falcon Bot sales only
     return {"available": True, "month_revenue": float(revenue), **_goals_out(revenue, await award_image_urls(db))}
 
 
@@ -421,7 +421,7 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "snakepay_fees": float(snake["fees"]),
         "month_flash_revenue": float(flash_revenue),
         **(await _falcon_fees(db) if user.platform_role == "SUPER_ADMIN" else {}),
-        "goal": _goals_out(revenue, await award_image_urls(db)),
+        "goal": _goals_out(flash_revenue, await award_image_urls(db)),  # goals count Falcon Bot sales only
         **numbers,
         "min_withdrawal": float(MIN_WITHDRAWAL),
         "withdrawals": await _history(db, workspace.id),

@@ -275,7 +275,7 @@ export function WalletPage() {
         <div className="h-2 overflow-hidden rounded-full bg-well">
           <div className="h-full rounded-full bg-success" style={{ width: `${Math.min(100, data.goal.percent)}%` }} />
         </div>
-        <AwardsCarousel goals={data.goal.goals} revenue={data.month_revenue} />
+        <AwardsCarousel goals={data.goal.goals} revenue={data.month_flash_revenue ?? 0} />
       </section>
 
       <section className="glass-panel space-y-2 p-4">
