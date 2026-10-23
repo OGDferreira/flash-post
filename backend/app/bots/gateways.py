@@ -159,13 +159,19 @@ async def snakepay_plan(
     if owner.platform_role == "SUPER_ADMIN":
         return SnakePlan()  # the platform's own sale: no split
     rule = await active_share(db, flow, workspace.id) if route.share_id else None
+    own_account = bool(workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted)
+    owner_shop = ""
     if rule is not None:
-        # A shared funnel with the owner's rules: the ShopIDs saved on the share, never the
-        # seller's own setup (the seller needs no SnakePay credentials to sell it).
+        # A shared funnel with the owner's rules. When the seller saved their own SnakePay key,
+        # the sale is charged in the seller's account and the owner's commission goes out by
+        # split to the owner's ShopID. Without it, the platform key charges and splits the
+        # seller's part to the ShopID saved on the share (the seller needs no credentials).
         if rule.gateway != "snakepay":
             return None
-        return await _split_plan(db, route, amount, (rule.seller_shop_id or "").strip(), rule)
-    if workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted:
+        if not own_account:
+            return await _split_plan(db, route, amount, (rule.seller_shop_id or "").strip(), rule)
+        owner_shop = (rule.owner_shop_id or "").strip()
+    if own_account:
         from app.core.crypto import decrypt_value
 
         try:
@@ -198,7 +204,7 @@ async def snakepay_plan(
                 chief_recipient = platform_recipient
             else:
                 chief_workspace = await owner_workspace(db, chief.id)
-                chief_recipient = (chief_workspace.snakepay_recipient_id or "").strip() if chief_workspace else None
+                chief_recipient = owner_shop or ((chief_workspace.snakepay_recipient_id or "").strip() if chief_workspace else None)
             if not chief_recipient or not valid_recipient(chief_recipient):
                 return None
             split_percents[chief_recipient] = split_percents.get(chief_recipient, Decimal("0")) + chief_percent

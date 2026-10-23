@@ -340,3 +340,69 @@ async def test_other_users_rules_and_gateways_stay_isolated(client, db_session, 
     assert (await client.put("/api/partners/flow-shares", headers=headers, json=_share(own_flow, partner.id))).status_code == 404
     assert (await client.put(f"/api/payment-gateways/flows/{own_flow}", headers=headers, json={"gateway": None})).status_code == 404
     assert share["id"] in str((await client.get("/api/partners/flow-shares")).json())
+
+
+@pytest.mark.anyio
+async def test_seller_with_own_snakepay_key_is_charged_in_their_account_and_splits_the_owners_commission(
+    client, db_session, owner, super_admin, snake, apis
+) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
+    await _enable(client)
+    headers = await _chief(client)
+    flow_id = await _new_flow(client, headers, "Funil Chefe")
+    saved = await client.put("/api/partners/flow-shares", headers=headers, json=_share(
+        flow_id, partner.id, gateway="snakepay", seller_percent="80", owner_percent="20", seller_shop_id=SELLER, owner_shop_id=CHIEF,
+    ))
+    assert saved.status_code == 200, saved.text
+
+    # the seller saves their own SnakePay key: the sale is charged in the seller's account
+    partner_headers = await _as(client, "socio@example.com")
+    assert (await client.put("/api/payment-gateways/snakepay/credentials", headers=partner_headers,
+                             json={"api_key": "seller_sk_test", "webhook_secret": "seller_webhook_test"})).status_code == 200
+    bot = (await client.post("/api/bots", headers=partner_headers, json={"token": TOKEN, "flow_id": flow_id})).json()
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    created = apis.methods("snake.create")[-1]
+    assert created["split"] == [{"recipient_id": CHIEF, "percentage": 20.0}]  # only the owner's commission goes out
+    auths = [call[1]["authorization"] for call in apis.calls if call[0] == "snake.auth"]
+    assert auths == ["Bearer seller_sk_test"]  # never the platform's key
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.share_id == uuid.UUID(saved.json()["id"]) and order.split_amount == Decimal("3.81")
+    assert order.partner_net == Decimal("15.24")
+
+    # the payment is confirmed with the seller's webhook secret
+    raw, sig = _event(snake["charges"]["in_1"], "seller_webhook_test")
+    assert (await client.post("/api/bots/pay/snakepay", content=raw, headers=sig)).status_code == 200
+    await db_session.refresh(order)
+    assert order.status == "paid"
+
+
+@pytest.mark.anyio
+async def test_super_admin_owner_gets_the_commission_in_the_platform_account_from_the_sellers_charge(
+    client, db_session, owner, super_admin, snake, apis
+) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws, link = await _partner(db_session, owner, accepted=True)
+    await _enable(client)
+    headers = await _chief(client)
+    flow_id = await _new_flow(client, headers, "Funil Chefe")
+    assert (await client.put("/api/partners/flow-shares", headers=headers, json=_share(
+        flow_id, partner.id, gateway="snakepay", seller_percent="80", owner_percent="20", seller_shop_id=SELLER, owner_shop_id=CHIEF,
+    ))).status_code == 200
+    chief.platform_role = "SUPER_ADMIN"  # like the real owner: the platform account
+    chief_ws.snakepay_recipient_id = PLATFORM
+    await db_session.commit()
+
+    partner_headers = await _as(client, "socio@example.com")
+    assert (await client.put("/api/payment-gateways/snakepay/credentials", headers=partner_headers,
+                             json={"api_key": "seller_sk_test", "webhook_secret": "seller_webhook_test"})).status_code == 200
+    bot = (await client.post("/api/bots", headers=partner_headers, json={"token": TOKEN, "flow_id": flow_id})).json()
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    created = apis.methods("snake.create")[-1]
+    auths = [call[1]["authorization"] for call in apis.calls if call[0] == "snake.auth"]
+    assert auths == ["Bearer seller_sk_test"]
+    assert [item["recipient_id"] for item in created["split"]] == [PLATFORM]
+    assert created["split"][0]["percentage"] == 20.0
