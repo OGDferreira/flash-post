@@ -210,6 +210,8 @@ export type AdminUser = {
   hierarchy?: "chief" | "partner" | "independent";
   transaction_fee?: string | null; // own Falcon Bot fee per sale; null = the default
   transaction_fee_effective?: string;
+  withdrawals_blocked?: boolean;
+  can_invite_partners?: boolean;
   chief_name?: string | null;
   invited_by_name?: string | null;
 };

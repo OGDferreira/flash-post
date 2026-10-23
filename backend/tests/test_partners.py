@@ -273,7 +273,12 @@ async def test_own_funnel_pays_only_the_platform_fee(client, db_session, owner, 
 async def test_partner_invite_waits_for_approval_without_partnership(client, db_session, owner) -> None:
     partner, _ws, _link = await _partner(db_session, owner, accepted=True)
     await _as(client, "socio@example.com")
-    code = (await client.get("/api/affiliates/invite")).json()["code"]
+    # a partner can't invite partners (only the Super Admin, or who they allow)
+    assert (await client.get("/api/affiliates/invite")).status_code == 403
+    from app.affiliates.router import ensure_invite_code
+
+    code = await ensure_invite_code(db_session, partner)  # a code made before the rule
+    await db_session.commit()
     await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
     created = await client.post("/api/auth/register", headers={"X-CSRF-Token": await _csrf(client)}, json={
         "full_name": "Indicado", "email": "novo@example.com", "nickname": "novo",
@@ -804,3 +809,22 @@ async def test_super_admin_hides_a_bot_and_its_funnel_from_the_user(client, db_s
     other["message"]["from"]["id"] = other["message"]["chat"]["id"] = 777
     assert (await _send(client, db_session, bot["id"], other)).status_code == 200
     assert await db_session.scalar(select(func.count(TgLead.id))) == 2
+
+
+@pytest.mark.anyio
+async def test_only_the_super_admin_or_who_they_allow_invites_partners(client, db_session, owner, super_admin) -> None:
+    from tests.test_affiliates import _make_owner
+
+    user, _ws = await _make_owner(db_session, "ana")
+    headers = await _as(client, "ana@example.com")
+    assert (await client.post("/api/affiliates/invite/link", headers=headers, json={"percent": "20"})).status_code == 403
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    allowed = await client.put(f"/api/admin/users/{user.id}/invite-partners", headers=admin, json={"allowed": True})
+    assert allowed.status_code == 200 and allowed.json()["can_invite_partners"] is True
+    headers = await _as(client, "ana@example.com")
+    link = await client.post("/api/affiliates/invite/link", headers=headers, json={"percent": "20"})
+    assert link.status_code == 200, link.text
+    # the Super Admin always can
+    from app.affiliates.router import may_invite_partners
+
+    assert may_invite_partners(super_admin)

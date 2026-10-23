@@ -44,6 +44,8 @@ class Workspace(Base):
     snakepay_recipient_id: Mapped[str | None] = mapped_column(String(64))
     snakepay_api_key_encrypted: Mapped[str | None] = mapped_column(String(1024))
     snakepay_webhook_secret_encrypted: Mapped[str | None] = mapped_column(String(1024))
+    # Signs this account's SnakePay Cash Out requests (withdrawals); encrypted, never sent back.
+    snakepay_cashout_secret_encrypted: Mapped[str | None] = mapped_column(String(1024))
     daily_withdrawal_goal: Mapped[Decimal] = mapped_column(
         "smokepay_daily_goal",
         Numeric(12, 2), nullable=False, default=Decimal("0.00"), server_default="0"

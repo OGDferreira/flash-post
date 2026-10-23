@@ -25,7 +25,7 @@ from app.notifications.signups import notify_new_signup
 from app.core.security import PlatformRole, WorkspaceRole, hash_password, verify_password
 from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.partners.service import partner_link
-from app.affiliates.router import find_chief, read_invite_terms
+from app.affiliates.router import find_chief, may_invite_partners, read_invite_terms
 from app.core.time import utc_now
 from app.models import Affiliation, User, Workspace, WorkspaceMember
 from app.schemas.auth import (
@@ -212,7 +212,7 @@ async def register(
             status="ACTIVE",
         )
         db.add(membership)
-        if chief is not None and not await partner_link(db, chief.id):
+        if chief is not None and may_invite_partners(chief) and not await partner_link(db, chief.id):
             # New user: no self-link or loop is possible. A partner's invite only
             # records who invited (``invited_by_user_id``); it never creates a
             # partnership, and the sign-up still waits for Super Admin approval.

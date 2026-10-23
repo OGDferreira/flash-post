@@ -165,7 +165,7 @@ function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) 
             </button>
           </div>
           {invite.isLoading && <div aria-busy="true" className="skeleton h-12" />}
-          {invite.error && <ErrorState message="Não foi possível carregar o código." onRetry={() => void invite.refetch()} />}
+          {invite.error && <ErrorState message={errorText(invite.error)} onRetry={() => void invite.refetch()} />}
           {invite.data && (
             <div className="grid gap-3 md:grid-cols-2">
               <CopyField label="Código" value={invite.data.code} />

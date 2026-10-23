@@ -189,6 +189,7 @@ export function AdminUsersPage() {
                           {user.role !== "SUPER_ADMIN" && user.status === "ACTIVE" && (
                             <AccessAccountButton name={user.full_name} userId={user.id} />
                           )}
+                          {user.role !== "SUPER_ADMIN" && <UserPermissions user={user} />}
                           {user.role !== "SUPER_ADMIN" && (
                             user.status === "BLOCKED" ? (
                               <button
@@ -257,6 +258,44 @@ export function AdminUsersPage() {
         </>
       )}
     </div>
+  );
+}
+
+/** Permissions the Super Admin gives or takes per user: withdrawing and inviting partners. */
+function UserPermissions({ user }: { user: AdminUser }) {
+  const queryClient = useQueryClient();
+  const change = useMutation({
+    mutationFn: ({ path, body }: { path: string; body: Record<string, boolean> }) =>
+      apiRequest<AdminUser>(`/api/admin/users/${user.id}/${path}`, { method: "PUT", body }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+  const blocked = Boolean(user.withdrawals_blocked);
+  const invites = Boolean(user.can_invite_partners);
+  const chip = "inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs disabled:opacity-50";
+  return (
+    <>
+      <button
+        className={`${chip} ${blocked ? "border-warning/40 bg-warning-soft text-warning" : "border-line text-fg-2 hover:bg-surface-raised"}`}
+        disabled={change.isPending}
+        onClick={async () => {
+          const message = blocked ? `Liberar os saques de ${user.full_name}?` : `Bloquear os saques de ${user.full_name}? Ele não consegue sacar; você ainda consegue sacar por ele.`;
+          if (await confirmAction(message)) change.mutate({ path: "withdrawals-blocked", body: { blocked: !blocked } });
+        }}
+        title="Permissão de saque"
+        type="button"
+      >
+        {blocked ? "Saques bloqueados" : "Saques liberados"}
+      </button>
+      <button
+        className={`${chip} ${invites ? "border-brand/40 bg-brand-soft text-accent" : "border-line text-fg-2 hover:bg-surface-raised"}`}
+        disabled={change.isPending}
+        onClick={() => change.mutate({ path: "invite-partners", body: { allowed: !invites } })}
+        title="Por padrão só você convida sócios"
+        type="button"
+      >
+        {invites ? "Pode convidar sócios" : "Não convida sócios"}
+      </button>
+    </>
   );
 }
 

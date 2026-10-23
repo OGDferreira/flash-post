@@ -4,7 +4,7 @@ import { ArrowDownToLine, CheckCircle2, Clock, Trophy, Wallet as WalletIcon, XCi
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Modal } from "@/components/ui/Modal";
 import { AwardsCarousel } from "@/features/wallet/AwardsCarousel";
-import { brl, compact, useWallet, useWalletMutations, type Wallet, type Withdrawal } from "@/features/wallet/api";
+import { brl, compact, useWallet, useWalletMutations, type GatewayBalance, type Wallet, type Withdrawal } from "@/features/wallet/api";
 import { ApiError } from "@/services/api";
 
 const keyTypes = [
@@ -25,7 +25,8 @@ const statusInfo = {
   FAILED: { label: "Falhou", tone: "text-danger", Icon: XCircle },
 } as const;
 
-type WithdrawBody = { amount: string; pix_key_type: string; pix_key: string };
+type WithdrawBody = { amount?: string; gateway?: string; withdraw_all?: boolean; pix_key_type: string; pix_key: string };
+const GATEWAY_NAMES = { smokepay: "SmokePay", snakepay: "SnakePay" } as const;
 export type WithdrawSender = {
   mutate: (body: WithdrawBody, options: { onSuccess: () => void }) => void;
   error: unknown;
@@ -34,16 +35,80 @@ export type WithdrawSender = {
 
 function OwnWithdrawModal(props: { wallet: Wallet; open: boolean; onClose: () => void }) {
   const { request } = useWalletMutations();
-  return <WithdrawModal {...props} request={request} />;
+  const [picked, setPicked] = useState<GatewayBalance | null>(null);
+  const close = () => {
+    setPicked(null);
+    props.onClose();
+  };
+  if (picked) return <WithdrawModal {...props} gateway={picked} onClose={close} request={request} />;
+  return <GatewayChooser gateways={props.wallet.gateways ?? []} onClose={close} onPick={setPicked} open={props.open} />;
+}
+
+/** "Sacar": one card per gateway where the money sits; the user picks one, then the Pix form. */
+export function GatewayChooser({ gateways, open, onClose, onPick, title = "De onde você quer sacar?" }: {
+  gateways: GatewayBalance[];
+  open: boolean;
+  onClose: () => void;
+  onPick: (gateway: GatewayBalance) => void;
+  title?: string;
+}) {
+  return (
+    <Modal description="Escolha o gateway com saldo. O Pix sai da conta dele." onClose={onClose} open={open} title={title}>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {gateways.map((item) => {
+          const usable = item.ready && item.withdrawable >= item.min;
+          return (
+            <button
+              className="flex flex-col gap-2 rounded-2xl border border-line bg-surface-inset p-4 text-left transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!usable}
+              key={item.gateway}
+              onClick={() => onPick(item)}
+              type="button"
+            >
+              <span className="flex items-center gap-2">
+                <img alt="" className="size-8 rounded-lg object-contain" draggable={false} src={`/gateways/${item.gateway}.png`} />
+                <span className="font-semibold text-fg">{GATEWAY_NAMES[item.gateway]}</span>
+              </span>
+              <span className="text-xl font-semibold text-success">{brl(item.available)}</span>
+              <span className="text-[11px] leading-4 text-muted">
+                {!item.ready
+                  ? "Para sacar por aqui, cadastre a chave API e o segredo de saque (Cash Out) da sua SnakePay em Gateways."
+                  : item.withdrawable < item.min
+                    ? `Saque mínimo ${brl(item.min)}.`
+                    : item.estimated
+                      ? `Saldo estimado: a ${GATEWAY_NAMES[item.gateway]} confere o valor real no saque.`
+                      : `Taxa de saque ${brl(item.fee ?? 0)} · dá para sacar até ${brl(item.withdrawable)}.`}
+              </span>
+            </button>
+          );
+        })}
+        {gateways.length === 0 && <p className="text-sm text-muted">Nenhum gateway com saldo ainda.</p>}
+      </div>
+    </Modal>
+  );
 }
 
 /** Pix withdrawal form; the Super Admin reuses it to pay out a partner's subaccount. */
-export function WithdrawModal({ wallet, open, onClose, request, title = "Solicitar saque — SmokePay" }: {
+export function WithdrawModal({ wallet, open, onClose, request, title, gateway }: {
   wallet: Pick<Wallet, "available" | "withdrawable" | "withdraw_fee" | "min_withdrawal" | "is_main_account">;
   open: boolean;
   onClose: () => void;
   request: WithdrawSender;
   title?: string;
+  gateway?: GatewayBalance;
+}) {
+  if (gateway?.gateway === "snakepay") {
+    return <SnakeWithdrawModal gateway={gateway} onClose={onClose} open={open} request={request} title={title} />;
+  }
+  return <SmokeWithdrawModal onClose={onClose} open={open} request={request} title={title ?? "Solicitar saque — SmokePay"} wallet={wallet} />;
+}
+
+function SmokeWithdrawModal({ wallet, open, onClose, request, title }: {
+  wallet: Pick<Wallet, "available" | "withdrawable" | "withdraw_fee" | "min_withdrawal" | "is_main_account">;
+  open: boolean;
+  onClose: () => void;
+  request: WithdrawSender;
+  title: string;
 }) {
   const [amount, setAmount] = useState("");
   const [keyType, setKeyType] = useState("cpf");
@@ -65,7 +130,7 @@ export function WithdrawModal({ wallet, open, onClose, request, title = "Solicit
     }
     if (!checked) return;
     request.mutate(
-      { amount: value.toFixed(2), pix_key_type: keyType, pix_key: pixKey.trim() },
+      { gateway: "smokepay", amount: value.toFixed(2), pix_key_type: keyType, pix_key: pixKey.trim() },
       { onSuccess: () => { setAmount(""); setPixKey(""); setReviewing(false); onClose(); } },
     );
   }
@@ -172,6 +237,113 @@ export function WithdrawModal({ wallet, open, onClose, request, title = "Solicit
   );
 }
 
+/** SnakePay Cash Out from the account's own key: R$ 10 to R$ 100.000, or everything ("Sacar tudo").
+ *  The balance is an estimate; SnakePay checks the real one and charges its own fee. */
+function SnakeWithdrawModal({ gateway, open, onClose, request, title }: {
+  gateway: GatewayBalance;
+  open: boolean;
+  onClose: () => void;
+  request: WithdrawSender;
+  title?: string;
+}) {
+  const [amount, setAmount] = useState("");
+  const [all, setAll] = useState(false);
+  const [keyType, setKeyType] = useState("cpf");
+  const [pixKey, setPixKey] = useState("");
+  const [reviewing, setReviewing] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const value = Number(amount.replace(/\./g, "").replace(",", "."));
+  const valid = (all || (Number.isFinite(value) && value >= gateway.min && value <= 100000)) && pixKey.trim().length > 3;
+  const keyLabel = keyTypes.find((item) => item.value === keyType)?.label ?? keyType;
+  const shown = all ? "Todo o saldo disponível" : brl(value > 0 ? value : 0);
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!reviewing) {
+      setReviewing(true);
+      setChecked(false);
+      return;
+    }
+    if (!checked) return;
+    request.mutate(
+      { gateway: "snakepay", withdraw_all: all, ...(all ? {} : { amount: value.toFixed(2) }), pix_key_type: keyType, pix_key: pixKey.trim() },
+      { onSuccess: () => { setAmount(""); setAll(false); setPixKey(""); setReviewing(false); onClose(); } },
+    );
+  }
+  return (
+    <Modal
+      description={`Saldo estimado: ${brl(gateway.available)} (a SnakePay confere o real)`}
+      onClose={() => { setReviewing(false); onClose(); }}
+      open={open}
+      title={reviewing ? "Confira antes de enviar" : title ?? "Saque — SnakePay"}
+    >
+      <form className="space-y-4" onSubmit={submit}>
+        {reviewing ? (
+          <>
+            <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-warning">O Pix vai para esta chave</p>
+              <p className="mt-2 text-xs text-muted">Tipo: <b className="text-fg">{keyLabel}</b></p>
+              <p className="mt-1 break-all font-mono text-lg font-semibold text-fg">{pixKey.trim()}</p>
+              <p className="mt-2 text-[11px] text-muted">Um Pix enviado não pode ser cancelado. Valor: <b className="text-fg">{shown}</b>. A taxa de saque é a da SnakePay.</p>
+            </div>
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
+              <input checked={checked} className="mt-0.5 size-5 shrink-0 accent-[var(--brand-c)]" onChange={(event) => setChecked(event.target.checked)} type="checkbox" />
+              Conferi: a chave Pix e o valor estão corretos e a conta é de quem vai receber.
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="block">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Valor do saque</span>
+              <span className="mt-1 flex items-center gap-2 rounded-xl border border-line bg-surface-inset px-3">
+                <span className="text-sm text-muted">R$</span>
+                <input
+                  autoFocus
+                  className="min-h-12 w-full min-w-0 flex-1 bg-transparent text-2xl font-semibold text-fg outline-none"
+                  disabled={all}
+                  inputMode="decimal"
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder={all ? "Tudo" : "0,00"}
+                  value={all ? "" : amount}
+                />
+                <button
+                  aria-pressed={all}
+                  className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold ${all ? "bg-brand text-white" : "bg-brand-soft text-accent"}`}
+                  onClick={() => setAll((current) => !current)}
+                  type="button"
+                >
+                  MAX
+                </button>
+              </span>
+              <span className="mt-1 block text-[11px] text-muted">De {brl(gateway.min)} a R$ 100.000,00, ou MAX para sacar tudo o que a SnakePay tiver disponível.</span>
+            </label>
+            <div className="space-y-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Chave Pix de destino</span>
+              <select className="field" onChange={(event) => setKeyType(event.target.value)} value={keyType}>
+                {keyTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+              <input
+                className="field"
+                onChange={(event) => setPixKey(event.target.value)}
+                placeholder={keyTypes.find((item) => item.value === keyType)?.placeholder}
+                value={pixKey}
+              />
+            </div>
+          </>
+        )}
+        {Boolean(request.error) && <p className="text-xs text-danger" role="alert">{errorText(request.error)}</p>}
+        {reviewing ? (
+          <div className="grid grid-cols-2 gap-2">
+            <button className="btn-secondary" disabled={request.isPending} onClick={() => setReviewing(false)} type="button">Voltar e corrigir</button>
+            <button className="btn-primary" disabled={!checked || request.isPending} type="submit">{request.isPending ? "Enviando…" : "Confirmar e enviar"}</button>
+          </div>
+        ) : (
+          <button className="btn-primary w-full" disabled={!valid} type="submit">Revisar saque</button>
+        )}
+      </form>
+    </Modal>
+  );
+}
+
 export function WithdrawalHistory({ items }: { items: Withdrawal[] }) {
   if (items.length === 0) return <p className="text-xs text-muted">Nenhum saque ainda.</p>;
   return (
@@ -211,17 +383,24 @@ export function WalletPage() {
   const partner = Boolean(data.is_partner);
   // Just these: each bot's revenue, what can be withdrawn, what already was, commissions
   // and (Super Admin) what the per-sale Falcon Bot fee brought in.
+  // Every gateway's balance together; the "Sacar" pop-up splits it again, one card per gateway.
+  const gateways = data.gateways ?? [];
+  const totalAvailable = gateways.length ? gateways.reduce((sum, item) => sum + item.available, 0) : data.available;
+  const perGateway = gateways.map((item) => `${GATEWAY_NAMES[item.gateway]} ${brl(item.available)}${item.estimated ? " (estimado)" : ""}`).join(" · ");
+  const commissions = data.month_commissions ?? 0;
   const cards: [string, string, string?, string?][] = [
-    ["Faturamento Falcon Bot", brl(data.month_flash_revenue ?? 0), "text-fg", "Vendas do mês no Falcon Bot"],
-    ["Faturamento Shark", brl(data.month_shark_revenue ?? 0), "text-fg", "Vendas do mês na SharkBot"],
     [
-      partner ? "Líquido disponível para saque" : "Disponível para sacar",
-      brl(data.available),
-      "text-success",
-      `Taxa por saque ${brl(fee)} · saque até ${brl(data.withdrawable ?? data.available)}`,
+      partner ? "Faturamento" : "Faturamento Falcon Bot",
+      brl(data.month_flash_revenue ?? 0),
+      "text-fg",
+      commissions > 0 ? `Vendas ${brl((data.month_flash_revenue ?? 0) - commissions)} + comissões ${brl(commissions)} no mês` : "Vendas do mês no Falcon Bot",
     ],
+    ...(!partner || (data.month_shark_revenue ?? 0) > 0
+      ? [["Faturamento Shark", brl(data.month_shark_revenue ?? 0), "text-fg", "Vendas do mês na SharkBot"] as [string, string, string, string]]
+      : []),
+    [partner ? "Disponível para saque" : "Disponível para sacar", brl(totalAvailable), "text-success", perGateway || `Taxa por saque ${brl(fee)}`],
     ["Já sacado", brl(data.withdrawn)],
-    ["Comissões recebidas", brl(data.commissions_received), "text-success", "Dos sócios"],
+    ...(!partner ? [["Comissões recebidas", brl(commissions), "text-success", "Dos sócios, no mês (todas as gateways)"] as [string, string, string, string]] : []),
   ];
   if (data.falcon_fees_month !== undefined) {
     cards.push([
@@ -245,10 +424,15 @@ export function WalletPage() {
               : "Seu faturamento, o que tem para sacar, o que já sacou e suas metas."}
           </p>
         </div>
-        <button className="btn-primary" disabled={data.available <= 0} onClick={() => setOpen(true)} type="button">
+        <button className="btn-primary" disabled={Boolean(data.withdrawals_blocked) || totalAvailable <= 0} onClick={() => setOpen(true)} type="button">
           <ArrowDownToLine size={16} /> Sacar
         </button>
       </header>
+      {data.withdrawals_blocked && (
+        <p className="rounded-xl border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning">
+          Os saques da sua conta estão bloqueados pelo administrador. Fale com ele para liberar.
+        </p>
+      )}
 
       <dl className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         {cards.map(([title, value, tone, hint]) => (

@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     # SnakePay (second PIX gateway): the platform owner's key and webhook secret.
     snakepay_api_key: SecretStr | None = None
     snakepay_webhook_secret: SecretStr | None = None
+    # Cash Out (withdrawals) of the platform's own SnakePay account; signs each request.
+    snakepay_cashout_secret: SecretStr | None = None
     snakepay_base_url: str = "https://snakepay.com.br/api/public/v1"
     vapid_subject: str | None = None
     daily_views_goal_check_minutes: Annotated[int, Field(ge=5, le=240)] = 15
@@ -62,6 +64,7 @@ class Settings(BaseSettings):
         "vapid_private_key",
         "snakepay_api_key",
         "snakepay_webhook_secret",
+        "snakepay_cashout_secret",
         mode="before",
     )
     @classmethod
