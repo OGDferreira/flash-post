@@ -11,7 +11,7 @@ Purchases are normal orders (kind ``remarketing``) and deliver like any plan.
 import logging
 import time
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -26,7 +26,7 @@ from app.bots.flow_schema import ButtonStyle, Delivery, FlowDefinition, LinkButt
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.time import BRAZIL_TIME_ZONE
 from app.bots.hidden import admin_view, mark_admin_view
-from app.models import TgBot, TgCampaign, TgFlow, TgLead, TgMedia, TgOrder, TgSubscription
+from app.models import TgBot, TgCampaign, TgCampaignRun, TgFlow, TgLead, TgMedia, TgOrder, TgSubscription
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/bots/campaigns", tags=["Bots"], dependencies=[Depends(mark_admin_view)])
@@ -92,6 +92,50 @@ class CampaignDefinition(_Model):
             if delivery:
                 found.update(delivery.media_ids)
         return found
+
+
+# ---------------------------------------------------------------- recurrence
+
+
+RecurrenceKind = Literal["daily", "hours", "weekdays"]
+
+
+class Recurrence(_Model):
+    """How a campaign repeats. ``None`` on the campaign means a one-shot send.
+
+    ``daily``/``weekdays`` fire at ``time`` (HH:MM, horário de Brasília); ``weekdays``
+    only on the chosen days (0 = segunda … 6 = domingo). ``hours`` fires every
+    ``hours`` hours from when it was scheduled.
+    """
+
+    kind: RecurrenceKind
+    time: Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")] = "09:00"
+    hours: Annotated[int, Field(ge=1, le=168)] = 24
+    weekdays: list[Annotated[int, Field(ge=0, le=6)]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check(self) -> "Recurrence":
+        if self.kind == "weekdays" and not self.weekdays:
+            raise ValueError("Escolha pelo menos um dia da semana.")
+        return self
+
+
+def next_fire(recurrence: Recurrence, after: datetime) -> datetime:
+    """The next UTC instant strictly after ``after`` when ``recurrence`` should fire."""
+    after = engine.aware(after) or engine.utcnow()
+    if recurrence.kind == "hours":
+        return after + timedelta(hours=recurrence.hours)
+    local = after.astimezone(BRAZIL_TIME_ZONE)
+    hour, minute = (int(part) for part in recurrence.time.split(":"))
+    candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if candidate <= local:
+        candidate += timedelta(days=1)
+    if recurrence.kind == "weekdays":
+        for _ in range(7):
+            if candidate.weekday() in recurrence.weekdays:
+                break
+            candidate += timedelta(days=1)
+    return candidate.astimezone(timezone.utc)
 
 
 # ---------------------------------------------------------------- audience
@@ -165,6 +209,28 @@ def campaign_keyboard(campaign: TgCampaign, definition: CampaignDefinition, mess
     return {"inline_keyboard": rows} if rows else None
 
 
+async def _open_run(db: AsyncSession, campaign: TgCampaign) -> None:
+    db.add(TgCampaignRun(
+        campaign_id=campaign.id, workspace_id=campaign.workspace_id, started_at=campaign.started_at,
+        status="sending", total=campaign.total, already_blocked=campaign.already_blocked,
+    ))
+
+
+async def _close_run(db: AsyncSession, campaign: TgCampaign, status: str) -> None:
+    """Snapshot the campaign's current counters onto its open run row (if any)."""
+    run = await db.scalar(
+        select(TgCampaignRun)
+        .where(TgCampaignRun.campaign_id == campaign.id, TgCampaignRun.finished_at.is_(None))
+        .order_by(TgCampaignRun.started_at.desc())
+    )
+    if run is None:
+        return
+    run.finished_at = engine.utcnow()
+    run.status = status
+    run.total, run.already_blocked = campaign.total, campaign.already_blocked
+    run.sent, run.failed, run.blocked = campaign.sent, campaign.failed, campaign.blocked
+
+
 async def start_campaign(db: AsyncSession, campaign: TgCampaign, resume: bool = False) -> None:
     definition = CampaignDefinition.model_validate(campaign.definition)
     campaign.status = "sending"
@@ -172,13 +238,38 @@ async def start_campaign(db: AsyncSession, campaign: TgCampaign, resume: bool = 
     campaign.finished_at = None
     if resume and campaign.started_at is not None:
         return
+    # A fresh send: close a run left open by a pause that was never resumed.
+    await _close_run(db, campaign, "paused")
     numbers = await estimate(db, campaign.workspace_id, campaign.flow_id, definition.audience)
     campaign.started_at = engine.utcnow()
+    campaign.last_run_at = campaign.started_at
     campaign.cursor_lead_id = None
     campaign.total = numbers["reach"]
     campaign.already_blocked = numbers["blocked"]
     campaign.sent = campaign.failed = campaign.blocked = 0
     campaign.runs += 1
+    await _open_run(db, campaign)
+
+
+def _recurrence(campaign: TgCampaign) -> Recurrence | None:
+    if not campaign.recurrence:
+        return None
+    try:
+        return Recurrence.model_validate(campaign.recurrence)
+    except ValidationError:
+        return None
+
+
+async def _finish_campaign(db: AsyncSession, campaign: TgCampaign) -> None:
+    """End the current send: close its run and either reschedule (recurring) or finish."""
+    await _close_run(db, campaign, "finished")
+    campaign.finished_at = engine.utcnow()
+    recurrence = _recurrence(campaign)
+    if recurrence is not None:
+        campaign.status = "scheduled"
+        campaign.scheduled_at = next_fire(recurrence, campaign.finished_at)
+    else:
+        campaign.status = "finished"
 
 
 async def run_campaign_batch(db: AsyncSession, campaign_id: uuid.UUID, deadline: float) -> None:
@@ -189,6 +280,7 @@ async def run_campaign_batch(db: AsyncSession, campaign_id: uuid.UUID, deadline:
         definition = CampaignDefinition.model_validate(campaign.definition)
     except ValidationError:
         campaign.status = "paused"
+        await _close_run(db, campaign, "paused")
         await db.commit()
         return
     query = (
@@ -201,8 +293,7 @@ async def run_campaign_batch(db: AsyncSession, campaign_id: uuid.UUID, deadline:
         query = query.where(TgLead.id > campaign.cursor_lead_id)
     leads = list(await db.scalars(query))
     if not leads:
-        campaign.status = "finished"
-        campaign.finished_at = engine.utcnow()
+        await _finish_campaign(db, campaign)
         await db.commit()
         return
     bots: dict[uuid.UUID, tuple[TgBot, TelegramClient] | None] = {}
@@ -301,6 +392,7 @@ class EstimateIn(BaseModel):
 
 class ScheduleIn(BaseModel):
     scheduled_at: datetime | None = None
+    recurrence: dict | None = None
 
 
 async def _flow(db: AsyncSession, flow_id: uuid.UUID, access) -> TgFlow:
@@ -359,7 +451,36 @@ async def _sales(db: AsyncSession, campaigns: list[TgCampaign]) -> dict[uuid.UUI
     return out
 
 
-def _out(campaign: TgCampaign, flow_name: str, sales: tuple[int, Decimal]) -> dict:
+def _target(campaign: TgCampaign) -> str:
+    try:
+        return CampaignDefinition.model_validate(campaign.definition).audience.target
+    except ValidationError:
+        return "all"
+
+
+def _active_for_conflict(campaign: TgCampaign) -> bool:
+    """A send that will fire on its own: scheduled, mid-send, or recurring."""
+    return campaign.status in {"scheduled", "sending"} or bool(campaign.recurrence)
+
+
+def _audiences_overlap(a: str, b: str) -> bool:
+    return a == b or a == "all" or b == "all"
+
+
+def _conflicts_for(campaign: TgCampaign, siblings: list[TgCampaign]) -> list[dict]:
+    """Other automated campaigns on the same funnel that hit an overlapping audience."""
+    mine = _target(campaign)
+    return [
+        {"id": str(other.id), "name": other.name}
+        for other in siblings
+        if other.id != campaign.id
+        and other.flow_id == campaign.flow_id
+        and _active_for_conflict(other)
+        and _audiences_overlap(mine, _target(other))
+    ]
+
+
+def _out(campaign: TgCampaign, flow_name: str, sales: tuple[int, Decimal], conflicts: list[dict] | None = None) -> dict:
     def iso(value: datetime | None) -> str | None:
         return engine.aware(value).isoformat() if value else None
 
@@ -367,16 +488,21 @@ def _out(campaign: TgCampaign, flow_name: str, sales: tuple[int, Decimal]) -> di
         "id": str(campaign.id), "flow_id": str(campaign.flow_id), "flow_name": flow_name, "name": campaign.name,
         "status": campaign.status, "definition": campaign.definition,
         "scheduled_at": iso(campaign.scheduled_at), "started_at": iso(campaign.started_at), "finished_at": iso(campaign.finished_at),
+        "recurrence": campaign.recurrence, "last_run_at": iso(campaign.last_run_at),
         "total": campaign.total, "sent": campaign.sent, "failed": campaign.failed, "blocked": campaign.blocked,
         "already_blocked": campaign.already_blocked, "runs": campaign.runs,
         "sales": sales[0], "revenue": f"{sales[1]:.2f}",
+        "conflicts": conflicts or [],
         "created_at": iso(campaign.created_at),
     }
 
 
 async def _one(db: AsyncSession, campaign: TgCampaign) -> dict:
     flow = await db.get(TgFlow, campaign.flow_id)
-    return _out(campaign, flow.name if flow else "", (await _sales(db, [campaign]))[campaign.id])
+    siblings = list(await db.scalars(
+        select(TgCampaign).where(TgCampaign.workspace_id == campaign.workspace_id, TgCampaign.flow_id == campaign.flow_id)
+    ))
+    return _out(campaign, flow.name if flow else "", (await _sales(db, [campaign]))[campaign.id], _conflicts_for(campaign, siblings))
 
 
 @router.get("")
@@ -389,7 +515,7 @@ async def list_campaigns(access: OwnerAccess, db: DbSession, flow_id: uuid.UUID 
     campaigns = list(await db.scalars(query))
     names = dict((await db.execute(select(TgFlow.id, TgFlow.name).where(TgFlow.workspace_id == access.workspace.id))).all())
     sales = await _sales(db, campaigns)
-    return {"campaigns": [_out(c, names.get(c.flow_id, ""), sales[c.id]) for c in campaigns]}
+    return {"campaigns": [_out(c, names.get(c.flow_id, ""), sales[c.id], _conflicts_for(c, campaigns)) for c in campaigns]}
 
 
 @router.post("/estimate", dependencies=csrf)
@@ -451,21 +577,51 @@ async def send_campaign(campaign_id: uuid.UUID, access: OwnerAccess, db: DbSessi
 
 @router.post("/{campaign_id}/schedule", dependencies=csrf)
 async def schedule_campaign(campaign_id: uuid.UUID, payload: ScheduleIn, access: OwnerAccess, db: DbSession) -> dict:
-    """Schedule the send; ``scheduled_at: null`` cancels the schedule."""
+    """Schedule the send. ``recurrence`` makes it repeat (daily/hours/weekdays); a bare
+    ``scheduled_at`` is a one-shot; both ``null`` cancels the schedule and the recurrence."""
     campaign = await _campaign(db, campaign_id, access)
     if campaign.status == "sending":
         raise HTTPException(status_code=409, detail="Pause a campanha antes de agendar.")
-    if payload.scheduled_at is None:
+    now = engine.utcnow()
+    first = engine.aware(payload.scheduled_at)
+    if first is not None and first <= now:
+        raise HTTPException(status_code=422, detail="Escolha um horário no futuro.")
+    if payload.recurrence is not None:
+        try:
+            recurrence = Recurrence.model_validate(payload.recurrence)
+        except ValidationError as exc:
+            raise _error(exc) from None
+        # First fire: the given start, or the next matching slot from now.
+        campaign.recurrence = recurrence.model_dump(mode="json")
+        campaign.status = "scheduled"
+        campaign.scheduled_at = first or next_fire(recurrence, now)
+    elif first is not None:
+        campaign.recurrence = None
+        campaign.status, campaign.scheduled_at = "scheduled", first
+    else:
+        campaign.recurrence = None
         campaign.status = "draft" if campaign.status == "scheduled" else campaign.status
         campaign.scheduled_at = None
-    else:
-        when = engine.aware(payload.scheduled_at)
-        if when <= engine.utcnow():
-            raise HTTPException(status_code=422, detail="Escolha um horário no futuro.")
-        campaign.status, campaign.scheduled_at = "scheduled", when
     await db.commit()
     await db.refresh(campaign)
     return await _one(db, campaign)
+
+
+@router.get("/{campaign_id}/runs")
+async def campaign_runs(campaign_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
+    """History of disparos: one row per send, newest first."""
+    campaign = await _campaign(db, campaign_id, access)
+    runs = list(await db.scalars(
+        select(TgCampaignRun).where(TgCampaignRun.campaign_id == campaign.id).order_by(TgCampaignRun.started_at.desc()).limit(50)
+    ))
+
+    def iso(value: datetime | None) -> str | None:
+        return engine.aware(value).isoformat() if value else None
+
+    return {"runs": [{
+        "id": str(run.id), "started_at": iso(run.started_at), "finished_at": iso(run.finished_at), "status": run.status,
+        "total": run.total, "sent": run.sent, "failed": run.failed, "blocked": run.blocked, "already_blocked": run.already_blocked,
+    } for run in runs]}
 
 
 @router.post("/{campaign_id}/pause", dependencies=csrf)

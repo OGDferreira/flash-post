@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { disablePush, enablePush, savePushPreference, type PushConfig } from "@/lib/push";
+import { useMutation } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   Bell,
@@ -21,6 +20,7 @@ import {
 
 import { HomePanelPreference } from "@/components/HomePanelPreference";
 import { AppearanceCard } from "@/components/AppearanceCard";
+import { PushSwitch } from "@/components/PushSwitch";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { copyGeneratedText, copyText } from "@/lib/clipboard";
 import { scriptableWidgetScript, type WidgetTheme } from "@/lib/scriptableWidget";
@@ -108,57 +108,6 @@ function ThemeSwitch() {
           </button>
         ))}
       </div>
-    </section>
-  );
-}
-
-/** Push notifications: the user's choice, saved on the account. This is the only place it changes. */
-function PushSwitch() {
-  const queryClient = useQueryClient();
-  const config = useQuery({
-    queryKey: ["notifications", "push", "config"],
-    queryFn: () => apiRequest<PushConfig>("/api/notifications/push/config"),
-    staleTime: 5 * 60_000,
-  });
-  const toggle = useMutation({
-    mutationFn: async (on: boolean) => {
-      if (on) {
-        const key = config.data?.public_key;
-        if (!key) throw new Error("Notificações indisponíveis no servidor.");
-        await enablePush(key);
-      } else {
-        await disablePush();
-      }
-      return savePushPreference({ enabled: on });
-    },
-    onSuccess: (next) => queryClient.setQueryData(["notifications", "push", "config"], next),
-  });
-  const on = Boolean(config.data?.enabled);
-  const blocked = config.data?.impersonating;
-  return (
-    <section className="flex flex-wrap items-center gap-3 rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-accent"><Bell size={18} /></span>
-      <div className="min-w-0 flex-1">
-        <h2 className="text-base font-semibold text-fg">Notificações no celular</h2>
-        <p className="text-xs text-muted">
-          {blocked
-            ? "Você está na conta de outro usuário: as notificações dele não mudam daqui."
-            : on
-              ? "Ativadas. Ficam salvas na sua conta até você desligar aqui."
-              : "Desativadas. Ative para receber vendas, comissões e metas."}
-        </p>
-        {toggle.error && <p className="mt-1 text-xs text-danger">{toggle.error instanceof Error ? toggle.error.message : "Não foi possível mudar."}</p>}
-      </div>
-      <button
-        aria-checked={on}
-        className={`relative h-7 w-12 shrink-0 rounded-full transition ${on ? "bg-brand" : "bg-well"} disabled:opacity-50`}
-        disabled={!config.data || blocked || toggle.isPending}
-        onClick={() => toggle.mutate(!on)}
-        role="switch"
-        type="button"
-      >
-        <span className={`absolute top-1 size-5 rounded-full bg-white shadow transition-[left] ${on ? "left-6" : "left-1"}`} />
-      </button>
     </section>
   );
 }

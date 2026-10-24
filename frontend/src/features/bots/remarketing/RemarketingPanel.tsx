@@ -1,15 +1,32 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, Ban, CalendarClock, CheckCircle2, CircleDollarSign, Megaphone, Pause, Plus, RefreshCw, Settings2, Trash2, Users, Workflow, XCircle } from "lucide-react";
+import { AlertTriangle, BarChart3, Ban, CalendarClock, CheckCircle2, CircleDollarSign, Megaphone, Pause, Plus, RefreshCw, Repeat, Settings2, Trash2, Users, Workflow, XCircle } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
-import { brl, type Campaign, type Flow } from "../types";
+import { brl, type Campaign, type Flow, type RecurrenceKind } from "../types";
 import { CampaignEditor } from "./CampaignEditor";
-import { CampaignStats, statusLabel } from "./CampaignStats";
+import { CampaignStats, recurrenceLabel, statusLabel } from "./CampaignStats";
+
+const WEEKDAYS: { value: number; label: string }[] = [
+  { value: 0, label: "Seg" },
+  { value: 1, label: "Ter" },
+  { value: 2, label: "Qua" },
+  { value: 3, label: "Qui" },
+  { value: 4, label: "Sex" },
+  { value: 5, label: "Sáb" },
+  { value: 6, label: "Dom" },
+];
+
+const SCHEDULE_MODES: { value: RecurrenceKind | "once"; label: string }[] = [
+  { value: "once", label: "Uma vez" },
+  { value: "daily", label: "Diariamente" },
+  { value: "hours", label: "A cada X horas" },
+  { value: "weekdays", label: "Dias da semana" },
+];
 
 const STATUS_TONE: Record<Campaign["status"], string> = {
   draft: "border-line bg-well text-muted",
@@ -43,6 +60,10 @@ export function RemarketingPanel({
   const [statsFor, setStatsFor] = useState<Campaign | null>(null);
   const [scheduling, setScheduling] = useState<Campaign | null>(null);
   const [scheduleAt, setScheduleAt] = useState("");
+  const [schedMode, setSchedMode] = useState<RecurrenceKind | "once">("once");
+  const [schedTime, setSchedTime] = useState("09:00");
+  const [schedHours, setSchedHours] = useState(24);
+  const [schedDays, setSchedDays] = useState<number[]>([]);
   useEffect(() => onEditingChange?.(editing !== null), [editing, onEditingChange]);
 
   const flows = useQuery({ queryKey: ["bots", "flows"], queryFn: () => apiRequest<{ flows: Flow[] }>("/api/bots/flows/list"), retry: false });
@@ -162,8 +183,22 @@ export function RemarketingPanel({
                               ? ` · ${new Date(campaign.scheduled_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`
                               : ""}
                           </span>
+                          {campaign.recurrence && (
+                            <span className="mt-1 ml-1 inline-flex items-center gap-1 rounded-full border border-brand/30 bg-brand-soft px-2 py-0.5 text-xs font-medium text-accent">
+                              <Repeat size={11} /> {recurrenceLabel(campaign.recurrence)}
+                            </span>
+                          )}
                         </div>
                       </div>
+                      {campaign.conflicts.length > 0 && (campaign.status === "scheduled" || campaign.recurrence) && (
+                        <p className="flex items-start gap-1.5 rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning">
+                          <AlertTriangle className="mt-0.5 shrink-0" size={13} />
+                          <span>
+                            Conflito: {campaign.conflicts.map((other) => other.name).join(", ")} também dispara
+                            {campaign.conflicts.length === 1 ? "" : "m"} para este público. Os leads podem receber mais de uma mensagem.
+                          </span>
+                        </p>
+                      )}
                       <dl className="grid grid-cols-3 gap-2">
                         <div>
                           <dt className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
@@ -209,7 +244,12 @@ export function RemarketingPanel({
                           className="grid size-10 place-items-center rounded-xl border border-brand/40 bg-brand-soft text-accent disabled:opacity-50"
                           disabled={campaign.status === "sending"}
                           onClick={() => {
-                            setScheduleAt(campaign.scheduled_at ? localInput(new Date(campaign.scheduled_at)) : localInput(new Date(Date.now() + 3_600_000)));
+                            const recurrence = campaign.recurrence;
+                            setSchedMode(recurrence ? recurrence.kind : "once");
+                            setSchedTime(recurrence?.time ?? "09:00");
+                            setSchedHours(recurrence?.hours ?? 24);
+                            setSchedDays(recurrence?.weekdays ?? []);
+                            setScheduleAt(campaign.scheduled_at && !recurrence ? localInput(new Date(campaign.scheduled_at)) : localInput(new Date(Date.now() + 3_600_000)));
                             setScheduling(campaign);
                           }}
                           type="button"
@@ -250,14 +290,25 @@ export function RemarketingPanel({
         busy={action.isPending}
         footer={
           <div className="flex flex-wrap justify-end gap-2">
-            {scheduling?.status === "scheduled" && (
-              <Button disabled={action.isPending} onClick={() => scheduling && action.mutate({ campaign: scheduling, path: "/schedule", body: { scheduled_at: null } })}>
+            {(scheduling?.status === "scheduled" || scheduling?.recurrence) && (
+              <Button disabled={action.isPending} onClick={() => scheduling && action.mutate({ campaign: scheduling, path: "/schedule", body: { scheduled_at: null, recurrence: null } })}>
                 Cancelar agendamento
               </Button>
             )}
             <Button
-              disabled={action.isPending || !scheduleAt}
-              onClick={() => scheduling && action.mutate({ campaign: scheduling, path: "/schedule", body: { scheduled_at: new Date(scheduleAt).toISOString() } })}
+              disabled={
+                action.isPending ||
+                (schedMode === "once" && !scheduleAt) ||
+                (schedMode === "weekdays" && schedDays.length === 0)
+              }
+              onClick={() => {
+                if (!scheduling) return;
+                const body =
+                  schedMode === "once"
+                    ? { scheduled_at: new Date(scheduleAt).toISOString(), recurrence: null }
+                    : { recurrence: { kind: schedMode, time: schedTime, hours: schedHours, weekdays: schedDays } };
+                action.mutate({ campaign: scheduling, path: "/schedule", body });
+              }}
               variant="primary"
             >
               Agendar
@@ -265,10 +316,82 @@ export function RemarketingPanel({
           </div>
         }
       >
-        <label className="grid gap-1.5 text-sm text-fg-2">
-          Data e hora do envio
-          <input className="field" min={localInput(new Date())} type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} />
-        </label>
+        <div className="space-y-4">
+          <div className="grid gap-1.5 text-sm text-fg-2">
+            Repetir
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Frequência do envio">
+              {SCHEDULE_MODES.map((mode) => (
+                <button
+                  aria-checked={schedMode === mode.value}
+                  className={`min-h-9 rounded-full border px-3 text-sm font-medium transition ${
+                    schedMode === mode.value ? "border-brand bg-brand-soft text-accent" : "border-line-soft text-muted hover:text-fg"
+                  }`}
+                  key={mode.value}
+                  onClick={() => setSchedMode(mode.value)}
+                  role="radio"
+                  type="button"
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {schedMode === "once" && (
+            <label className="grid gap-1.5 text-sm text-fg-2">
+              Data e hora do envio
+              <input className="field" min={localInput(new Date())} type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} />
+            </label>
+          )}
+          {schedMode === "daily" && (
+            <label className="grid gap-1.5 text-sm text-fg-2">
+              Horário (todos os dias)
+              <input className="field !w-40" type="time" value={schedTime} onChange={(event) => setSchedTime(event.target.value)} />
+            </label>
+          )}
+          {schedMode === "hours" && (
+            <label className="grid gap-1.5 text-sm text-fg-2">
+              A cada quantas horas
+              <input className="field !w-40" max={168} min={1} type="number" value={schedHours} onChange={(event) => setSchedHours(Math.min(168, Math.max(1, Number(event.target.value) || 1)))} />
+              <span className="text-xs text-muted">O primeiro envio é daqui a {schedHours}h; depois repete nesse intervalo.</span>
+            </label>
+          )}
+          {schedMode === "weekdays" && (
+            <div className="space-y-2">
+              <div className="grid gap-1.5 text-sm text-fg-2">
+                Dias da semana
+                <div className="flex flex-wrap gap-1.5">
+                  {WEEKDAYS.map((day) => {
+                    const on = schedDays.includes(day.value);
+                    return (
+                      <button
+                        aria-checked={on}
+                        className={`size-10 rounded-xl border text-sm font-medium transition ${on ? "border-brand bg-brand-soft text-accent" : "border-line-soft text-muted hover:text-fg"}`}
+                        key={day.value}
+                        onClick={() => setSchedDays((current) => (current.includes(day.value) ? current.filter((value) => value !== day.value) : [...current, day.value].sort((a, b) => a - b)))}
+                        role="checkbox"
+                        type="button"
+                      >
+                        {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <label className="grid gap-1.5 text-sm text-fg-2">
+                Horário
+                <input className="field !w-40" type="time" value={schedTime} onChange={(event) => setSchedTime(event.target.value)} />
+              </label>
+            </div>
+          )}
+
+          {scheduling && scheduling.conflicts.length > 0 && schedMode !== "once" && (
+            <p className="flex items-start gap-1.5 rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning">
+              <AlertTriangle className="mt-0.5 shrink-0" size={13} />
+              <span>Já há outra campanha ativa para este público ({scheduling.conflicts.map((other) => other.name).join(", ")}). Os mesmos leads podem receber mais de uma mensagem.</span>
+            </p>
+          )}
+        </div>
       </Modal>
     </div>
   );

@@ -255,6 +255,22 @@ export type CampaignDefinition = {
   offer: { plans: CampaignPlan[]; order_bump: OrderBump | null; redirect: LinkButton | null };
 };
 
+export type RecurrenceKind = "daily" | "hours" | "weekdays";
+/** How a campaign repeats (null = one-shot). `time` is HH:MM BRT; weekdays 0=Mon..6=Sun. */
+export type Recurrence = { kind: RecurrenceKind; time: string; hours: number; weekdays: number[] };
+
+export type CampaignRun = {
+  id: string;
+  started_at: string | null;
+  finished_at: string | null;
+  status: string;
+  total: number;
+  sent: number;
+  failed: number;
+  blocked: number;
+  already_blocked: number;
+};
+
 export type Campaign = {
   id: string;
   flow_id: string;
@@ -265,6 +281,8 @@ export type Campaign = {
   scheduled_at: string | null;
   started_at: string | null;
   finished_at: string | null;
+  recurrence: Recurrence | null;
+  last_run_at: string | null;
   total: number;
   sent: number;
   failed: number;
@@ -273,6 +291,7 @@ export type Campaign = {
   runs: number;
   sales: number;
   revenue: string;
+  conflicts: { id: string; name: string }[];
   created_at: string | null;
 };
 
