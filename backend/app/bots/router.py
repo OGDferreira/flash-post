@@ -560,6 +560,26 @@ async def bot_stats(
     return data
 
 
+@router.get("/analytics")
+async def bot_analytics(
+    access: OwnerAccess, db: DbSession, period: AnalyticsPeriod = "today",
+    start_date: date | None = None, end_date: date | None = None,
+) -> dict:
+    """Análises: which funnels and which plans sold most in the period."""
+    from app.bots.stats import flows_ranking, plans_ranking
+
+    zone = await user_time_zone(db, access.workspace.id, access.membership.user_id)
+    start, end = period_bounds(period, start_date, end_date, utc_now(), zone)
+    if start is None or end is None:
+        raise HTTPException(status_code=422, detail="Escolha um período limitado.")
+    hide = not admin_view()
+    return {
+        "period_label": period_label(start, end, zone),
+        "funis": await flows_ranking(db, access.workspace.id, start, end, zone, hide=hide),
+        "planos": await plans_ranking(db, access.workspace.id, start, end, hide=hide),
+    }
+
+
 @router.get("/activity")
 async def bot_activity(access: OwnerAccess, db: DbSession, limit: int = Query(30, ge=1, le=100)) -> dict:
     """Live log of the operation: new leads, Pix generated and approved sales."""

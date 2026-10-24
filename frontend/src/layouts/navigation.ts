@@ -189,6 +189,7 @@ const botGroups: NavGroup[] = [
     icon: LayoutDashboard,
     items: [
       { label: "Painel", to: "/bot", icon: LayoutDashboard },
+      { label: "Análises", to: "/bot/analises", icon: BarChart3 },
     ],
   },
   {

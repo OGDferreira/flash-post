@@ -15,12 +15,12 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots.hidden import not_hidden_bot
 from app.core.time import BRAZIL_TIME_ZONE, as_utc
-from app.models import Affiliation, TgBot, TgLead, TgOrder, User, Workspace, WorkspaceMember
+from app.models import Affiliation, TgBot, TgFlow, TgLead, TgOrder, User, Workspace, WorkspaceMember
 
 
 def _f(value) -> float:
@@ -105,6 +105,54 @@ async def conversion_stats(
         "flows": {str(k): out(v) for k, v in per_flow.items()},
         "bots": {str(k): out(v) for k, v in per_bot.items()},
     }
+
+
+async def plans_ranking(
+    db: AsyncSession, workspace_id: uuid.UUID, start: datetime, end: datetime, *, hide: bool = False
+) -> list[dict]:
+    """Which plans sold most in the period: one row per offer, with Pix generated, paid, revenue
+    and the generated→paid conversion. Ordered client-side (sales, revenue or conversion)."""
+    shown = (not_hidden_bot(TgOrder.bot_id),) if hide else ()
+    rows = (
+        await db.execute(
+            select(
+                TgOrder.offer_name,
+                func.coalesce(func.sum(case((TgOrder.status == "paid", 1), else_=0)), 0),
+                func.coalesce(func.sum(case((TgOrder.status == "paid", TgOrder.amount), else_=0)), 0),
+                func.count(TgOrder.id),
+            )
+            .where(
+                TgOrder.workspace_id == workspace_id, TgOrder.created_at >= start, TgOrder.created_at < end,
+                TgOrder.status != "failed", *shown,
+            )
+            .group_by(TgOrder.offer_name)
+        )
+    ).all()
+    out = []
+    for name, paid, revenue, generated in rows:
+        paid, generated = int(paid or 0), int(generated or 0)
+        out.append({
+            "name": name, "sales": paid, "revenue": _f(revenue), "generated": generated,
+            "conversion": round(100 * paid / generated, 1) if generated else 0.0,
+        })
+    out.sort(key=lambda row: (-row["sales"], -row["revenue"]))
+    return out
+
+
+async def flows_ranking(
+    db: AsyncSession, workspace_id: uuid.UUID, start: datetime, end: datetime, zone: ZoneInfo, *, hide: bool = False
+) -> list[dict]:
+    """Which funnels sold most: the per-flow conversion numbers with the funnel's name."""
+    data = await conversion_stats(db, workspace_id, start, end, zone, hide=hide)
+    names = dict(
+        (str(fid), name)
+        for fid, name in (
+            await db.execute(select(TgFlow.id, TgFlow.name).where(TgFlow.workspace_id == workspace_id))
+        ).all()
+    )
+    out = [{"id": fid, "name": names.get(fid, "Funil removido"), **stats} for fid, stats in data["flows"].items()]
+    out.sort(key=lambda row: (-row["sales"], -row["revenue"]))
+    return out
 
 
 def _public_avatar(user: User) -> str | None:
