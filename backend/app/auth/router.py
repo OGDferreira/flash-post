@@ -251,7 +251,14 @@ async def login(payload: LoginRequest, request: Request, db: DbSession) -> AuthR
             headers={"Retry-After": str(settings.login_window_seconds)},
         )
 
-    user = await db.scalar(select(User).where(User.email == str(payload.email)))
+    identifier = str(payload.email)
+    user = await db.scalar(select(User).where(func.lower(User.email) == identifier))
+    if user is None and "@" not in identifier:
+        # Sign in with just the text before the @ (unique per account), never the full address.
+        escaped = identifier.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        matches = list(await db.scalars(select(User).where(func.lower(User.email).like(f"{escaped}@%", escape="\\"))))
+        if len(matches) == 1:  # ambiguous local-parts fall through to the generic error
+            user = matches[0]
     is_valid = verify_password(payload.password, user.password_hash if user else None)
     if user is None or not is_valid:
         await limiter.record_failure(rate_key)
