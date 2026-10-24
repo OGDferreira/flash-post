@@ -680,6 +680,47 @@ async def test_owner_can_remove_an_errored_account(
 
 
 @pytest.mark.anyio
+async def test_owner_can_remove_all_broken_accounts_at_once(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+    future = datetime.now(timezone.utc) + timedelta(days=50)
+    errored = InstagramAccount(
+        workspace_id=workspace.id, instagram_user_id="1784000000000001", username="errored",
+        encrypted_access_token=encrypt_value("tok-a"), token_expires_at=future, status="error",
+    )
+    disconnected = InstagramAccount(
+        workspace_id=workspace.id, instagram_user_id="1784000000000002", username="disconnected",
+        encrypted_access_token=None, token_expires_at=future, status="disconnected",
+    )
+    healthy = InstagramAccount(
+        workspace_id=workspace.id, instagram_user_id="1784000000000003", username="healthy",
+        encrypted_access_token=encrypt_value("tok-c"), token_expires_at=future, status="connected",
+    )
+    db_session.add_all([errored, disconnected, healthy])
+    await db_session.commit()
+    healthy_id = healthy.id
+
+    async def fake_revoke(_access_token: str) -> bool:
+        return True
+
+    monkeypatch.setattr(instagram_router, "revoke_instagram_permissions", fake_revoke)
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+    response = await client.post("/api/instagram/accounts/remove-broken", headers={"X-CSRF-Token": token})
+
+    assert response.status_code == 200
+    # Both broken accounts removed; only the one with a token was revoked on Meta.
+    assert response.json() == {"removed": 2, "meta_revoked": 1}
+    assert await db_session.get(InstagramAccount, healthy_id) is not None
+    remaining = (await db_session.scalars(select(InstagramAccount).where(InstagramAccount.workspace_id == workspace.id))).all()
+    assert [account.username for account in remaining] == ["healthy"]
+
+
+@pytest.mark.anyio
 async def test_account_is_removed_locally_when_meta_revocation_cannot_be_confirmed(
     client: AsyncClient,
     db_session: AsyncSession,

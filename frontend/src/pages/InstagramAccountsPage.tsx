@@ -144,6 +144,27 @@ export function InstagramAccountsPage() {
       void queryClient.invalidateQueries({ queryKey: ["instagram", "folders"] });
     },
   });
+  const removeBroken = useMutation({
+    mutationFn: () =>
+      apiRequest<{ removed: number; meta_revoked: number }>("/api/instagram/accounts/remove-broken", {
+        method: "POST",
+      }),
+    onSuccess: ({ removed, meta_revoked }) => {
+      setDisconnectMessage({
+        complete: removed === 0 || meta_revoked === removed,
+        text:
+          removed === 0
+            ? "Nenhuma conta com erro ou desconectada para remover."
+            : `${removed} conta(s) com erro ou desconectada(s) removida(s) do Falcon Post.` +
+              (meta_revoked === removed
+                ? " Autorização revogada no Instagram."
+                : ` A Meta confirmou a revogação de ${meta_revoked}. Remova o Falcon Post dos apps conectados nas configurações do Instagram para concluir as demais.`),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["loops"] });
+      void queryClient.invalidateQueries({ queryKey: ["instagram", "folders"] });
+    },
+  });
 
   useEffect(() => {
     const outcome = searchParams.get("instagram");
@@ -207,8 +228,18 @@ export function InstagramAccountsPage() {
       : metaApps.error
         ? "Não foi possível carregar os aplicativos Meta."
         : null;
+  const removeBrokenError =
+    removeBroken.error instanceof ApiError
+      ? removeBroken.error.message
+      : removeBroken.error
+        ? "Não foi possível remover as contas com erro ou desconectadas."
+        : null;
   const activeAccountCount = accounts.data.accounts.filter(isInstagramAccountActive).length;
   const issueAccountCount = accounts.data.accounts.length - activeAccountCount;
+  // Only error/disconnected accounts are hard-removed in bulk (expired-but-connected are left to reconnect).
+  const brokenAccountCount = accounts.data.accounts.filter(
+    (account) => account.status === "error" || account.status === "disconnected",
+  ).length;
   const unassignedAccountCount = accounts.data.accounts.filter(
     (account) => !account.profile_folder_id && isInstagramAccountActive(account),
   ).length;
@@ -299,6 +330,7 @@ export function InstagramAccountsPage() {
       )}
       {disconnectError && <ErrorState message={disconnectError} />}
       {removeError && <ErrorState message={removeError} />}
+      {removeBrokenError && <ErrorState message={removeBrokenError} />}
       {metaAppsError && <ErrorState message={metaAppsError} />}
       {disconnectMessage && (
         <div
@@ -432,11 +464,32 @@ export function InstagramAccountsPage() {
             ))}
           </div>
         </div>
-        <div className="flex items-center justify-between text-sm text-muted">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
           <h3>Contas Instagram ({visibleAccounts.length})</h3>
-          {issueAccountCount > 0 && (
-            <span className="text-xs text-danger">{issueAccountCount} com erro ou expiradas</span>
-          )}
+          <div className="flex items-center gap-3">
+            {issueAccountCount > 0 && (
+              <span className="text-xs text-danger">{issueAccountCount} com erro ou expiradas</span>
+            )}
+            {accounts.data.can_manage && brokenAccountCount > 0 && (
+              <button
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-danger/30 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger-soft disabled:opacity-60"
+                type="button"
+                disabled={removeBroken.isPending}
+                onClick={async () => {
+                  if (
+                    await confirmAction(
+                      `Remover as ${brokenAccountCount} conta(s) com erro ou desconectada(s) do Falcon Post? As contas e o histórico de publicações associado serão excluídos. As contas ativas não são afetadas.`,
+                    )
+                  ) {
+                    removeBroken.mutate();
+                  }
+                }}
+              >
+                <Trash2 size={14} />
+                {removeBroken.isPending ? "Removendo…" : `Remover com erro/desconectadas (${brokenAccountCount})`}
+              </button>
+            )}
+          </div>
         </div>
         {visibleAccounts.length === 0 ? (
           <EmptyState
