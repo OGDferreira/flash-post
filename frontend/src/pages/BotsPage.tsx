@@ -10,6 +10,7 @@ import { ConversionOverview } from "@/features/bots/ConversionOverview";
 import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
 import { AnalyticsPanel } from "@/features/bots/AnalyticsPanel";
 import { BotsListPanel } from "@/features/bots/BotsListPanel";
+import { FoldersPanel } from "@/features/bots/FoldersPanel";
 import { FlowsPanel } from "@/features/bots/FlowsPanel";
 import { GatewaysPanel } from "@/features/bots/GatewaysPanel";
 import { RemarketingPanel } from "@/features/bots/remarketing/RemarketingPanel";
@@ -23,6 +24,7 @@ export const BOT_SECTIONS = {
   home: { slug: "", title: "Painel", eyebrow: "Visão geral", hint: "Leads, starts, vendas e conversão dos seus bots no período." },
   bots: { slug: "robos", title: "Meus bots", eyebrow: "Bots e leads", hint: "Conecte bots do Telegram e escolha o funil (ou a pasta de funis) de cada um." },
   flows: { slug: "funis", title: "Meus funis", eyebrow: "Funis", hint: "Funis criados por você: conteúdo, planos, entregas e o gateway de cada um." },
+  folders: { slug: "pastas", title: "Pastas de funis", eyebrow: "Funis", hint: "Junte vários funis numa pasta: o bot sorteia um por lead no /start." },
   analises: { slug: "analises", title: "Análises", eyebrow: "Visão geral", hint: "Quais funis e quais planos mais venderam no período." },
   remarketing: { slug: "remarketing", title: "Remarketing", eyebrow: "Bots e leads", hint: "Disparos para os leads de um funil, pelos próprios bots." },
   sharedByMe: { slug: "compartilhei", title: "Que compartilhei", eyebrow: "Funis", hint: "Seus funis compartilhados com cada sócio: gateway, a parte do vendedor, a sua comissão e as vendas. Só você altera essas regras." },
@@ -99,6 +101,7 @@ export function BotsPage() {
         />
       )}
       {tab === "analises" && <AnalyticsPanel period={period} />}
+      {tab === "folders" && <FoldersPanel />}
       {tab === "remarketing" && <RemarketingPanel flowId={remarketingFlow} onEditingChange={setEditing} onFlowChange={setRemarketingFlow} />}
       {tab === "shared" && <SharedFlowsPanel />}
       {tab === "sharedByMe" && <SharedByMePanel />}

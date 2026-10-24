@@ -51,6 +51,8 @@ from app.models.telegram_bot import (
     TgBot,
     TgCampaign,
     TgFlow,
+    TgFlowFolder,
+    TgFlowFolderItem,
     TgFlowShare,
     TgGatewaySetting,
     TgGroup,
@@ -64,6 +66,8 @@ from app.models.telegram_bot import (
 
 __all__ = [
     "AuditEvent",
+    "TgFlowFolder",
+    "TgFlowFolderItem",
     "TgFlowShare",
     "TgGatewaySetting",
     "AdminAuditLog",
