@@ -14,6 +14,13 @@ export function savePushPreference(body: { enabled?: boolean; prompt_done?: bool
   return apiRequest<PushConfig>("/api/notifications/push/preference", { method: "PUT", body });
 }
 
+export type PushTestResult = { delivered: number; devices: number };
+
+/** Sends a test push to the user's subscribed devices (rate-limited on the server). */
+export function sendTestPush(): Promise<PushTestResult> {
+  return apiRequest<PushTestResult>("/api/notifications/push/test", { method: "POST" });
+}
+
 export type PushAvailability =
   | "supported"
   | "unsupported-browser"

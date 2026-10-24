@@ -365,12 +365,41 @@ class TgCampaign(Base):
     # Leads of the audience that had already blocked the bot when the send started.
     already_blocked: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     runs: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Recurrence (None = one-shot). Validated by app.bots.campaigns.Recurrence:
+    # {"kind": "daily"|"hours"|"weekdays", "time": "HH:MM", "hours": int, "weekdays": [0..6]}.
+    recurrence: Mapped[dict | None] = mapped_column(JSON)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class TgCampaignRun(Base):
+    """One send of a campaign, kept so the panel can show the history of disparos.
+
+    Opened by ``start_campaign`` (finished_at NULL) and closed when the send finishes;
+    the counters are a snapshot of that run, independent of later runs of the same campaign.
+    """
+
+    __tablename__ = "tg_campaign_runs"
+    __table_args__ = (Index("ix_tg_campaign_runs_campaign", "campaign_id", "started_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    workspace_id: Mapped[uuid.UUID] = _workspace_fk()
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="sending", server_default="sending")
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    sent: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    blocked: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    already_blocked: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class TgFlowShare(Base):

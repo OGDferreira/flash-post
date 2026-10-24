@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 
 import { MemberGoalsPanel } from "@/components/MemberGoalsPanel";
+import { PushSwitch } from "@/components/PushSwitch";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest } from "@/services/api";
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
@@ -109,6 +110,8 @@ export function NotificationsPage() {
           Atualizar
         </button>
       </header>
+
+      <PushSwitch />
 
       <aside className="rounded-lg border border-line bg-surface p-4 text-xs leading-5 text-muted">
         Os detalhes abaixo vêm dos retornos da Meta, do estado das contas e dos

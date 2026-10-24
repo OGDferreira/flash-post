@@ -53,13 +53,23 @@ export function PushPrompt() {
 
   const needsInstall = availability === "ios-needs-install";
   const canAsk = availability === "supported" && config.data?.supported === true;
-  if (!config.data || config.data.prompt_done || config.data.impersonating) return null;
+  const granted = typeof Notification !== "undefined" && Notification.permission === "granted";
+  // The account wants push, but THIS device/app has no live subscription and the
+  // silent renewal can't run (permission isn't granted here — e.g. a freshly
+  // installed Home Screen app is a new push context). Ask again on this device.
+  const needsDevice = Boolean(config.data?.enabled) && subscribed === false && !granted;
+  if (!config.data || config.data.impersonating) return null;
   if (hidden || subscribed !== false || (!canAsk && !needsInstall)) return null;
+  // First-time ask, or re-ask a device that wants notifications but isn't receiving yet.
+  if (config.data.prompt_done && !needsDevice) return null;
   if (typeof Notification !== "undefined" && Notification.permission === "denied" && !needsInstall) return null;
 
   const dismiss = () => {
     setHidden(true);
-    void savePushPreference({ prompt_done: true }).then((next) => queryClient.setQueryData(["notifications", "push", "config"], next));
+    // Keep the account's choice; only record that the first-time prompt was answered.
+    if (!config.data?.prompt_done) {
+      void savePushPreference({ prompt_done: true }).then((next) => queryClient.setQueryData(["notifications", "push", "config"], next));
+    }
   };
 
   return (
@@ -68,11 +78,16 @@ export function PushPrompt() {
         <BellRing size={18} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-fg">Receba os avisos de metas e conquistas</p>
+        <p className="text-sm font-semibold text-fg">
+          {needsDevice ? "Ative as notificações neste aparelho" : "Receba os avisos de metas e conquistas"}
+        </p>
         <p className="text-xs text-muted">
           {needsInstall
             ? "No iPhone, adicione o Falcon Post à Tela de Início e abra por lá para ativar."
-            : (error ?? "Ative as notificações neste dispositivo. Leva um toque.")}
+            : (error ??
+              (needsDevice
+                ? "Você ativou as notificações, mas este aparelho ainda não está recebendo. Toque para ativar aqui."
+                : "Ative as notificações neste dispositivo. Leva um toque."))}
         </p>
       </div>
       {canAsk && (
