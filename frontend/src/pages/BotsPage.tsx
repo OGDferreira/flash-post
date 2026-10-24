@@ -19,7 +19,7 @@ import { SharedFlowsPanel } from "@/features/partners/SharedTemplates";
 
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-/** Each Falcon Bot section has its own address (the sidebar links to them). */
+/** Each Flash section has its own address (the sidebar links to them). */
 export const BOT_SECTIONS = {
   home: { slug: "", title: "Painel", eyebrow: "Visão geral", hint: "Leads, starts, vendas e conversão dos seus bots no período." },
   bots: { slug: "robos", title: "Meus bots", eyebrow: "Bots e leads", hint: "Conecte bots do Telegram e escolha o funil (ou a pasta de funis) de cada um." },

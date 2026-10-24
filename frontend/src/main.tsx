@@ -34,7 +34,7 @@ if ("serviceWorker" in navigator) {
     void navigator.serviceWorker
       .register("/service-worker.js")
       .catch((error: unknown) => {
-        console.error("Falcon Post could not register its offline app shell.", error);
+        console.error("Flash could not register its offline app shell.", error);
       });
   });
 }

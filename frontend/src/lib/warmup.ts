@@ -21,7 +21,7 @@ async function warm(client: QueryClient, app: "post" | "bot") {
   const prefetch = (queryKey: unknown[], url: string, staleTime = 60_000) =>
     client.prefetchQuery({ queryKey, queryFn: get(url), staleTime }).catch(() => undefined);
 
-  // Falcon Post: the dashboard numbers, the accounts and the Meta metrics of each tab.
+  // Flash: the dashboard numbers, the accounts and the Meta metrics of each tab.
   const post = async () => {
     await prefetch(["analytics", "summary", "fast", "today", null, null], "/api/analytics/summary?period=today");
     void prefetch(["analytics", "summary", "meta", "today", null, null], "/api/analytics/summary?period=today&include_meta_insights=true", 5 * 60_000);
@@ -38,7 +38,7 @@ async function warm(client: QueryClient, app: "post" | "bot") {
       );
     }
   };
-  // Falcon Bot: today's panel, the 30-day chart and the wallet.
+  // Flash: today's panel, the 30-day chart and the wallet.
   const bot = async () => {
     void prefetch(["bots", "stats", { period: "today" }], "/api/bots/stats?period=today", 30_000);
     void prefetch(["bots", "stats", { period: "30d" }], "/api/bots/stats?period=30d", 30_000);

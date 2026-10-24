@@ -1,4 +1,4 @@
-"""Telegram sales bots run by Falcon Post itself (the in-house SharkBot alternative).
+"""Telegram sales bots run by Flash itself (the in-house SharkBot alternative).
 
 A workspace connects bots (token from @BotFather) and builds flows in the panel.
 Every piece of copy, media, price and delivery lives in ``TgFlow.definition``;
@@ -246,7 +246,7 @@ class TgOrder(Base):
     # Gateways tried before the one that charged (failover), e.g. ["snakepay"].
     gateway_attempts: Mapped[list | None] = mapped_column(JSON)
     platform_fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
-    transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))  # Falcon Bot fee charged on this sale
+    transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))  # Flash fee charged on this sale
     # The funnel's owner took 100% of this sale (TgFlowShare.owner_takes_all): the seller never sees it.
     seller_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     pix_copy_paste: Mapped[str | None] = mapped_column(Text)

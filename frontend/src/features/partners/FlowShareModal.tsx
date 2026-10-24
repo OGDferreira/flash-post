@@ -331,7 +331,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
             <p className="font-semibold text-fg">Como cada venda é dividida</p>
             <p className="mt-1">
               Base de cálculo: o valor líquido da venda (bruto menos a taxa do gateway). Sua comissão sai dessa base pelo split do gateway, na
-              hora da cobrança. A taxa Falcon Bot por venda sai da parte do vendedor. Venda estornada não gera comissão.
+              hora da cobrança. A taxa Flash por venda sai da parte do vendedor. Venda estornada não gera comissão.
             </p>
             {gateway === "snakepay" && !Number.isNaN(o) && (
               <p className="mt-2">

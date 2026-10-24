@@ -83,7 +83,7 @@ export function PushPrompt() {
         </p>
         <p className="text-xs text-muted">
           {needsInstall
-            ? "No iPhone, adicione o Falcon Post à Tela de Início e abra por lá para ativar."
+            ? "No iPhone, adicione o Flash à Tela de Início e abra por lá para ativar."
             : (error ??
               (needsDevice
                 ? "Você ativou as notificações, mas este aparelho ainda não está recebendo. Toque para ativar aqui."

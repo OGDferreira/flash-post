@@ -279,7 +279,7 @@ async def set_invite_partners(user_id: uuid.UUID, payload: _Flag, admin: SuperAd
 async def set_transaction_fee(
     user_id: uuid.UUID, payload: AdminTransactionFeeRequest, _admin: SuperAdminUser, db: DbSession
 ) -> AdminUser:
-    """The Falcon Bot fee per sale for one user's operations (None = back to the default)."""
+    """The Flash fee per sale for one user's operations (None = back to the default)."""
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")

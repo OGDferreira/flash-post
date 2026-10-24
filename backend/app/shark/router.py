@@ -199,7 +199,7 @@ _NOTIFY_MAX_PER_DELIVERY = 3
 
 
 async def _notify_shark_sales(db, workspace: Workspace, sales: list, now: datetime) -> None:
-    """Approved SharkBot sale -> the same "Nova venda" notice (and cash sound) as Falcon Bot.
+    """Approved SharkBot sale -> the same "Nova venda" notice (and cash sound) as Flash.
     Old payments re-sent by SharkBot (history backfills) do not notify."""
     from app.partners.service import notify_user
 

@@ -96,7 +96,7 @@ export function EngagementRankingPanel({
                   </span>
                   <span className="mt-1 block h-1 overflow-hidden rounded bg-white/5">
                     <span
-                      className="block h-full rounded bg-gradient-to-r from-[#536dfe] to-[#00c9d8]"
+                      className="block h-full rounded bg-gradient-to-r from-[#1e9cfd] to-[#00c9d8]"
                       style={{ width: `${row.engagement_rate === null ? 0 : (row.engagement_rate / best) * 100}%` }}
                     />
                   </span>

@@ -57,7 +57,7 @@ export function ContactsPage() {
           action="Chamar no WhatsApp"
           description="Atendimento direto com a equipe para dúvidas, problemas e sugestões."
           detail={SUPPORT_WHATSAPP_LABEL}
-          href={whatsappLink("Olá! Preciso de ajuda com o Falcon Post.")}
+          href={whatsappLink("Olá! Preciso de ajuda com o Flash.")}
           icon={MessageCircle}
           title="WhatsApp"
         />
@@ -78,15 +78,15 @@ export function ContactsPage() {
         />
         <Channel
           action="Ver no Instagram"
-          description="Perfil oficial do Falcon Post, com conteúdos criados e publicados automaticamente pela própria plataforma."
+          description="Perfil oficial do Flash, com conteúdos criados e publicados automaticamente pela própria plataforma."
           detail={instagram.handle ?? undefined}
           href={instagram.url}
           icon={Instagram}
-          title="Instagram do Falcon Post"
+          title="Instagram do Flash"
         />
         <Channel
           action="Abrir no Telegram"
-          description="Bot do Falcon Post no Telegram: tudo em um só lugar, direto no seu chat."
+          description="Bot do Flash no Telegram: tudo em um só lugar, direto no seu chat."
           href={telegram.url}
           icon={Send}
           title="Bot do Telegram"

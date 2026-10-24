@@ -2,10 +2,10 @@
  * The iPhone widget script for the Scriptable app. It reads /api/widget/today with a
  * read-only token (made when the user copies it in Configurações) and draws, in the logo's
  * blue gradient:
- * - medium and small (the SharkBot-style cards): Falcon Bot, sales pill, "Faturamento hoje",
+ * - medium and small (the SharkBot-style cards): Flash, sales pill, "Faturamento hoje",
  *   the day's total and the revenue-by-hour chart;
  * - large: revenue, profit, Pix generated/paid and a bigger chart;
- * - lock screen: logo, Falcon Bot, revenue and number of sales.
+ * - lock screen: logo, Flash, revenue and number of sales.
  * iOS widgets are still images the system refreshes on its own (it asks for 1 min; iOS
  * usually allows every 5-15 min), so a new sale shows as a green "+R$" badge, and tapping
  * the widget opens an animated view (chart drawing itself, numbers counting up).
@@ -14,23 +14,23 @@ export type WidgetTheme = "azul" | "dark" | "white";
 
 export function scriptableWidgetScript(baseUrl: string, token: string, theme: WidgetTheme = "azul"): string {
   const base = baseUrl.replace(/\/$/, "");
-  return `// Falcon Bot — widget de vendas do Falcon Post para o Scriptable
+  return `// Flash — widget de vendas do Flash para o Scriptable
 // Gerado em ${new Date().toLocaleDateString("pt-BR")}. Copiar o script de novo no site desliga este.
 const API = ${JSON.stringify(`${base}/api/widget/today`)};
 const TOKEN = ${JSON.stringify(token)};
-const LOGO = ${JSON.stringify(`${base}/brand/falconbot-icon-192.png`)};
+const LOGO = ${JSON.stringify(`${base}/brand/flash-icon-192.png`)};
 const SITE = ${JSON.stringify(`${base}/bot`)};
 
-// Three looks in the Falcon Bot colors (indigo/purple). Pick one per widget in its "Parameter"
+// Three looks in the Flash colors (azul-ciano). Pick one per widget in its "Parameter"
 // field (dark, white or azul); empty = the one chosen when the script was copied. "comm" is the
 // commission tone (purple) used on the Super Admin's commission line and dotted chart.
 const THEMES = {
-  azul: { bg: ["#5169f4", "#3b52e0", "#2f3fbf"], text: "#ffffff", soft: ["#ffffff", 0.82], faint: ["#ffffff", 0.62],
+  azul: { bg: ["#1e9cfd", "#1577c9", "#0e5fa8"], text: "#ffffff", soft: ["#ffffff", 0.82], faint: ["#ffffff", 0.62],
           pill: ["#ffffff", 0.2], line: "#ffffff", fill: 0.16, profit: "#b6ffcf", rate: "#ffffff", comm: "#dcc4ff" },
   dark: { bg: ["#12141c", "#191d2e", "#20264a"], text: "#ffffff", soft: ["#aab4d4", 1], faint: ["#6b7699", 1],
-          pill: ["#536dfe", 0.24], line: "#6b81ff", fill: 0.2, profit: "#22c55e", rate: "#93a3ff", comm: "#b171ff" },
+          pill: ["#1e9cfd", 0.24], line: "#4fb6fe", fill: 0.2, profit: "#22c55e", rate: "#6ec9ff", comm: "#b171ff" },
   white: { bg: ["#ffffff", "#f2f5ff", "#e7edff"], text: "#0b1530", soft: ["#495271", 1], faint: ["#8a93b4", 1],
-           pill: ["#536dfe", 0.12], line: "#3a4fd6", fill: 0.14, profit: "#16a34a", rate: "#536dfe", comm: "#8b3fd6" },
+           pill: ["#1e9cfd", 0.12], line: "#0b74c4", fill: 0.14, profit: "#16a34a", rate: "#1e9cfd", comm: "#8b3fd6" },
 };
 const PICK = String(args.widgetParameter || ${JSON.stringify(theme)}).trim().toLowerCase();
 const T = THEMES[PICK === "branco" ? "white" : PICK === "escuro" ? "dark" : PICK] || THEMES.azul;
@@ -118,7 +118,7 @@ function header(stack, logo, size, pill) {
     image.borderColor = new Color(T.text, 0.25);
     row.addSpacer(6);
   }
-  const name = row.addText("Falcon Bot");
+  const name = row.addText("Flash");
   name.font = Font.boldSystemFont(size * 0.8);
   name.textColor = C.text;
   name.lineLimit = 1;
@@ -264,7 +264,7 @@ function commissionLine(stack, data, size) {
 function footer(stack, data, size) {
   const row = stack.addStack();
   row.addSpacer();
-  const t = row.addText(data.updated_at + (data.offline ? " · offline" : "") + " · Falcon Post");
+  const t = row.addText(data.updated_at + (data.offline ? " · offline" : "") + " · Flash");
   t.font = Font.mediumSystemFont(size);
   t.textColor = C.faint;
 }
@@ -375,11 +375,11 @@ function large(data, logo, delta) {
   return w;
 }
 
-// Lock screen: logo, Falcon Bot, revenue and sales (iOS draws it in one tone).
+// Lock screen: logo, Flash, revenue and sales (iOS draws it in one tone).
 function lockScreen(data, logo, family) {
   const w = new ListWidget();
   if (family === "accessoryInline") {
-    w.addText("Falcon Bot " + brl(data.revenue) + " · " + sales(data.pix_paid));
+    w.addText("Flash " + brl(data.revenue) + " · " + sales(data.pix_paid));
     return w;
   }
   if (family === "accessoryCircular") {
@@ -401,7 +401,7 @@ function lockScreen(data, logo, family) {
     image.cornerRadius = 3;
     top.addSpacer(4);
   }
-  const name = top.addText("Falcon Bot");
+  const name = top.addText("Flash");
   name.font = Font.boldSystemFont(12);
   const amount = w.addText(brl(data.revenue));
   amount.font = Font.boldRoundedSystemFont(20);
@@ -415,7 +415,7 @@ function lockScreen(data, logo, family) {
 function failure(message) {
   const w = new ListWidget();
   background(w);
-  const title = w.addText("Falcon Bot");
+  const title = w.addText("Flash");
   title.font = Font.boldSystemFont(15);
   title.textColor = C.text;
   w.addSpacer(6);
@@ -445,13 +445,13 @@ svg{width:100%;height:auto;overflow:visible}.line{fill:none;stroke:\${T.line};st
 @keyframes draw{to{stroke-dashoffset:0}}@keyframes fade{to{opacity:1}}@keyframes pulse{0%,100%{opacity:1;r:5}50%{opacity:.5;r:9}}
 a{color:#fff;text-align:center;background:\${T.line === "#ffffff" ? "rgba(0,0,0,.18)" : T.line};border-radius:14px;padding:13px;text-decoration:none;font-weight:600}
 </style></head><body>
-<div class="top"><img src="\${LOGO}">Falcon Bot<span class="pill">\${sales(data.pix_paid)}</span></div>
+<div class="top"><img src="\${LOGO}">Flash<span class="pill">\${sales(data.pix_paid)}</span></div>
 <div><div class="lbl">Faturamento hoje</div><div class="big" data-to="\${data.revenue}">R$ 0,00</div></div>
 <div class="row"><div class="card"><div class="lbl">Lucro</div><b data-to="\${data.profit}">R$ 0,00</b></div>
 <div class="card"><div class="lbl">Pix</div><b>\${data.pix_generated} gerados</b><span style="opacity:.8">\${data.pix_paid} pagos · \${conversion}%</span></div></div>
 <svg viewBox="0 0 320 160"><path class="area" d="\${d} L320,160 L0,160 Z"/><path class="line" d="\${d}"/><circle class="dot" cx="\${pts[pts.length-1][0]}" cy="\${pts[pts.length-1][1]}" r="5"/></svg>
 <div class="lbl" style="text-align:right">atualizado \${data.updated_at}</div>
-<a href="\${SITE}">Abrir o Falcon Bot</a>
+<a href="\${SITE}">Abrir o Flash</a>
 <script>
 const fmt=v=>"R$ "+v.toFixed(2).replace(".",",").replace(/\\\\B(?=(\\\\d{3})+(?!\\\\d))/g,".");
 document.querySelectorAll("[data-to]").forEach(el=>{const to=+el.dataset.to,t0=performance.now();

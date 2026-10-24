@@ -1,20 +1,20 @@
-/** Falcon Post (accounts and publishing) and Falcon Bot (funnels, sales and money): two tools,
- * one login. Paths decide which tool a screen belongs to. */
+/** Flash: two tools (publishing on Instagram and funnels/sales on Telegram), one login and
+ * one brand. Paths decide which tool a screen belongs to. */
 export type AppId = "post" | "bot";
 
 export const APPS: Record<AppId, { name: string; short: string; home: string; emblem: string; tagline: string }> = {
   post: {
-    name: "Falcon Post",
+    name: "Flash",
     short: "Post",
     home: "/dashboard",
-    emblem: "/brand/falconpost-emblem-256.webp",
+    emblem: "/brand/flash-emblem.svg",
     tagline: "Contas, pastas, loops e métricas",
   },
   bot: {
-    name: "Falcon Bot",
+    name: "Flash",
     short: "Bot",
     home: "/bot",
-    emblem: "/brand/falconbot-emblem-256.webp",
+    emblem: "/brand/flash-emblem.svg",
     tagline: "Funis, vendas, gateways e comissões",
   },
 };
@@ -33,7 +33,7 @@ const LAST_KEY = "falcon-last-path-";
 
 /** Where the switcher sends you back to: the last screen you used in that tool. */
 export function rememberPath(app: AppId, path: string) {
-  if (isAdminPath(path)) return; // Falcon Adm screens belong to neither tool
+  if (isAdminPath(path)) return; // Flash Adm screens belong to neither tool
   try {
     sessionStorage.setItem(LAST_KEY + app, path);
   } catch {

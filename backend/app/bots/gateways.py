@@ -239,7 +239,7 @@ async def snakepay_plan(
 
 async def _owner_all_plan(db: AsyncSession, route: BillingRoute, amount: Decimal) -> SnakePlan | None:
     """The funnel's owner takes the whole sale: the Super Admin's goes to the platform account
-    (no split); another owner's is charged with their own SnakePay key (only the Falcon fee goes
+    (no split); another owner's is charged with their own SnakePay key (only the Flash fee goes
     out by split) or, without one, with the platform key splitting the net to their ShopID."""
     chief = await db.get(User, route.chief_user_id) if route.chief_user_id else None
     if chief is None:
@@ -343,7 +343,7 @@ def apply_snake_charge(order, route: BillingRoute, plan: SnakePlan, charge: snak
             owner = amounts.get(plan.chief_recipient.lower())
             if owner is None:
                 owner = snakepay.share(net, plan.chief_percent)
-        else:  # charged in the owner's own account: only the splits (the Falcon fee) went out
+        else:  # charged in the owner's own account: only the splits (the Flash fee) went out
             out = Decimal("0.00")
             for rule in plan.split:
                 part = amounts.get(rule["recipient_id"].lower())

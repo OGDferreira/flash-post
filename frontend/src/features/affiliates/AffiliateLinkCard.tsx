@@ -49,7 +49,7 @@ export function AffiliateLinkCard() {
           </p>
           <p className="text-xs leading-5 text-muted">
             Seu chefe vê as métricas das suas contas e do SharkBot. Ele não acessa suas contas, tokens ou senha. O
-            percentual é definido por ele; o Falcon Post não faz repasses.
+            percentual é definido por ele; o Flash não faz repasses.
           </p>
         </div>
       ) : (

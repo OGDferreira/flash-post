@@ -315,7 +315,7 @@ export function DashboardPage() {
       title: "Posts no período",
       target: metrics?.published_posts ?? null,
       loading: summary.isFetching && !summary.data,
-      detail: "Publicados pelo Falcon Post",
+      detail: "Publicados pelo Flash",
       icon: CircleCheck,
       color: "text-success",
     },

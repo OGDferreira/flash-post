@@ -1,4 +1,4 @@
-/** Official Falcon Post channels. Set a url to turn a "Em breve" card into a live link. */
+/** Official Flash channels. Set a url to turn a "Em breve" card into a live link. */
 export const SUPPORT_WHATSAPP = "5527999384259"; // +55 27 99938-4259
 export const SUPPORT_WHATSAPP_LABEL = "+55 27 99938-4259";
 

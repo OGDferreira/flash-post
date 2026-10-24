@@ -51,10 +51,10 @@ export const adminLinks: NavItem[] = [
   { label: "Sistema", to: "/admin/system", icon: Settings2 },
 ];
 
-// ------------------------------------------------------------------ Falcon Post
+// ------------------------------------------------------------------ Flash
 // Operational order: accounts, folders, loops and metrics first; team and settings after.
 
-/** Phone bottom bar of Falcon Post. */
+/** Phone bottom bar of Flash. */
 const postDirect: NavItem[] = [
   { label: "Painel", to: "/dashboard", icon: Home },
   { label: "Contas", to: "/feature/accounts", icon: Users },
@@ -142,7 +142,7 @@ const postGroups: NavGroup[] = [
   },
 ];
 
-// A sócio (partner) sees a lean Falcon Post: their accounts, the loops shared with them,
+// A sócio (partner) sees a lean Flash: their accounts, the loops shared with them,
 // the posts ranking and their revenue. Route guards and the API still enforce permissions.
 const partnerPostRoutes = new Set([
   "/dashboard",
@@ -171,7 +171,7 @@ const collaboratorRoutes = new Set([
   "/avisos",
 ]);
 
-// ------------------------------------------------------------------ Falcon Bot
+// ------------------------------------------------------------------ Flash
 // Funnels, leads, sales, gateways and money. Gateway setup lives apart from daily results.
 
 const botDirect: NavItem[] = [

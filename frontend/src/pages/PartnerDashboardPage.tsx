@@ -28,7 +28,7 @@ function Metric({ label, value, icon: Icon, tone = "text-fg", hint }: { label: s
   );
 }
 
-/** Falcon Post panel of a sócio (partner): only their accounts, revenue and the posts ranking. */
+/** Flash panel of a sócio (partner): only their accounts, revenue and the posts ranking. */
 export function PartnerDashboardPage() {
   const { user } = useAuth();
   const [period, setPeriod] = useState<MetricsPeriod>({ period: "today", start: todayInput(), end: todayInput() });
@@ -98,7 +98,7 @@ export function PartnerDashboardPage() {
 
       <section aria-labelledby="partner-ranking-title" className="space-y-2">
         <h2 className="flex items-center gap-2 px-1 text-base font-semibold text-fg" id="partner-ranking-title">
-          <Trophy aria-hidden="true" className="text-accent" size={18} /> Ranking de posts do Falcon Post
+          <Trophy aria-hidden="true" className="text-accent" size={18} /> Ranking de posts do Flash
         </h2>
         <TopVideosPanel compact period={period} />
       </section>

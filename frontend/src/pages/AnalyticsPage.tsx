@@ -156,7 +156,7 @@ export function AnalyticsPage() {
       icon: BarChart3,
     },
     {
-      title: "Publicados pelo Falcon Post",
+      title: "Publicados pelo Flash",
       value: formatCount(accountMetrics?.published_posts),
       helper: "Publicações concluídas pela ferramenta",
       icon: CircleCheck,
@@ -342,15 +342,15 @@ export function AnalyticsPage() {
               </div>
               <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-4">
                 <h3 className="text-sm font-medium text-fg">
-                  Publicações feitas pelo Falcon Post no período
+                  Publicações feitas pelo Flash no período
                 </h3>
                 <div className="mt-4 h-[260px]">
                   <ResponsiveContainer height="100%" width="100%">
                     <AreaChart data={summary.data?.daily_publications ?? []}>
                       <defs>
                         <linearGradient id="accountPublishedFill" x1="0" x2="0" y1="0" y2="1">
-                          <stop offset="0%" stopColor="#536dfe" stopOpacity={0.38} />
-                          <stop offset="95%" stopColor="#536dfe" stopOpacity={0.02} />
+                          <stop offset="0%" stopColor="#1e9cfd" stopOpacity={0.38} />
+                          <stop offset="95%" stopColor="#1e9cfd" stopOpacity={0.02} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid stroke="#202838" strokeDasharray="3 3" vertical={false} />

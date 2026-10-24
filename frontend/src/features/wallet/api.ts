@@ -55,7 +55,7 @@ export type Wallet = {
   month_commissions?: number;
   gateways?: GatewayBalance[];
   withdrawals_blocked?: boolean;
-  /** Super Admin only: the per-sale Falcon Bot fee collected (month and today). */
+  /** Super Admin only: the per-sale Flash fee collected (month and today). */
   falcon_fees_month?: number;
   falcon_fees_month_count?: number;
   falcon_fees_today?: number;

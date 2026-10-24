@@ -13,7 +13,7 @@ const copy = {
   register: {
     eyebrow: "Comece agora",
     title: ["Menos trabalho manual,", "mais resultado."],
-    text: "O Falcon Post conecta seus perfis, publica no horário certo e automatiza a rotina da sua equipe.",
+    text: "O Flash conecta seus perfis, publica no horário certo e automatiza a rotina da sua equipe.",
   },
 } as const;
 
@@ -62,9 +62,7 @@ export function AuthShell({ mode, children }: { mode: "login" | "register"; chil
           />
           <Link to="/" className="relative flex w-fit items-center gap-2.5">
             <BrandLogo animated className="size-9 sm:size-11" />
-            <BrandLockup app="post" className="h-4 sm:h-5" kind="wordmark" />
-            <span aria-hidden="true" className="text-muted">+</span>
-            <BrandLogo app="bot" className="size-7 sm:size-8" />
+            <BrandLockup app="post" className="h-5 sm:h-6" kind="wordmark" />
           </Link>
           <div className="relative max-w-md md:my-auto">
             <p className="mb-2 inline-flex rounded-full border border-line bg-brand-soft px-2.5 py-0.5 text-[11px] font-medium text-accent sm:mb-4 sm:px-3 sm:py-1 sm:text-xs">

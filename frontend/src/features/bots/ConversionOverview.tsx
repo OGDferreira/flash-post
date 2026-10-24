@@ -81,7 +81,7 @@ export function useBotStats(period: MetricsPeriod) {
 
 type PartnerRow = { bot_revenue: string; bot_sales: number; commission_received: string };
 
-/** Falcon Bot sales of the user's partners and the commission they paid, in the chosen period. */
+/** Flash sales of the user's partners and the commission they paid, in the chosen period. */
 function usePartnerTotals(period: MetricsPeriod) {
   return useQuery({
     queryKey: ["affiliates", "flashbot-totals", periodParams(period)],
@@ -138,7 +138,7 @@ function Gauge({ percent }: { percent: number }) {
   );
 }
 
-/** Falcon Bot home: SharkBot-style KPI cards, daily revenue chart, lead log, next award and the partners' ranking. */
+/** Flash home: SharkBot-style KPI cards, daily revenue chart, lead log, next award and the partners' ranking. */
 export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod; onPeriod: (value: MetricsPeriod) => void }) {
   const stats = useBotStats(period);
   const chart = useBotStats({ period: "30d", start: "", end: "" });
@@ -272,7 +272,7 @@ export function ConversionOverview({ period, onPeriod }: { period: MetricsPeriod
           <StatCard icon={<Handshake size={16} />} title="Vendas dos sócios">
             <p className="text-2xl font-bold text-fg">{money(partnerRevenue)}</p>
             <p className="mt-auto pt-3 text-[10px] text-muted">
-              {count(partnerSales)} {partnerSales === 1 ? "venda" : "vendas"} no Falcon Bot de {count(partnerRows.length)}{" "}
+              {count(partnerSales)} {partnerSales === 1 ? "venda" : "vendas"} no Flash de {count(partnerRows.length)}{" "}
               {partnerRows.length === 1 ? "sócio" : "sócios"} · {stats.data?.period_label ?? ""}
             </p>
           </StatCard>

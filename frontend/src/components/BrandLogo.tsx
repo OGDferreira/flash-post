@@ -1,15 +1,7 @@
-import { useSyncExternalStore } from "react";
-
 import { APPS, type AppId } from "@/lib/brand";
-import { getTheme } from "@/lib/theme";
 
-function subscribeTheme(listener: () => void) {
-  window.addEventListener("flashpost:theme", listener);
-  return () => window.removeEventListener("flashpost:theme", listener);
-}
-
-/** The falcon emblem of a tool (Falcon Post by default). ``animated``: the entry animation
- * (the ring turns in, the falcon lands, a light sweep crosses it), see .falcon-anim in index.css. */
+/** The Flash emblem (the lightning bolt). ``animated``: the entry animation
+ * (the ring turns in, the mark lands, a light sweep crosses it), see .falcon-anim in index.css. */
 export function BrandLogo({
   className = "size-9",
   animated = false,
@@ -27,7 +19,8 @@ export function BrandLogo({
   );
 }
 
-/** "FALCON POST" / "FALCON BOT" wordmark (with or without the emblem), light or dark following the theme. */
+/** "Flash" wordmark, optionally with the emblem. Rendered as text in the brand font so it
+ * follows the theme (currentColor) and needs no per-name image. */
 export function BrandLockup({
   app = "post",
   className = "h-8",
@@ -38,14 +31,23 @@ export function BrandLockup({
   /** lockup = emblem + name; wordmark = name only (when the emblem is already beside it). */
   kind?: "lockup" | "wordmark";
 }) {
-  const theme = useSyncExternalStore(subscribeTheme, getTheme);
-  const name = app === "bot" ? "falconbot" : "falconpost";
   return (
-    <img
-      alt={APPS[app].name}
-      className={`${className} w-auto object-contain`}
-      draggable={false}
-      src={`/brand/${name}-${kind}-${theme === "light" ? "light" : "dark"}.webp`}
-    />
+    <span className={`inline-flex items-center gap-2 text-fg ${className}`}>
+      {kind === "lockup" && (
+        <img alt="" className="h-full w-auto object-contain" draggable={false} src={APPS[app].emblem} />
+      )}
+      <svg className="h-full w-auto" viewBox="0 0 150 48" role="img" aria-label={APPS[app].name} fill="currentColor">
+        <text
+          x="0"
+          y="37"
+          fontFamily="'Space Grotesk Variable','Space Grotesk',system-ui,sans-serif"
+          fontSize="40"
+          fontWeight="700"
+          letterSpacing="-1.5"
+        >
+          Flash
+        </text>
+      </svg>
+    </span>
   );
 }

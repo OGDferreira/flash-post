@@ -64,9 +64,9 @@ async def import_flow(db: AsyncSession, data: dict, workspace_id: uuid.UUID) -> 
     from app.instagram.storage import SupabaseStorage
 
     if not isinstance(data, dict) or data.get("format") != FORMAT:
-        raise HTTPException(status_code=422, detail="Arquivo inválido: não é um funil do Falcon Post.")
+        raise HTTPException(status_code=422, detail="Arquivo inválido: não é um funil do Flash.")
     if int(data.get("version") or 0) > VERSION:
-        raise HTTPException(status_code=422, detail="Este arquivo é de uma versão mais nova do Falcon Post.")
+        raise HTTPException(status_code=422, detail="Este arquivo é de uma versão mais nova do Flash.")
     ids: dict[str, str] = {}
     uploads = []
     for item in data.get("media") or []:

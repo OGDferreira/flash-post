@@ -119,8 +119,8 @@ export function InstagramAccountsPage() {
       setDisconnectMessage({
         complete: meta_revoked,
         text: meta_revoked
-          ? "Conta desconectada do Falcon Post e autorização revogada no Instagram."
-          : "Conta removida do Falcon Post, mas a Meta não confirmou a revogação. Remova o Falcon Post dos apps conectados nas configurações do Instagram para concluir.",
+          ? "Conta desconectada do Flash e autorização revogada no Instagram."
+          : "Conta removida do Flash, mas a Meta não confirmou a revogação. Remova o Flash dos apps conectados nas configurações do Instagram para concluir.",
       });
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
       void queryClient.invalidateQueries({ queryKey: ["loops"] });
@@ -136,8 +136,8 @@ export function InstagramAccountsPage() {
       setDisconnectMessage({
         complete: meta_revoked,
         text: meta_revoked
-          ? "A conta com erro foi removida do Falcon Post e a autorização foi revogada no Instagram."
-          : "A conta com erro foi removida do Falcon Post, mas a Meta não confirmou a revogação. Remova o Falcon Post dos apps conectados nas configurações do Instagram.",
+          ? "A conta com erro foi removida do Flash e a autorização foi revogada no Instagram."
+          : "A conta com erro foi removida do Flash, mas a Meta não confirmou a revogação. Remova o Flash dos apps conectados nas configurações do Instagram.",
       });
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
       void queryClient.invalidateQueries({ queryKey: ["loops"] });
@@ -155,10 +155,10 @@ export function InstagramAccountsPage() {
         text:
           removed === 0
             ? "Nenhuma conta com erro ou desconectada para remover."
-            : `${removed} conta(s) com erro ou desconectada(s) removida(s) do Falcon Post.` +
+            : `${removed} conta(s) com erro ou desconectada(s) removida(s) do Flash.` +
               (meta_revoked === removed
                 ? " Autorização revogada no Instagram."
-                : ` A Meta confirmou a revogação de ${meta_revoked}. Remova o Falcon Post dos apps conectados nas configurações do Instagram para concluir as demais.`),
+                : ` A Meta confirmou a revogação de ${meta_revoked}. Remova o Flash dos apps conectados nas configurações do Instagram para concluir as demais.`),
       });
       void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] });
       void queryClient.invalidateQueries({ queryKey: ["loops"] });
@@ -478,7 +478,7 @@ export function InstagramAccountsPage() {
                 onClick={async () => {
                   if (
                     await confirmAction(
-                      `Remover as ${brokenAccountCount} conta(s) com erro ou desconectada(s) do Falcon Post? As contas e o histórico de publicações associado serão excluídos. As contas ativas não são afetadas.`,
+                      `Remover as ${brokenAccountCount} conta(s) com erro ou desconectada(s) do Flash? As contas e o histórico de publicações associado serão excluídos. As contas ativas não são afetadas.`,
                     )
                   ) {
                     removeBroken.mutate();
@@ -597,7 +597,7 @@ export function InstagramAccountsPage() {
                         onClick={async () => {
                           if (
                             await confirmAction(
-                              `Remover @${account.username} do Falcon Post? A conta e o histórico de publicações associado serão excluídos.`,
+                              `Remover @${account.username} do Flash? A conta e o histórico de publicações associado serão excluídos.`,
                             )
                           ) {
                             removeErroredAccount.mutate(account.id);

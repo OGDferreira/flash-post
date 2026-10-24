@@ -83,7 +83,7 @@ export function SharkAccountsPanel() {
           conta veio. O mesmo evento recebido duas vezes (ou por duas URLs) conta uma única vez.
         </p>
         <p className="mt-2 rounded-xl border border-warning/30/60 bg-warning-soft/60 p-3 text-xs leading-5 text-warning">
-          Só o ID da conta Shark não faz as compras chegarem ao Falcon Post: o SharkBot envia os eventos por webhook. Cole
+          Só o ID da conta Shark não faz as compras chegarem ao Flash: o SharkBot envia os eventos por webhook. Cole
           a URL da conta no campo de webhook do SharkBot e ative os eventos de entrada de lead, PIX gerado e pagamento
           aprovado. O ID abaixo é opcional e serve só para você identificar a conta.
         </p>

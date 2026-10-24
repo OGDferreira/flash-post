@@ -542,7 +542,7 @@ function LoopAccountsDialog({ loop, onClose, withFolders = true }: { loop: Insta
   );
 }
 
-/** Falcon Bot > Compartilhados comigo: the funnels another owner shared with me, with the
+/** Flash > Compartilhados comigo: the funnels another owner shared with me, with the
  *  rules that owner set (read-only: gateway, my part, the owner's commission). */
 export function SharedFlowsPanel() {
   const chief = useChiefLabel();

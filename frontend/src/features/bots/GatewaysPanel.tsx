@@ -59,7 +59,7 @@ export function GatewayLogo({ id, className = "size-12" }: { id: GatewayId; clas
   );
 }
 
-/** Falcon Bot > Gateways. Credentials live only inside each gateway's modal and only for the
+/** Flash > Gateways. Credentials live only inside each gateway's modal and only for the
  *  operation's OWN funnels; funnels shared with this operation are read-only here. */
 export function GatewaysPanel() {
   const queryClient = useQueryClient();

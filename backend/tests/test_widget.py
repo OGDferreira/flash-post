@@ -29,7 +29,7 @@ async def test_widget_token_reads_today_and_is_replaced_by_a_new_one(client, db_
     data = today.json()
     assert data["pix_generated"] == 1 and data["pix_paid"] == 1
     assert data["revenue"] == 19.9 and data["profit"] == 18.9  # fake SmokePay: R$ 1,00 fee
-    assert data["series"][-1] == 19.9 and data["name"] == "Falcon Bot"
+    assert data["series"][-1] == 19.9 and data["name"] == "Flash"
     # a plain owner: no commissions and not the Super Admin (no commission line/chart)
     assert data["commissions"] == 0.0 and data["commission_series"][-1] == 0.0 and data["is_admin"] is False
 

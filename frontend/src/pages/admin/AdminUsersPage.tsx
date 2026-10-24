@@ -113,7 +113,7 @@ export function AdminUsersPage() {
                     <th className="px-4 py-3.5 font-medium">Role</th>
                     <th className="px-4 py-3.5 font-medium">Status</th>
                     <th className="px-4 py-3.5 font-medium">Workspace</th>
-                    <th className="px-4 py-3.5 font-medium">Taxa Falcon Bot</th>
+                    <th className="px-4 py-3.5 font-medium">Taxa Flash</th>
                     <th className="px-4 py-3.5 font-medium">Criado em</th>
                     <th className="px-4 py-3.5 font-medium">Último login</th>
                     <th className="px-4 py-3.5 font-medium">Ações</th>
@@ -305,7 +305,7 @@ function UserPermissions({ user }: { user: AdminUser }) {
 
 const brl = (value: string | number) => Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-/** The Falcon Bot fee each sale of this user's operations pays; the Super Admin sets a special
+/** The Flash fee each sale of this user's operations pays; the Super Admin sets a special
  * one per user or goes back to the platform default. The Super Admin's own sales never pay. */
 function TransactionFeeCell({ user }: { user: AdminUser }) {
   const queryClient = useQueryClient();
@@ -354,7 +354,7 @@ function TransactionFeeCell({ user }: { user: AdminUser }) {
     >
       <span className="text-xs text-muted">R$</span>
       <input
-        aria-label={`Taxa Falcon Bot de ${user.full_name}`}
+        aria-label={`Taxa Flash de ${user.full_name}`}
         autoFocus
         className="field h-8 px-2 text-xs"
         style={{ width: "5.5rem" }}

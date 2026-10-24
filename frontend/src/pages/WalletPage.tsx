@@ -382,7 +382,7 @@ export function WalletPage() {
   const fee = data.withdraw_fee ?? 0;
   const partner = Boolean(data.is_partner);
   // Just these: each bot's revenue, what can be withdrawn, what already was, commissions
-  // and (Super Admin) what the per-sale Falcon Bot fee brought in.
+  // and (Super Admin) what the per-sale Flash fee brought in.
   // Every gateway's balance together; the "Sacar" pop-up splits it again, one card per gateway.
   const gateways = data.gateways ?? [];
   // "Disponível para sacar" = only the confirmed SmokePay wallet balance. SnakePay has no balance
@@ -399,10 +399,10 @@ export function WalletPage() {
   const commissions = data.month_commissions ?? 0;
   const cards: [string, string, string?, string?][] = [
     [
-      partner ? "Faturamento" : "Faturamento Falcon Bot",
+      partner ? "Faturamento" : "Faturamento Flash",
       brl(data.month_flash_revenue ?? 0),
       "text-fg",
-      commissions > 0 ? `Vendas ${brl((data.month_flash_revenue ?? 0) - commissions)} + comissões ${brl(commissions)} no mês` : "Vendas do mês no Falcon Bot",
+      commissions > 0 ? `Vendas ${brl((data.month_flash_revenue ?? 0) - commissions)} + comissões ${brl(commissions)} no mês` : "Vendas do mês no Flash",
     ],
     ...(!partner || (data.month_shark_revenue ?? 0) > 0
       ? [["Faturamento Shark", brl(data.month_shark_revenue ?? 0), "text-fg", "Vendas do mês na SharkBot"] as [string, string, string, string]]
@@ -413,7 +413,7 @@ export function WalletPage() {
   ];
   if (data.falcon_fees_month !== undefined) {
     cards.push([
-      "Arrecadado com o Falcon Bot",
+      "Arrecadado com o Flash",
       brl(data.falcon_fees_month),
       "text-success",
       `Taxa por venda · ${data.falcon_fees_month_count ?? 0} no mês · hoje ${brl(data.falcon_fees_today ?? 0)} (${data.falcon_fees_today_count ?? 0})`,
@@ -448,7 +448,7 @@ export function WalletPage() {
       </dl>
       {!partner && <p className="text-[11px] text-muted">
         {data.balance_source === "smokepay" ? "Saldo lido agora da SmokePay" : "Saldo estimado (SmokePay indisponível)"}
-        {data.shop_ref ? ` · subconta ${data.shop_ref}` : " · carteira principal"}. Ganho total no Falcon Bot (já sem taxas e comissões): {brl(data.earned)}
+        {data.shop_ref ? ` · subconta ${data.shop_ref}` : " · carteira principal"}. Ganho total no Flash (já sem taxas e comissões): {brl(data.earned)}
         {data.commissions_received > 0 && ` · inclui ${brl(data.commissions_received)} de comissões dos sócios`}.
       </p>}
 
