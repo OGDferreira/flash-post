@@ -303,18 +303,24 @@ export function LoopsPage() {
     }
 
     setUploadingBatch(true);
-    try {
-      const caption = uploadCaption.trim();
-      for (const file of files) {
+    const caption = uploadCaption.trim();
+    let failed: { name: string; reason: string } | null = null;
+    for (const file of files) {
+      try {
         await uploadMedia.mutateAsync({ file, caption });
+      } catch (error) {
+        // Surface the real reason (duration, aspect, size, storage) instead of a generic line.
+        failed = { name: file.name, reason: apiErrorMessage(error, "Falha ao enviar o arquivo.") ?? "Falha ao enviar o arquivo." };
+        break;
       }
-      setUploadCaption("");
-    } catch {
+    }
+    setUploadingBatch(false);
+    if (failed) {
       setUploadValidationError(
-        "O envio em lote foi interrompido. Os arquivos enviados antes da falha permanecem salvos no pool.",
+        `Não foi possível enviar “${failed.name}”: ${failed.reason} Os arquivos enviados antes dele permanecem salvos no pool.`,
       );
-    } finally {
-      setUploadingBatch(false);
+    } else {
+      setUploadCaption("");
     }
   }
 

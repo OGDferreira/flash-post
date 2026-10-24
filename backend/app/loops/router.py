@@ -1,8 +1,14 @@
 from datetime import datetime, timedelta, timezone
+import logging
 import uuid
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+
+from app.instagram.storage import SupabaseStorage, SupabaseStorageError
+
+logger = logging.getLogger(__name__)
 
 from app.auth.dependencies import (
     DbSession,
@@ -1446,8 +1452,79 @@ async def delete_loop(
             status_code=status.HTTP_409_CONFLICT,
             detail="A publication is already in progress for this loop.",
         )
+
+    # Gather the loop's media before deleting it: the pool items and any Reels covers.
+    # These are removed from the database (and storage) when nothing else uses them.
+    workspace_id = loop.workspace_id
+    pool_ids = list(
+        await db.scalars(select(InstagramLoopMedia.media_id).where(InstagramLoopMedia.loop_id == loop.id))
+    )
+    cover_ids: set[uuid.UUID] = set()
+    if loop.cover_media_id is not None:
+        cover_ids.add(loop.cover_media_id)
+    if pool_ids:
+        for media in await db.scalars(select(InstagramMedia).where(InstagramMedia.id.in_(pool_ids))):
+            if media.cover_media_id is not None:
+                cover_ids.add(media.cover_media_id)
+
+    # Remove this loop's pool associations explicitly (don't rely on DB cascade) so the
+    # orphan check below sees the media as unreferenced by this loop.
+    await db.execute(delete(InstagramLoopMedia).where(InstagramLoopMedia.loop_id == loop.id))
     await db.delete(loop)
+    await db.flush()
+
+    # Delete pool media first (freeing their covers), then the covers now left unused.
+    removed_paths: list[str] = []
+    for media_id in [*pool_ids, *cover_ids]:
+        path = await _delete_media_if_orphaned(db, workspace_id, media_id)
+        if path is not None:
+            removed_paths.append(path)
     await db.commit()
+
+    if removed_paths:
+        try:
+            storage = SupabaseStorage.from_settings()
+        except RuntimeError as exc:
+            logger.warning("Loop media removed from the database but storage is not configured (%s).", type(exc).__name__)
+            return
+        for path in removed_paths:
+            try:
+                await storage.delete(path)
+            except (SupabaseStorageError, httpx.HTTPError) as exc:
+                logger.warning("Loop media %s removed from the database but not from storage (%s).", path, type(exc).__name__)
+
+
+async def _delete_media_if_orphaned(db, workspace_id: uuid.UUID, media_id: uuid.UUID) -> str | None:
+    """Delete a media row once no loop pool, cover, or partner copy references it.
+
+    Returns its storage path (to delete after commit) when removed, else None.
+    """
+    still_in_a_pool = await db.scalar(
+        select(InstagramLoopMedia.media_id).where(InstagramLoopMedia.media_id == media_id).limit(1)
+    )
+    if still_in_a_pool is not None:
+        return None
+    used_as_media_cover = await db.scalar(
+        select(InstagramMedia.id).where(InstagramMedia.cover_media_id == media_id).limit(1)
+    )
+    used_as_loop_cover = await db.scalar(
+        select(InstagramLoop.id).where(InstagramLoop.cover_media_id == media_id).limit(1)
+    )
+    if used_as_media_cover is not None or used_as_loop_cover is not None:
+        return None
+    # A chief's media that a partner copy still follows must stay.
+    is_partner_source = await db.scalar(
+        select(InstagramMedia.id).where(InstagramMedia.template_media_id == media_id).limit(1)
+    )
+    if is_partner_source is not None:
+        return None
+    media = await db.get(InstagramMedia, media_id)
+    if media is None or media.workspace_id != workspace_id:
+        return None
+    path = media.storage_path
+    await db.delete(media)
+    await db.flush()
+    return path
 
 
 async def _partner_copy(db, access, loop_id: uuid.UUID) -> InstagramLoop:
