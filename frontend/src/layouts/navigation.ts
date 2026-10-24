@@ -198,6 +198,7 @@ const botGroups: NavGroup[] = [
     icon: GitBranch,
     items: [
       { label: "Meus funis", to: "/bot/funis", icon: GitBranch },
+      { label: "Pastas de funis", to: "/bot/pastas", icon: GitBranch },
       { label: "Compartilhados comigo", to: "/bot/compartilhados-comigo", icon: Inbox },
       { label: "Que compartilhei", to: "/bot/compartilhei", icon: Share2 },
     ],

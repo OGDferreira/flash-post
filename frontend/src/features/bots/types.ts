@@ -160,6 +160,7 @@ export type Bot = {
   username: string;
   name: string;
   flow_id: string | null;
+  folder_id: string | null;
   is_active: boolean;
   status: string;
   last_error: string | null;

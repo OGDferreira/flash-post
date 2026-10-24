@@ -563,3 +563,43 @@ async def test_groups_the_bot_joined_before_connecting_are_learned(client, db_se
     apis.member_status = "left"
     gone = await client.post(f"/api/bots/{bot['id']}/groups/link", headers=headers, json={"chat": "@canal_cache"})
     assert gone.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_folder_bot_draws_a_funnel_per_lead_and_keeps_it(client, db_session: AsyncSession, owner, apis) -> None:
+    headers = await _login(client)
+    a = (await client.post("/api/bots/flows", headers=headers, json={"name": "Funil A", "definition": _flow()})).json()
+    b = (await client.post("/api/bots/flows", headers=headers, json={"name": "Funil B", "definition": _flow()})).json()
+    created = await client.post("/api/bots/folders", headers=headers, json={"name": "Pasta", "flow_ids": [a["id"], b["id"]]})
+    assert created.status_code == 201, created.text
+    folder = created.json()
+    assert {item["id"] for item in folder["flows"]} == {a["id"], b["id"]}
+
+    bot = (await client.post("/api/bots", headers=headers, json={"token": TOKEN, "flow_id": a["id"]})).json()
+    patched = await client.patch(f"/api/bots/{bot['id']}", headers=headers, json={"folder_id": folder["id"]})
+    assert patched.status_code == 200 and patched.json()["folder_id"] == folder["id"] and patched.json()["flow_id"] is None
+
+    # the lead /starts: one funnel of the folder is drawn and stored on the lead
+    await _send(client, db_session, bot["id"], _start())
+    await db_session.commit()
+    lead = await db_session.scalar(select(TgLead))
+    assert str(lead.flow_id) in {a["id"], b["id"]}
+    chosen = lead.flow_id
+
+    # /start again keeps the same funnel
+    await _send(client, db_session, bot["id"], _start(), update_id=9001)
+    await db_session.refresh(lead)
+    assert lead.flow_id == chosen
+
+    # a sale is charged on the lead's funnel, not the bot (which has none)
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.flow_id == chosen and order.bot_id == uuid.UUID(bot["id"])
+
+    # deleting the folder disconnects the bot; the lead keeps its funnel
+    assert (await client.delete(f"/api/bots/folders/{folder['id']}", headers=headers)).status_code == 200
+    await db_session.refresh(lead)
+    assert lead.flow_id == chosen
+    refreshed = (await client.get("/api/bots")).json()["bots"][0]
+    assert refreshed["folder_id"] is None and refreshed["flow_id"] is None

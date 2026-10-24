@@ -25,7 +25,7 @@ from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
-from app.models import TgBot, TgCampaign, TgFlow, TgGroup, TgJob, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
+from app.models import TgBot, TgCampaign, TgFlow, TgFlowFolder, TgFlowFolderItem, TgGroup, TgJob, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, billing_route, flow_offered_to, notify_user, owner_workspace, partner_link, shared_funnel_access
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
@@ -59,6 +59,8 @@ class BotCreate(BaseModel):
 class BotUpdate(BaseModel):
     flow_id: uuid.UUID | None = None
     clear_flow: bool = False
+    folder_id: uuid.UUID | None = None  # run a folder of funnels instead of a single one
+    clear_folder: bool = False
     is_active: bool | None = None
     delivery_group_chat_id: int | None = None
     clear_delivery_group: bool = False
@@ -82,6 +84,7 @@ def _bot_out(bot: TgBot, stats: dict | None = None) -> dict:
         "username": bot.username,
         "name": bot.name,
         "flow_id": str(bot.flow_id) if bot.flow_id else None,
+        "folder_id": str(bot.folder_id) if bot.folder_id else None,
         "delivery_group_chat_id": bot.delivery_group_chat_id,
         "cache_chat_id": bot.cache_chat_id,
         "is_active": bot.is_active,
@@ -160,6 +163,75 @@ async def _owned(db, model, item_id: uuid.UUID, access) -> Any:
     if getattr(item, "hidden_by_admin", False) and not admin_view():
         raise HTTPException(status_code=404, detail="Não encontrado.")  # hidden by the Super Admin
     return item
+
+
+async def _owned_folder(db, folder_id: uuid.UUID, access) -> TgFlowFolder:
+    folder = await db.get(TgFlowFolder, folder_id)
+    if folder is None or folder.workspace_id != access.workspace.id:
+        raise HTTPException(status_code=404, detail="Pasta não encontrada.")
+    return folder
+
+
+class FolderPayload(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=120)]
+    flow_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+async def _folder_out(db, folder: TgFlowFolder, access) -> dict:
+    items = list(await db.scalars(select(TgFlowFolderItem.flow_id).where(TgFlowFolderItem.folder_id == folder.id)))
+    names = dict((f.id, f.name) for f in await db.scalars(select(TgFlow).where(TgFlow.id.in_(items or [uuid.uuid4()]))))
+    bots = await db.scalar(select(func.count(TgBot.id)).where(TgBot.folder_id == folder.id)) or 0
+    return {
+        "id": str(folder.id), "name": folder.name, "bots": int(bots),
+        "flows": [{"id": str(fid), "name": names.get(fid, "Funil removido")} for fid in items],
+    }
+
+
+@router.get("/folders")
+async def list_folders(access: OwnerAccess, db: DbSession) -> dict:
+    folders = await db.scalars(
+        select(TgFlowFolder).where(TgFlowFolder.workspace_id == access.workspace.id).order_by(TgFlowFolder.name, TgFlowFolder.id)
+    )
+    return {"folders": [await _folder_out(db, folder, access) for folder in folders]}
+
+
+async def _set_folder_flows(db, folder: TgFlowFolder, flow_ids: list[uuid.UUID], access) -> None:
+    """Only the operation's own funnels, or shared funnels still available to it, may be in a folder."""
+    unique = list(dict.fromkeys(flow_ids))
+    for flow_id in unique:
+        await _usable_flow(db, flow_id, access)
+    await db.execute(delete(TgFlowFolderItem).where(TgFlowFolderItem.folder_id == folder.id))
+    for flow_id in unique:
+        db.add(TgFlowFolderItem(folder_id=folder.id, flow_id=flow_id))
+
+
+@router.post("/folders", status_code=201, dependencies=csrf)
+async def create_folder(payload: FolderPayload, access: OwnerAccess, db: DbSession) -> dict:
+    folder = TgFlowFolder(workspace_id=access.workspace.id, name=payload.name.strip())
+    db.add(folder)
+    await db.flush()
+    await _set_folder_flows(db, folder, payload.flow_ids, access)
+    await db.commit()
+    return await _folder_out(db, folder, access)
+
+
+@router.put("/folders/{folder_id}", dependencies=csrf)
+async def update_folder(folder_id: uuid.UUID, payload: FolderPayload, access: OwnerAccess, db: DbSession) -> dict:
+    folder = await _owned_folder(db, folder_id, access)
+    folder.name = payload.name.strip()
+    await _set_folder_flows(db, folder, payload.flow_ids, access)
+    await db.commit()
+    return await _folder_out(db, folder, access)
+
+
+@router.delete("/folders/{folder_id}", dependencies=csrf)
+async def delete_folder(folder_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
+    folder = await _owned_folder(db, folder_id, access)
+    # Bots on this folder are disconnected (folder_id SET NULL); leads keep the funnel they got.
+    await db.execute(update(TgBot).where(TgBot.folder_id == folder.id).values(folder_id=None))
+    await db.delete(folder)
+    await db.commit()
+    return {"ok": True}
 
 
 def _validate_definition(raw: dict) -> FlowDefinition:
@@ -304,11 +376,19 @@ async def bot_photo(bot_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> Re
 @router.patch("/{bot_id}", dependencies=csrf)
 async def update_bot(bot_id: uuid.UUID, payload: BotUpdate, access: OwnerAccess, db: DbSession) -> dict:
     bot = await _owned(db, TgBot, bot_id, access)
+    # A bot runs either one funnel or a folder of funnels: setting one clears the other.
     if payload.clear_flow:
         bot.flow_id = None
     elif payload.flow_id:
         await _usable_flow(db, payload.flow_id, access)
         bot.flow_id = payload.flow_id
+        bot.folder_id = None
+    if payload.clear_folder:
+        bot.folder_id = None
+    elif payload.folder_id:
+        await _owned_folder(db, payload.folder_id, access)
+        bot.folder_id = payload.folder_id
+        bot.flow_id = None
     if payload.clear_delivery_group:
         bot.delivery_group_chat_id = None
     elif payload.delivery_group_chat_id is not None:

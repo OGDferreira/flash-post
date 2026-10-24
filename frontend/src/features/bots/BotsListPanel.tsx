@@ -30,6 +30,10 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
     queryFn: () => apiRequest<{ flows: Flow[]; shared_flows?: SharedFlowOption[] }>("/api/bots/flows/list"),
     retry: false,
   });
+  const folders = useQuery({
+    queryKey: ["bots", "folders"],
+    queryFn: () => apiRequest<{ folders: { id: string; name: string; flows: { id: string; name: string }[] }[] }>("/api/bots/folders"),
+  });
   const groups = useQuery({
     queryKey: ["bots", "groups"],
     queryFn: () => apiRequest<{ groups: BotGroup[] }>("/api/bots/groups/list"),
@@ -123,14 +127,19 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                 Fluxo
                 <select
                   className="field"
-                  value={bot.flow_id ?? ""}
+                  value={bot.folder_id ? `folder:${bot.folder_id}` : (bot.flow_id ?? "")}
                   disabled={update.isPending}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const v = event.target.value;
                     update.mutate({
                       id: bot.id,
-                      body: event.target.value ? { flow_id: event.target.value } : { clear_flow: true },
-                    })
-                  }
+                      body: !v
+                        ? { clear_flow: true, clear_folder: true }
+                        : v.startsWith("folder:")
+                          ? { folder_id: v.slice(7) }
+                          : { flow_id: v },
+                    });
+                  }}
                 >
                   <option value="">Sem fluxo (o bot não responde)</option>
                   {flows.data?.flows.map((flow) => (
@@ -142,6 +151,13 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                     <optgroup label={`Compartilhados por ${chief}`}>
                       {flows.data!.shared_flows!.map((flow) => (
                         <option key={flow.id} value={flow.id}>{flow.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {(folders.data?.folders ?? []).length > 0 && (
+                    <optgroup label="Pastas (multifunis · sorteio por lead)">
+                      {folders.data!.folders.map((folder) => (
+                        <option key={folder.id} value={`folder:${folder.id}`}>📁 {folder.name} ({folder.flows.length})</option>
                       ))}
                     </optgroup>
                   )}
