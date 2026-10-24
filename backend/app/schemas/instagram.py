@@ -122,6 +122,11 @@ class InstagramDisconnectResponse(BaseModel):
     meta_revoked: bool
 
 
+class InstagramBulkRemoveResponse(BaseModel):
+    removed: int
+    meta_revoked: int
+
+
 class InstagramAccountHighlightsRequest(BaseModel):
     has_highlights: bool
 

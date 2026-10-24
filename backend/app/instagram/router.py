@@ -45,6 +45,7 @@ from app.schemas.instagram import (
     InstagramMetaAppResponse,
     InstagramMetaAppsResponse,
     InstagramMetaAppUpdateRequest,
+    InstagramBulkRemoveResponse,
     InstagramConnectResponse,
     InstagramDisconnectResponse,
     InstagramAccountFeedResponse,
@@ -886,3 +887,43 @@ async def remove_error_account(
     if not meta_revoked:
         logger.warning("Errored Instagram account was removed locally without confirmed Meta revocation.")
     return InstagramDisconnectResponse(meta_revoked=meta_revoked)
+
+
+@router.post(
+    "/accounts/remove-broken",
+    response_model=InstagramBulkRemoveResponse,
+    dependencies=[Depends(require_csrf)],
+)
+async def remove_broken_accounts(
+    access: OwnerAccess,
+    db: DbSession,
+) -> InstagramBulkRemoveResponse:
+    """Remove every account in error or disconnected state at once, revoking each on Meta."""
+    accounts = list(
+        await db.scalars(
+            select(InstagramAccount).where(
+                InstagramAccount.workspace_id == access.workspace.id,
+                InstagramAccount.status.in_(("error", "disconnected")),
+            )
+        )
+    )
+    tokens: list[str] = []
+    for account in accounts:
+        if account.encrypted_access_token is not None:
+            try:
+                tokens.append(decrypt_value(account.encrypted_access_token))
+            except (RuntimeError, ValueError) as exc:
+                logger.warning("Instagram token could not be decrypted for revocation (%s).", type(exc).__name__)
+        await db.delete(account)
+    await db.commit()
+
+    meta_revoked = 0
+    for token in tokens:
+        try:
+            if await revoke_instagram_permissions(token):
+                meta_revoked += 1
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("Instagram permission revocation failed (%s).", type(exc).__name__)
+    if meta_revoked < len(tokens):
+        logger.warning("Some broken Instagram accounts were removed locally without confirmed Meta revocation.")
+    return InstagramBulkRemoveResponse(removed=len(accounts), meta_revoked=meta_revoked)
