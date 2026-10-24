@@ -27,6 +27,7 @@ async function warm(client: QueryClient, app: "post" | "bot") {
     void prefetch(["analytics", "summary", "meta", "today", null, null], "/api/analytics/summary?period=today&include_meta_insights=true", 5 * 60_000);
     void prefetch(["loops"], "/api/loops?include_accounts=false");
     await prefetch(["instagram", "accounts"], "/api/instagram/accounts");
+    void prefetch(["instagram", "apps"], "/api/instagram/apps");
     const accounts = client.getQueryData<Accounts>(["instagram", "accounts"])?.accounts ?? [];
     const first = accounts.find((a) => a.status === "connected" && Date.parse(a.token_expires_at) > Date.now());
     if (first) {

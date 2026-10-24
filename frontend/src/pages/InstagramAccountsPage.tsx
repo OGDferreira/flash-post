@@ -94,7 +94,8 @@ export function InstagramAccountsPage() {
   const metaApps = useQuery({
     queryKey: metaAppsQueryKey,
     queryFn: () => apiRequest<InstagramMetaAppsResponse>("/api/instagram/apps"),
-    enabled: accounts.data?.can_connect === true,
+    // Load in parallel with the accounts list (it used to wait for it, delaying the connect flow).
+    staleTime: 60_000,
     retry: false,
   });
   const folders = useQuery({
