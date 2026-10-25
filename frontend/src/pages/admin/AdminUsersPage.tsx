@@ -1,17 +1,20 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Check, LockOpen, Search, Trash2 } from "lucide-react";
+import { Ban, Check, LockOpen, Search, Shield, Trash2 } from "lucide-react";
 
 import { AccessAccountButton } from "@/components/AccessAccountButton";
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest, type AdminUser, type Page } from "@/services/api";
 import { confirmAction } from "@/lib/confirm";
+import { PartnerPermissionsManager } from "@/features/partners/PartnerPermissionsManager";
+import { FeeManagementPanel } from "@/features/partners/FeeManagementPanel";
 
 export function AdminUsersPage() {
   const queryClient = useQueryClient();
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [selectedPartner, setSelectedPartner] = useState<{ id: string; name: string } | null>(null);
   const pageSize = 20;
   const users = useQuery({
     queryKey: ["admin", "users", search, page],
@@ -51,6 +54,8 @@ export function AdminUsersPage() {
 
   return (
     <div className="space-y-4">
+      <FeeManagementPanel />
+
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
@@ -193,7 +198,15 @@ export function AdminUsersPage() {
                           {user.role !== "SUPER_ADMIN" && user.status === "ACTIVE" && (
                             <AccessAccountButton name={user.full_name} userId={user.id} />
                           )}
-                          {user.role !== "SUPER_ADMIN" && <UserPermissions user={user} />}
+                          {user.hierarchy === "partner" && (
+                            <button
+                              className="btn-secondary !min-h-8 text-xs"
+                              onClick={() => setSelectedPartner({ id: user.id, name: user.full_name })}
+                              type="button"
+                            >
+                              <Shield size={14} /> Permissões
+                            </button>
+                          )}
                           {user.role !== "SUPER_ADMIN" && (
                             user.status === "BLOCKED" ? (
                               <button
@@ -260,6 +273,15 @@ export function AdminUsersPage() {
             onChange={setPage}
           />
         </>
+      )}
+
+      {selectedPartner && (
+        <PartnerPermissionsManager
+          userId={selectedPartner.id}
+          userName={selectedPartner.name}
+          open={!!selectedPartner}
+          onClose={() => setSelectedPartner(null)}
+        />
       )}
     </div>
   );

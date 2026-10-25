@@ -36,6 +36,7 @@ export function PartnerDashboardPage() {
   const params = periodParams(period);
   const partner = usePartnerMe(params, isPeriodReady(period));
   const wallet = useWallet();
+
   // Account counts are the current state (connected now / disconnected now), not a period.
   const summary = useQuery({
     queryKey: ["analytics", "summary", "fast", "today", null, null],
@@ -48,28 +49,38 @@ export function PartnerDashboardPage() {
   if (summary.error) {
     return <ErrorState message="Não foi possível carregar suas contas." onRetry={() => void summary.refetch()} />;
   }
+
   const metrics = summary.data;
   const disconnected = metrics ? metrics.disconnected_accounts + metrics.errored_accounts + metrics.expired_accounts : 0;
   const totals = partner.data?.totals;
+
+  // Check permissions
+  const permissions = partner.data?.permissions;
+  const canViewAccounts = permissions?.flashpost.can_view_accounts ?? true;
+  const canViewWallet = permissions?.flashbot.can_view_wallets ?? true;
+  const canViewRanking = permissions?.flashpost.can_view_ranking ?? true;
+
   return (
     <div className="mx-auto max-w-[1320px] space-y-4">
       <GreetingClock nickname={user?.nickname} />
 
-      <section aria-labelledby="partner-accounts-title" className="dashboard-card space-y-4 p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-fg" id="partner-accounts-title">
-            <UserRoundCheck aria-hidden="true" className="text-accent" size={18} /> Contas
-          </h2>
-          <button className="btn-primary" onClick={() => setConnecting(true)} type="button">
-            <Plus size={16} /> Conectar nova conta
-          </button>
-        </div>
-        <dl className="grid grid-cols-2 gap-2">
-          <Metric icon={UserRoundCheck} label="Conectadas" tone="text-success" value={String(metrics?.active_accounts ?? 0)} />
-          <Metric icon={UserRoundX} label="Desconectadas" tone={disconnected ? "text-danger" : "text-fg"} value={String(disconnected)} />
-        </dl>
-        <Link className="text-xs font-medium text-accent hover:underline" to="/feature/accounts">Ver e gerenciar contas →</Link>
-      </section>
+      {canViewAccounts && (
+        <section aria-labelledby="partner-accounts-title" className="dashboard-card space-y-4 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-fg" id="partner-accounts-title">
+              <UserRoundCheck aria-hidden="true" className="text-accent" size={18} /> Contas
+            </h2>
+            <button className="btn-primary" onClick={() => setConnecting(true)} type="button">
+              <Plus size={16} /> Conectar nova conta
+            </button>
+          </div>
+          <dl className="grid grid-cols-2 gap-2">
+            <Metric icon={UserRoundCheck} label="Conectadas" tone="text-success" value={String(metrics?.active_accounts ?? 0)} />
+            <Metric icon={UserRoundX} label="Desconectadas" tone={disconnected ? "text-danger" : "text-fg"} value={String(disconnected)} />
+          </dl>
+          <Link className="text-xs font-medium text-accent hover:underline" to="/feature/accounts">Ver e gerenciar contas →</Link>
+        </section>
+      )}
 
       <section aria-labelledby="partner-revenue-title" className="dashboard-card space-y-4 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -85,23 +96,27 @@ export function PartnerDashboardPage() {
             <Metric icon={CircleDollarSign} label="Faturamento bruto" value={totals ? brl(totals.gross) : "—"} hint={partner.data?.period_label} />
             <Metric icon={Receipt} label="Vendas pagas" value={totals ? String(totals.sales) : "—"} />
             <Metric icon={CircleDollarSign} label="Líquido (após taxas e comissão)" tone="text-success" value={totals ? brl(totals.net) : "—"} />
-            <Metric
-              icon={WalletIcon}
-              label="Disponível na carteira"
-              value={wallet.data ? brl(wallet.data.available) : "—"}
-              hint={wallet.data ? `Processando ${brl(wallet.data.pending)} · sacado ${brl(wallet.data.withdrawn)}` : undefined}
-            />
+            {canViewWallet && (
+              <Metric
+                icon={WalletIcon}
+                label="Disponível na carteira"
+                value={wallet.data ? brl(wallet.data.available) : "—"}
+                hint={wallet.data ? `Processando ${brl(wallet.data.pending)} · sacado ${brl(wallet.data.withdrawn)}` : undefined}
+              />
+            )}
           </dl>
         )}
-        <Link className="text-xs font-medium text-accent hover:underline" to="/carteira">Abrir carteira e sacar →</Link>
+        {canViewWallet && <Link className="text-xs font-medium text-accent hover:underline" to="/carteira">Abrir carteira e sacar →</Link>}
       </section>
 
-      <section aria-labelledby="partner-ranking-title" className="space-y-2">
-        <h2 className="flex items-center gap-2 px-1 text-base font-semibold text-fg" id="partner-ranking-title">
-          <Trophy aria-hidden="true" className="text-accent" size={18} /> Ranking de posts do Flash
-        </h2>
-        <TopVideosPanel compact period={period} />
-      </section>
+      {canViewRanking && (
+        <section aria-labelledby="partner-ranking-title" className="space-y-2">
+          <h2 className="flex items-center gap-2 px-1 text-base font-semibold text-fg" id="partner-ranking-title">
+            <Trophy aria-hidden="true" className="text-accent" size={18} /> Ranking de posts do Flash
+          </h2>
+          <TopVideosPanel compact period={period} />
+        </section>
+      )}
 
       <Modal onClose={() => setConnecting(false)} open={connecting} title="Conectar nova conta">
         <ConnectAppsPanel onClose={() => setConnecting(false)} returnTo="/dashboard" />

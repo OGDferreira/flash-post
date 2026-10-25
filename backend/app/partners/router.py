@@ -36,6 +36,7 @@ from app.models import (
 )
 from app.bots.hidden import not_hidden_bot
 from app.partners import service
+from app.partners import permissions as perm_service
 
 router = APIRouter(prefix="/api/partners", tags=["Partners"])
 
@@ -120,6 +121,10 @@ async def my_partnership(
     link = await service.partner_link(db, user.id)
     workspace = await service.owner_workspace(db, user.id)
     chief = await db.get(User, link.chief_user_id) if link else None
+
+    # Get partner permissions
+    perms = await perm_service.get_all_partner_permissions(db, user.id)
+
     out: dict = {
         "role": role,
         "period_label": period_label(start, end),
@@ -128,6 +133,10 @@ async def my_partnership(
         "partnership": None,
         "totals": await _sales(db, workspace.id, start, end) if workspace else None,
         "sales": await _recent_orders(db, workspace.id, start, end) if workspace else [],
+        "permissions": {
+            "flashpost": perm_service.serialize_permissions(perms.get("flashpost")),
+            "flashbot": perm_service.serialize_permissions(perms.get("flashbot")),
+        },
     }
     if link and chief:
         out["partnership"] = {

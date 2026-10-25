@@ -47,6 +47,9 @@ from app.bots.gateways_router import router as payment_gateways_router
 from app.widget.router import router as widget_router
 from app.affiliates.router import router as affiliates_router
 from app.partners.router import router as partners_router
+from app.partners.permission_routes import router as partner_permissions_router
+from app.partners.fee_routes import router as partner_fees_router
+from app.partners.chief_routes import router as chief_partners_router
 from app.wallet.router import admin_router as partner_wallets_router, router as wallet_router
 from app.extensions.router import router as extensions_router
 from app.support.router import router as support_router
@@ -178,6 +181,9 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(notifications_router)
     application.include_router(affiliates_router)
     application.include_router(partners_router)
+    application.include_router(partner_permissions_router)
+    application.include_router(partner_fees_router)
+    application.include_router(chief_partners_router)
     application.include_router(wallet_router)
     application.include_router(partner_wallets_router)
     application.include_router(extensions_router)

@@ -46,6 +46,7 @@ from app.models.push import (
     PushSubscription,
 )
 from app.models.workspace import Workspace, WorkspaceMember
+from app.models.partner_permission import PartnerPermission, FeeChangeLog
 from app.models.telegram_bot import (
     AuditEvent,
     TgBot,
@@ -87,7 +88,9 @@ __all__ = [
     "Affiliation",
     "Base",
     "Extension",
+    "FeeChangeLog",
     "InstagramAccountDailyViews",
+    "PartnerPermission",
     "SharkAccount",
     "SupportTicket",
     "CollaboratorInvite",

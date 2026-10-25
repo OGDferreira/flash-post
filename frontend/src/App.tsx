@@ -62,6 +62,7 @@ const PartnerDashboardPage = lazyPage(() => import("@/pages/PartnerDashboardPage
 const AnalyticsPage = lazyPage(() => import("@/pages/AnalyticsPage"), "AnalyticsPage");
 const FinancePage = lazyPage(() => import("@/pages/FinancePage"), "FinancePage");
 const CollaboratorDashboardPage = lazyPage(() => import("@/pages/CollaboratorDashboardPage"), "CollaboratorDashboardPage");
+const ChiefPartnersPage = lazyPage(() => import("@/pages/ChiefPartnersPage"), "ChiefPartnersPage");
 
 export default function App() {
   return (
@@ -99,6 +100,7 @@ export default function App() {
                       }
                     />
                     <Route path="/feature/affiliates" element={<AffiliatesPage />} />
+                    <Route path="/feature/chief-partners" element={<ChiefPartnersPage />} />
                     <Route path="/feature/feed" element={<FeedPage />} />
                     <Route path="/feature/bots" element={<LegacyBotsRedirect />} />
                     <Route path="/bot/:section?" element={<BotsPage />} />

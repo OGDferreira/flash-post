@@ -170,6 +170,21 @@ export type User = {
   last_login_at: string | null;
   /** Set while a Super Admin is inside this account via "Entrar". */
   impersonator_name?: string | null;
+  permissions?: {
+    flashpost: {
+      can_view_dashboard: boolean;
+      can_view_ranking: boolean;
+      can_view_accounts: boolean;
+      can_view_meta_apps: boolean;
+      can_view_settings: boolean;
+      can_view_contact: boolean;
+    };
+    flashbot: {
+      can_view_bot_dashboard: boolean;
+      can_view_leads: boolean;
+      can_view_wallets: boolean;
+    };
+  };
 };
 
 export type Workspace = {
