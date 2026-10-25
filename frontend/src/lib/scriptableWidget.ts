@@ -18,19 +18,19 @@ export function scriptableWidgetScript(baseUrl: string, token: string, theme: Wi
 // Gerado em ${new Date().toLocaleDateString("pt-BR")}. Copiar o script de novo no site desliga este.
 const API = ${JSON.stringify(`${base}/api/widget/today`)};
 const TOKEN = ${JSON.stringify(token)};
-const LOGO = ${JSON.stringify(`${base}/brand/flash-icon-192.png`)};
+const LOGO = ${JSON.stringify(`${base}/brand/flash-icon-bot-192.png`)};
 const SITE = ${JSON.stringify(`${base}/bot`)};
 
-// Three looks in the Flash colors (azul-ciano). Pick one per widget in its "Parameter"
-// field (dark, white or azul); empty = the one chosen when the script was copied. "comm" is the
-// commission tone (purple) used on the Super Admin's commission line and dotted chart.
+// Three looks in the Flash Bot colors (roxo). Pick one per widget in its "Parameter"
+// field (dark, white or roxo); empty = the one chosen when the script was copied. "comm" is the
+// commission tone used on the Super Admin's commission line and dotted chart.
 const THEMES = {
-  azul: { bg: ["#1e9cfd", "#1577c9", "#0e5fa8"], text: "#ffffff", soft: ["#ffffff", 0.82], faint: ["#ffffff", 0.62],
-          pill: ["#ffffff", 0.2], line: "#ffffff", fill: 0.16, profit: "#b6ffcf", rate: "#ffffff", comm: "#dcc4ff" },
-  dark: { bg: ["#12141c", "#191d2e", "#20264a"], text: "#ffffff", soft: ["#aab4d4", 1], faint: ["#6b7699", 1],
-          pill: ["#1e9cfd", 0.24], line: "#4fb6fe", fill: 0.2, profit: "#22c55e", rate: "#6ec9ff", comm: "#b171ff" },
-  white: { bg: ["#ffffff", "#f2f5ff", "#e7edff"], text: "#0b1530", soft: ["#495271", 1], faint: ["#8a93b4", 1],
-           pill: ["#1e9cfd", 0.12], line: "#0b74c4", fill: 0.14, profit: "#16a34a", rate: "#1e9cfd", comm: "#8b3fd6" },
+  azul: { bg: ["#8f1dff", "#7a00ff", "#5b00c4"], text: "#ffffff", soft: ["#ffffff", 0.82], faint: ["#ffffff", 0.62],
+          pill: ["#ffffff", 0.2], line: "#ffffff", fill: 0.16, profit: "#b6ffcf", rate: "#ffffff", comm: "#f0d4ff" },
+  dark: { bg: ["#12141c", "#1c1630", "#2a1a4a"], text: "#ffffff", soft: ["#b7a6d4", 1], faint: ["#7a6b99", 1],
+          pill: ["#8f1dff", 0.26], line: "#a64bff", fill: 0.2, profit: "#22c55e", rate: "#d19bff", comm: "#d6a0ff" },
+  white: { bg: ["#ffffff", "#f6f2ff", "#efe7ff"], text: "#17082e", soft: ["#574b71", 1], faint: ["#938ab4", 1],
+           pill: ["#8f1dff", 0.12], line: "#7412d1", fill: 0.14, profit: "#16a34a", rate: "#8f1dff", comm: "#8b3fd6" },
 };
 const PICK = String(args.widgetParameter || ${JSON.stringify(theme)}).trim().toLowerCase();
 const T = THEMES[PICK === "branco" ? "white" : PICK === "escuro" ? "dark" : PICK] || THEMES.azul;

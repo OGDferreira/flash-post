@@ -114,7 +114,7 @@ function ThemeSwitch() {
 
 /** The Flash sales widget for the iPhone home screen, through the free Scriptable app. */
 const WIDGET_THEMES: { id: WidgetTheme; label: string; swatch: string; text: string }[] = [
-  { id: "azul", label: "Azul", swatch: "linear-gradient(135deg,#1e9cfd,#1577c9 55%,#0e5fa8)", text: "#fff" },
+  { id: "azul", label: "Roxo", swatch: "linear-gradient(135deg,#8f1dff,#7a00ff 55%,#5b00c4)", text: "#fff" },
   { id: "dark", label: "Escuro", swatch: "linear-gradient(135deg,#12141c,#20264a)", text: "#fff" },
   { id: "white", label: "Branco", swatch: "linear-gradient(135deg,#ffffff,#e7edff)", text: "#0b1530" },
 ];
@@ -188,7 +188,7 @@ function IphoneWidgetCard() {
         ))}
       </div>
       <p className="mt-1.5 text-[11px] text-muted">
-        Dá para trocar em cada widget: segure o widget → Editar widget → em <b>Parameter</b> escreva dark, white ou azul.
+        Dá para trocar em cada widget: segure o widget → Editar widget → em <b>Parameter</b> escreva dark, white ou roxo.
       </p>
       <button className="btn-primary mt-3" disabled={copying} onClick={() => void copy()} type="button">
         {copying ? "Preparando…" : copied ? "Script copiado ✓" : "Copiar script"}
