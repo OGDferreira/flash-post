@@ -1,20 +1,20 @@
-/** Flash: two tools (publishing on Instagram and funnels/sales on Telegram), one login and
- * one brand. Paths decide which tool a screen belongs to. */
+/** Flash Post (accounts and publishing, blue) and Flash Bot (funnels, sales and money, purple):
+ * two tools, one login. Paths decide which tool a screen belongs to. */
 export type AppId = "post" | "bot";
 
 export const APPS: Record<AppId, { name: string; short: string; home: string; emblem: string; tagline: string }> = {
   post: {
-    name: "Flash",
+    name: "Flash Post",
     short: "Post",
     home: "/dashboard",
     emblem: "/brand/flash-emblem.svg",
     tagline: "Contas, pastas, loops e métricas",
   },
   bot: {
-    name: "Flash",
+    name: "Flash Bot",
     short: "Bot",
     home: "/bot",
-    emblem: "/brand/flash-emblem.svg",
+    emblem: "/brand/flash-emblem-bot.svg",
     tagline: "Funis, vendas, gateways e comissões",
   },
 };

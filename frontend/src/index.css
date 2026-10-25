@@ -1466,15 +1466,16 @@ html[data-motion="off"] :is(.award-enter-right, .award-enter-left) { animation: 
 }
 
 /* Flash Bot: same Flash blue → cyan (one brand, one color). */
+/* Flash Bot: violet → magenta (its own identity next to Flash Post's blue). */
 html[data-app="bot"] {
-  --brand-c: #1e9cfd;
-  --brand-strong-c: #4fb6fe;
-  --grad-a: #1e9cfd;
-  --grad-b: #15d6fe;
-  --brand-rgb: 30 156 253;
-  --brand-2-rgb: 21 214 254;
-  --accent: #6ec9ff;
-  --tx-accent: #6ec9ff;
+  --brand-c: #8f1dff;
+  --brand-strong-c: #a64bff;
+  --grad-a: #7a00ff;
+  --grad-b: #c400ff;
+  --brand-rgb: 143 29 255;
+  --brand-2-rgb: 214 0 255;
+  --accent: #d19bff;
+  --tx-accent: #d19bff;
 }
 
 html[data-theme="light"] {
@@ -1496,7 +1497,7 @@ html[data-theme="light"] {
   --color-line-soft: rgb(15 22 40 / 0.07);
   --card-sheen: none;
 }
-html[data-theme="light"][data-app="bot"] { --accent: #0b74c4; --tx-accent: #0b74c4; }
+html[data-theme="light"][data-app="bot"] { --accent: #7412d1; --tx-accent: #7412d1; }
 
 html { background: #050507; }
 html[data-theme="light"] { background: #f5f6f9; }
@@ -1579,7 +1580,7 @@ h1, h2, .font-display, .dashboard-metric-value { font-family: var(--font-display
   -webkit-mask: url("/brand/flash-emblem.svg") center / contain no-repeat;
   mask: url("/brand/flash-emblem.svg") center / contain no-repeat;
 }
-html[data-app="bot"] .falcon-shine { -webkit-mask-image: url("/brand/flash-emblem.svg"); mask-image: url("/brand/flash-emblem.svg"); }
+html[data-app="bot"] .falcon-shine { -webkit-mask-image: url("/brand/flash-emblem-bot.svg"); mask-image: url("/brand/flash-emblem-bot.svg"); }
 .falcon-shine::after {
   content: "";
   position: absolute;
@@ -1614,7 +1615,7 @@ html[data-app="bot"] .falcon-shine { -webkit-mask-image: url("/brand/flash-emble
   background: rgb(var(--switch-rgb) / 0.08);
   transition: transform 260ms var(--ease-spring), border-color 200ms ease, background-color 200ms ease;
 }
-.app-switch-row[data-target="bot"] { --switch-rgb: 30 156 253; }
+.app-switch-row[data-target="bot"] { --switch-rgb: 143 29 255; }
 .app-switch-row[data-target="post"] { --switch-rgb: 30 156 253; }
 .app-switch-row:hover { border-color: rgb(var(--switch-rgb) / 0.75); background: rgb(var(--switch-rgb) / 0.16); color: var(--fg); }
 .app-switch-row:active { transform: scale(0.98); }

@@ -19,8 +19,8 @@ export function BrandLogo({
   );
 }
 
-/** "Flash" wordmark, optionally with the emblem. Rendered as text in the brand font so it
- * follows the theme (currentColor) and needs no per-name image. */
+/** The tool's wordmark ("Flash Post" / "Flash Bot"), optionally with the emblem. Rendered as
+ * text in the brand font so it follows the theme (currentColor) and needs no per-name image. */
 export function BrandLockup({
   app = "post",
   className = "h-8",
@@ -31,21 +31,26 @@ export function BrandLockup({
   /** lockup = emblem + name; wordmark = name only (when the emblem is already beside it). */
   kind?: "lockup" | "wordmark";
 }) {
+  const name = APPS[app].name;
+  // Fit the text to the viewBox width so "Flash Post" and "Flash Bot" never clip or trail space.
+  const width = Math.round(name.length * 20);
   return (
     <span className={`inline-flex items-center gap-2 text-fg ${className}`}>
       {kind === "lockup" && (
         <img alt="" className="h-full w-auto object-contain" draggable={false} src={APPS[app].emblem} />
       )}
-      <svg className="h-full w-auto" viewBox="0 0 150 48" role="img" aria-label={APPS[app].name} fill="currentColor">
+      <svg className="h-full w-auto" viewBox={`0 0 ${width} 48`} role="img" aria-label={name} fill="currentColor">
         <text
           x="0"
           y="37"
+          textLength={width}
+          lengthAdjust="spacingAndGlyphs"
           fontFamily="'Space Grotesk Variable','Space Grotesk',system-ui,sans-serif"
           fontSize="40"
           fontWeight="700"
-          letterSpacing="-1.5"
+          letterSpacing="-1"
         >
-          Flash
+          {name}
         </text>
       </svg>
     </span>

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CalendarClock, ChartNoAxesColumn, Link2, Workflow } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { BrandLogo, BrandLockup } from "@/components/BrandLogo";
+import { BrandLogo } from "@/components/BrandLogo";
 
 const copy = {
   login: {
@@ -62,7 +62,9 @@ export function AuthShell({ mode, children }: { mode: "login" | "register"; chil
           />
           <Link to="/" className="relative flex w-fit items-center gap-2.5">
             <BrandLogo animated className="size-9 sm:size-11" />
-            <BrandLockup app="post" className="h-5 sm:h-6" kind="wordmark" />
+            <span className="font-display text-2xl font-bold tracking-tight text-fg sm:text-3xl">Flash</span>
+            <span aria-hidden="true" className="text-muted">+</span>
+            <BrandLogo app="bot" className="size-7 sm:size-8" />
           </Link>
           <div className="relative max-w-md md:my-auto">
             <p className="mb-2 inline-flex rounded-full border border-line bg-brand-soft px-2.5 py-0.5 text-[11px] font-medium text-accent sm:mb-4 sm:px-3 sm:py-1 sm:text-xs">

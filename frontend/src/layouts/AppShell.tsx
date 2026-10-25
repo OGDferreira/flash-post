@@ -59,9 +59,6 @@ function snoozeInstallPrompt() {
   }
 }
 
-/** One brand (Flash), two tools: a short functional label so the switcher is unambiguous. */
-const TOOL_LABEL: Record<AppId, string> = { post: "Publicações", bot: "Vendas & Bots" };
-
 /** Flash Adm: the platform admin area, same Flash mark. */
 function AdminEmblem({ className = "" }: { className?: string }) {
   return <img alt="Flash Adm" className={`${className} object-contain`} draggable={false} src="/brand/flash-emblem.svg" />;
@@ -501,17 +498,17 @@ export function AppShell() {
           <div className="mb-2 space-y-1 border-b border-line-soft pb-2">
             {switchApps.map((target) => (
               <Link
-                aria-label={`Ir para o Flash · ${TOOL_LABEL[target]}`}
+                aria-label={`Ir para o ${APPS[target].name}`}
                 className="app-switch-row flex min-h-11 items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium text-fg-2 lg:px-0 lg:group-data-[open=true]:justify-start lg:group-data-[open=true]:px-3"
                 data-target={target}
                 key={target}
                 onClick={() => setMobileOpen(false)}
-                title={`Ir para o Flash · ${TOOL_LABEL[target]} (mesma sessão)`}
+                title={`Ir para o ${APPS[target].name} (mesma sessão)`}
                 to={lastPath(target)}
               >
                 <BrandLogo app={target} className="size-8 shrink-0" />
                 <span className="max-w-[150px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[150px] lg:group-data-[open=true]:opacity-100">
-                  {TOOL_LABEL[target]}
+                  {APPS[target].name}
                 </span>
                 <ArrowLeftRight className="hidden shrink-0 text-muted lg:group-data-[open=true]:block" size={14} />
               </Link>
@@ -603,9 +600,9 @@ export function AppShell() {
       {hasWorkspaceOwnerAccess && !isAdminRoute && (
         // Phones: the other tool is one tap away in the bottom-right corner (refresh sits on the left).
         <Link
-          aria-label={`Ir para o Flash · ${TOOL_LABEL[other]}`}
+          aria-label={`Ir para o ${APPS[other].name}`}
           className="glass-bar fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] right-4 z-30 grid size-12 place-items-center rounded-full shadow-lg transition-transform active:scale-95 lg:hidden [body[data-bottom-tabs]_&]:hidden [body[data-flow-editor]_&]:hidden"
-          title={`Ir para o Flash · ${TOOL_LABEL[other]}`}
+          title={`Ir para o ${APPS[other].name}`}
           to={lastPath(other)}
         >
           <BrandLogo app={other} className="size-8" />
@@ -678,7 +675,7 @@ export function AppShell() {
                     to={lastPath(target)}
                   >
                     <BrandLogo app={target} className="size-9 shrink-0" />
-                    <span className="flex-1 truncate">Flash · {TOOL_LABEL[target]}</span>
+                    <span className="flex-1 truncate">{APPS[target].name}</span>
                     {switchApps.length === 1 && <ArrowLeftRight className="shrink-0 text-muted" size={14} />}
                   </Link>
                 ))}
