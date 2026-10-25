@@ -17,7 +17,7 @@ import {
 import { buildNavigation } from "./navigation";
 import { RefreshFab } from "@/components/RefreshFab";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { BrandLogo, BrandLockup } from "@/components/BrandLogo";
+import { BrandLogo } from "@/components/BrandLogo";
 import { APPS, appForPath, lastPath, otherApp, rememberPath, type AppId } from "@/lib/brand";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
@@ -506,7 +506,7 @@ export function AppShell() {
                 title={`Ir para o ${APPS[target].name} (mesma sessão)`}
                 to={lastPath(target)}
               >
-                <BrandLogo app={target} className="size-8 shrink-0" />
+                <BrandLogo app={target} className="size-8 shrink-0" round />
                 <span className="max-w-[150px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[150px] lg:group-data-[open=true]:opacity-100">
                   {APPS[target].name}
                 </span>
@@ -578,8 +578,8 @@ export function AppShell() {
               </>
             ) : (
               <>
-                <BrandLockup app={app} className="h-8 lg:hidden" kind="lockup" />
-                <BrandLockup app={app} className="hidden h-[18px] lg:block" kind="wordmark" />
+                <BrandLogo app={app} className="size-8 shrink-0 lg:hidden" />
+                <span className="truncate font-display text-base font-semibold text-fg sm:text-lg">{APPS[app].name}</span>
               </>
             )}
           </Link>
@@ -605,7 +605,7 @@ export function AppShell() {
           title={`Ir para o ${APPS[other].name}`}
           to={lastPath(other)}
         >
-          <BrandLogo app={other} className="size-8" />
+          <BrandLogo app={other} className="size-9" round />
         </Link>
       )}
       <nav
@@ -674,7 +674,7 @@ export function AppShell() {
                     onClick={() => setMobileOpen(false)}
                     to={lastPath(target)}
                   >
-                    <BrandLogo app={target} className="size-9 shrink-0" />
+                    <BrandLogo app={target} className="size-9 shrink-0" round />
                     <span className="flex-1 truncate">{APPS[target].name}</span>
                     {switchApps.length === 1 && <ArrowLeftRight className="shrink-0 text-muted" size={14} />}
                   </Link>

@@ -6,13 +6,19 @@ export function BrandLogo({
   className = "size-9",
   animated = false,
   app = "post",
+  round = false,
 }: {
   className?: string;
   animated?: boolean;
   app?: AppId;
+  /** Clip the (square) emblem into a circular badge — used on the tool-switch buttons. */
+  round?: boolean;
 }) {
   return (
-    <span aria-hidden="true" className={`falcon-emblem relative inline-block shrink-0 ${className}${animated ? " falcon-anim" : ""}`}>
+    <span
+      aria-hidden="true"
+      className={`falcon-emblem relative inline-block shrink-0 ${round ? "overflow-hidden rounded-full" : ""} ${className}${animated ? " falcon-anim" : ""}`}
+    >
       <img alt="" className="size-full object-contain" draggable={false} src={APPS[app].emblem} />
       {animated && <span className="falcon-shine" />}
     </span>
