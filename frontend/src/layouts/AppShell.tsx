@@ -14,7 +14,7 @@ import {
   Share,
   X,
 } from "lucide-react";
-import { buildNavigation } from "./navigation";
+import { buildNavigation, partnerCanOpen } from "./navigation";
 import { RefreshFab } from "@/components/RefreshFab";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -126,6 +126,12 @@ export function AppShell() {
     useState<BeforeInstallPromptEvent | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // A restricted sócio who lands on a tab the admin turned off goes back to their panel.
+  const partnerPermissions = partnerMe.data?.permissions;
+  useEffect(() => {
+    if (isAdminRoute || !isPartner || !partnerPermissions) return;
+    if (!partnerCanOpen(partnerPermissions, location.pathname)) navigate("/dashboard", { replace: true });
+  }, [isAdminRoute, isPartner, partnerPermissions, location.pathname, navigate]);
   const analyticsNotifications = useQuery({
     queryKey: ["analytics", "summary", "fast", "7d", null, null],
     queryFn: () =>
@@ -246,7 +252,7 @@ export function AppShell() {
       navigate("/login", { replace: true });
     },
   });
-  const navigation = buildNavigation({ isAdminRoute, isSuperAdmin, workspaceRole, pathname: location.pathname, isPartner });
+  const navigation = buildNavigation({ isAdminRoute, isSuperAdmin, workspaceRole, pathname: location.pathname, isPartner, partnerPermissions: partnerMe.data?.permissions });
   // The phone bar holds a few shortcuts; everything else lives in "Mais", grouped.
   const sidebarDirect = navigation.groups.length === 0 ? navigation.direct : [];
   const mobileLinks = navigation.direct.slice(0, isAdminRoute ? 4 : 6);

@@ -120,12 +120,16 @@ async def my_partnership(
     link = await service.partner_link(db, user.id)
     workspace = await service.owner_workspace(db, user.id)
     chief = await db.get(User, link.chief_user_id) if link else None
+    from app.partners.permissions import effective_permissions
+
     out: dict = {
         "role": role,
         "period_label": period_label(start, end),
         "basis": SPLIT_BASIS,
         "shop_ref": service.shop_ref(workspace.id) if workspace and user.platform_role != "SUPER_ADMIN" else None,
         "partnership": None,
+        # Only a sócio is restricted; everyone else sees the full product (null = no limit).
+        "permissions": effective_permissions(link.permissions) if link else None,
         "totals": await _sales(db, workspace.id, start, end) if workspace else None,
         "sales": await _recent_orders(db, workspace.id, start, end) if workspace else [],
     }

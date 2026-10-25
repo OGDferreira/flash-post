@@ -4,8 +4,104 @@ import { Ban, Check, LockOpen, Search, Trash2 } from "lucide-react";
 
 import { AccessAccountButton } from "@/components/AccessAccountButton";
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
+import { Modal } from "@/components/ui/Modal";
 import { apiRequest, type AdminUser, type Page } from "@/services/api";
 import { confirmAction } from "@/lib/confirm";
+
+type PartnerPerms = { post: Record<string, boolean>; bot: Record<string, boolean>; full_panel: boolean };
+const POST_FEATURE_LABELS: [string, string][] = [
+  ["dashboard", "Painel"],
+  ["ranking", "Ranking de visualizações (todos)"],
+  ["accounts", "Contas conectadas"],
+  ["meta_apps", "Apps Meta"],
+  ["settings", "Configurações"],
+  ["contacts", "Contato"],
+];
+const BOT_FEATURE_LABELS: [string, string][] = [
+  ["dashboard", "Painel"],
+  ["leads", "Leads e vendas"],
+  ["wallet", "Carteira"],
+];
+
+/** The Super Admin turns each Flash Post / Flash Bot tab on or off for one sócio. */
+function PartnerPermissionsModal({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const current = useQuery({
+    queryKey: ["admin", "partner-permissions", user.id],
+    queryFn: () => apiRequest<{ is_partner: boolean; permissions: PartnerPerms | null }>(`/api/admin/users/${user.id}/partner-permissions`),
+  });
+  const [perms, setPerms] = useState<PartnerPerms | null>(null);
+  if (current.data?.permissions && perms === null) setPerms(current.data.permissions);
+  const save = useMutation({
+    mutationFn: () => apiRequest(`/api/admin/users/${user.id}/partner-permissions`, { method: "PUT", body: { permissions: perms } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "partner-permissions", user.id] });
+      onClose();
+    },
+  });
+  const toggle = (tool: "post" | "bot", feature: string) =>
+    setPerms((p) => (p ? { ...p, [tool]: { ...p[tool], [feature]: !p[tool][feature] } } : p));
+  const row = (tool: "post" | "bot", feature: string, label: string) => (
+    <label className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-fg hover:bg-surface-inset" key={`${tool}.${feature}`}>
+      <input
+        checked={Boolean(perms?.[tool][feature]) || Boolean(perms?.full_panel)}
+        className="size-4 accent-[var(--color-accent)]"
+        disabled={perms?.full_panel}
+        onChange={() => toggle(tool, feature)}
+        type="checkbox"
+      />
+      <span>{label}</span>
+    </label>
+  );
+  return (
+    <Modal open title={`Permissões · ${user.full_name}`} description="Quais abas o sócio vê em cada ferramenta. O painel dele é simplificado." onClose={onClose}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button className="btn-ghost" onClick={onClose} type="button">Cancelar</button>
+          <button className="btn-primary" disabled={save.isPending || !perms} onClick={() => save.mutate()} type="button">
+            {save.isPending ? "Salvando…" : "Salvar"}
+          </button>
+        </div>
+      }>
+      {current.isLoading || !perms ? (
+        <LoadingState label="Carregando permissões" />
+      ) : (
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 rounded-xl border border-brand/30 bg-brand-soft px-3 py-2 text-sm font-medium text-accent">
+            <input checked={perms.full_panel} className="size-4 accent-[var(--color-accent)]" onChange={() => setPerms({ ...perms, full_panel: !perms.full_panel })} type="checkbox" />
+            Liberar o painel completo (acesso a tudo, como um dono)
+          </label>
+          <div>
+            <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Flash Post</h4>
+            {POST_FEATURE_LABELS.map(([f, l]) => row("post", f, l))}
+          </div>
+          <div>
+            <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Flash Bot</h4>
+            {BOT_FEATURE_LABELS.map(([f, l]) => row("bot", f, l))}
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function PartnerPermissionsButton({ user }: { user: AdminUser }) {
+  const [open, setOpen] = useState(false);
+  if (user.hierarchy !== "partner") return null;
+  return (
+    <>
+      <button
+        className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs text-fg-2 hover:bg-surface-raised"
+        onClick={() => setOpen(true)}
+        title="Abas que o sócio pode acessar"
+        type="button"
+      >
+        Permissões do sócio
+      </button>
+      {open && <PartnerPermissionsModal onClose={() => setOpen(false)} user={user} />}
+    </>
+  );
+}
 
 export function AdminUsersPage() {
   const queryClient = useQueryClient();
@@ -299,6 +395,7 @@ function UserPermissions({ user }: { user: AdminUser }) {
       >
         {invites ? "Pode convidar sócios" : "Não convida sócios"}
       </button>
+      <PartnerPermissionsButton user={user} />
     </>
   );
 }

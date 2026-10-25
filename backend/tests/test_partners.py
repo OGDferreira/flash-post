@@ -666,6 +666,37 @@ async def test_super_admin_sets_a_users_fee_and_sees_todays_fees(client, db_sess
 
 
 @pytest.mark.anyio
+async def test_admin_restricts_a_partner_tab_and_the_backend_blocks_it(client, db_session, owner, super_admin) -> None:
+    partner, _partner_ws, _link = await _partner(db_session, owner)
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+
+    # a sócio starts with the default tabs, Meta apps included
+    got = (await client.get(f"/api/admin/users/{partner.id}/partner-permissions", headers=admin)).json()
+    assert got["is_partner"] is True and got["permissions"]["post"]["meta_apps"] is True
+
+    # the partner can list the Meta apps, and /partners/me shows the permissions
+    await _as(client, "socio@example.com", PASSWORD)
+    assert (await client.get("/api/instagram/apps")).status_code == 200
+    assert (await client.get("/api/partners/me")).json()["permissions"]["post"]["meta_apps"] is True
+
+    # the admin turns Meta apps off for this sócio
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    perms = got["permissions"]
+    perms["post"]["meta_apps"] = False
+    saved = await client.put(f"/api/admin/users/{partner.id}/partner-permissions", headers=admin, json={"permissions": perms})
+    assert saved.status_code == 200 and saved.json()["permissions"]["post"]["meta_apps"] is False
+
+    # now the backend blocks the partner (not just the menu)
+    await _as(client, "socio@example.com", PASSWORD)
+    assert (await client.get("/api/instagram/apps")).status_code == 403
+    assert (await client.get("/api/partners/me")).json()["permissions"]["post"]["meta_apps"] is False
+
+    # a non-partner (the chief) is never restricted by this
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.get("/api/instagram/apps")).status_code == 200
+
+
+@pytest.mark.anyio
 async def test_super_admin_sets_the_default_fee_for_everyone(client, db_session, owner, super_admin, monkeypatch) -> None:
     from app.core.config import get_settings
 
