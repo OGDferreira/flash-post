@@ -288,6 +288,38 @@ async def set_transaction_fee(
     return await _admin_user(db, user)
 
 
+class PartnerPermissionsRequest(BaseModel):
+    permissions: dict | None = None
+
+
+@router.get("/users/{user_id}/partner-permissions")
+async def get_partner_permissions(user_id: uuid.UUID, _admin: SuperAdminUser, db: DbSession) -> dict:
+    """A sócio's feature permissions (which Flash Post / Flash Bot tabs they may use)."""
+    from app.partners.permissions import effective_permissions
+    from app.partners.service import partner_link
+
+    link = await partner_link(db, user_id)
+    if link is None:
+        return {"is_partner": False, "permissions": None}
+    return {"is_partner": True, "permissions": effective_permissions(link.permissions)}
+
+
+@router.put("/users/{user_id}/partner-permissions", dependencies=[Depends(require_csrf)])
+async def set_partner_permissions(
+    user_id: uuid.UUID, payload: PartnerPermissionsRequest, _admin: SuperAdminUser, db: DbSession
+) -> dict:
+    """Turn a sócio's Flash Post / Flash Bot tabs on or off (or unlock the full panel)."""
+    from app.partners.permissions import effective_permissions, sanitize
+    from app.partners.service import partner_link
+
+    link = await partner_link(db, user_id)
+    if link is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Este usuário não é sócio de ninguém.")
+    link.permissions = sanitize(payload.permissions)
+    await db.commit()
+    return {"is_partner": True, "permissions": effective_permissions(link.permissions)}
+
+
 async def _target_user(db: AsyncSession, admin: User, user_id: uuid.UUID, action: str) -> User:
     if user_id == admin.id:
         raise HTTPException(

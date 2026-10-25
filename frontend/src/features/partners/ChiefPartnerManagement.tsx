@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Folder, FolderOpen, Plus, RefreshCw, Users, List } from "lucide-react";
+import { Folder, FolderOpen, Plus, RefreshCw, Users } from "lucide-react";
 import { useChiefPartners, usePartnerFolders, usePartnerAccounts, usePartnerLoops, useCreatePartnerFolder, useAssignAccountToFolder } from "@/features/partners/chiefApi";
 import { LoadingState, ErrorState, EmptyState } from "@/components/PageState";
 import { Modal } from "@/components/ui/Modal";

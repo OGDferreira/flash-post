@@ -36,7 +36,6 @@ from app.models import (
 )
 from app.bots.hidden import not_hidden_bot
 from app.partners import service
-from app.partners import permissions as perm_service
 
 router = APIRouter(prefix="/api/partners", tags=["Partners"])
 
@@ -121,9 +120,7 @@ async def my_partnership(
     link = await service.partner_link(db, user.id)
     workspace = await service.owner_workspace(db, user.id)
     chief = await db.get(User, link.chief_user_id) if link else None
-
-    # Get partner permissions
-    perms = await perm_service.get_all_partner_permissions(db, user.id)
+    from app.partners.permissions import effective_permissions
 
     out: dict = {
         "role": role,
@@ -131,12 +128,10 @@ async def my_partnership(
         "basis": SPLIT_BASIS,
         "shop_ref": service.shop_ref(workspace.id) if workspace and user.platform_role != "SUPER_ADMIN" else None,
         "partnership": None,
+        # Only a sócio is restricted; everyone else sees the full product (null = no limit).
+        "permissions": effective_permissions(link.permissions) if link else None,
         "totals": await _sales(db, workspace.id, start, end) if workspace else None,
         "sales": await _recent_orders(db, workspace.id, start, end) if workspace else [],
-        "permissions": {
-            "flashpost": perm_service.serialize_permissions(perms.get("flashpost")),
-            "flashbot": perm_service.serialize_permissions(perms.get("flashbot")),
-        },
     }
     if link and chief:
         out["partnership"] = {

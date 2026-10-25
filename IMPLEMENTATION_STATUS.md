@@ -5,17 +5,17 @@
 ### ✅ Backend Completo
 
 1. **Modelos de Dados**
-   - `PartnerPermission`: Permissões granulares por plataforma (Flash Post / Flash Bot)
+   - `Affiliation.permissions`: Permissões JSON por ferramenta e funcionalidade
    - `FeeChangeLog`: Histórico de alterações de taxas com auditoria
 
 2. **Serviços**
-   - `permissions.py`: Gerenciamento e validação de permissões
+   - `permissions.py`: Normalização e validação de permissões do sócio
    - `fee_service.py`: Gerenciamento de taxas (individual/global) com histórico
 
 3. **Rotas API**
-   - `GET /api/admin/partner-permissions/{user_id}`: Buscar permissões de um sócio
-   - `PUT /api/admin/partner-permissions`: Atualizar permissões
-   - `POST /api/admin/partner-permissions/initialize/{user_id}`: Inicializar permissões padrão
+   - `GET /api/admin/users/{user_id}/partner-permissions`: Buscar permissões de um sócio
+   - `PUT /api/admin/users/{user_id}/partner-permissions`: Atualizar permissões
+   - `require_partner_feature`: Bloquear funcionalidades desativadas no backend
    - `GET /api/admin/fees/current`: Listar taxas atuais
    - `GET /api/admin/fees/user/{user_id}`: Taxa de um usuário específico
    - `PUT /api/admin/fees/user`: Alterar taxa individual
@@ -25,18 +25,18 @@
    - `GET /api/partners/me`: Atualizado para retornar permissões
 
 4. **Migration**
-   - `20261025_66_partner_permissions_and_fee_log.py`
+   - `20261025_66_partner_permissions.py`: adicionar permissões JSON à afiliação
+   - `20261025_67_fee_change_log.py`: criar o histórico de alterações de taxas
 
 ### ✅ Frontend Completo
 
 1. **Componentes**
-   - `PartnerPermissionsManager`: Gerenciamento visual de permissões
+   - Modal de permissões do sócio em `AdminUsersPage`
    - `FeeManagementPanel`: Painel administrativo de taxas
    
 2. **Hooks e APIs**
-   - `permissionsApi.ts`: Hooks React Query para permissões
    - `feesApi.ts`: Hooks React Query para taxas
-   - `usePartnerPermissions.ts`: Verificação de permissões do usuário
+   - Menu e rotas protegidos conforme as permissões do sócio
 
 3. **Integração**
    - AdminUsersPage: Botão de permissões e painel de taxas
@@ -124,23 +124,24 @@ O painel simplificado do sócio agora:
 ## Permissões Disponíveis
 
 ### Flash Post
-- `can_view_dashboard`: Visualizar painel principal
-- `can_view_ranking`: Acessar ranking diário de visualizações
-- `can_view_accounts`: Gerenciar contas conectadas
-- `can_view_meta_apps`: Configurar Apps Meta
-- `can_view_settings`: Acessar configurações
-- `can_view_contact`: Visualizar contato
+- `dashboard`: Visualizar painel principal
+- `ranking`: Acessar ranking diário de visualizações
+- `accounts`: Gerenciar contas conectadas
+- `meta_apps`: Configurar Apps Meta
+- `settings`: Acessar configurações
+- `contacts`: Visualizar contato
 
 ### Flash Bot
-- `can_view_bot_dashboard`: Visualizar painel do Flash Bot
-- `can_view_leads`: Gerenciar leads
-- `can_view_wallets`: Acessar carteiras e sacar
+- `dashboard`: Visualizar painel do Flash Bot
+- `leads`: Gerenciar leads
+- `wallet`: Acessar carteiras e sacar
+- `full_panel`: Liberar o painel completo
 
 ## Notas Importantes
 
 1. **Permissões Padrão**
-   - Quando um usuário vira sócio, recebe permissões padrão (apenas dashboards)
-   - O administrador deve configurar as demais permissões manualmente
+   - O sócio recebe as abas principais liberadas por padrão
+   - O painel completo fica desativado por padrão e pode ser liberado pelo administrador
 
 2. **Taxas**
    - `null` significa taxa padrão da plataforma

@@ -30,6 +30,7 @@ from app.instagram.oauth import (
     revoke_instagram_permissions,
 )
 from app.instagram.account_state import isolate_inactive_account
+from app.partners.permissions import require_partner_feature
 from app.models import (
     InstagramAccount,
     InstagramAppCredential,
@@ -364,7 +365,7 @@ async def _workspace_meta_app(
     )
 
 
-@router.get("/apps", response_model=InstagramMetaAppsResponse)
+@router.get("/apps", response_model=InstagramMetaAppsResponse, dependencies=[require_partner_feature("post", "meta_apps")])
 async def list_meta_apps(
     access: WorkspaceMemberAccess,
     db: DbSession,
@@ -406,7 +407,7 @@ async def list_meta_apps(
     "/apps",
     response_model=InstagramMetaAppActionResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_csrf)],
+    dependencies=[Depends(require_csrf), require_partner_feature("post", "meta_apps")],
 )
 async def create_meta_app(
     payload: InstagramMetaAppCreateRequest,
@@ -470,7 +471,7 @@ async def create_meta_app(
 @router.put(
     "/apps/{app_id}/select",
     response_model=InstagramMetaAppActionResponse,
-    dependencies=[Depends(require_csrf)],
+    dependencies=[Depends(require_csrf), require_partner_feature("post", "meta_apps")],
 )
 async def select_meta_app(
     app_id: uuid.UUID,
@@ -496,7 +497,7 @@ async def select_meta_app(
 @router.patch(
     "/apps/{app_id}",
     response_model=InstagramMetaAppResponse,
-    dependencies=[Depends(require_csrf)],
+    dependencies=[Depends(require_csrf), require_partner_feature("post", "meta_apps")],
 )
 async def update_meta_app(
     app_id: uuid.UUID,
@@ -533,7 +534,7 @@ async def update_meta_app(
 @router.delete(
     "/apps/{app_id}",
     response_model=InstagramMetaAppsResponse,
-    dependencies=[Depends(require_csrf)],
+    dependencies=[Depends(require_csrf), require_partner_feature("post", "meta_apps")],
 )
 async def delete_meta_app(
     app_id: uuid.UUID,

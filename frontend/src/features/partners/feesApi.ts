@@ -1,5 +1,5 @@
 import { apiRequest } from "@/services/api";
-import type { FeeChangeLog, UserFeeInfo, PartnerFeeInfo } from "@/types/permissions";
+import type { FeeChangeLog, UserFeeInfo, PartnerFeeInfo } from "@/features/partners/feeTypes";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface FeeUpdateRequest {

@@ -34,9 +34,45 @@ import {
 } from "lucide-react";
 
 import { appForPath, type AppId } from "@/lib/brand";
+import type { PartnerPermissions } from "@/features/partners/api";
 
 export type NavItem = { label: string; to: string; icon: LucideIcon; short?: string };
 export type NavGroup = { id: string; title: string; icon: LucideIcon; items: NavItem[] };
+
+/** The sócio-restrictable routes, each mapped to the permission that unlocks it.
+ *  Routes not listed here are "full panel only": a restricted partner cannot open them. */
+export const PARTNER_FEATURE_BY_ROUTE: Record<string, ["post" | "bot", string]> = {
+  "/dashboard": ["post", "dashboard"],
+  "/feature/ranking": ["post", "ranking"],
+  "/feature/accounts": ["post", "accounts"],
+  "/feature/meta-apps": ["post", "meta_apps"],
+  "/configuracoes": ["post", "settings"],
+  "/feature/contacts": ["post", "contacts"],
+  "/bot": ["bot", "dashboard"],
+  "/bot/vendas": ["bot", "leads"],
+  "/carteira": ["bot", "wallet"],
+};
+// Essential account pages a sócio can always reach.
+const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos"]);
+
+function matchBase(path: string): string | null {
+  const keys = [...Object.keys(PARTNER_FEATURE_BY_ROUTE), ...PARTNER_ALWAYS_ALLOWED];
+  // longest match first so "/bot/vendas" wins over "/bot"
+  const found = keys
+    .filter((key) => path === key || path.startsWith(`${key}/`))
+    .sort((a, b) => b.length - a.length)[0];
+  return found ?? null;
+}
+
+/** Whether a sócio with these permissions may open a path (null permissions = unrestricted). */
+export function partnerCanOpen(permissions: PartnerPermissions | null | undefined, path: string): boolean {
+  if (!permissions || permissions.full_panel) return true;
+  const base = matchBase(path);
+  if (base === null) return false;
+  if (PARTNER_ALWAYS_ALLOWED.has(base)) return true;
+  const [tool, feature] = PARTNER_FEATURE_BY_ROUTE[base];
+  return Boolean(permissions[tool]?.[feature]);
+}
 
 export const adminLinks: NavItem[] = [
   { label: "Visão geral", short: "Início", to: "/admin", icon: Home },
@@ -263,12 +299,21 @@ export function buildNavigation(opts: {
   workspaceRole: string | null | undefined;
   pathname?: string;
   isPartner?: boolean;
+  partnerPermissions?: PartnerPermissions | null;
 }): NavModel {
   const app = appForPath(opts.pathname ?? "/dashboard");
   if (opts.isAdminRoute) return { app: "post", direct: adminLinks, flat: [], groups: [], admin: [] };
   // Super Admin pages are a plain, always-open section (no collapsible group).
   const admin = opts.isSuperAdmin ? adminLinks : [];
+  // A restricted sócio (no full panel) only sees the tabs the admin left on.
+  const restricted = Boolean(opts.isPartner) && !opts.partnerPermissions?.full_panel;
   if (opts.workspaceRole === "OWNER") {
+    if (restricted) {
+      const keep = (to: string) => partnerCanOpen(opts.partnerPermissions, to);
+      const groups = app === "bot" ? botGroups : postGroups;
+      const direct = app === "bot" ? botDirect : postDirect;
+      return { app, direct: direct.filter(({ to }) => keep(to)), flat: [], groups: only(groups, keep), admin };
+    }
     if (app === "bot") {
       if (opts.isPartner) {
         return { app, direct: botDirect, flat: [], groups: only(botGroups, (to) => !partnerBotHidden.has(to)), admin };

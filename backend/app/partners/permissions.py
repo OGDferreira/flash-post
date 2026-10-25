@@ -1,149 +1,74 @@
-"""Partner permission management and validation."""
+"""Per-sócio (partner) feature permissions.
 
-import uuid
-from typing import Literal
+A partner (someone with an active ``Affiliation``) only sees a restricted, unified
+panel: a few Flash Post tabs and a few Flash Bot tabs. The Super Admin (or the chief)
+can turn each one on or off, or unlock the full panel. Owners, collaborators and the
+Super Admin themselves are never restricted by this.
+"""
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from __future__ import annotations
 
-from app.models import PartnerPermission, Affiliation, User
+from fastapi import Depends, HTTPException, status
 
+from app.auth.dependencies import AuthenticatedUser, DbSession
 
-PlatformType = Literal["flashpost", "flashbot"]
-
-
-async def get_partner_permissions(
-    db: AsyncSession,
-    user_id: uuid.UUID,
-    platform: PlatformType
-) -> PartnerPermission | None:
-    """Get partner permissions for a specific platform."""
-    return await db.scalar(
-        select(PartnerPermission).where(
-            PartnerPermission.user_id == user_id,
-            PartnerPermission.platform == platform
-        )
-    )
+POST_FEATURES = ("dashboard", "ranking", "accounts", "meta_apps", "settings", "contacts")
+BOT_FEATURES = ("dashboard", "leads", "wallet")
 
 
-async def get_all_partner_permissions(
-    db: AsyncSession,
-    user_id: uuid.UUID
-) -> dict[str, PartnerPermission]:
-    """Get all permissions for a partner (both platforms)."""
-    perms = await db.scalars(
-        select(PartnerPermission).where(PartnerPermission.user_id == user_id)
-    )
-    return {p.platform: p for p in perms}
-
-
-async def ensure_partner_permissions(
-    db: AsyncSession,
-    user_id: uuid.UUID,
-    platform: PlatformType
-) -> PartnerPermission:
-    """Get or create default permissions for a partner."""
-    existing = await get_partner_permissions(db, user_id, platform)
-    if existing:
-        return existing
-
-    # Create default permissions (only dashboard access)
-    perm = PartnerPermission(
-        user_id=user_id,
-        platform=platform,
-        can_view_dashboard=True,
-        can_view_ranking=False,
-        can_view_accounts=False,
-        can_view_meta_apps=False,
-        can_view_settings=False,
-        can_view_contact=False,
-        can_view_bot_dashboard=True,
-        can_view_leads=False,
-        can_view_wallets=False,
-    )
-    db.add(perm)
-    await db.flush()
-    return perm
-
-
-async def update_partner_permissions(
-    db: AsyncSession,
-    user_id: uuid.UUID,
-    platform: PlatformType,
-    permissions: dict[str, bool]
-) -> PartnerPermission:
-    """Update partner permissions for a platform."""
-    perm = await ensure_partner_permissions(db, user_id, platform)
-
-    # Update only the fields that were provided
-    for key, value in permissions.items():
-        if hasattr(perm, key) and isinstance(value, bool):
-            setattr(perm, key, value)
-
-    await db.flush()
-    return perm
-
-
-async def is_partner(db: AsyncSession, user_id: uuid.UUID) -> bool:
-    """Check if a user is an active partner."""
-    link = await db.scalar(
-        select(Affiliation).where(
-            Affiliation.affiliate_user_id == user_id,
-            Affiliation.status == "ACTIVE"
-        )
-    )
-    return link is not None
-
-
-async def has_permission(
-    db: AsyncSession,
-    user_id: uuid.UUID,
-    platform: PlatformType,
-    permission: str
-) -> bool:
-    """Check if a partner has a specific permission."""
-    # Super admins have all permissions
-    user = await db.scalar(select(User).where(User.id == user_id))
-    if user and user.platform_role == "SUPER_ADMIN":
-        return True
-
-    # Check if user is a partner
-    if not await is_partner(db, user_id):
-        # Not a partner, check if they're a regular owner (full access)
-        return True  # Non-partners have full access to their own workspace
-
-    # Get partner permissions
-    perm = await get_partner_permissions(db, user_id, platform)
-    if not perm:
-        # No explicit permissions set, default to dashboard only
-        return permission in ["can_view_dashboard", "can_view_bot_dashboard"]
-
-    return getattr(perm, permission, False)
-
-
-def serialize_permissions(perm: PartnerPermission | None) -> dict:
-    """Serialize permissions to JSON format."""
-    if not perm:
-        return {
-            "can_view_dashboard": True,
-            "can_view_ranking": False,
-            "can_view_accounts": False,
-            "can_view_meta_apps": False,
-            "can_view_settings": False,
-            "can_view_contact": False,
-            "can_view_bot_dashboard": True,
-            "can_view_leads": False,
-            "can_view_wallets": False,
-        }
-
+def default_permissions() -> dict:
+    """The default set a sócio gets: all the restricted tabs, full panel off."""
     return {
-        "can_view_dashboard": perm.can_view_dashboard,
-        "can_view_ranking": perm.can_view_ranking,
-        "can_view_accounts": perm.can_view_accounts,
-        "can_view_meta_apps": perm.can_view_meta_apps,
-        "can_view_settings": perm.can_view_settings,
-        "can_view_contact": perm.can_view_contact,
-        "can_view_bot_dashboard": perm.can_view_bot_dashboard,
-        "can_view_leads": perm.can_view_leads,
-        "can_view_wallets": perm.can_view_wallets,
+        "post": {feature: True for feature in POST_FEATURES},
+        "bot": {feature: True for feature in BOT_FEATURES},
+        "full_panel": False,
     }
+
+
+def effective_permissions(permissions: dict | None) -> dict:
+    """Merge a stored permissions dict onto the defaults (unknown keys ignored)."""
+    base = default_permissions()
+    stored = permissions if isinstance(permissions, dict) else {}
+    for tool in ("post", "bot"):
+        group = stored.get(tool)
+        if isinstance(group, dict):
+            for feature, value in group.items():
+                if feature in base[tool]:
+                    base[tool][feature] = bool(value)
+    if "full_panel" in stored:
+        base["full_panel"] = bool(stored["full_panel"])
+    return base
+
+
+def allows(permissions: dict, tool: str, feature: str) -> bool:
+    """Whether the (already-effective) permissions let a partner use ``tool.feature``."""
+    if permissions.get("full_panel"):
+        return True
+    return bool(permissions.get(tool, {}).get(feature, False))
+
+
+def sanitize(permissions: dict | None) -> dict:
+    """Clamp an incoming permissions payload to the known shape (for storage)."""
+    return effective_permissions(permissions)
+
+
+def require_partner_feature(tool: str, feature: str):
+    """Dependency: block a partner from a feature the admin turned off.
+
+    Non-partners (owners, collaborators, Super Admin) pass through untouched, so
+    adding this to an endpoint never changes their access.
+    """
+
+    async def guard(user: AuthenticatedUser, db: DbSession) -> None:
+        from app.partners.service import partner_link
+
+        link = await partner_link(db, user.id)
+        if link is None:
+            return
+        if not allows(effective_permissions(link.permissions), tool, feature):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Seu acesso a esta função foi desativado pelo administrador.",
+            )
+
+    return Depends(guard)

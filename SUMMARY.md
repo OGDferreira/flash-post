@@ -5,16 +5,15 @@
 ### 1. Sistema de Permissões Granulares para Sócios
 
 **Backend:**
-- ✅ Modelo `PartnerPermission` com permissões por plataforma (Flash Post e Flash Bot)
-- ✅ Serviço de gerenciamento de permissões (`permissions.py`)
-- ✅ Rotas administrativas para CRUD de permissões
+- ✅ Permissões armazenadas como JSON em `affiliations.permissions`
+- ✅ Serviço de validação de permissões (`permissions.py`)
+- ✅ Rotas administrativas para consultar e atualizar as permissões de sócios
+- ✅ Bloqueio no backend das funcionalidades desativadas
 - ✅ Integração no endpoint `/api/partners/me`
 
 **Frontend:**
-- ✅ Componente `PartnerPermissionsManager` para gerenciamento visual
-- ✅ Hooks React Query para manipulação de permissões
-- ✅ Hook `usePartnerPermissions` para verificação de acesso
-- ✅ Integração na `AdminUsersPage` com botão "Permissões" para sócios
+- ✅ Modal de permissões na `AdminUsersPage`
+- ✅ Menu e rotas respeitam as permissões configuradas
 - ✅ Painel do sócio respeitando permissões configuradas
 
 **Permissões Flash Post:**
@@ -69,8 +68,8 @@
 ### 5. Migration do Banco de Dados
 
 **Criado:**
-- ✅ Migration `20261025_66_partner_permissions_and_fee_log.py`
-- ✅ Tabela `partner_permissions`
+- ✅ Migration `20261025_66_partner_permissions.py` para `affiliations.permissions`
+- ✅ Migration `20261025_67_fee_change_log.py` para o histórico de taxas
 - ✅ Tabela `fee_change_logs`
 - ✅ Índices e constraints apropriados
 
@@ -130,24 +129,8 @@
 
 ## 📊 Estrutura de Dados
 
-### PartnerPermission
-```sql
-- id: UUID
-- user_id: UUID (FK users.id)
-- platform: 'flashpost' | 'flashbot'
-- can_view_dashboard: BOOLEAN
-- can_view_ranking: BOOLEAN
-- can_view_accounts: BOOLEAN
-- can_view_meta_apps: BOOLEAN
-- can_view_settings: BOOLEAN
-- can_view_contact: BOOLEAN
-- can_view_bot_dashboard: BOOLEAN
-- can_view_leads: BOOLEAN
-- can_view_wallets: BOOLEAN
-- extra_permissions: JSONB (para futuras extensões)
-- created_at: TIMESTAMP
-- updated_at: TIMESTAMP
-```
+### Permissões do sócio
+As permissões ficam no campo JSON `affiliations.permissions`, com grupos `post` e `bot` e a opção `full_panel`. O backend aplica permissões padrão e valida o acesso às funcionalidades.
 
 ### FeeChangeLog
 ```sql
@@ -194,12 +177,11 @@
 
 ### Backend
 - **Novos:**
-  - `backend/app/models/partner_permission.py`
+  - `backend/app/models/fee_change_log.py`
   - `backend/app/partners/permissions.py`
   - `backend/app/partners/fee_service.py`
-  - `backend/app/partners/permission_routes.py`
   - `backend/app/partners/fee_routes.py`
-  - `backend/alembic/versions/20261025_66_partner_permissions_and_fee_log.py`
+  - `backend/alembic/versions/20261025_67_fee_change_log.py`
 
 - **Modificados:**
   - `backend/app/models/__init__.py`
@@ -208,12 +190,9 @@
 
 ### Frontend
 - **Novos:**
-  - `frontend/src/types/permissions.ts`
-  - `frontend/src/features/partners/permissionsApi.ts`
+  - `frontend/src/features/partners/feeTypes.ts`
   - `frontend/src/features/partners/feesApi.ts`
-  - `frontend/src/features/partners/PartnerPermissionsManager.tsx`
   - `frontend/src/features/partners/FeeManagementPanel.tsx`
-  - `frontend/src/hooks/usePartnerPermissions.ts`
 
 - **Modificados:**
   - `frontend/src/services/api.ts`

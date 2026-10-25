@@ -54,11 +54,10 @@ export function PartnerDashboardPage() {
   const disconnected = metrics ? metrics.disconnected_accounts + metrics.errored_accounts + metrics.expired_accounts : 0;
   const totals = partner.data?.totals;
 
-  // Check permissions
   const permissions = partner.data?.permissions;
-  const canViewAccounts = permissions?.flashpost.can_view_accounts ?? true;
-  const canViewWallet = permissions?.flashbot.can_view_wallets ?? true;
-  const canViewRanking = permissions?.flashpost.can_view_ranking ?? true;
+  const canViewAccounts = !permissions || permissions.full_panel || permissions.post.accounts;
+  const canViewWallet = !permissions || permissions.full_panel || permissions.bot.wallet;
+  const canViewRanking = !permissions || permissions.full_panel || permissions.post.ranking;
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4">

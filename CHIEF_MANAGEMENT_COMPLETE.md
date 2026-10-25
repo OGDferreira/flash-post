@@ -9,7 +9,7 @@ Esta implementação adiciona funcionalidades completas para que o sócio chefe 
 ## ✅ Funcionalidades Implementadas
 
 ### 1. Sistema de Permissões Granulares para Sócios
-- ✅ Modelo `PartnerPermission` com permissões por plataforma
+- ✅ Campo JSON `Affiliation.permissions` com permissões por ferramenta
 - ✅ Gerenciamento via painel administrativo
 - ✅ Interface visual para configuração
 - ✅ Painel do sócio respeitando permissões
@@ -128,25 +128,21 @@ DELETE /api/chief/partners/{workspace_id}/loops/{loop_id}/accounts/{account_id}
 ### Backend (Novos)
 - `backend/app/partners/chief_management.py` - Serviço de gerenciamento
 - `backend/app/partners/chief_routes.py` - Rotas da API
-- `backend/app/models/partner_permission.py` - Modelo de permissões
 - `backend/app/partners/permissions.py` - Serviço de permissões
 - `backend/app/partners/fee_service.py` - Serviço de taxas
-- `backend/app/partners/permission_routes.py` - Rotas de permissões
 - `backend/app/partners/fee_routes.py` - Rotas de taxas
-- `backend/alembic/versions/20261025_66_partner_permissions_and_fee_log.py` - Migration
+- `backend/alembic/versions/20261025_66_partner_permissions.py` - Migration das permissões
+- `backend/alembic/versions/20261025_67_fee_change_log.py` - Migration do histórico de taxas
 
 ### Frontend (Novos)
 - `frontend/src/features/partners/chiefApi.ts` - API hooks
 - `frontend/src/features/partners/ChiefPartnerManagement.tsx` - Componente principal
 - `frontend/src/features/partners/PartnerLoopManager.tsx` - Gerenciamento de loops
-- `frontend/src/features/partners/PartnerPermissionsManager.tsx` - Gerenciamento de permissões
 - `frontend/src/features/partners/FeeManagementPanel.tsx` - Gerenciamento de taxas
-- `frontend/src/features/partners/permissionsApi.ts` - API de permissões
 - `frontend/src/features/partners/feesApi.ts` - API de taxas
 - `frontend/src/pages/ChiefPartnersPage.tsx` - Página principal
 - `frontend/src/types/chief.ts` - Tipos TypeScript
-- `frontend/src/types/permissions.ts` - Tipos de permissões
-- `frontend/src/hooks/usePartnerPermissions.ts` - Hook de permissões
+- `frontend/src/features/partners/feeTypes.ts` - Tipos para gerenciamento de taxas
 
 ### Modificados
 - `backend/app/main.py` - Registro de novas rotas
@@ -295,7 +291,7 @@ curl -X POST http://localhost:8000/api/chief/partners/{workspace_id}/loops/{loop
 **Solução:** Verificar se a conta pertence ao workspace correto
 
 ### Problema: Permissões não funcionam
-**Solução:** Executar migration e verificar dados na tabela `partner_permissions`
+**Solução:** Executar as migrations e verificar o campo `permissions` na tabela `affiliations`
 
 ---
 

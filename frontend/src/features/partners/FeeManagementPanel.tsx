@@ -10,8 +10,6 @@ export function FeeManagementPanel() {
   const [newFee, setNewFee] = useState<string>("");
   const [reason, setReason] = useState("");
   const [showHistory, setShowHistory] = useState(false);
-  const [showGlobalPreview, setShowGlobalPreview] = useState(false);
-
   const currentFees = useCurrentFees();
   const updateUserFee = useUpdateUserFee();
   const updateGlobalFee = useUpdateGlobalFee();
@@ -52,7 +50,6 @@ export function FeeManagementPanel() {
       });
       setNewFee("");
       setReason("");
-      setShowGlobalPreview(false);
     }
   };
 

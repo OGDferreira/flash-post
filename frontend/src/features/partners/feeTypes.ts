@@ -1,25 +1,3 @@
-export type PlatformType = "flashpost" | "flashbot";
-
-export interface PartnerPermissions {
-  // Flash Post permissions
-  can_view_dashboard: boolean;
-  can_view_ranking: boolean;
-  can_view_accounts: boolean;
-  can_view_meta_apps: boolean;
-  can_view_settings: boolean;
-  can_view_contact: boolean;
-
-  // Flash Bot permissions
-  can_view_bot_dashboard: boolean;
-  can_view_leads: boolean;
-  can_view_wallets: boolean;
-}
-
-export interface UserPermissions {
-  flashpost: PartnerPermissions;
-  flashbot: PartnerPermissions;
-}
-
 export interface FeeChangeLog {
   user_id: string;
   user_name: string;
