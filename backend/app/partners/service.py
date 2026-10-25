@@ -137,6 +137,7 @@ async def role_of(db: AsyncSession, user: User) -> str:
 
 
 PLATFORM_FEE_KEY = "platform_fee"
+TRANSACTION_FEE_KEY = "flashbot_transaction_fee"
 
 
 @dataclass
@@ -278,6 +279,24 @@ async def _chief_copy_link(db: AsyncSession, flow: TgFlow, owner_id: uuid.UUID) 
     return link if chief_workspace is not None and template.workspace_id == chief_workspace.id else None
 
 
+async def default_transaction_fee(db: AsyncSession) -> Decimal:
+    """The per-sale Flash fee that applies to everyone without a personal override.
+
+    The Super Admin sets it in the admin; falls back to the configured default.
+    """
+    from app.core.config import get_settings
+    from app.models import SystemSetting
+
+    row = await db.get(SystemSetting, TRANSACTION_FEE_KEY)
+    value = row.value if row and isinstance(row.value, dict) else {}
+    if value.get("value") is not None:
+        try:
+            return max(Decimal("0.00"), Decimal(str(value["value"])).quantize(CENT))
+        except Exception:
+            pass
+    return money(get_settings().flashbot_transaction_fee)
+
+
 async def billing_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.UUID | None = None) -> BillingRoute:
     route = await _base_route(db, workspace_id, flow_id)
     if route.allowed and route.shop_ref is not None:  # every operation but the Super Admin's
@@ -286,11 +305,11 @@ async def billing_route(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid
         else:
             workspace = await db.get(Workspace, workspace_id)
             owner = await db.get(User, workspace.owner_id) if workspace else None
-        _add_transaction_fee(route, transaction_fee_for(owner))
+        _add_transaction_fee(route, transaction_fee_for(owner, await default_transaction_fee(db)))
     return route
 
 
-def transaction_fee_for(user: User | None) -> Decimal:
+def transaction_fee_for(user: User | None, default: Decimal | None = None) -> Decimal:
     """The Flash fee per sale: the user's own (set by the Super Admin) or the default."""
     from app.core.config import get_settings
 
@@ -298,7 +317,7 @@ def transaction_fee_for(user: User | None) -> Decimal:
         return Decimal("0.00")
     if user is not None and user.transaction_fee is not None:
         return money(user.transaction_fee)
-    return money(get_settings().flashbot_transaction_fee)
+    return money(default if default is not None else get_settings().flashbot_transaction_fee)
 
 
 def _add_transaction_fee(route: BillingRoute, fee: Decimal) -> None:

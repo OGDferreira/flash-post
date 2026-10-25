@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update
 
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.auth.dependencies import DbSession, SuperAdminUser, require_csrf
@@ -28,7 +28,13 @@ from app.models import (
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from app.partners.service import PLATFORM_FEE_KEY, platform_fee_setting
+from app.partners.service import (
+    PLATFORM_FEE_KEY,
+    TRANSACTION_FEE_KEY,
+    default_transaction_fee,
+    platform_fee_setting,
+    transaction_fee_for,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["platform administration"])
 
@@ -131,6 +137,7 @@ async def operations(
         select(TgOrder.split_chief_user_id, func.coalesce(func.sum(TgOrder.split_amount), 0))
         .where(*in_period, TgOrder.split_chief_user_id.is_not(None)).group_by(TgOrder.split_chief_user_id)
     )).all())
+    fee_default = await default_transaction_fee(db)
     user_rows = []
     for ws in workspaces.values():
         owner = users.get(ws.owner_id)
@@ -143,6 +150,9 @@ async def operations(
             "chief": users[link.chief_user_id].full_name if link and link.chief_user_id in users else None,
             "commission_percent": _f(link.participation_percent) if link else None,
             "revenue": total, "fees": fees, "commission_paid": paid_out, "commission_received": _f(received.get(owner.id)),
+            # the user's own per-sale fee override (None = uses the default) and the fee actually applied
+            "transaction_fee": str(owner.transaction_fee) if owner.transaction_fee is not None else None,
+            "transaction_fee_effective": str(transaction_fee_for(owner, fee_default)),
         })
     user_rows.sort(key=lambda r: r["revenue"], reverse=True)
 
@@ -286,6 +296,40 @@ async def set_platform_fee(payload: PlatformFee, admin: SuperAdminUser, db: DbSe
         row.value, row.updated_by_user_id = value, admin.id
     await db.commit()
     return {"type": payload.type, "value": float(payload.value)}
+
+
+# ------------------------------------------------------------------ per-sale fee (Flash Bot)
+
+
+class TransactionFeeDefault(BaseModel):
+    value: Decimal = Field(ge=0, le=999, decimal_places=2)
+    # When true, also clears every user's personal fee so the new default applies to everyone.
+    clear_overrides: bool = False
+
+
+@router.get("/transaction-fee")
+async def get_transaction_fee(_admin: SuperAdminUser, db: DbSession) -> dict:
+    return {"default": float(await default_transaction_fee(db))}
+
+
+@router.put("/transaction-fee", dependencies=[Depends(require_csrf)])
+async def set_transaction_fee_default(payload: TransactionFeeDefault, admin: SuperAdminUser, db: DbSession) -> dict:
+    """The per-sale fee for everyone without a personal override (optionally reset all overrides)."""
+    amount = payload.value.quantize(Decimal("0.01"))
+    row = await db.get(SystemSetting, TRANSACTION_FEE_KEY)
+    value = {"value": str(amount)}
+    if row is None:
+        db.add(SystemSetting(key=TRANSACTION_FEE_KEY, value=value, updated_by_user_id=admin.id))
+    else:
+        row.value, row.updated_by_user_id = value, admin.id
+    cleared = 0
+    if payload.clear_overrides:
+        result = await db.execute(
+            update(User).where(User.transaction_fee.is_not(None)).values(transaction_fee=None)
+        )
+        cleared = result.rowcount or 0
+    await db.commit()
+    return {"default": float(amount), "cleared_overrides": cleared}
 
 
 # ------------------------------------------------------------------ award photos

@@ -24,7 +24,7 @@ from app.models import (
     Workspace,
     WorkspaceMember,
 )
-from app.partners.service import transaction_fee_for
+from app.partners.service import default_transaction_fee, transaction_fee_for
 from app.schemas.admin import (
     AdminSummary,
     AdminTransactionFeeRequest,
@@ -84,7 +84,7 @@ async def summary(_admin: SuperAdminUser, db: DbSession) -> AdminSummary:
         flashbot_sales_today=sales or 0,
         flashbot_revenue_today=Decimal(revenue or 0).quantize(Decimal("0.01")),
         transaction_fees_today=Decimal(fees or 0).quantize(Decimal("0.01")),
-        transaction_fee_default=get_settings().flashbot_transaction_fee,
+        transaction_fee_default=await default_transaction_fee(db),
     )
 
 
