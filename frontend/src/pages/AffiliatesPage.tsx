@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, Handshake, Info, Plus, RefreshCw, Trash2 } from "lucide-react";
 
@@ -227,9 +227,16 @@ function DetailModal({ id, period, onClose, initialAccounts = "all" }: {
   initialAccounts?: AccountFilter;
 }) {
   const [accountFilter, setAccountFilter] = useState<AccountFilter>(initialAccounts);
+  // The popup has its own period, starting from the page's and changeable here.
+  const [localPeriod, setLocalPeriod] = useState<MetricsPeriod>(period);
+  useEffect(() => {
+    if (id) setLocalPeriod(period);
+    // Reset to the page period each time a different partner opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
   const detail = useQuery({
-    queryKey: ["affiliates", "detail", id, periodParams(period)],
-    queryFn: () => apiRequest<Detail>(`/api/affiliates/${id}?${new URLSearchParams(periodParams(period))}`),
+    queryKey: ["affiliates", "detail", id, periodParams(localPeriod)],
+    queryFn: () => apiRequest<Detail>(`/api/affiliates/${id}?${new URLSearchParams(periodParams(localPeriod))}`),
     enabled: Boolean(id),
   });
   const data = detail.data;
@@ -243,6 +250,10 @@ function DetailModal({ id, period, onClose, initialAccounts = "all" }: {
       title={data ? data.full_name : "Filiado"}
       wide
     >
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line-soft bg-surface-inset px-3 py-2">
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted">Período</span>
+        <PeriodFilter onChange={setLocalPeriod} value={localPeriod} />
+      </div>
       {detail.isLoading && <LoadingState label="Carregando filiado" />}
       {detail.error && <ErrorState message={errorText(detail.error)} onRetry={() => void detail.refetch()} />}
       {data && (
@@ -285,7 +296,7 @@ function DetailModal({ id, period, onClose, initialAccounts = "all" }: {
             <p className="text-xs text-warning">{data.purchases_without_amount} compra(s) paga(s) chegaram sem valor e não entram na receita.</p>
           )}
           <AccountsList accounts={data.accounts} filter={accountFilter} onFilter={setAccountFilter} />
-          {id && <PartnerOperations id={id} period={period} />}
+          {id && <PartnerOperations id={id} period={localPeriod} />}
           <p className="rounded-xl border border-line-soft bg-surface-inset p-3 text-[11px] leading-5 text-muted">{data.criteria.participation}</p>
         </div>
       )}

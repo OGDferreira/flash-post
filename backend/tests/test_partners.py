@@ -92,6 +92,9 @@ def storage(monkeypatch):
         async def copy(self, source, destination):
             copies.append((source, destination))
 
+        async def delete(self, path):
+            pass
+
     from app.instagram import storage as storage_module
 
     monkeypatch.setattr(storage_module.SupabaseStorage, "from_settings", classmethod(lambda cls: FakeStorage()))
@@ -660,6 +663,30 @@ async def test_super_admin_sets_a_users_fee_and_sees_todays_fees(client, db_sess
     admin = await _as(client, "superadmin@example.com", "super admin password")
     reset = await client.put(f"/api/admin/users/{chief.id}/transaction-fee", headers=admin, json={"transaction_fee": None})
     assert reset.json()["transaction_fee"] is None and Decimal(str(reset.json()["transaction_fee_effective"])) == Decimal("0.40")
+
+
+@pytest.mark.anyio
+async def test_super_admin_sets_the_default_fee_for_everyone(client, db_session, owner, super_admin, monkeypatch) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "flashbot_transaction_fee", Decimal("0.40"))
+    chief, chief_ws = owner
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+
+    # the default comes from config until the admin changes it
+    assert Decimal(str((await client.get("/api/admin/transaction-fee")).json()["default"])) == Decimal("0.40")
+
+    # give this user a personal fee, then raise the default for everyone and wipe the overrides
+    await client.put(f"/api/admin/users/{chief.id}/transaction-fee", headers=admin, json={"transaction_fee": "0.10"})
+    saved = await client.put("/api/admin/transaction-fee", headers=admin, json={"value": "0.90", "clear_overrides": True})
+    assert saved.status_code == 200, saved.text
+    assert Decimal(str(saved.json()["default"])) == Decimal("0.90") and saved.json()["cleared_overrides"] >= 1
+
+    assert Decimal(str((await client.get("/api/admin/transaction-fee")).json()["default"])) == Decimal("0.90")
+    await db_session.refresh(chief)
+    assert chief.transaction_fee is None  # the personal override was cleared
+    route = await service.billing_route(db_session, chief_ws.id)
+    assert route.transaction_fee == Decimal("0.90")
 
 
 @pytest.mark.anyio

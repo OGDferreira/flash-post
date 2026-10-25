@@ -12,7 +12,7 @@ from app.bots import engine, gateways, snakepay
 from app.core.config import get_settings
 from app.core.crypto import encrypt_value
 from app.models import SystemSetting, TgBot, TgFlow, TgGatewaySetting, TgOrder, User, Workspace
-from app.partners.service import active_share, audit
+from app.partners.service import active_share, audit, default_transaction_fee, transaction_fee_for
 
 router = APIRouter(prefix="/api/payment-gateways", tags=["Payment gateways"])
 
@@ -132,7 +132,8 @@ async def _state(db, user, workspace) -> dict:
     state["priority"] = await _priority(db, workspace, state["gateways"], admin)
     state["shared_flows"] = await _shared_flows(db, workspace)
     state["partners_without_shop_id"] = await _partners_without_shop_id(db, workspace)
-    fee = get_settings().flashbot_transaction_fee
+    owner = await db.get(User, workspace.owner_id)
+    fee = transaction_fee_for(owner, await default_transaction_fee(db))
     if not admin and fee > 0:  # the Super Admin's own bots do not pay it
         for gateway in state["gateways"]:
             gateway["fee"] += f" · taxa Flash {_brl(fee)} por venda"

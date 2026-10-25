@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { PeriodFilter, isPeriodReady, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
@@ -11,6 +11,7 @@ type Data = {
   users: {
     user_id: string; name: string; email: string; hierarchy: string; chief: string | null; commission_percent: number | null;
     revenue: number; fees: number; commission_paid: number; commission_received: number;
+    transaction_fee: string | null; transaction_fee_effective: string;
   }[];
   bots: {
     id: string; name: string; username: string; status: string; owner: string; flow_name: string | null;
@@ -120,6 +121,98 @@ function PlatformFeeCard() {
   );
 }
 
+/** Per-sale Flash fee: the default for everyone, and a custom value for one person. */
+function TransactionFeeCard({ users }: { users: Data["users"] }) {
+  const queryClient = useQueryClient();
+  const current = useQuery({ queryKey: ["admin", "transaction-fee"], queryFn: () => apiRequest<{ default: number }>("/api/admin/transaction-fee") });
+  const [defaultValue, setDefaultValue] = useState("0,40");
+  const [clearAll, setClearAll] = useState(false);
+  useEffect(() => {
+    if (current.data) setDefaultValue(String(current.data.default).replace(".", ","));
+  }, [current.data]);
+  const saveDefault = useMutation({
+    mutationFn: () => apiRequest("/api/admin/transaction-fee", { method: "PUT", body: { value: defaultValue.replace(",", ".") || "0", clear_overrides: clearAll } }),
+    onSuccess: () => {
+      setClearAll(false);
+      void current.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["admin", "operations"] });
+    },
+  });
+
+  const [userId, setUserId] = useState("");
+  const [userValue, setUserValue] = useState("");
+  const picked = users.find((u) => u.user_id === userId);
+  useEffect(() => {
+    setUserValue(picked?.transaction_fee != null ? String(picked.transaction_fee).replace(".", ",") : "");
+  }, [userId, picked?.transaction_fee]);
+  const saveUser = useMutation({
+    mutationFn: (value: string | null) =>
+      apiRequest(`/api/admin/users/${userId}/transaction-fee`, { method: "PUT", body: { transaction_fee: value } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "operations"] });
+    },
+  });
+
+  return (
+    <section className="glass-panel space-y-3 p-4">
+      <h3 className="text-sm font-semibold text-fg">Taxa por venda (Flash Bot)</h3>
+      <p className="text-xs text-muted">
+        Taxa fixa cobrada em cada venda (R$). Vale para todos sem taxa própria. O Super Admin não paga. Vale para as próximas cobranças.
+      </p>
+
+      <div className="rounded-xl border border-line-soft bg-surface-inset p-3">
+        <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">Para todo mundo</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-fg-2">R$</span>
+          <input className="field !min-h-10 !w-24" inputMode="decimal" onChange={(event) => setDefaultValue(event.target.value)} value={defaultValue} />
+          <label className="flex items-center gap-1.5 text-xs text-fg-2">
+            <input checked={clearAll} className="size-4 accent-[var(--color-accent)]" onChange={(event) => setClearAll(event.target.checked)} type="checkbox" />
+            Zerar as taxas individuais (aplicar a todos)
+          </label>
+          <button className="btn-primary !min-h-10" disabled={saveDefault.isPending} onClick={() => saveDefault.mutate()} type="button">
+            {saveDefault.isPending ? "Salvando…" : saveDefault.isSuccess ? "Salvo ✓" : "Salvar padrão"}
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-line-soft bg-surface-inset p-3">
+        <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">Para uma pessoa</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <select className="field !min-h-10 !w-auto max-w-[260px]" onChange={(event) => setUserId(event.target.value)} value={userId}>
+            <option value="">Escolha um usuário…</option>
+            {users.map((u) => (
+              <option key={u.user_id} value={u.user_id}>
+                {u.name} · {u.email}
+              </option>
+            ))}
+          </select>
+          {userId && (
+            <>
+              <span className="text-sm text-fg-2">R$</span>
+              <input
+                className="field !min-h-10 !w-24"
+                inputMode="decimal"
+                onChange={(event) => setUserValue(event.target.value)}
+                placeholder={picked ? String(picked.transaction_fee_effective).replace(".", ",") : "padrão"}
+                value={userValue}
+              />
+              <button className="btn-primary !min-h-10" disabled={saveUser.isPending || !userValue} onClick={() => saveUser.mutate(userValue.replace(",", "."))} type="button">
+                {saveUser.isPending ? "Salvando…" : "Salvar"}
+              </button>
+              <button className="btn-ghost !min-h-10" disabled={saveUser.isPending} onClick={() => saveUser.mutate(null)} type="button">
+                Usar padrão
+              </button>
+              <span className="text-xs text-muted">
+                {picked?.transaction_fee != null ? `Taxa própria: R$ ${String(picked.transaction_fee).replace(".", ",")}` : "Usa o padrão agora."}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function AdminOperationsPage() {
   const [period, setPeriod] = useState<MetricsPeriod>({ period: "30d", start: todayInput(), end: todayInput() });
   const query = useQuery({
@@ -138,6 +231,7 @@ export function AdminOperationsPage() {
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>
       <PlatformFeeCard />
+      {data && <TransactionFeeCard users={data.users} />}
       {query.isLoading && <LoadingState label="Carregando operações" />}
       {query.error && <ErrorState message="Não foi possível carregar." onRetry={() => void query.refetch()} />}
       {data && (
