@@ -26,13 +26,13 @@ export function AdminOverviewPage() {
   const brl = (value: string | number) => Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const cards: { label: string; value: string | number; icon: typeof Users; hint?: string }[] = [
     {
-      label: "Vendas Falcon Bot hoje",
+      label: "Vendas Flash hoje",
       value: summary.data.flashbot_sales_today,
       icon: ShoppingBag,
       hint: `${brl(summary.data.flashbot_revenue_today)} vendidos por todas as operações`,
     },
     {
-      label: "Arrecadação Falcon Bot hoje",
+      label: "Arrecadação Flash hoje",
       value: brl(summary.data.transaction_fees_today),
       icon: CircleDollarSign,
       hint: `${summary.data.fee_pix_generated_today} pix gerados e ${summary.data.fee_pix_paid_today} pagos · taxa ${brl(summary.data.transaction_fee_default)} por venda`,

@@ -56,7 +56,7 @@ export function PushSwitch() {
   // The device/browser can't deliver push even if the server supports it.
   const reason =
     availability === "ios-needs-install"
-      ? "No iPhone, adicione o Falcon Post à Tela de Início e abra por lá para ativar."
+      ? "No iPhone, adicione o Flash à Tela de Início e abra por lá para ativar."
       : availability === "insecure-context"
         ? "Abra o site por HTTPS para ativar as notificações."
         : availability === "unsupported-browser"

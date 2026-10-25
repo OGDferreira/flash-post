@@ -465,9 +465,9 @@ async def test_gateways_tab_shows_the_transaction_fee_except_to_the_super_admin(
     state = await client.get("/api/payment-gateways")
     assert state.status_code == 200, state.text
     fees = [g["fee"] for g in state.json()["gateways"]]
-    assert all("taxa Falcon Bot R$ 0,40 por venda" in fee for fee in fees)
+    assert all("taxa Flash R$ 0,40 por venda" in fee for fee in fees)
     chief, _ = owner
     chief.platform_role = "SUPER_ADMIN"  # the platform owner's own operation
     await db_session.commit()
     fees = [g["fee"] for g in (await client.get("/api/payment-gateways")).json()["gateways"]]
-    assert not any("taxa Falcon Bot" in fee for fee in fees)
+    assert not any("taxa Flash" in fee for fee in fees)

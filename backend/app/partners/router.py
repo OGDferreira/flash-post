@@ -69,7 +69,7 @@ def _pct(value: Decimal) -> str:
 
 
 async def _sales(db, workspace_id: uuid.UUID, start, end, *, chief_user_id: uuid.UUID | None = None) -> dict:
-    """Paid Falcon Bot sales of a workspace with fee, commission and partner net."""
+    """Paid Flash sales of a workspace with fee, commission and partner net."""
     where = [TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end,
              not_hidden_bot(TgOrder.bot_id, seller=chief_user_id is None)]
     if chief_user_id is not None:
@@ -530,7 +530,7 @@ async def share_with_partner(
 
 SHARE_BASIS = (
     "Base de cálculo: valor líquido da venda (bruto menos a taxa do gateway). A comissão do dono "
-    "sai dessa base pelo split do gateway; a taxa Falcon Bot por venda sai da parte do vendedor. "
+    "sai dessa base pelo split do gateway; a taxa Flash por venda sai da parte do vendedor. "
     "Vendas estornadas não geram comissão."
 )
 HUNDRED = Decimal("100")

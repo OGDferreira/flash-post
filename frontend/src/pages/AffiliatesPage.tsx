@@ -378,7 +378,7 @@ function PartnerOperations({ id, period }: { id: string; period: MetricsPeriod }
   );
   return (
     <div className="space-y-4">
-      <h4 className="text-sm font-semibold text-fg">Operação do sócio (Falcon Bot)</h4>
+      <h4 className="text-sm font-semibold text-fg">Operação do sócio (Flash)</h4>
       {data.totals && <TotalsGrid commissionLabel="Sua comissão" netLabel="Líquido do sócio" totals={data.totals} />}
       {list("Bots", data.bots.map((b) => ({
         key: b.id, left: `${b.name} · @${b.username}`,
@@ -441,7 +441,7 @@ export function AffiliatesPage() {
             <dl className="grid grid-cols-2 gap-2 sm:grid-cols-5">
               {[
                 ["Sócios", formatNumber(data.rows.length)],
-                ["Vendas Falcon Bot dos sócios", money(data.rows.reduce((sum, row) => sum + Number(row.bot_revenue), 0).toFixed(2))],
+                ["Vendas Flash dos sócios", money(data.rows.reduce((sum, row) => sum + Number(row.bot_revenue), 0).toFixed(2))],
                 ["Comissão recebida", money(data.rows.reduce((sum, row) => sum + Number(row.commission_received), 0).toFixed(2))],
                 ["Faturamento total (Shark + Flash)", money(data.totals_revenue)],
                 ["Participação SharkBot (referência)", money(data.totals_participation)],
@@ -492,7 +492,7 @@ export function AffiliatesPage() {
                   <tr className="text-[10px] uppercase tracking-wider">
                     <th colSpan={3} />
                     <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={3}>SharkBot</th>
-                    <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={2}>Falcon Bot</th>
+                    <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={2}>Flash</th>
                     <th className="border-b border-line-soft px-2 pt-3 text-center font-semibold text-accent" colSpan={5}>Faturamento e carteira</th>
                     <th colSpan={4} />
                   </tr>

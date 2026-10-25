@@ -14,7 +14,7 @@ export function AdminAwardsPage() {
     <div className="mx-auto max-w-[1100px] space-y-4">
       <header>
         <h1 className="flex items-center gap-2 text-2xl font-semibold text-fg"><Trophy className="text-warning" size={24} /> Premiações</h1>
-        <p className="mt-1 text-sm text-muted">O banner de cada meta aparece no painel e na carteira de todos. Já vem com a arte padrão da Falcon Bot; envie outra para trocar. JPG, PNG ou WEBP até 8 MB, no formato retrato 4:5 (ex.: 1080×1350).</p>
+        <p className="mt-1 text-sm text-muted">O banner de cada meta aparece no painel e na carteira de todos. Já vem com a arte padrão da Flash; envie outra para trocar. JPG, PNG ou WEBP até 8 MB, no formato retrato 4:5 (ex.: 1080×1350).</p>
       </header>
       {error && <p className="text-xs text-danger" role="alert">{error instanceof ApiError ? error.message : "Não foi possível salvar."}</p>}
       <ul className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">

@@ -1,4 +1,4 @@
-"""Falcon Bot > Gateways: each operation picks the PIX gateway of its bots; the Super Admin
+"""Flash > Gateways: each operation picks the PIX gateway of its bots; the Super Admin
 turns SnakePay on once its key and webhook secret are set on the server."""
 
 import uuid
@@ -120,7 +120,7 @@ async def _state(db, user, workspace) -> dict:
         "gateways": [
             {
                 "id": "smokepay", "name": "SmokePay", "available": _smokepay_configured(),
-                "fee": await _smokepay_fee_text(db), "description": "Pix com subconta própria e saque pelo Falcon Post.",
+                "fee": await _smokepay_fee_text(db), "description": "Pix com subconta própria e saque pelo Flash.",
             },
             {
                 "id": "snakepay", "name": "SnakePay", "available": snakepay.configured() and enabled,
@@ -135,7 +135,7 @@ async def _state(db, user, workspace) -> dict:
     fee = get_settings().flashbot_transaction_fee
     if not admin and fee > 0:  # the Super Admin's own bots do not pay it
         for gateway in state["gateways"]:
-            gateway["fee"] += f" · taxa Falcon Bot {_brl(fee)} por venda"
+            gateway["fee"] += f" · taxa Flash {_brl(fee)} por venda"
     if admin:
         state["admin"] = {
             "snakepay_key_set": bool(get_settings().snakepay_api_key and get_settings().snakepay_api_key.get_secret_value().strip()),

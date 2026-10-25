@@ -109,7 +109,7 @@ export function ActivityLog() {
 
 // ------------------------------------------------------------------ awards
 
-/** The user's next Falcon Bot award, with the banners; arrows browse the other goals.
+/** The user's next Flash award, with the banners; arrows browse the other goals.
  * Every award stays locked (grey) until its revenue goal is reached. */
 export function NextAward() {
   const goals = useGoals();

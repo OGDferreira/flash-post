@@ -1,4 +1,4 @@
-"""iPhone home-screen widget (Scriptable): today's Falcon Bot numbers for one operation.
+"""iPhone home-screen widget (Scriptable): today's Flash numbers for one operation.
 
 The script carries a read-only token made in Configurações; only its SHA-256 is stored, and
 making a new one (copying the script again) turns the old one off. The token reads these
@@ -93,7 +93,7 @@ async def today(
         series.append(float(running.quantize(CENT)))
         commission_series.append(float(crunning.quantize(CENT)))
     return {
-        "name": "Falcon Bot",
+        "name": "Flash",
         "pix_generated": generated,
         "pix_paid": len(paid_rows),
         "revenue": float(revenue.quantize(CENT)),

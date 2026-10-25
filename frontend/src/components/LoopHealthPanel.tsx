@@ -151,7 +151,7 @@ export function LoopHealthPanel({ loopId }: { loopId: string }) {
                   </span>
                 </div>
                 <div className="mt-2 h-1.5 overflow-hidden rounded bg-white/5">
-                  <div className="h-full rounded bg-gradient-to-r from-[#536dfe] to-[#00c9d8]" style={{ width: `${percent}%` }} />
+                  <div className="h-full rounded bg-gradient-to-r from-[#1e9cfd] to-[#00c9d8]" style={{ width: `${percent}%` }} />
                 </div>
                 {account.cycles_completed > 0 && (
                   <p className="mt-1.5 text-[11px] text-muted">

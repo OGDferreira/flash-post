@@ -5,7 +5,7 @@ Rules enforced here (never only in the UI):
 * nobody can be their own chief, and chains can never loop;
 * an affiliate keeps their own workspace and never sees the chief's data;
 * a chief can only read aggregate numbers of their *direct* affiliates;
-* the participation is a reference calculation. Falcon Post makes no payouts.
+* the participation is a reference calculation. Flash makes no payouts.
 """
 
 import base64
@@ -52,7 +52,7 @@ _MAX_CHAIN_DEPTH = 50
 PARTICIPATION_BASIS = (
     "Participação = receita aprovada do filiado no período (compras pagas com valor informado, "
     "valor bruto, sem descontar taxas, impostos ou custos) × percentual definido por você. "
-    "É um valor de referência. Nas vendas do Falcon Bot, o percentual definido pelo sócio que convida "
+    "É um valor de referência. Nas vendas do Flash, o percentual definido pelo sócio que convida "
     "é separado automaticamente pelo gateway (split) e aparece em “Comissão recebida”."
 )
 
@@ -241,7 +241,7 @@ class AffiliateRow(BaseModel):
     bot_leads: int = 0
     bot_pix: int = 0
     commission_received: Decimal = Decimal("0.00")
-    # SharkBot + Falcon Bot together, so a sale in either bot shows up.
+    # SharkBot + Flash together, so a sale in either bot shows up.
     total_revenue: Decimal = Decimal("0.00")
     total_sales: int = 0
     total_ticket: Decimal | None = None
@@ -466,7 +466,7 @@ async def _money_numbers(db: AsyncSession, user: User, workspace_id, start, end)
 
 
 async def _bot_numbers(db: AsyncSession, workspace_id, chief_user_id, start, end) -> dict:
-    """Falcon Bot paid sales of the affiliate and the split the chief received from them."""
+    """Flash paid sales of the affiliate and the split the chief received from them."""
     if workspace_id is None:
         return {}
     row = (

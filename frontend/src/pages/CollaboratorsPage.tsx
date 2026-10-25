@@ -399,7 +399,7 @@ export function CollaboratorsPage() {
                       )}
                     >
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-[#536dfe] to-[#b171ff]"
+                        className="h-full rounded-full bg-gradient-to-r from-[#1e9cfd] to-[#b171ff]"
                         style={{
                           width: `${Math.min(
                             (item.connections_month / item.monthly_connection_goal) * 100,
@@ -426,7 +426,7 @@ export function CollaboratorsPage() {
                         <div className="flex h-full flex-1 flex-col justify-end gap-1" key={item.recent_dates[index]}>
                           <span className="text-center text-[10px] text-muted">{count}</span>
                           <div
-                            className="min-h-1 rounded-t bg-gradient-to-t from-[#536dfe] to-[#b171ff]"
+                            className="min-h-1 rounded-t bg-gradient-to-t from-[#1e9cfd] to-[#b171ff]"
                             style={{ height: `${Math.max(4, (count / maxDaily) * 58)}px` }}
                           />
                         </div>

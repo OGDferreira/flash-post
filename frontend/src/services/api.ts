@@ -208,7 +208,7 @@ export type AdminUser = {
   created_at: string;
   last_login_at: string | null;
   hierarchy?: "chief" | "partner" | "independent";
-  transaction_fee?: string | null; // own Falcon Bot fee per sale; null = the default
+  transaction_fee?: string | null; // own Flash fee per sale; null = the default
   transaction_fee_effective?: string;
   withdrawals_blocked?: boolean;
   can_invite_partners?: boolean;

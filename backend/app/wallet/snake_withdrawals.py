@@ -1,10 +1,10 @@
 """SnakePay withdrawals (Cash Out) of an operation's own SnakePay account.
 
 The money of SnakePay sales sits in each account at SnakePay (the seller's share, the
-owner's commission). Falcon withdraws it with that account's key and Cash Out secret: the
+owner's commission). Flash withdraws it with that account's key and Cash Out secret: the
 platform's (server settings) for the Super Admin, the ones the user saved in Gateways for
 everyone else. There is no balance API, so the balance shown is our estimate (what SnakePay
-sent to the account minus what was withdrawn through Falcon); SnakePay checks the real one.
+sent to the account minus what was withdrawn through Flash); SnakePay checks the real one.
 
 Every withdrawal is saved with its ``request_id`` BEFORE the first call and the same id is
 reused on retries, so a lost answer can never pay twice.
@@ -48,7 +48,7 @@ async def credentials(db, workspace: Workspace) -> tuple[str, str] | None:
 
 
 async def estimated_balance(db, workspace_id: uuid.UUID, received: Decimal) -> Decimal:
-    """What SnakePay sent to the account minus what left through Falcon (paid or on the way)."""
+    """What SnakePay sent to the account minus what left through Flash (paid or on the way)."""
     out = await db.scalar(
         select(func.coalesce(func.sum(FinancialWithdrawal.amount), 0)).where(
             FinancialWithdrawal.workspace_id == workspace_id, FinancialWithdrawal.gateway == "snakepay",

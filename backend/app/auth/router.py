@@ -390,7 +390,7 @@ async def get_profile(user: AuthenticatedUser, db: DbSession) -> UserResponse:
 async def update_preferences(payload: PreferencesUpdateRequest, user: AuthenticatedUser, db: DbSession) -> UserResponse:
     membership = await _primary_membership(user, db)
     if payload.home_panel == "flashbot" and (membership is None or membership.role != "OWNER"):
-        raise HTTPException(status_code=403, detail="O Falcon Bot está disponível para o dono da operação.")
+        raise HTTPException(status_code=403, detail="O Flash está disponível para o dono da operação.")
     user.home_panel = payload.home_panel
     await db.commit()
     await db.refresh(user)

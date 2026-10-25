@@ -29,7 +29,7 @@ export function HomePanelPreference({ prompt = false }: { prompt?: boolean }) {
         key={panel} type="button" disabled={save.isPending} aria-pressed={user?.home_panel === panel}
         className={user?.home_panel === panel ? "btn-primary" : "btn-secondary"}
         onClick={() => save.mutate(panel)}
-      >{panel === "flashpost" ? "Falcon Post" : "Falcon Bot"}</button>)}
+      >{panel === "flashpost" ? "Flash" : "Flash"}</button>)}
     </div>
     <p className="mt-3 text-xs text-success" role="status">{save.isPending ? "Salvando…" : save.isSuccess ? "Tela inicial salva." : ""}</p>
     {save.error && <p role="alert" className="mt-2 text-xs text-danger">{save.error.message}</p>}

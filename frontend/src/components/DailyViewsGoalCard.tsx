@@ -188,7 +188,7 @@ export function DailyViewsGoalCard() {
                 role="progressbar"
               >
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-[#536dfe] to-[#00c9d8] transition-[width] duration-500"
+                  className="h-full rounded-full bg-gradient-to-r from-[#1e9cfd] to-[#00c9d8] transition-[width] duration-500"
                   style={{ width: `${progress ?? 0}%` }}
                 />
               </div>
@@ -241,7 +241,7 @@ export function DailyViewsGoalCard() {
             <label className="flex items-center gap-3 sm:col-span-2">
               <input
                 checked={enabled}
-                className="size-4 accent-[#536dfe]"
+                className="size-4 accent-[#1e9cfd]"
                 onChange={(event) => setEnabled(event.target.checked)}
                 type="checkbox"
               />
@@ -264,7 +264,7 @@ export function DailyViewsGoalCard() {
         </p>
         {availability === "ios-needs-install" ? (
           <p className="mt-2 text-sm leading-6 text-muted">
-            No iPhone e iPad, adicione o Falcon Post à Tela de Início (Compartilhar → Adicionar à Tela de
+            No iPhone e iPad, adicione o Flash à Tela de Início (Compartilhar → Adicionar à Tela de
             Início), abra pelo ícone e ative aqui. Requer iOS 16.4 ou superior.
           </p>
         ) : availability !== "supported" ? (

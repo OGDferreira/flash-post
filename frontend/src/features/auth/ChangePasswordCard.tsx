@@ -55,7 +55,7 @@ export function ChangePasswordCard() {
           {show ? <EyeOff size={14} /> : <Eye size={14} />} {show ? "Ocultar" : "Mostrar"}
         </button>
       </div>
-      <p className="mt-1 text-xs text-muted">Vale para o Falcon Post e o Falcon Bot (é o mesmo login).</p>
+      <p className="mt-1 text-xs text-muted">Vale para o Flash e o Flash (é o mesmo login).</p>
       <form className="mt-4 grid gap-3 sm:grid-cols-3" onSubmit={submit}>
         {input("current_password", "Senha atual", "current-password")}
         {input("new_password", "Nova senha", "new-password", tooShort && "Use pelo menos 8 caracteres.")}

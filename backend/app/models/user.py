@@ -54,7 +54,7 @@ class User(Base):
     platform_role: Mapped[str] = mapped_column(
         String(32), nullable=False, default="USER", server_default="USER"
     )
-    # Falcon Bot fee per sale for this user's operations; NULL = the platform default
+    # Flash fee per sale for this user's operations; NULL = the platform default
     transaction_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     # Set by the Super Admin: this user can't withdraw (the Super Admin still can, for them).
     withdrawals_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
@@ -65,7 +65,7 @@ class User(Base):
     push_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     push_prompt_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     home_panel: Mapped[str | None] = mapped_column(String(16))
-    # iPhone widget (Scriptable): SHA-256 of a read-only token for today's Falcon Bot numbers
+    # iPhone widget (Scriptable): SHA-256 of a read-only token for today's Flash numbers
     widget_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))

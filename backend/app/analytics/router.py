@@ -161,7 +161,7 @@ async def _fetch_account_meta(
     try:
         access_token = decrypt_value(account.encrypted_access_token)
     except (RuntimeError, ValueError) as exc:
-        message = "O Falcon Post não conseguiu ler o token salvo. Reconecte esta conta."
+        message = "O Flash não conseguiu ler o token salvo. Reconecte esta conta."
         result.profile_error = message
         result.insights_error = message
         logger.warning(

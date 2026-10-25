@@ -107,7 +107,7 @@ export function DailyViewsPanel({ period, accountId }: { period: MetricsPeriod; 
                   formatter={(value) => (value === null || value === undefined ? "indisponível" : formatNumber(Number(value)))}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="received" fill="#536dfe" name="Recebidas no dia" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="received" fill="#1e9cfd" name="Recebidas no dia" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="published" fill="#00c9d8" name="Acumuladas dos publicados no dia" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

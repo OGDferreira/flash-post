@@ -361,7 +361,7 @@ export function MetaAppsPage() {
           </label>
           <p className="text-xs leading-5 text-muted sm:col-span-2">
             O app Meta deve ser do tipo Business e ter o Instagram Business Login configurado.
-            Cadastre o URI de callback exibido pelo Falcon Post entre os OAuth redirect URIs nessa
+            Cadastre o URI de callback exibido pelo Flash entre os OAuth redirect URIs nessa
             mesma configuração. O segredo não é retornado nem compartilhado com outros workspaces.
           </p>
           <div className="flex items-center gap-3 sm:col-span-2">

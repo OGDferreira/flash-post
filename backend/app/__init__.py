@@ -1,1 +1,1 @@
-"""Falcon Post backend application."""
+"""Flash backend application."""

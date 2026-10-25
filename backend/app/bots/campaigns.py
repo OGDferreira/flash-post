@@ -1,4 +1,4 @@
-"""Falcon Bot remarketing: broadcasts to one funnel's leads, each through the bot it came from.
+"""Flash remarketing: broadcasts to one funnel's leads, each through the bot it came from.
 
 Every funnel has its own campaigns (SharkBot's "Remarketing" per flow). A campaign is
 built in five steps in the panel: campaign and funnel, audience, message, offer and

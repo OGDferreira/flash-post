@@ -43,7 +43,7 @@ function isInstallPromptSnoozed() {
       Date.now()
     );
   } catch (error) {
-    console.warn("Falcon Post could not read the install-prompt preference.", error);
+    console.warn("Flash could not read the install-prompt preference.", error);
     return false;
   }
 }
@@ -55,13 +55,16 @@ function snoozeInstallPrompt() {
       String(Date.now() + INSTALL_PROMPT_SNOOZE_MS),
     );
   } catch (error) {
-    console.warn("Falcon Post could not save the install-prompt preference.", error);
+    console.warn("Flash could not save the install-prompt preference.", error);
   }
 }
 
-/** Falcon Adm: the Falcon Post blue blended into the Falcon Bot purple. */
+/** One brand (Flash), two tools: a short functional label so the switcher is unambiguous. */
+const TOOL_LABEL: Record<AppId, string> = { post: "Publicações", bot: "Vendas & Bots" };
+
+/** Flash Adm: the platform admin area, same Flash mark. */
 function AdminEmblem({ className = "" }: { className?: string }) {
-  return <img alt="Falcon Adm" className={`${className} object-contain`} draggable={false} src="/brand/falconadm-emblem-256.webp" />;
+  return <img alt="Flash Adm" className={`${className} object-contain`} draggable={false} src="/brand/flash-emblem.svg" />;
 }
 
 export function AppShell() {
@@ -100,8 +103,8 @@ export function AppShell() {
   const workspaceRole =
     isSuperAdmin ? user.workspace_role : user?.role;
   const hasWorkspaceOwnerAccess = workspaceRole === "OWNER";
-  // Falcon Post and Falcon Bot share this shell (one session): the path decides the tool,
-  // its menu, its palette and its logo. Collaborators only use Falcon Post.
+  // Flash and Flash share this shell (one session): the path decides the tool,
+  // its menu, its palette and its logo. Collaborators only use Flash.
   const app = isAdminRoute || !hasWorkspaceOwnerAccess ? "post" : appForPath(location.pathname);
   const other = otherApp(app);
   // Tool switch inside the menu: the other tool, or both tools from the admin panel.
@@ -390,7 +393,7 @@ export function AppShell() {
           {isAdminRoute ? <AdminEmblem className="size-9 shrink-0" /> : <BrandLogo app={app} className="size-9 shrink-0" />}
           <span className="max-w-[160px] overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[160px] lg:group-data-[open=true]:opacity-100">
             <span className={`block font-display text-base font-semibold leading-tight ${isAdminRoute ? "falcon-adm-text" : "text-fg"}`}>
-              {isAdminRoute ? "Falcon Adm" : APPS[app].name}
+              {isAdminRoute ? "Flash Adm" : APPS[app].name}
             </span>
             <span className="block text-[10px] text-muted">{isAdminRoute ? "Administração da plataforma" : APPS[app].tagline}</span>
           </span>
@@ -498,17 +501,17 @@ export function AppShell() {
           <div className="mb-2 space-y-1 border-b border-line-soft pb-2">
             {switchApps.map((target) => (
               <Link
-                aria-label={`Ir para o ${APPS[target].name}`}
+                aria-label={`Ir para o Flash · ${TOOL_LABEL[target]}`}
                 className="app-switch-row flex min-h-11 items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium text-fg-2 lg:px-0 lg:group-data-[open=true]:justify-start lg:group-data-[open=true]:px-3"
                 data-target={target}
                 key={target}
                 onClick={() => setMobileOpen(false)}
-                title={`Ir para o ${APPS[target].name} (mesma sessão)`}
+                title={`Ir para o Flash · ${TOOL_LABEL[target]} (mesma sessão)`}
                 to={lastPath(target)}
               >
                 <BrandLogo app={target} className="size-8 shrink-0" />
                 <span className="max-w-[150px] flex-1 overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:max-w-0 lg:opacity-0 lg:group-data-[open=true]:max-w-[150px] lg:group-data-[open=true]:opacity-100">
-                  {APPS[target].name}
+                  {TOOL_LABEL[target]}
                 </span>
                 <ArrowLeftRight className="hidden shrink-0 text-muted lg:group-data-[open=true]:block" size={14} />
               </Link>
@@ -574,7 +577,7 @@ export function AppShell() {
             {isAdminRoute ? (
               <>
                 <AdminEmblem className="size-8 shrink-0 lg:hidden" />
-                <span className="falcon-adm-text truncate font-display text-base font-semibold sm:text-lg">Falcon Adm</span>
+                <span className="falcon-adm-text truncate font-display text-base font-semibold sm:text-lg">Flash Adm</span>
               </>
             ) : (
               <>
@@ -600,9 +603,9 @@ export function AppShell() {
       {hasWorkspaceOwnerAccess && !isAdminRoute && (
         // Phones: the other tool is one tap away in the bottom-right corner (refresh sits on the left).
         <Link
-          aria-label={`Ir para o ${APPS[other].name}`}
+          aria-label={`Ir para o Flash · ${TOOL_LABEL[other]}`}
           className="glass-bar fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] right-4 z-30 grid size-12 place-items-center rounded-full shadow-lg transition-transform active:scale-95 lg:hidden [body[data-bottom-tabs]_&]:hidden [body[data-flow-editor]_&]:hidden"
-          title={`Ir para o ${APPS[other].name}`}
+          title={`Ir para o Flash · ${TOOL_LABEL[other]}`}
           to={lastPath(other)}
         >
           <BrandLogo app={other} className="size-8" />
@@ -675,7 +678,7 @@ export function AppShell() {
                     to={lastPath(target)}
                   >
                     <BrandLogo app={target} className="size-9 shrink-0" />
-                    <span className="flex-1 truncate">{APPS[target].name}</span>
+                    <span className="flex-1 truncate">Flash · {TOOL_LABEL[target]}</span>
                     {switchApps.length === 1 && <ArrowLeftRight className="shrink-0 text-muted" size={14} />}
                   </Link>
                 ))}
@@ -785,7 +788,7 @@ export function AppShell() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.14em] text-accent">
-                  App Falcon Post
+                  App Flash
                 </p>
                 <h2 id="install-guide-title" className="mt-2 text-lg font-semibold text-fg">
                   Adicione à tela de início
@@ -815,14 +818,14 @@ export function AppShell() {
             ) : (
               <p className="mt-4 text-sm leading-6 text-fg-2">
                 {installPrompt
-                  ? "Adicione o Falcon Post à tela inicial para abrir em modo de aplicativo."
+                  ? "Adicione o Flash à tela inicial para abrir em modo de aplicativo."
                   : "Abra o menu do navegador e escolha “Instalar app” ou “Adicionar à tela inicial”."}
               </p>
             )}
             <p className="mt-4 rounded-lg border border-line bg-surface p-3 text-xs leading-5 text-muted">
               {isIosDevice
-                ? "Depois de adicionar, abra o ícone Falcon Post pela tela de início. O app abrirá sem a barra de endereço."
-                : "A instalação mantém sua sessão e abre o Falcon Post numa janela própria."}
+                ? "Depois de adicionar, abra o ícone Flash pela tela de início. O app abrirá sem a barra de endereço."
+                : "A instalação mantém sua sessão e abre o Flash numa janela própria."}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button

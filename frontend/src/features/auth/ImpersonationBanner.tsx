@@ -2,8 +2,8 @@ import { useState } from "react";
 
 import { apiRequest } from "@/services/api";
 
-/** While the Super Admin is inside someone's account: a round Falcon Adm button (blue and
- *  purple) that goes back to the admin panel. On phones it sits left of the Falcon Post/Bot
+/** While the Super Admin is inside someone's account: a round Flash Adm button (blue and
+ *  purple) that goes back to the admin panel. On phones it sits left of the Flash/Bot
  *  switch; on computers, left of the refresh button. */
 export function ImpersonationBanner({ userName }: { userName: string; adminName: string }) {
   const [leaving, setLeaving] = useState(false);
@@ -22,7 +22,7 @@ export function ImpersonationBanner({ userName }: { userName: string; adminName:
     }
   }
 
-  const label = `Na conta de ${userName} · voltar ao Falcon Adm`;
+  const label = `Na conta de ${userName} · voltar ao Flash Adm`;
   return (
     <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] right-[76px] z-[100] flex flex-col items-end gap-1 lg:bottom-6 lg:right-[88px] [body[data-flow-editor]_&]:hidden">
       {error && <span className="rounded-lg bg-surface-raised px-2 py-1 text-[11px] text-danger shadow">{error}</span>}
@@ -35,7 +35,7 @@ export function ImpersonationBanner({ userName }: { userName: string; adminName:
         type="button"
       >
         <span className="grid size-full place-items-center rounded-full bg-[var(--nm-bg)]">
-          <img alt="" className={`size-8 ${leaving ? "animate-pulse" : ""}`} draggable={false} src="/brand/falconadm-emblem-128.webp" />
+          <img alt="" className={`size-8 ${leaving ? "animate-pulse" : ""}`} draggable={false} src="/brand/flash-emblem.svg" />
         </span>
       </button>
     </div>

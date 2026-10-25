@@ -115,7 +115,7 @@ export function NotificationsPage() {
 
       <aside className="rounded-lg border border-line bg-surface p-4 text-xs leading-5 text-muted">
         Os detalhes abaixo vêm dos retornos da Meta, do estado das contas e dos
-        erros de publicação guardados pelo Falcon Post. O Render não disponibiliza
+        erros de publicação guardados pelo Flash. O Render não disponibiliza
         os logs brutos ao aplicativo sem uma integração autenticada; para
         consultar logs de deploy e servidor, use a seção Logs do serviço no
         Render.

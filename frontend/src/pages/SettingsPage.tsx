@@ -59,7 +59,7 @@ const sections: { id: string; title: string; icon: ReactNode; items: Item[] }[] 
       {
         to: "/feature/extensions",
         title: "Extensões",
-        text: "Extensão do navegador e ferramentas que conversam com o Falcon Post.",
+        text: "Extensão do navegador e ferramentas que conversam com o Flash.",
         icon: <Puzzle size={18} />,
       },
     ],
@@ -112,9 +112,9 @@ function ThemeSwitch() {
   );
 }
 
-/** The Falcon Bot sales widget for the iPhone home screen, through the free Scriptable app. */
+/** The Flash sales widget for the iPhone home screen, through the free Scriptable app. */
 const WIDGET_THEMES: { id: WidgetTheme; label: string; swatch: string; text: string }[] = [
-  { id: "azul", label: "Azul", swatch: "linear-gradient(135deg,#5169f4,#3b52e0 55%,#2f3fbf)", text: "#fff" },
+  { id: "azul", label: "Azul", swatch: "linear-gradient(135deg,#1e9cfd,#1577c9 55%,#0e5fa8)", text: "#fff" },
   { id: "dark", label: "Escuro", swatch: "linear-gradient(135deg,#12141c,#20264a)", text: "#fff" },
   { id: "white", label: "Branco", swatch: "linear-gradient(135deg,#ffffff,#e7edff)", text: "#0b1530" },
 ];

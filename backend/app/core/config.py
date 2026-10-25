@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     smokepay_withdraw_api_key: SecretStr | None = None
     # SmokePay takes its withdrawal fee from the balance on top of the amount.
     smokepay_withdraw_fee: Decimal = Decimal("3.00")
-    # Falcon Bot: fixed platform fee on every sale of operations that are not the Super Admin's.
+    # Flash: fixed platform fee on every sale of operations that are not the Super Admin's.
     flashbot_transaction_fee: Decimal = Decimal("0.40")
     smokepay_base_url: str = "https://smokepay.com.br"
     # SnakePay (second PIX gateway): the platform owner's key and webhook secret.

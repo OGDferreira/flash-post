@@ -439,7 +439,7 @@ function ProgressBar({ value, color = "blue" }: { value: number; color?: "blue" 
         className={`h-full rounded-full transition-[width] duration-500 ${
           color === "gold"
             ? "bg-gradient-to-r from-[#d69b44] to-[#f2d48a]"
-            : "bg-gradient-to-r from-[#536dfe] to-[#b171ff]"
+            : "bg-gradient-to-r from-[#1e9cfd] to-[#b171ff]"
         }`}
         style={{ width: `${value}%` }}
       />

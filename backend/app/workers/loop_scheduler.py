@@ -647,7 +647,7 @@ async def _hold_for_reconciliation(db, job_id, error: Exception) -> bool:
     job.next_retry_at = now + RECONCILE_RETRY_DELAY
     job.error_category = "uncertain"
     job.last_error = (
-        "A Meta não confirmou a publicação; o Falcon Post vai verificar o container "
+        "A Meta não confirmou a publicação; o Flash vai verificar o container "
         "antes de qualquer nova tentativa."
     )
     db.add(

@@ -115,7 +115,7 @@ function PartnerSharesModal({ affiliationId, userId, name, onClose }: {
           <LoadingState label="Carregando funis e loops" />
         ) : (
           <>
-            {section("Funis", "flow", own.flows, "Crie um funil no Falcon Bot para poder compartilhar.")}
+            {section("Funis", "flow", own.flows, "Crie um funil no Flash para poder compartilhar.")}
             {section("Loops", "loop", own.loops, "Crie um loop para poder compartilhar.")}
           </>
         )}

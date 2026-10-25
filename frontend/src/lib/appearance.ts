@@ -5,7 +5,7 @@ const GALAXY_KEY = "flashpost-galaxy";
 const LOGO_KEY = "flashpost-flashbot-logo";
 
 export const accentPresets = [
-  { name: "Azul", hex: "#536dfe" },
+  { name: "Azul", hex: "#1e9cfd" },
   { name: "Roxo", hex: "#8b5cf6" },
   { name: "Rosa", hex: "#ec4899" },
   { name: "Vermelho", hex: "#ef4444" },
@@ -13,7 +13,7 @@ export const accentPresets = [
   { name: "Verde", hex: "#16a34a" },
   { name: "Ciano", hex: "#06b6d4" },
 ] as const;
-export const DEFAULT_ACCENT = "#536dfe";
+export const DEFAULT_ACCENT = "#1e9cfd";
 
 function read(key: string): string | null {
   try {
@@ -102,7 +102,7 @@ export function setMotionOff(off: boolean) {
   else delete document.documentElement.dataset.motion;
 }
 
-// ------------------------------------------------------------------ galaxy theme + Falcon Bot logo
+// ------------------------------------------------------------------ galaxy theme + Flash logo
 export type FlashBotLogoStyle = "clean" | "galaxy";
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((listener) => listener());
