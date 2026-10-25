@@ -1,4 +1,4 @@
-const CACHE_NAME = "flashpost-shell-v34";
+const CACHE_NAME = "flashpost-shell-v35";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -7,8 +7,8 @@ const SHELL_ASSETS = [
   "/brand/icon-512.png",
   "/brand/badge-96.png",
   "/favicon.ico",
-  "/brand/falconpost-emblem-256.webp",
-  "/brand/falconbot-emblem-256.webp",
+  "/brand/flash-emblem.svg",
+  "/brand/flash-emblem-bot.svg",
   "/sounds/venda.mp3",
 ];
 
@@ -80,10 +80,10 @@ self.addEventListener("push", (event) => {
   } catch {
     data = { body: event.data ? event.data.text() : "" };
   }
-  const title = typeof data.title === "string" && data.title ? data.title : "Falcon Post";
+  const title = typeof data.title === "string" && data.title ? data.title : "Flash";
   const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/dashboard";
-  // Sales and commissions come from Falcon Bot (purple falcon); everything else is Falcon Post.
-  const icon = typeof data.brand === "string" && data.brand.startsWith("flashbot") ? "/brand/falconbot-icon-192.png" : "/brand/icon-192.png";
+  // Sales and commissions come from Flash Bot (purple); everything else is Flash Post (blue).
+  const icon = typeof data.brand === "string" && data.brand.startsWith("flashbot") ? "/brand/flash-icon-bot-192.png" : "/brand/flash-icon-192.png";
   // Tell any open FlashPost window right away, so its numbers refresh without waiting.
   const tellWindows = self.clients
     .matchAll({ type: "window", includeUncontrolled: true })
