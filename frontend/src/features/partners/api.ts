@@ -17,11 +17,19 @@ export type Sale = {
   net: number;
 };
 
+/** A sócio's feature permissions (null for anyone who isn't a partner = no limit). */
+export type PartnerPermissions = {
+  post: Record<string, boolean>;
+  bot: Record<string, boolean>;
+  full_panel: boolean;
+};
+
 export type PartnerMe = {
   role: Role;
   period_label: string;
   basis: string;
   shop_ref: string | null;
+  permissions: PartnerPermissions | null;
   partnership: null | {
     chief_name: string;
     chief_nickname: string;

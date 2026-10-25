@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -41,6 +41,9 @@ class Affiliation(Base):
     accepted_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE", server_default="ACTIVE")
+    # Which Flash Post / Flash Bot features this sócio may use (None = the default set);
+    # validated by app.partners.permissions. Only the Super Admin (or the chief) changes it.
+    permissions: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
