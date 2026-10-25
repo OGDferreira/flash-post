@@ -1576,3 +1576,67 @@ async def test_loop_saves_one_caption_and_reels_covers_used_on_publish(
         json={**base, "cover_mode": "all"},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_deleting_a_loop_removes_its_orphaned_media(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deleting a loop removes its videos and covers from the database and storage,
+    but keeps media still used by another loop."""
+    from app.instagram.storage import SupabaseStorage
+
+    _user, workspace = owner
+    cover = InstagramMedia(
+        workspace_id=workspace.id, storage_path=f"{workspace.id}/c/cover.jpg", filename="cover.jpg",
+        mime_type="image/jpeg", media_type="image", size_bytes=10, is_cover=True,
+    )
+    db_session.add(cover)
+    await db_session.flush()
+    only_here = InstagramMedia(
+        workspace_id=workspace.id, storage_path=f"{workspace.id}/v/only.mp4", filename="only.mp4",
+        mime_type="video/mp4", media_type="video", size_bytes=100, cover_media_id=cover.id,
+    )
+    shared = InstagramMedia(
+        workspace_id=workspace.id, storage_path=f"{workspace.id}/v/shared.mp4", filename="shared.mp4",
+        mime_type="video/mp4", media_type="video", size_bytes=100,
+    )
+    loop = InstagramLoop(
+        workspace_id=workspace.id, name="To delete", interval_min_minutes=10, interval_max_minutes=20,
+        post_type="reels", repeat_media=True, status="paused", cover_mode="per_media",
+    )
+    other = InstagramLoop(
+        workspace_id=workspace.id, name="Keeper", interval_min_minutes=10, interval_max_minutes=20,
+        post_type="reels", repeat_media=True, status="paused",
+    )
+    db_session.add_all([only_here, shared, loop, other])
+    await db_session.flush()
+    db_session.add_all([
+        InstagramLoopMedia(loop_id=loop.id, media_id=only_here.id),
+        InstagramLoopMedia(loop_id=loop.id, media_id=shared.id),
+        InstagramLoopMedia(loop_id=other.id, media_id=shared.id),
+    ])
+    await db_session.commit()
+    only_id, shared_id, cover_id = only_here.id, shared.id, cover.id
+
+    deleted_paths: list[str] = []
+
+    class FakeStorage:
+        async def delete(self, path: str) -> None:
+            deleted_paths.append(path)
+
+    monkeypatch.setattr(SupabaseStorage, "from_settings", classmethod(lambda _cls: FakeStorage()))
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    csrf = await _csrf(client)
+
+    response = await client.request("DELETE", f"/api/loops/{loop.id}", headers={"X-CSRF-Token": csrf})
+    assert response.status_code == 204, response.text
+
+    # The loop's own video and its cover are gone; the video shared with "Keeper" stays.
+    assert await db_session.get(InstagramMedia, only_id) is None
+    assert await db_session.get(InstagramMedia, cover_id) is None
+    assert await db_session.get(InstagramMedia, shared_id) is not None
+    assert set(deleted_paths) == {f"{workspace.id}/v/only.mp4", f"{workspace.id}/c/cover.jpg"}
