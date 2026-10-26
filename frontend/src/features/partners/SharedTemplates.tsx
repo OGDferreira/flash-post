@@ -340,7 +340,12 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
     if (sharedCount > availableCount) void queryClient.invalidateQueries({ queryKey: ["loops"] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shared.dataUpdatedAt]);
-  if (!shared.data?.available || (linked.length === 0 && sharedCount === 0)) return null;
+  if (shared.isLoading) return <LoadingState label="Carregando loops compartilhados" />;
+  if (shared.error) {
+    return <ErrorState message={errorText(shared.error)} onRetry={() => void shared.refetch()} />;
+  }
+  const data = shared.data!;
+  if (!data.available || (linked.length === 0 && sharedCount === 0)) return null;
   return (
     <section className="glass-panel space-y-3 p-4">
       <div>
@@ -351,7 +356,7 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
           Toque no loop para ver as contas conectadas e escolher as contas ou pastas que postam nele.
         </p>
       </div>
-      {!shared.data.accepted && <AcceptFirst />}
+      {!data.accepted && <AcceptFirst />}
       {linked.length === 0 ? (
         <LoadingState label="Preparando os loops compartilhados" />
       ) : (
@@ -359,7 +364,7 @@ export function SharedLoopsSection({ loops }: { loops: InstagramLoop[] }) {
           {linked.map((loop) => (
             <button
               className="flex items-center justify-between gap-3 rounded-xl border border-line-soft bg-surface-inset p-3 text-left transition-colors hover:border-line disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={!shared.data!.accepted || !loop.linked_available}
+              disabled={!data.accepted || !loop.linked_available}
               key={loop.id}
               onClick={() => setOpened(loop)}
               type="button"

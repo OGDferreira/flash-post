@@ -12,8 +12,10 @@ import { PeriodFilter, isPeriodReady, periodParams, todayInput, type MetricsPeri
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { usePartnerMe, brl } from "@/features/partners/api";
+import { SharedLoopsSection } from "@/features/partners/SharedTemplates";
 import { useWallet } from "@/features/wallet/api";
 import { apiRequest } from "@/services/api";
+import type { InstagramLoopsResponse } from "@/pages/loops/loopShared";
 
 function Metric({ label, value, icon: Icon, tone = "text-fg", hint }: { label: string; value: string; icon: LucideIcon; tone?: string; hint?: string }) {
   return (
@@ -36,6 +38,15 @@ export function PartnerDashboardPage() {
   const params = periodParams(period);
   const partner = usePartnerMe(params, isPeriodReady(period));
   const wallet = useWallet();
+  const permissions = partner.data?.permissions;
+  const canViewAccounts = !permissions || permissions.full_panel || permissions.post.accounts;
+  const sharedLoops = useQuery({
+    queryKey: ["loops"],
+    queryFn: () => apiRequest<InstagramLoopsResponse>("/api/loops?include_accounts=false"),
+    enabled: partner.data?.role === "partner" && canViewAccounts,
+    refetchInterval: 120_000,
+    retry: false,
+  });
 
   // Account counts are the current state (connected now / disconnected now), not a period.
   const summary = useQuery({
@@ -54,8 +65,6 @@ export function PartnerDashboardPage() {
   const disconnected = metrics ? metrics.disconnected_accounts + metrics.errored_accounts + metrics.expired_accounts : 0;
   const totals = partner.data?.totals;
 
-  const permissions = partner.data?.permissions;
-  const canViewAccounts = !permissions || permissions.full_panel || permissions.post.accounts;
   const canViewWallet = !permissions || permissions.full_panel || permissions.bot.wallet;
   const canViewRanking = !permissions || permissions.full_panel || permissions.post.ranking;
 
@@ -79,6 +88,19 @@ export function PartnerDashboardPage() {
           </dl>
           <Link className="text-xs font-medium text-accent hover:underline" to="/feature/accounts">Ver e gerenciar contas →</Link>
         </section>
+      )}
+
+      {partner.data?.role === "partner" && canViewAccounts && (
+        <div className="space-y-3">
+          {sharedLoops.isLoading && <LoadingState label="Carregando loops compartilhados" />}
+          {sharedLoops.error && (
+            <ErrorState
+              message="Não foi possível carregar os loops compartilhados."
+              onRetry={() => void sharedLoops.refetch()}
+            />
+          )}
+          {sharedLoops.data && <SharedLoopsSection loops={sharedLoops.data.loops} />}
+        </div>
       )}
 
       <section aria-labelledby="partner-revenue-title" className="dashboard-card space-y-4 p-4 sm:p-5">
