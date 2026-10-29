@@ -1,4 +1,4 @@
-"""Bot panel API (owner only) plus the public Telegram and SmokePay webhooks."""
+"""Bot panel API (owner only) plus the public Telegram and payment gateway webhooks."""
 
 import hmac
 import json
@@ -19,7 +19,7 @@ from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
-from app.bots import engine, portable, smokepay
+from app.bots import atenaspay, engine, portable, smokepay
 from app.bots.flow_schema import FlowDefinition, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
@@ -1090,6 +1090,48 @@ async def snakepay_webhook(request: Request, db: DbSession) -> dict:
     fee = (amount - net).quantize(Decimal("0.01")) if amount is not None and net is not None else None
     try:
         await engine.approve_order(db, order.id, amount if amount is not None else order.amount, None, fee, net)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Retry.") from None
+    return {"ok": True}
+
+
+@router.post("/pay/atenaspay", include_in_schema=False)
+async def atenaspay_webhook(request: Request, db: DbSession) -> dict:
+    raw = await request.body()
+    if not atenaspay.verify_signature(raw, request.headers.get("x-webhook-signature")):
+        raise HTTPException(status_code=401, detail="Invalid signature.")
+    try:
+        event = json.loads(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid webhook payload.") from exc
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="Invalid webhook payload.")
+    external_id = str(event.get("external_id") or "")
+    if event.get("event") != "payment.confirmed" or event.get("status") != "paid":
+        return {"ok": True}
+    if not external_id.startswith(engine.ORDER_PREFIX):
+        return {"ok": True}
+    try:
+        order_id = uuid.UUID(external_id[len(engine.ORDER_PREFIX):])
+    except ValueError:
+        return {"ok": True}
+    order = await db.scalar(
+        select(TgOrder).where(TgOrder.id == order_id, TgOrder.gateway == "atenaspay")
+    )
+    if order is None:
+        return {"ok": True}
+    transaction_id = str(event.get("transaction_id") or "")
+    if transaction_id and order.gateway_transaction_id != transaction_id[:64]:
+        return {"ok": True}
+    try:
+        await engine.approve_order(
+            db, order.id,
+            Decimal(str(event.get("amount") if event.get("amount") is not None else order.amount)),
+            event.get("payer_name"),
+            Decimal(str(event["fee"])) if event.get("fee") is not None else None,
+            Decimal(str(event["net_amount"])) if event.get("net_amount") is not None else None,
+        )
     except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(status_code=500, detail="Retry.") from None

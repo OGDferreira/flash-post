@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/services/api";
 
 export type GatewayBalance = {
-  gateway: "smokepay" | "snakepay";
+  gateway: "smokepay" | "snakepay" | "atenaspay";
   available: number;
   withdrawable: number;
   fee: number | null;
@@ -14,7 +14,7 @@ export type GatewayBalance = {
 
 export type Withdrawal = {
   id: string;
-  gateway?: "smokepay" | "snakepay";
+  gateway?: "smokepay" | "snakepay" | "atenaspay";
   amount: number;
   status: "PAID" | "REQUESTED" | "REJECTED" | "PROCESSING" | "FAILED";
   fee?: number | null;

@@ -575,8 +575,9 @@ export function SharedFlowsPanel() {
     <div className="space-y-3">
       <p className="text-sm text-muted">
         Funis de {chief} prontos para rodar no seu bot. As regras de divisão são definidas por {chief}. Funis pela SnakePay exigem que
-        você configure a sua conta SnakePay (as vendas caem direto nela); funis pela SmokePay funcionam sem configurar nada. Quando o
-        funil vem com um loop, ele aparece em Loops compartilhados, sem contas: conecte as suas e ele começa a postar. O conteúdo do
+        você configure a sua conta SnakePay (as vendas caem direto nela); funis pela SmokePay ou Athenas Pay usam as subcontas da
+        plataforma e não exigem configuração. Quando o funil vem com um loop, ele aparece em Loops compartilhados, sem contas: conecte as
+        suas e ele começa a postar. O conteúdo do
         funil é protegido; leads, vendas e métricas são seus.
       </p>
       {!data.accepted && <AcceptFirst />}
@@ -598,7 +599,9 @@ export function SharedFlowsPanel() {
                 {flow.in_use && <Badge tone="success">No seu bot</Badge>}
               </div>
               <div className="flex items-center gap-2">
-                <Badge>{flow.rules.gateway === "snakepay" ? "SnakePay" : "SmokePay"}</Badge>
+                <Badge>
+                  {flow.rules.gateway === "snakepay" ? "SnakePay" : flow.rules.gateway === "atenaspay" ? "Athenas Pay" : "SmokePay"}
+                </Badge>
                 {flow.rules.needs_setup && <Badge tone="warning">Configure a SnakePay</Badge>}
               </div>
               <p className="text-xs text-muted">

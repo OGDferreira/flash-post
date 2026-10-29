@@ -12,7 +12,7 @@ import { type FlowShare, type GatewayId, brl, useMyPartners, useSaveFlowShare } 
 
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : "Não foi possível salvar. Tente de novo.");
 const SHOP_ID = /^(snakepay_[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
-const GATEWAY_NAMES: Record<GatewayId, string> = { smokepay: "SmokePay", snakepay: "SnakePay" };
+const GATEWAY_NAMES: Record<GatewayId, string> = { smokepay: "SmokePay", snakepay: "SnakePay", atenaspay: "Athenas Pay" };
 
 type GatewayCatalog = { gateways: { id: GatewayId; name: string; available: boolean; fee: string }[] };
 
@@ -79,6 +79,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
   const myLoops = (loops.data?.loops ?? []).filter((loop) => !loop.linked && !loop.from_template);
   const partnerList = partners.data?.partners ?? [];
   const snakeAvailable = catalog.data?.gateways.find((g) => g.id === "snakepay")?.available ?? false;
+  const atenasAvailable = catalog.data?.gateways.find((g) => g.id === "atenaspay")?.available ?? false;
   const flow = ownFlows.find((item) => item.id === flowId);
   const partner = partnerList.find((item) => item.id === partnerId);
   const currentLoop = loopId === undefined ? (flow?.shared_loop_id ?? "") : loopId ?? "";
@@ -105,8 +106,9 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
       if (!takeAll && !Number.isNaN(o) && o > 0 && !ownerValue && !keepsOwner) list.push("Informe o seu ShopID SnakePay para receber a comissão.");
       if (ownerValue && !SHOP_ID.test(ownerValue)) list.push("O seu ShopID é inválido (começa com snakepay_).");
     }
+    if (gateway === "atenaspay" && !atenasAvailable) list.push("A Athenas Pay ainda não foi liberada pelo administrador.");
     return list;
-  }, [flowId, partnerId, seller, owner, gateway, snakeAvailable, ownerShop, keepsOwner, takeAll]);
+  }, [flowId, partnerId, seller, owner, gateway, snakeAvailable, atenasAvailable, ownerShop, keepsOwner, takeAll]);
 
   const confirm = () => {
     // With 100% for you the saved split stays for when you turn it off (100/0 when there is none).
@@ -192,7 +194,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium text-fg">Gateway das vendas deste compartilhamento</legend>
             <div className="grid grid-cols-2 gap-2">
-              {(["smokepay", "snakepay"] as const).map((id) => {
+              {(["smokepay", "snakepay", "atenaspay"] as const).map((id) => {
                 const available = catalog.data?.gateways.find((g) => g.id === id)?.available ?? false;
                 return (
                   <button
@@ -207,7 +209,13 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
                   >
                     <span className="block font-semibold">{GATEWAY_NAMES[id]}</span>
                     <span className="block text-[11px] text-muted">
-                      {available ? (id === "snakepay" ? "Split por ShopID, sem credencial do vendedor" : "Split por subconta, automático") : "Não liberado"}
+                      {available
+                        ? id === "snakepay"
+                          ? "Split por ShopID, sem credencial do vendedor"
+                          : id === "atenaspay"
+                            ? "Split por subcontas, gerenciado pela plataforma"
+                            : "Split por subconta, automático"
+                        : "Não liberado"}
                     </span>
                   </button>
                 );
@@ -340,6 +348,7 @@ export function FlowShareModal({ open, initial, onClose }: { open: boolean; init
               </p>
             )}
             {gateway === "smokepay" && <p className="mt-2">A taxa da SmokePay segue o contrato da conta; o painel mostra a taxa real de cada venda.</p>}
+            {gateway === "atenaspay" && <p className="mt-2">As taxas da Athenas Pay seguem o contrato da plataforma; as divisões são feitas diretamente nas subcontas.</p>}
           </div>
           )}
           <p className="flex items-center gap-1.5 text-xs text-muted">

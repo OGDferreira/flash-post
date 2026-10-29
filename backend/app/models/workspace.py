@@ -38,7 +38,7 @@ class Workspace(Base):
     sharkbot_webhook_token: Mapped[str | None] = mapped_column(
         String(128), unique=True, index=True
     )
-    # PIX gateway of this operation's bots: "smokepay" (default) or "snakepay".
+    # PIX gateway of this operation's bots.
     payment_gateway: Mapped[str] = mapped_column(String(16), nullable=False, default="smokepay", server_default="smokepay")
     # SnakePay account (Conta → Split) that receives this operation's share of SnakePay sales.
     snakepay_recipient_id: Mapped[str | None] = mapped_column(String(64))

@@ -1,4 +1,4 @@
-"""Which PIX gateway charges a sale, and how a SnakePay sale is divided.
+"""Which PIX gateway charges a sale, and how gateway splits are applied.
 
 SmokePay stays the default. SnakePay is used for an operation when:
 * the Super Admin connected it (``SNAKEPAY_API_KEY`` + ``SNAKEPAY_WEBHOOK_SECRET``) and
@@ -9,6 +9,8 @@ SmokePay stays the default. SnakePay is used for an operation when:
 With the platform key, SnakePay splits the net (after 3% + R$ 0,25) to the seller
 and chief. When a seller configured their own credentials, their charge is created
 in their account and only external shares are split out. Same billing rules apply.
+Athenas Pay uses the platform key and each operation's own subaccount; it is also
+the final automatic backup when the Super Admin releases it.
 """
 
 import re
@@ -19,12 +21,13 @@ from decimal import ROUND_UP, Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bots import snakepay
+from app.bots import atenaspay, snakepay
 from app.models import SystemSetting, TgFlow, TgFlowShare, TgGatewaySetting, User, Workspace
 from app.partners.service import BillingRoute, active_share, owner_workspace, shared_source
 
 SNAKEPAY_ENABLED_KEY = "snakepay_enabled"
-GATEWAYS = ("smokepay", "snakepay")
+ATENASPAY_ENABLED_KEY = "atenaspay_enabled"
+GATEWAYS = ("smokepay", "snakepay", "atenaspay")
 # The ShopID shown in SnakePay → Conta → Split ("snakepay_" + 32 hex); the docs' UUID form is accepted too.
 RECIPIENT_RE = re.compile(
     r"^(snakepay_[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
@@ -43,6 +46,15 @@ async def snakepay_enabled(db: AsyncSession) -> bool:
 
 async def snakepay_available(db: AsyncSession) -> bool:
     return snakepay.configured() and await snakepay_enabled(db)
+
+
+async def atenaspay_enabled(db: AsyncSession) -> bool:
+    row = await db.get(SystemSetting, ATENASPAY_ENABLED_KEY)
+    return bool(row and isinstance(row.value, dict) and row.value.get("enabled"))
+
+
+async def atenaspay_available(db: AsyncSession) -> bool:
+    return atenaspay.configured() and await atenaspay_enabled(db)
 
 
 @dataclass
@@ -120,26 +132,30 @@ def serves(setting: TgGatewaySetting, flow: TgFlow | None) -> bool:
 async def gateway_order(db: AsyncSession, workspace: Workspace, flow: TgFlow | None) -> list[str]:
     """The gateways to try for one sale, in order: the principal first, then the backups.
 
-    * A funnel shared by another operation follows that owner's rules (one gateway, with
-      SmokePay as the safety net when SnakePay cannot pay every share).
+    * A funnel shared by another operation follows that owner's rules, with SmokePay and
+      Atenas Pay as safety nets when the selected gateway cannot pay every share.
     * The operation's own funnel: its own gateway choice comes first, then the operation's
       enabled gateways by priority, limited to the ones associated with this funnel.
     * An operation that never set the priority keeps the old behaviour: its choice, with
-      SmokePay behind SnakePay.
+      SmokePay behind SnakePay; Atenas Pay is the final backup when the platform enabled it.
     """
     if await shared_source(db, flow, workspace.id) is not None:
         first = await gateway_choice(db, workspace, flow)
-        return [first, "smokepay"] if first == "snakepay" else [first]
+        backups = [name for name in ("smokepay", "atenaspay") if name != first]
+        return [first, *backups]
     # Regular operations don't choose a gateway: SnakePay is the principal when the platform has
     # it on, with SmokePay as the automatic backup. Whoever has no SnakePay set up still sells by
     # SmokePay (SnakePay can't charge → it falls through). Only the Super Admin picks and orders.
     owner = await db.get(User, workspace.owner_id)
     if owner is not None and owner.platform_role != "SUPER_ADMIN":
-        return ["snakepay", "smokepay"] if await snakepay_available(db) else ["smokepay"]
+        order = ["snakepay", "smokepay"] if await snakepay_available(db) else ["smokepay"]
+        if await atenaspay_available(db):
+            order.append("atenaspay")
+        return order
     settings = await gateway_settings(db, workspace.id)
     if not settings:
         first = gateway_for(workspace, flow)
-        return [first, "smokepay"] if first == "snakepay" else [first]
+        return [first, *[name for name in ("smokepay", "atenaspay") if name != first]]
     order = [row.gateway for row in settings if row.enabled and serves(row, flow)]
     enabled = {row.gateway for row in settings if row.enabled}
     if flow is not None and flow.payment_gateway in enabled:  # the funnel's own choice beats the global order

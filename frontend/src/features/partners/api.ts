@@ -68,7 +68,7 @@ export type SharedTemplates = {
   }[];
 };
 
-export type GatewayId = "smokepay" | "snakepay";
+export type GatewayId = "smokepay" | "snakepay" | "atenaspay";
 
 export type SellerRules = {
   set_by_owner: boolean;

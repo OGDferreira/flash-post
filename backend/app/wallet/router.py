@@ -1,12 +1,9 @@
-"""Wallet: revenue, balance to withdraw, withdrawals and revenue goals.
+"""Wallet: revenue, gateway balances, withdrawals and revenue goals.
 
-Money from Flash sales sits in SmokePay: the platform owner's main account
-(Super Admin) or each operation's subaccount. The balance shown here is what
-the sales left for this user after fees and the partner split. Withdrawals go
-straight to SmokePay: a subaccount pays out with POST /api/shops/{ref}/withdraw
-(idempotent on our row id), the main wallet with POST /api/withdrawals. The
-balance shown is SmokePay's own when reachable. Amounts are checked on the
-server, never trusted from the browser.
+PIX sales are credited to the selected gateway account. SmokePay and Atenas
+Pay subaccounts can be queried and paid out from Flash; SnakePay withdrawals
+use that account's Cash Out credentials. Amounts are checked against the
+selected gateway's live balance when available, never trusted from the browser.
 """
 
 import logging
@@ -22,12 +19,12 @@ from sqlalchemy import func, select
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, SuperAdminUser, require_csrf
 from app.core.time import BRAZIL_TIME_ZONE, utc_now
-from app.bots import smokepay
+from app.bots import atenaspay, smokepay
 from app.core.config import get_settings
 from app.models import FinancialWithdrawal, TgOrder, User, Workspace
 from app.models import Affiliation
 from app.partners.service import owner_workspace, partner_link, shop_ref
-from app.wallet import snake_withdrawals
+from app.wallet import atenas_withdrawals, snake_withdrawals
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/wallet", tags=["Wallet"])
@@ -53,7 +50,7 @@ def _money(value: object) -> Decimal:
 class WithdrawalRequest(BaseModel):
     # None only with ``withdraw_all`` on SnakePay ("MAX": everything available).
     amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
-    gateway: Literal["smokepay", "snakepay"] = "smokepay"
+    gateway: Literal["smokepay", "snakepay", "atenaspay"] = "smokepay"
     withdraw_all: bool = False
     pix_key_type: Literal["cpf", "cnpj", "email", "phone", "random"] | None = None
     pix_key: str | None = Field(default=None, max_length=140)
@@ -116,7 +113,7 @@ async def balances(db, user: User, workspace_id: uuid.UUID) -> dict:
     """What the sales left for this user (after fee and split) and what is free to withdraw."""
     # SnakePay sales are paid out by SnakePay itself (split to each account): only
     # SmokePay money sits in the Flash wallet.
-    smoke = TgOrder.gateway != "snakepay"
+    smoke = TgOrder.gateway.notin_(("snakepay", "atenaspay"))
     own = await db.scalar(
         select(func.coalesce(func.sum(func.coalesce(TgOrder.partner_net, TgOrder.net_amount, TgOrder.amount)), 0)).where(
             TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", smoke
@@ -437,6 +434,24 @@ async def _wallet_numbers(db, user: User, workspace: Workspace, shop: str | None
             "gateway": "snakepay", "available": float(snake_balance), "withdrawable": float(snake_balance), "fee": None,
             "ready": snake_ready, "estimated": True, "min": float(snake_withdrawals.cashout.MIN_AMOUNT),
         })
+    if shop is not None and atenaspay.api_configured():
+        try:
+            await atenas_withdrawals.reconcile(db, workspace, shop)
+            atenas_balance = await atenaspay.shop_balance(shop)
+            atenas_estimated = False
+        except atenaspay.AtenaspayError as exc:
+            logger.warning("Athenas Pay wallet lookup failed (HTTP %s).", exc.status)
+            atenas_balance = None
+            atenas_estimated = True
+        out["gateways"].append({
+            "gateway": "atenaspay",
+            "available": float(atenas_balance or Decimal("0.00")),
+            "withdrawable": float(atenas_balance or Decimal("0.00")),
+            "fee": None,
+            "ready": True,
+            "estimated": atenas_estimated,
+            "min": float(atenas_withdrawals.MIN_AMOUNT),
+        })
     out["withdrawals_blocked"] = await withdrawals_blocked_for(db, user)
     return out
 
@@ -540,6 +555,25 @@ async def _dispatch(db, actor: User, owner: User, workspace: Workspace, payload:
         item = await snake_withdrawals.withdraw(
             db, actor, workspace, amount=None if payload.withdraw_all else payload.amount.quantize(CENT),
             pix_key=pix_key, key_type=payload.pix_key_type, estimate=estimate,
+        )
+        await db.refresh(item)
+        return _withdrawal_out(item)
+    if payload.gateway == "atenaspay":
+        if payload.withdraw_all:
+            raise HTTPException(status_code=422, detail="Informe o valor do saque Atenas Pay.")
+        if payload.amount is None:
+            raise HTTPException(status_code=422, detail="Informe o valor do saque.")
+        if not payload.pix_key or not payload.pix_key_type:
+            raise HTTPException(status_code=422, detail="Informe a chave Pix que vai receber.")
+        pix_key = normalize_pix_key(payload.pix_key_type, payload.pix_key)
+        item = await atenas_withdrawals.withdraw(
+            db,
+            actor,
+            workspace,
+            amount=payload.amount.quantize(CENT),
+            shop_ref=shop_ref(workspace.id),
+            pix_key=pix_key,
+            key_type=payload.pix_key_type,
         )
         await db.refresh(item)
         return _withdrawal_out(item)

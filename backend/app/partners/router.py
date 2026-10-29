@@ -18,6 +18,7 @@ from sqlalchemy import func, select, update
 
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
+from app.bots import gateways
 from app.core.time import utc_now
 from app.models import (
     Affiliation,
@@ -543,7 +544,7 @@ HUNDRED = Decimal("100")
 class FlowShareRequest(BaseModel):
     flow_id: uuid.UUID
     partner_id: uuid.UUID
-    gateway: Literal["smokepay", "snakepay"]
+    gateway: Literal["smokepay", "snakepay", "atenaspay"]
     seller_percent: Decimal = Field(gt=0, le=100, decimal_places=2)
     owner_percent: Decimal = Field(ge=0, lt=100, decimal_places=2)
     # None keeps the saved ShopID (when editing); "" clears it.
@@ -693,6 +694,8 @@ async def save_flow_share(payload: FlowShareRequest, access: OwnerAccess, user: 
     if payload.gateway == "snakepay":
         seller_shop = pick(payload.seller_shop_id, rule.seller_shop_id if rule else None)
         owner_shop = pick(payload.owner_shop_id, rule.owner_shop_id if rule else None)
+    if payload.gateway == "atenaspay" and not await gateways.atenaspay_available(db):
+        raise HTTPException(status_code=409, detail="A Athenas Pay ainda não foi liberada pelo administrador.")
     own_key = bool(access.workspace.snakepay_api_key_encrypted and access.workspace.snakepay_webhook_secret_encrypted)
     await _validate_shop_ids(
         db, user, payload.gateway, payload.owner_percent, seller_shop, owner_shop,

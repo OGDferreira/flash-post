@@ -1,6 +1,6 @@
-# Bots de vendas no Telegram: arquitetura (proposta)
+# Bots de vendas no Telegram: arquitetura (proposta histórica)
 
-Status: **proposta para aprovação**. Nada aqui foi implementado ainda.
+Status: este arquivo registra a proposta e as decisões que orientaram a implementação. A Flash Bot já está implementada; para as telas e funcionalidades atuais, consulte o [Guia completo da Flash Bot](../GUIA_FLASH_BOT.md). Nem todos os detalhes deste documento histórico correspondem ao produto atual.
 
 ## 1. Objetivo
 

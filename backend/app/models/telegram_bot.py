@@ -420,7 +420,7 @@ class TgFlowShare(Base):
         CheckConstraint("seller_percent > 0 AND seller_percent <= 100", name="ck_tg_flow_shares_seller_percent"),
         CheckConstraint("owner_percent + seller_percent = 100", name="ck_tg_flow_shares_total"),
         CheckConstraint("status IN ('ACTIVE', 'REVOKED')", name="ck_tg_flow_shares_status"),
-        CheckConstraint("gateway IN ('smokepay', 'snakepay')", name="ck_tg_flow_shares_gateway"),
+        CheckConstraint("gateway IN ('smokepay', 'snakepay', 'atenaspay')", name="ck_tg_flow_shares_gateway"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -492,7 +492,7 @@ class TgGatewaySetting(Base):
     __tablename__ = "tg_gateway_settings"
     __table_args__ = (
         UniqueConstraint("workspace_id", "gateway", name="uq_tg_gateway_settings_workspace_gateway"),
-        CheckConstraint("gateway IN ('smokepay', 'snakepay')", name="ck_tg_gateway_settings_gateway"),
+        CheckConstraint("gateway IN ('smokepay', 'snakepay', 'atenaspay')", name="ck_tg_gateway_settings_gateway"),
         CheckConstraint("priority >= 1", name="ck_tg_gateway_settings_priority"),
     )
 

@@ -4,6 +4,12 @@ FlashPost is a new application built independently from the legacy Auto-Insta
 codebase. The legacy repository is a functional reference for business rules
 and integrations, not a source of frontend or backend architecture.
 
+## User guides
+
+- [Flash Post: platform features and sections](docs/GUIA_FLASH_POST.md)
+- [Flash Bot: Telegram sales bots and funnels](docs/GUIA_FLASH_BOT.md)
+- [Technical guide: Instagram accounts and publishing loops](docs/GUIA_TECNICO_INSTAGRAM_E_LOOPS.md)
+
 ## Deployment
 
 The initial release uses one Docker Web Service. Vite builds React and FastAPI
@@ -285,12 +291,12 @@ permission. The worker publishes with the encrypted access token stored on
 each Instagram account; it does not substitute the currently selected Meta
 app's token. Reels are sent to `/{ig-user-id}/media`, polled until the
 container reports `FINISHED`, and only then sent to `media_publish`. A failure
-for one account is recorded and that account is marked with an error without
-stopping the remaining account queue. Failed jobs are not automatically
-retried because a network failure can happen after Instagram has accepted a
-post. Verify Instagram before uploading the same media again; media from an
-ambiguous, started attempt is not reused automatically. A suspended Render web
-service cannot run its in-process scheduler until the service wakes.
+for one account is recorded without stopping the remaining account queue.
+Definitive failures and failures before the publish request can be retried
+automatically up to three attempts; a possibly accepted publish request is
+reconciled against the Meta container instead of being blindly retried. Token
+failures require reconnecting the account. A suspended Render web service
+cannot run its in-process scheduler until the service wakes.
 An active loop queues its first selected media immediately for each eligible
 account instead of waiting for the first random interval. Accounts added later
 join the current playlist item immediately (or the next item after the last

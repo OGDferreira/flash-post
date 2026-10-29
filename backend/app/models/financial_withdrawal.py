@@ -35,14 +35,14 @@ class FinancialWithdrawal(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="PAID", server_default="PAID")
     pix_key_type: Mapped[str | None] = mapped_column(String(16))
     pix_key: Mapped[str | None] = mapped_column(String(140))
-    # Automatic payout through SmokePay: its withdrawal id and fee.
+    # Automatic payout through SmokePay or Atenas Pay: the remote withdrawal id and fee.
     gateway_withdrawal_id: Mapped[str | None] = mapped_column(String(64))
-    # Pix end-to-end id from SmokePay: the bank receipt that traces where the money went.
+    # Pix end-to-end id from the gateway: the bank receipt that traces where the money went.
     gateway_e2e_id: Mapped[str | None] = mapped_column(String(64))
     fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
-    # Which gateway pays it out: smokepay (subaccount) or snakepay (Cash Out of the account's key).
+    # Which gateway pays it out: SmokePay/Atenas subaccount or SnakePay Cash Out.
     gateway: Mapped[str] = mapped_column(String(16), nullable=False, default="smokepay", server_default="smokepay")
-    # SnakePay idempotency key: saved before the first call and reused on every retry.
+    # Gateway idempotency key: saved before the first call and reused on safe retries.
     request_id: Mapped[str | None] = mapped_column(String(36), unique=True)
     # "Sacar tudo": SnakePay withdraws everything available (``amount`` is our estimate until it answers).
     requested_max: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

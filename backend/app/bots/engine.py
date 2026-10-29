@@ -21,7 +21,7 @@ from decimal import Decimal
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bots import smokepay
+from app.bots import atenaspay, smokepay
 from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, UpsellStep
 from app.bots.richtext import sanitize
 from app.bots.telegram import InputFile, TelegramClient, TelegramError
@@ -1045,7 +1045,7 @@ async def create_order(
         mark = time.perf_counter()
         try:
             qr = await _charge(db, bot, order, route, amount, f"{bot.name} · {name}", flow.payment.expiration_minutes)
-        except smokepay.SmokepayError as exc:
+        except (smokepay.SmokepayError, atenaspay.AtenaspayError) as exc:
             order.status = "failed"
             bot.last_error = f"Gateway: {exc}"[:500]
             await db.commit()
@@ -1116,10 +1116,14 @@ async def _charge(
     workspace = await db.get(Workspace, bot.workspace_id)
     flow = await db.get(TgFlow, order.flow_id) if order.flow_id else None
     order_gateways = await gateways.gateway_order(db, workspace, flow) if workspace else ["smokepay"]
-    error: smokepay.SmokepayError | None = None
+    error: RuntimeError | None = None
     for name in order_gateways:
         if name == "snakepay":
             if await _charge_with_snakepay(db, bot, order, route, amount, flow):
+                return None
+            continue
+        if name == "atenaspay":
+            if await _charge_with_atenaspay(db, bot, order, route, amount, description, expiration_minutes):
                 return None
             continue
         try:
@@ -1129,6 +1133,64 @@ async def _charge(
             order.gateway_attempts = [*(order.gateway_attempts or []), "smokepay"]
             logger.warning("SmokePay charge failed (%s) for order %s; trying the next gateway, if any.", exc, order.id)
     raise error or smokepay.SmokepayError("Nenhum gateway disponível para esta venda.")
+
+
+def atenaspay_webhook_url() -> str:
+    return f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/atenaspay"
+
+
+async def _charge_with_atenaspay(
+    db: AsyncSession, bot: TgBot, order: TgOrder, route, amount: Decimal, description: str, expiration_minutes: int,
+) -> bool:
+    from app.bots import atenaspay, gateways
+
+    if not await gateways.atenaspay_available(db):
+        return False
+    try:
+        charge = await atenaspay.create_pix(
+            amount=amount,
+            external_id=f"{ORDER_PREFIX}{order.id}",
+            description=description,
+            webhook_url=atenaspay_webhook_url(),
+            expiration_seconds=expiration_minutes * 60,
+            shop_id=route.shop_ref,
+            splits=route.splits,
+        )
+    except atenaspay.AtenaspayError as exc:
+        logger.warning("Athenas Pay charge failed (%s) for order %s; trying the next gateway, if any.", exc, order.id)
+        bot.last_error = f"Athenas Pay: {exc}"[:500]
+        order.gateway_attempts = [*(order.gateway_attempts or []), "atenaspay"]
+        return False
+
+    order.gateway = "atenaspay"
+    order.shop_ref = route.shop_ref
+    order.gateway_transaction_id = charge.transaction_id[:64]
+    order.gateway_fee = charge.fee
+    order.net_amount = charge.net_amount
+    if route.owner_all:
+        order.partner_net = Decimal("0.00")
+        owner_net = charge.owner_net
+        if owner_net is None and charge.net_amount is not None:
+            owner_net = charge.net_amount - (charge.split_total or Decimal("0.00"))
+        order.split_amount = owner_net
+        if charge.net_amount is not None and owner_net is not None:
+            order.platform_fee = (charge.net_amount - owner_net).quantize(Decimal("0.01")) or None
+    elif route.percent is not None:
+        commission, partner = route.preview(charge.net_amount)
+        order.split_amount = (
+            charge.split_total - route.transaction_fee
+            if charge.split_total is not None else commission
+        )
+        order.partner_net = charge.owner_net if charge.owner_net is not None else partner
+        order.platform_fee = route.transaction_fee or None
+    elif route.splits:
+        order.platform_fee = charge.split_total if charge.split_total is not None else route.platform_fee(charge.net_amount)
+        if charge.owner_net is not None:
+            order.partner_net = charge.owner_net
+        elif order.platform_fee is not None and charge.net_amount is not None:
+            order.partner_net = charge.net_amount - order.platform_fee
+    order.pix_copy_paste = charge.copy_paste
+    return True
 
 
 async def _charge_with_smokepay(order: TgOrder, route, amount: Decimal, description: str, expiration_minutes: int) -> str | None:
@@ -1280,6 +1342,19 @@ def pix_qr_png(code: str, fallback_b64: str | None = None) -> bytes | None:
 
 async def check_order(db: AsyncSession, order: TgOrder) -> None:
     """Ask the gateway directly (the "Já paguei" button and the reconciliation job)."""
+    if order.gateway == "atenaspay":
+        from app.bots import atenaspay
+
+        if not order.gateway_transaction_id:
+            return
+        try:
+            charge = await atenaspay.get_pix(order.gateway_transaction_id)
+        except atenaspay.AtenaspayError:
+            return
+        if charge.status == "paid":
+            await approve_order(db, order.id, charge.amount or order.amount, charge.payer_name, charge.fee, charge.net_amount)
+            await db.refresh(order)
+        return
     if order.gateway == "snakepay":
         from app.bots import snakepay
 

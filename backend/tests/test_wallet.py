@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import httpx
@@ -68,6 +68,81 @@ def smoke(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "smokepay_api_key", SecretStr("main_key"))
     monkeypatch.setattr(settings, "smokepay_withdraw_api_key", SecretStr("withdraw_key"))
+    yield fake
+    http.set_transport(None)
+
+
+class FakeAthenasPay:
+    def __init__(self) -> None:
+        self.shops: dict[str, float] = {}
+        self.calls: list[tuple[str, str, dict]] = []
+        self.payouts: dict[str, list[dict]] = {}
+        self.next_status = "completed"
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        body = json.loads(request.content) if request.content else {}
+        self.calls.append((request.method, path, body))
+        assert request.headers["x-api-key"] == "atenas_key"
+        parts = path.strip("/").split("/")
+        if parts[:2] != ["api", "shops"]:
+            return httpx.Response(404, json={"error": "Subconta não encontrada"})
+        ref = next(
+            (key for key in self.shops if parts[2] in {key, f"internal-{key}"}),
+            None,
+        )
+        if ref is None:
+            return httpx.Response(404, json={"error": "Subconta não encontrada"})
+        if len(parts) == 3:
+            return httpx.Response(200, json={"success": True, "shop": {"id": f"internal-{ref}"}})
+        if parts[3] == "balance":
+            return httpx.Response(200, json={"success": True, "wallet_balance": self.shops[ref]})
+        if parts[3] == "withdrawals":
+            return httpx.Response(200, json={"success": True, "withdrawals": self.payouts.get(ref, [])})
+        if parts[3] == "withdraw" and request.method == "POST":
+            amount = body["amount"]
+            if amount > self.shops[ref]:
+                return httpx.Response(400, json={"error": "Saldo insuficiente"})
+            self.shops[ref] -= amount
+            payout = {
+                "id": f"at-{len(self.payouts.get(ref, [])) + 1}",
+                "amount": amount,
+                "fee": 2.0,
+                "status": self.next_status,
+                "pix_key": body["pix_key"],
+                "pix_key_type": body["pix_key_type"],
+                "gateway_e2eid": "E18236120202610191644ATENAS",
+            }
+            self.payouts.setdefault(ref, []).insert(0, payout)
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "withdrawal_id": payout["id"],
+                    "amount": amount,
+                    "fee": 2.0,
+                    "net_amount": amount,
+                    "status": self.next_status,
+                    "new_balance": self.shops[ref],
+                },
+            )
+        raise AssertionError(f"unexpected {request.method} {path}")
+
+
+@pytest.fixture
+def atenas_wallet(monkeypatch):
+    fake = FakeAthenasPay()
+    http.set_transport(httpx.MockTransport(fake.handler))
+    settings = get_settings()
+    monkeypatch.setattr(settings, "atenaspay_api_key", SecretStr("atenas_key"))
+    monkeypatch.setattr(settings, "atenaspay_base_url", "https://atenas.example")
+    monkeypatch.setattr(settings, "smokepay_api_key", SecretStr("main_key"))
+    monkeypatch.setattr(settings, "smokepay_withdraw_api_key", SecretStr("withdraw_key"))
+
+    async def no_smoke_balance(_shop):
+        return Decimal("0.00")
+
+    monkeypatch.setattr("app.wallet.router._gateway_balance", no_smoke_balance)
     yield fake
     http.set_transport(None)
 
@@ -318,3 +393,80 @@ async def test_commissions_count_as_the_chiefs_falcon_bot_revenue(client, db_ses
     # the partner's revenue is their sale
     await _as(client, "socio@example.com")
     assert (await client.get("/api/wallet")).json()["month_flash_revenue"] == 19.9
+
+
+@pytest.mark.anyio
+async def test_workspace_owner_and_partner_withdraw_from_atenas_subaccounts(
+    client, db_session, owner, atenas_wallet
+) -> None:
+    chief, chief_ws = owner
+    partner, partner_ws = await _make_owner(db_session, "socio")
+    db_session.add(
+        Affiliation(
+            chief_user_id=chief.id,
+            affiliate_user_id=partner.id,
+            participation_percent=Decimal("30"),
+            accepted_percent=Decimal("30"),
+            accepted_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+    chief_ref = f"fp-{chief_ws.id.hex}"
+    partner_ref = f"fp-{partner_ws.id.hex}"
+    atenas_wallet.shops.update({chief_ref: 52.0, partner_ref: 37.5})
+
+    owner_headers = await _as(client, "owner@example.com", "correct horse battery staple")
+    owner_wallet = (await client.get("/api/wallet")).json()
+    owner_gateway = next(item for item in owner_wallet["gateways"] if item["gateway"] == "atenaspay")
+    assert owner_gateway["available"] == 52.0 and owner_gateway["estimated"] is False
+    too_small = await client.post(
+        "/api/wallet/withdrawals",
+        headers=owner_headers,
+        json={"gateway": "atenaspay", "amount": "9.99", **PIX},
+    )
+    assert too_small.status_code == 422
+    too_large = await client.post(
+        "/api/wallet/withdrawals",
+        headers=owner_headers,
+        json={"gateway": "atenaspay", "amount": "53", **PIX},
+    )
+    assert too_large.status_code == 422
+
+    atenas_wallet.next_status = "processing"
+    owner_payout = await client.post(
+        "/api/wallet/withdrawals",
+        headers=owner_headers,
+        json={"gateway": "atenaspay", "amount": "20", **PIX},
+    )
+    assert owner_payout.status_code == 201, owner_payout.text
+    assert owner_payout.json()["gateway"] == "atenaspay"
+    assert owner_payout.json()["status"] == "PROCESSING"
+    method, path, body = atenas_wallet.calls[-1]
+    assert (method, path) == ("POST", f"/api/shops/internal-{chief_ref}/withdraw")
+    owner_withdrawal = await db_session.get(FinancialWithdrawal, uuid.UUID(owner_payout.json()["id"]))
+    assert owner_withdrawal is not None
+    assert body["correlation_id"] == owner_withdrawal.request_id
+    assert body["sub_shop_id"] == str(chief_ws.owner_id)
+    atenas_wallet.payouts[chief_ref][0]["status"] = "completed"
+    owner_withdrawal.last_checked_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await db_session.commit()
+    reconciled = (await client.get("/api/wallet")).json()
+    assert reconciled["withdrawals"][0]["status"] == "PAID"
+    assert reconciled["withdrawals"][0]["e2e_id"] == "E18236120202610191644ATENAS"
+
+    atenas_wallet.next_status = "completed"
+    partner_headers = await _as(client, "socio@example.com")
+    partner_wallet = (await client.get("/api/wallet")).json()
+    partner_gateway = next(item for item in partner_wallet["gateways"] if item["gateway"] == "atenaspay")
+    assert partner_gateway["available"] == 37.5
+    partner_payout = await client.post(
+        "/api/wallet/withdrawals",
+        headers=partner_headers,
+        json={"gateway": "atenaspay", "amount": "15", **PIX},
+    )
+    assert partner_payout.status_code == 201, partner_payout.text
+    assert atenas_wallet.calls[-1][1] == f"/api/shops/internal-{partner_ref}/withdraw"
+    assert atenas_wallet.calls[-1][2]["sub_shop_id"] == str(partner_ws.owner_id)
+    refreshed = (await client.get("/api/wallet")).json()
+    assert refreshed["withdrawn"] == 15.0
+    assert refreshed["withdrawals"][0]["gateway"] == "atenaspay"

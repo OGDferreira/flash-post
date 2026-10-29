@@ -1,5 +1,5 @@
-"""Flash > Gateways: each operation picks the PIX gateway of its bots; the Super Admin
-turns SnakePay on once its key and webhook secret are set on the server."""
+"""Flash > Gateways: the Super Admin releases centrally managed gateways and configures
+which PIX gateway charges each operation's bots."""
 
 import uuid
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select, update
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, SuperAdminUser, require_csrf
-from app.bots import engine, gateways, snakepay
+from app.bots import atenaspay, engine, gateways, snakepay
 from app.core.config import get_settings
 from app.core.crypto import encrypt_value
 from app.models import SystemSetting, TgBot, TgFlow, TgGatewaySetting, TgOrder, User, Workspace
@@ -18,17 +18,21 @@ router = APIRouter(prefix="/api/payment-gateways", tags=["Payment gateways"])
 
 
 class GatewayChoice(BaseModel):
-    gateway: str = Field(pattern="^(smokepay|snakepay)$")
+    gateway: str = Field(pattern="^(smokepay|snakepay|atenaspay)$")
     snakepay_recipient_id: str | None = Field(default=None, max_length=64)
     # True: every funnel follows this gateway (clears the per-funnel choices).
     apply_to_all: bool = False
 
 
 class FlowGateway(BaseModel):
-    gateway: str | None = Field(default=None, pattern="^(smokepay|snakepay)$")  # None = operation default
+    gateway: str | None = Field(default=None, pattern="^(smokepay|snakepay|atenaspay)$")  # None = operation default
 
 
 class SnakepaySwitch(BaseModel):
+    enabled: bool
+
+
+class AtenaspaySwitch(BaseModel):
     enabled: bool
 
 
@@ -41,7 +45,7 @@ class SnakepayCredentials(BaseModel):
 
 
 class PriorityItem(BaseModel):
-    gateway: str = Field(pattern="^(smokepay|snakepay)$")
+    gateway: str = Field(pattern="^(smokepay|snakepay|atenaspay)$")
     enabled: bool
     # None = every funnel of the operation; else only these own funnels.
     flow_ids: list[uuid.UUID] | None = Field(default=None, max_length=500)
@@ -94,6 +98,7 @@ async def _has_own_flow(db, workspace_id) -> bool:
 async def _state(db, user, workspace) -> dict:
     admin = user.platform_role == "SUPER_ADMIN"
     enabled = await gateways.snakepay_enabled(db)
+    atenas_enabled = await gateways.atenaspay_enabled(db)
     state = {
         "current": workspace.payment_gateway if workspace.payment_gateway in gateways.GATEWAYS else "smokepay",
         "snakepay_recipient_id": workspace.snakepay_recipient_id,
@@ -103,6 +108,7 @@ async def _state(db, user, workspace) -> dict:
         # The platform's own withdrawals use the server settings.
         "snakepay_platform_cashout_configured": admin and bool(get_settings().snakepay_cashout_secret),
         "snakepay_webhook_url": f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/snakepay",
+        "atenaspay_webhook_url": engine.atenaspay_webhook_url(),
         "is_admin": admin,
         "flows": [
             {"id": str(flow.id), "name": flow.name, "gateway": flow.payment_gateway}
@@ -127,6 +133,11 @@ async def _state(db, user, workspace) -> dict:
                 "fee": "3% + R$ 0,25 por venda · saque pela SnakePay",
                 "description": "Pix com repasse automático (split) para a sua conta SnakePay.",
             },
+            {
+                "id": "atenaspay", "name": "Athenas Pay", "available": atenaspay.configured() and atenas_enabled,
+                "fee": "Taxas conforme seu contrato Atenas Pay",
+                "description": "Pix com subcontas e divisão automática das vendas.",
+            },
         ],
     }
     state["priority"] = await _priority(db, workspace, state["gateways"], admin)
@@ -145,6 +156,15 @@ async def _state(db, user, workspace) -> dict:
             ),
             "snakepay_enabled": enabled,
             "snakepay_webhook_url": f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/snakepay",
+            "atenaspay_key_set": bool(
+                get_settings().atenaspay_api_key and get_settings().atenaspay_api_key.get_secret_value().strip()
+            ),
+            "atenaspay_secret_set": bool(
+                get_settings().atenaspay_webhook_secret
+                and get_settings().atenaspay_webhook_secret.get_secret_value().strip()
+            ),
+            "atenaspay_enabled": atenas_enabled,
+            "atenaspay_webhook_url": engine.atenaspay_webhook_url(),
         }
     return state
 
@@ -217,6 +237,8 @@ async def save_priority(payload: PriorityRequest, access: OwnerAccess, user: Aut
                 raise HTTPException(status_code=409, detail="A SnakePay ainda não foi liberada pelo administrador.")
             if not _snake_ready(workspace, admin):
                 raise HTTPException(status_code=422, detail="Configure a SnakePay (ShopID ou credenciais) antes de ligá-la.")
+        if item.enabled and item.gateway == "atenaspay" and not await gateways.atenaspay_available(db):
+            raise HTTPException(status_code=409, detail="A Athenas Pay ainda não foi liberada pelo administrador.")
         if item.enabled and item.gateway == "smokepay" and not _smokepay_configured():
             raise HTTPException(status_code=409, detail="A SmokePay não está configurada no servidor.")
     before = await _priority(db, workspace, (await _state_catalog(db)), admin)
@@ -249,6 +271,7 @@ async def _state_catalog(db) -> list[dict]:
     return [
         {"id": "smokepay", "available": _smokepay_configured()},
         {"id": "snakepay", "available": snakepay.configured() and enabled},
+        {"id": "atenaspay", "available": atenaspay.configured() and await gateways.atenaspay_enabled(db)},
     ]
 
 
@@ -340,6 +363,8 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
             workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted
         ):
             raise HTTPException(status_code=422, detail="Cole o seu ShopID da SnakePay para receber suas vendas.")
+    if payload.gateway == "atenaspay" and not await gateways.atenaspay_available(db):
+        raise HTTPException(status_code=409, detail="A Athenas Pay ainda não foi liberada pelo administrador.")
     workspace.payment_gateway = payload.gateway
     workspace.snakepay_recipient_id = recipient
     rows = await gateways.gateway_settings(db, workspace.id)
@@ -413,6 +438,8 @@ async def flow_gateway(
             or (workspace.snakepay_api_key_encrypted and workspace.snakepay_webhook_secret_encrypted)
         ):
             raise HTTPException(status_code=422, detail="Cadastre o seu ShopID da SnakePay antes de usar a SnakePay num fluxo.")
+    if payload.gateway == "atenaspay" and not await gateways.atenaspay_available(db):
+        raise HTTPException(status_code=409, detail="A Athenas Pay ainda não foi liberada pelo administrador.")
     flow.payment_gateway = payload.gateway
     await db.commit()
     engine.resume_snakepay()  # a new ShopID/choice gets a fresh try right away
@@ -434,4 +461,27 @@ async def switch_snakepay(payload: SnakepaySwitch, user: SuperAdminUser, db: DbS
         row.updated_by_user_id = user.id
     await db.commit()
     engine.resume_snakepay()  # a new ShopID/choice gets a fresh try right away
+    return {"enabled": payload.enabled}
+
+
+@router.put("/atenaspay/enabled", dependencies=[Depends(require_csrf)])
+async def switch_atenaspay(payload: AtenaspaySwitch, user: SuperAdminUser, db: DbSession) -> dict:
+    if payload.enabled and not atenaspay.configured():
+        raise HTTPException(
+            status_code=409,
+            detail="Configure ATENASPAY_API_KEY e ATENASPAY_WEBHOOK_SECRET no servidor antes de liberar a Athenas Pay.",
+        )
+    row = await db.get(SystemSetting, gateways.ATENASPAY_ENABLED_KEY)
+    if row is None:
+        db.add(
+            SystemSetting(
+                key=gateways.ATENASPAY_ENABLED_KEY,
+                value={"enabled": payload.enabled},
+                updated_by_user_id=user.id,
+            )
+        )
+    else:
+        row.value = {"enabled": payload.enabled}
+        row.updated_by_user_id = user.id
+    await db.commit()
     return {"enabled": payload.enabled}

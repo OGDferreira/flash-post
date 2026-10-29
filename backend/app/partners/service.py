@@ -46,7 +46,7 @@ MAX_COMMISSION = Decimal("99.00")  # SmokePay rejects split percentages summing 
 
 
 def shop_ref(workspace_id: uuid.UUID) -> str:
-    """SmokePay subaccount reference of a workspace (created on first charge)."""
+    """Stable external reference for a workspace's payment-gateway subaccount."""
     return f"{SHOP_PREFIX}{workspace_id.hex}"
 
 

@@ -11,7 +11,7 @@ import { FlowShareModal } from "./FlowShareModal";
 
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : "Não foi possível concluir a ação.");
 const pct = (value: number) => `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
-const GATEWAY_NAMES = { smokepay: "SmokePay", snakepay: "SnakePay" } as const;
+const GATEWAY_NAMES = { smokepay: "SmokePay", snakepay: "SnakePay", atenaspay: "Athenas Pay" } as const;
 const ACTIONS: Record<string, string> = {
   "share.created": "Compartilhou",
   "share.updated": "Alterou as regras",
@@ -180,7 +180,7 @@ function HistoryModal({ item, onClose }: { item: FlowShare | null; onClose: () =
                 <p className="font-medium text-fg">{ACTIONS[event.action] ?? event.action}</p>
                 <p className="text-muted">
                   {event.created_at ? new Date(event.created_at).toLocaleString("pt-BR") : ""}
-                  {after.gateway ? ` · ${GATEWAY_NAMES[after.gateway as "smokepay" | "snakepay"] ?? after.gateway}` : ""}
+                  {after.gateway ? ` · ${GATEWAY_NAMES[after.gateway as "smokepay" | "snakepay" | "atenaspay"] ?? after.gateway}` : ""}
                   {after.seller_percent !== undefined ? ` · vendedor ${pct(Number(after.seller_percent))} / dono ${pct(Number(after.owner_percent))}` : ""}
                 </p>
               </li>

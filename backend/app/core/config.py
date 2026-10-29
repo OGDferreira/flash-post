@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # Cash Out (withdrawals) of the platform's own SnakePay account; signs each request.
     snakepay_cashout_secret: SecretStr | None = None
     snakepay_base_url: str = "https://snakepay.com.br/api/public/v1"
+    # Athenas Pay: central account; each workspace is routed through its own subaccount.
+    atenaspay_api_key: SecretStr | None = None
+    atenaspay_webhook_secret: SecretStr | None = None
+    atenaspay_base_url: str = "https://atenaspay.com.br"
     vapid_subject: str | None = None
     daily_views_goal_check_minutes: Annotated[int, Field(ge=5, le=240)] = 15
     session_max_age_seconds: Annotated[int, Field(ge=900, le=2592000)] = 2592000
@@ -65,6 +69,8 @@ class Settings(BaseSettings):
         "snakepay_api_key",
         "snakepay_webhook_secret",
         "snakepay_cashout_secret",
+        "atenaspay_api_key",
+        "atenaspay_webhook_secret",
         mode="before",
     )
     @classmethod

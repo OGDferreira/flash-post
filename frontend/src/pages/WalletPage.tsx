@@ -26,7 +26,7 @@ const statusInfo = {
 } as const;
 
 type WithdrawBody = { amount?: string; gateway?: string; withdraw_all?: boolean; pix_key_type: string; pix_key: string };
-const GATEWAY_NAMES = { smokepay: "SmokePay", snakepay: "SnakePay" } as const;
+const GATEWAY_NAMES = { smokepay: "SmokePay", snakepay: "SnakePay", atenaspay: "Athenas Pay" } as const;
 export type WithdrawSender = {
   mutate: (body: WithdrawBody, options: { onSuccess: () => void }) => void;
   error: unknown;
@@ -72,12 +72,16 @@ export function GatewayChooser({ gateways, open, onClose, onPick, title = "De on
               <span className="text-xl font-semibold text-success">{brl(item.available)}</span>
               <span className="text-[11px] leading-4 text-muted">
                 {!item.ready
-                  ? "Para sacar por aqui, cadastre a chave API e o segredo de saque (Cash Out) da sua SnakePay em Gateways."
+                  ? item.gateway === "snakepay"
+                    ? "Para sacar por aqui, cadastre a chave API e o segredo de saque (Cash Out) da sua SnakePay em Gateways."
+                    : "Saque indisponível: a configuração do gateway não está pronta."
                   : item.withdrawable < item.min
                     ? `Saque mínimo ${brl(item.min)}.`
                     : item.estimated
                       ? `Saldo estimado: a ${GATEWAY_NAMES[item.gateway]} confere o valor real no saque.`
-                      : `Taxa de saque ${brl(item.fee ?? 0)} · dá para sacar até ${brl(item.withdrawable)}.`}
+                      : item.fee === null
+                        ? `Taxa conforme a tabela da ${GATEWAY_NAMES[item.gateway]} · dá para sacar até ${brl(item.withdrawable)}.`
+                        : `Taxa de saque ${brl(item.fee)} · dá para sacar até ${brl(item.withdrawable)}.`}
               </span>
             </button>
           );
@@ -99,6 +103,9 @@ export function WithdrawModal({ wallet, open, onClose, request, title, gateway }
 }) {
   if (gateway?.gateway === "snakepay") {
     return <SnakeWithdrawModal gateway={gateway} onClose={onClose} open={open} request={request} title={title} />;
+  }
+  if (gateway?.gateway === "atenaspay") {
+    return <AthenasWithdrawModal gateway={gateway} onClose={onClose} open={open} request={request} title={title} />;
   }
   return <SmokeWithdrawModal onClose={onClose} open={open} request={request} title={title ?? "Solicitar saque — SmokePay"} wallet={wallet} />;
 }
@@ -344,6 +351,110 @@ function SnakeWithdrawModal({ gateway, open, onClose, request, title }: {
   );
 }
 
+function AthenasWithdrawModal({ gateway, open, onClose, request, title }: {
+  gateway: GatewayBalance;
+  open: boolean;
+  onClose: () => void;
+  request: WithdrawSender;
+  title?: string;
+}) {
+  const [amount, setAmount] = useState("");
+  const [keyType, setKeyType] = useState("cpf");
+  const [pixKey, setPixKey] = useState("");
+  const [reviewing, setReviewing] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const value = Number(amount.replace(/\./g, "").replace(",", "."));
+  const valid =
+    Number.isFinite(value) &&
+    value >= gateway.min &&
+    value <= gateway.withdrawable &&
+    pixKey.trim().length > 3;
+  const keyLabel = keyTypes.find((item) => item.value === keyType)?.label ?? keyType;
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!reviewing) {
+      setReviewing(true);
+      setChecked(false);
+      return;
+    }
+    if (!checked) return;
+    request.mutate(
+      { gateway: "atenaspay", amount: value.toFixed(2), pix_key_type: keyType, pix_key: pixKey.trim() },
+      { onSuccess: () => { setAmount(""); setPixKey(""); setReviewing(false); onClose(); } },
+    );
+  }
+
+  return (
+    <Modal
+      description={`Saldo disponível na subconta Atenas Pay: ${brl(gateway.available)}`}
+      onClose={() => { setReviewing(false); onClose(); }}
+      open={open}
+      title={reviewing ? "Confira antes de enviar" : title ?? "Saque — Athenas Pay"}
+    >
+      <form className="space-y-4" onSubmit={submit}>
+        {reviewing ? (
+          <>
+            <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-warning">O Pix vai para esta chave</p>
+              <p className="mt-2 text-xs text-muted">Tipo: <b className="text-fg">{keyLabel}</b></p>
+              <p className="mt-1 break-all font-mono text-lg font-semibold text-fg">{pixKey.trim()}</p>
+              <p className="mt-2 text-[11px] text-muted">
+                Valor: <b className="text-fg">{brl(value)}</b>. A Atenas Pay pode aplicar a tarifa de saque configurada na plataforma.
+              </p>
+            </div>
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
+              <input checked={checked} className="mt-0.5 size-5 shrink-0 accent-[var(--brand-c)]" onChange={(event) => setChecked(event.target.checked)} type="checkbox" />
+              Conferi: a chave Pix e o valor estão corretos e a conta é de quem vai receber.
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="block">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Valor do saque</span>
+              <span className="mt-1 flex items-center gap-2 rounded-xl border border-line bg-surface-inset px-3">
+                <span className="text-sm text-muted">R$</span>
+                <input
+                  autoFocus
+                  className="min-h-12 w-full min-w-0 flex-1 bg-transparent text-2xl font-semibold text-fg outline-none"
+                  inputMode="decimal"
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder="0,00"
+                  value={amount}
+                />
+              </span>
+              <span className="mt-1 block text-[11px] text-muted">
+                Mínimo {brl(gateway.min)} · máximo atual {brl(gateway.withdrawable)} (saldo da subconta).
+              </span>
+            </label>
+            <div className="space-y-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Chave Pix de destino</span>
+              <select className="field" onChange={(event) => setKeyType(event.target.value)} value={keyType}>
+                {keyTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+              <input
+                className="field"
+                onChange={(event) => setPixKey(event.target.value)}
+                placeholder={keyTypes.find((item) => item.value === keyType)?.placeholder}
+                value={pixKey}
+              />
+            </div>
+          </>
+        )}
+        {Boolean(request.error) && <p className="text-xs text-danger" role="alert">{errorText(request.error)}</p>}
+        {reviewing ? (
+          <div className="grid grid-cols-2 gap-2">
+            <button className="btn-secondary" disabled={request.isPending} onClick={() => setReviewing(false)} type="button">Voltar e corrigir</button>
+            <button className="btn-primary" disabled={!checked || request.isPending} type="submit">{request.isPending ? "Enviando…" : "Confirmar e enviar"}</button>
+          </div>
+        ) : (
+          <button className="btn-primary w-full" disabled={!valid || request.isPending} type="submit">Revisar saque</button>
+        )}
+      </form>
+    </Modal>
+  );
+}
+
 export function WithdrawalHistory({ items }: { items: Withdrawal[] }) {
   if (items.length === 0) return <p className="text-xs text-muted">Nenhum saque ainda.</p>;
   return (
@@ -356,6 +467,8 @@ export function WithdrawalHistory({ items }: { items: Withdrawal[] }) {
               <span className="block font-semibold text-fg">{brl(item.amount)}</span>
               <span className="block truncate text-[11px] text-muted">
                 {when(item.created_at)}
+                {item.gateway && ` · ${GATEWAY_NAMES[item.gateway]}`}
+                {item.fee != null && ` · taxa ${brl(item.fee)}`}
                 {item.pix_key && ` · Pix ${item.pix_key}`}
                 {item.e2e_id && ` · Comprovante (E2E) ${item.e2e_id}`}
                 {item.note && ` · ${item.note}`}
@@ -385,8 +498,7 @@ export function WalletPage() {
   // and (Super Admin) what the per-sale Flash fee brought in.
   // Every gateway's balance together; the "Sacar" pop-up splits it again, one card per gateway.
   const gateways = data.gateways ?? [];
-  // "Disponível para sacar" = only the confirmed SmokePay wallet balance. SnakePay has no balance
-  // API, so its figure is an estimate kept out of the headline and shown apart.
+  // The headline remains SmokePay's confirmed balance; other gateways stay visible separately.
   const smoke = gateways.find((item) => item.gateway === "smokepay");
   const confirmedAvailable = smoke ? smoke.available : data.available;
   const otherGateways = gateways.filter((item) => item.gateway !== "smokepay");

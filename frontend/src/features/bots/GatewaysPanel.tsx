@@ -9,7 +9,7 @@ import { CopyField } from "@/components/ui/CopyField";
 import { Modal } from "@/components/ui/Modal";
 import { ApiError, apiRequest } from "@/services/api";
 
-type GatewayId = "smokepay" | "snakepay";
+type GatewayId = "smokepay" | "snakepay" | "atenaspay";
 type Gateway = { id: GatewayId; name: string; available: boolean; fee: string; description: string };
 type PriorityStatus = "ativo" | "desligado" | "pausado" | "configurar" | "indisponivel";
 type PriorityRow = { gateway: GatewayId; enabled: boolean; priority: number; flow_ids: string[] | null; status: PriorityStatus };
@@ -20,6 +20,7 @@ type GatewayState = {
   snakepay_account_secret_set: boolean;
   snakepay_cashout_secret_set?: boolean;
   snakepay_webhook_url: string;
+  atenaspay_webhook_url: string;
   is_admin: boolean;
   needs_recipient: boolean;
   has_own_flow: boolean;
@@ -36,7 +37,16 @@ type GatewayState = {
   }[];
   partners_without_shop_id: string[];
   gateways: Gateway[];
-  admin?: { snakepay_key_set: boolean; snakepay_secret_set: boolean; snakepay_enabled: boolean; snakepay_webhook_url: string };
+  admin?: {
+    snakepay_key_set: boolean;
+    snakepay_secret_set: boolean;
+    snakepay_enabled: boolean;
+    snakepay_webhook_url: string;
+    atenaspay_key_set: boolean;
+    atenaspay_secret_set: boolean;
+    atenaspay_enabled: boolean;
+    atenaspay_webhook_url: string;
+  };
 };
 
 const KEY = ["payment-gateways"];
@@ -74,6 +84,10 @@ export function GatewaysPanel() {
     mutationFn: (enabled: boolean) => apiRequest("/api/payment-gateways/snakepay/enabled", { method: "PUT", body: { enabled } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }),
   });
+  const releaseAthenas = useMutation({
+    mutationFn: (enabled: boolean) => apiRequest("/api/payment-gateways/atenaspay/enabled", { method: "PUT", body: { enabled } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }),
+  });
 
   if (state.isLoading) return <LoadingState label="Carregando gateways" />;
   if (state.error || !state.data) return <ErrorState message={errorText(state.error)} onRetry={() => void state.refetch()} />;
@@ -84,6 +98,10 @@ export function GatewaysPanel() {
   // (when the platform has it on) and SmokePay the automatic backup.
   const snakeAvailable = data.gateways.find((g) => g.id === "snakepay")?.available ?? false;
   const autoPrincipal: GatewayId = snakeAvailable ? "snakepay" : "smokepay";
+  const automaticOrder = [
+    ...(snakeAvailable ? ["snakepay" as const, "smokepay" as const] : ["smokepay" as const]),
+    ...(data.gateways.some((gateway) => gateway.id === "atenaspay" && gateway.available) ? ["atenaspay" as const] : []),
+  ];
   const principal = data.is_admin
     ? (data.priority.find((row) => row.enabled && row.flow_ids === null)?.gateway ?? data.current)
     : autoPrincipal;
@@ -138,10 +156,61 @@ export function GatewaysPanel() {
       {release.error && <p className="mt-3 text-xs text-danger">{errorText(release.error)}</p>}
     </div>
   );
+  const atenasAdminCard = data.admin && (
+    <div className="glass-panel p-4 sm:p-5">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="text-accent" size={18} />
+        <h2 className="text-base font-semibold text-fg">Integração Athenas Pay (administrador)</h2>
+      </div>
+      <div
+        className={`mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 ${
+          data.admin.atenaspay_enabled ? "border-success/40 bg-success/10" : "border-accent/50 bg-brand/10"
+        }`}
+      >
+        <span className="min-w-0">
+          <span className="flex items-center gap-2 text-sm font-semibold text-fg">
+            Athenas Pay para os usuários:
+            <span className={`rounded-full px-2 py-0.5 text-[11px] ${data.admin.atenaspay_enabled ? "bg-success/20 text-success" : "bg-warning/20 text-warning"}`}>
+              {data.admin.atenaspay_enabled ? "LIGADA" : "DESLIGADA"}
+            </span>
+          </span>
+          <span className="mt-0.5 block text-xs text-muted">
+            {data.admin.atenaspay_enabled
+              ? "Disponível na prioridade dos seus funis e como último backup automático das outras operações."
+              : "Configure as credenciais do servidor e libere para disponibilizar como gateway e backup."}
+          </span>
+        </span>
+        <button
+          className={data.admin.atenaspay_enabled ? "btn-secondary" : "btn-primary"}
+          disabled={releaseAthenas.isPending || (!data.admin.atenaspay_enabled && !(data.admin.atenaspay_key_set && data.admin.atenaspay_secret_set))}
+          onClick={() => releaseAthenas.mutate(!data.admin?.atenaspay_enabled)}
+          type="button"
+        >
+          {releaseAthenas.isPending ? "Salvando…" : data.admin.atenaspay_enabled ? "Desligar" : "Liberar Athenas Pay"}
+        </button>
+      </div>
+      <ul className="mt-3 space-y-1.5 text-xs">
+        {[
+          ["Chave da API (ATENASPAY_API_KEY no servidor)", data.admin.atenaspay_key_set],
+          ["Segredo do webhook (ATENASPAY_WEBHOOK_SECRET no servidor)", data.admin.atenaspay_secret_set],
+        ].map(([label, ok]) => (
+          <li className="flex items-center gap-2" key={String(label)}>
+            {ok ? <Check className="text-success" size={14} /> : <CircleAlert className="text-warning" size={14} />}
+            <span className={ok ? "text-fg-2" : "text-warning"}>{label}: {ok ? "configurado" : "falta configurar"}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3">
+        <CopyField hint="Cadastre no painel Atenas Pay em Dashboard → Integrações → Webhooks." label="URL do webhook" value={data.admin.atenaspay_webhook_url} />
+      </div>
+      {releaseAthenas.error && <p className="mt-3 text-xs text-danger">{errorText(releaseAthenas.error)}</p>}
+    </div>
+  );
 
   return (
     <section className="space-y-4">
       {data.admin && !data.admin.snakepay_enabled && adminCard}
+      {data.admin && !data.admin.atenaspay_enabled && atenasAdminCard}
 
       {data.shared_flows.length > 0 && (
         <div className="glass-panel p-4 sm:p-5">
@@ -193,7 +262,7 @@ export function GatewaysPanel() {
         <p className="mt-1 text-xs text-muted">
           {data.is_admin
             ? "Para os seus funis próprios. Toque em um gateway para ver taxas e configurar a sua conta."
-            : "Pagamento automático: SnakePay é a principal e o SmokePay entra sozinho como backup. Toque na SnakePay para configurar a sua conta."}
+            : "Pagamento automático: SnakePay é a principal quando liberada, SmokePay é o backup e Athenas Pay pode ser usada como última alternativa."}
         </p>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-6">
           {data.gateways.map((gateway) => {
@@ -203,7 +272,7 @@ export function GatewaysPanel() {
             const isPrincipal = data.is_admin ? principal === gateway.id && Boolean(row?.enabled) : gateway.id === autoPrincipal;
             const isBackup = data.is_admin
               ? principal !== gateway.id && Boolean(row?.enabled)
-              : gateway.id !== autoPrincipal && snakeAvailable;
+              : automaticOrder[0] !== gateway.id && automaticOrder.includes(gateway.id);
             return (
               <button
                 className={`flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-2xl border p-3 text-center transition hover:border-accent/60 ${
@@ -265,6 +334,7 @@ export function GatewaysPanel() {
       )}
 
       {data.admin?.snakepay_enabled && adminCard}
+      {data.admin?.atenaspay_enabled && atenasAdminCard}
       <GatewayModal data={data} gateway={configuring} onClose={() => setConfiguring(null)} />
     </section>
   );
@@ -441,6 +511,14 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
           <p className="text-xs leading-5 text-muted">
             A SmokePay não pede credencial sua: a subconta da sua operação é criada sozinha na primeira venda e o saque é feito pela Carteira.
           </p>
+        ) : gateway === "atenaspay" ? (
+          <div className="space-y-3">
+            <p className="rounded-xl border border-line-soft px-3 py-2 text-xs leading-5 text-muted">
+              A integração é gerenciada pelo administrador. As cobranças dos seus funis usam uma subconta Atenas Pay própria da operação,
+              com repasses de comissão e taxas processados automaticamente.
+            </p>
+            <CopyField hint="Cadastre esta URL no painel Atenas Pay em Integrações → Webhooks." label="URL do webhook" value={data.atenaspay_webhook_url} />
+          </div>
         ) : (
           <>
             <p className="rounded-xl border border-line-soft px-3 py-2 text-[11px] leading-5 text-muted">
