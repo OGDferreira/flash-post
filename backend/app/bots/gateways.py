@@ -129,6 +129,14 @@ def serves(setting: TgGatewaySetting, flow: TgFlow | None) -> bool:
     return flow is not None and str(flow.id) in {str(value) for value in setting.flow_ids}
 
 
+async def automatic_order(db: AsyncSession) -> list[str]:
+    """Order of an operation that never arranged its gateways."""
+    order = ["snakepay", "smokepay"] if await snakepay_available(db) else ["smokepay"]
+    if await atenaspay_available(db):
+        order.append("atenaspay")
+    return order
+
+
 async def gateway_order(db: AsyncSession, workspace: Workspace, flow: TgFlow | None) -> list[str]:
     """The gateways to try for one sale, in order: the principal first, then the backups.
 
@@ -136,23 +144,19 @@ async def gateway_order(db: AsyncSession, workspace: Workspace, flow: TgFlow | N
       Atenas Pay as safety nets when the selected gateway cannot pay every share.
     * The operation's own funnel: its own gateway choice comes first, then the operation's
       enabled gateways by priority, limited to the ones associated with this funnel.
-    * An operation that never set the priority keeps the old behaviour: its choice, with
-      SmokePay behind SnakePay; Atenas Pay is the final backup when the platform enabled it.
+    * Any operation can arrange its own gateways. One that never did uses the automatic order
+      (Super Admin: its choice, with SmokePay and Atenas Pay as backups).
     """
     if await shared_source(db, flow, workspace.id) is not None:
         first = await gateway_choice(db, workspace, flow)
         backups = [name for name in ("smokepay", "atenaspay") if name != first]
         return [first, *backups]
-    # Regular operations don't choose a gateway: SnakePay is the principal when the platform has
-    # it on, with SmokePay as the automatic backup. Whoever has no SnakePay set up still sells by
-    # SmokePay (SnakePay can't charge → it falls through). Only the Super Admin picks and orders.
-    owner = await db.get(User, workspace.owner_id)
-    if owner is not None and owner.platform_role != "SUPER_ADMIN":
-        order = ["snakepay", "smokepay"] if await snakepay_available(db) else ["smokepay"]
-        if await atenaspay_available(db):
-            order.append("atenaspay")
-        return order
     settings = await gateway_settings(db, workspace.id)
+    owner = await db.get(User, workspace.owner_id)
+    if not settings and owner is not None and owner.platform_role != "SUPER_ADMIN":
+        # Until the operation orders its gateways, SnakePay is the principal when the platform has
+        # it on, with SmokePay behind it (SnakePay that can't charge falls through).
+        return await automatic_order(db)
     if not settings:
         first = gateway_for(workspace, flow)
         return [first, *[name for name in ("smokepay", "atenaspay") if name != first]]

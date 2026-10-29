@@ -93,18 +93,7 @@ export function GatewaysPanel() {
   if (state.error || !state.data) return <ErrorState message={errorText(state.error)} onRetry={() => void state.refetch()} />;
   const data = state.data;
   const nameOf = (id: GatewayId) => data.gateways.find((g) => g.id === id)?.name ?? id;
-  const statusOf = (id: GatewayId) => data.priority.find((row) => row.gateway === id);
-  // Only the Super Admin picks and orders gateways. For everyone else SnakePay is the principal
-  // (when the platform has it on) and SmokePay the automatic backup.
-  const snakeAvailable = data.gateways.find((g) => g.id === "snakepay")?.available ?? false;
-  const autoPrincipal: GatewayId = snakeAvailable ? "snakepay" : "smokepay";
-  const automaticOrder = [
-    ...(snakeAvailable ? ["snakepay" as const, "smokepay" as const] : ["smokepay" as const]),
-    ...(data.gateways.some((gateway) => gateway.id === "atenaspay" && gateway.available) ? ["atenaspay" as const] : []),
-  ];
-  const principal = data.is_admin
-    ? (data.priority.find((row) => row.enabled && row.flow_ids === null)?.gateway ?? data.current)
-    : autoPrincipal;
+  const principal = data.priority.find((row) => row.enabled && row.flow_ids === null)?.gateway ?? data.current;
 
   const adminCard = data.admin && (
     <div className="glass-panel p-4 sm:p-5">
@@ -254,57 +243,22 @@ export function GatewaysPanel() {
         </div>
       )}
 
-      <div className="glass-panel p-4 sm:p-5">
-        <div className="flex items-center gap-2">
-          <CreditCard className="text-accent" size={18} />
-          <h2 className="text-base font-semibold text-fg">Seus gateways</h2>
-        </div>
-        <p className="mt-1 text-xs text-muted">
-          {data.is_admin
-            ? "Para os seus funis próprios. Toque em um gateway para ver taxas e configurar a sua conta."
-            : "Pagamento automático: SnakePay é a principal quando liberada, SmokePay é o backup e Athenas Pay pode ser usada como última alternativa."}
-        </p>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-6">
-          {data.gateways.map((gateway) => {
-            const row = statusOf(gateway.id);
-            const status = STATUS[row?.status ?? "indisponivel"];
-            // For non-admins the order is fixed: SnakePay principal, SmokePay backup.
-            const isPrincipal = data.is_admin ? principal === gateway.id && Boolean(row?.enabled) : gateway.id === autoPrincipal;
-            const isBackup = data.is_admin
-              ? principal !== gateway.id && Boolean(row?.enabled)
-              : automaticOrder[0] !== gateway.id && automaticOrder.includes(gateway.id);
-            return (
-              <button
-                className={`flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-2xl border p-3 text-center transition hover:border-accent/60 ${
-                  isPrincipal ? "border-accent bg-brand/10" : "border-line-soft"
-                }`}
-                key={gateway.id}
-                onClick={() => setConfiguring(gateway.id)}
-                type="button"
-              >
-                <GatewayLogo className="size-14 sm:size-16" id={gateway.id} />
-                <span className="text-sm font-semibold text-fg">{gateway.name}</span>
-                <span className="flex flex-wrap justify-center gap-1">
-                  {isPrincipal && <Badge tone="success">Principal</Badge>}
-                  {isBackup && <Badge>Backup</Badge>}
-                  {data.is_admin && !row?.enabled && <Badge tone={status.tone}>{status.label}</Badge>}
-                </span>
-                <span className="flex items-center gap-1 text-[11px] text-muted">
-                  <Settings2 size={12} /> Configurar
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {data.is_admin && <PriorityCard data={data} />}
+      <GatewayRanking data={data} onConfigure={setConfiguring} />
 
       {data.is_admin && (
+        <details className="glass-panel p-4 sm:p-5">
+          <summary className="cursor-pointer text-sm font-semibold text-fg">Avançado: gateways por funis específicos</summary>
+          <div className="mt-3">
+            <PriorityCard data={data} />
+          </div>
+        </details>
+      )}
+
       <div className="glass-panel p-4 sm:p-5">
         <h2 className="text-base font-semibold text-fg">Gateway por funil</h2>
         <p className="mt-1 text-xs text-muted">
-          A escolha de um funil vale antes da ordem acima. Os backups ligados continuam valendo se o gateway do funil não conseguir gerar o Pix.
+          Vale só para os seus funis próprios e antes da ordem acima. Funis compartilhados com você seguem o gateway de quem compartilhou e não podem ser alterados.
+          Os backups ligados continuam valendo se o gateway do funil não conseguir gerar o Pix.
         </p>
         {data.flows.length === 0 ? (
           <p className="mt-3 text-xs text-muted">Você ainda não tem funis próprios.</p>
@@ -331,12 +285,135 @@ export function GatewaysPanel() {
         )}
         {perFlow.error && <p className="mt-2 text-xs text-danger">{errorText(perFlow.error)}</p>}
       </div>
-      )}
 
       {data.admin?.snakepay_enabled && adminCard}
       {data.admin?.atenaspay_enabled && atenasAdminCard}
       <GatewayModal data={data} gateway={configuring} onClose={() => setConfiguring(null)} />
     </section>
+  );
+}
+
+/** Gateways in order of use (Shark style): tap a card to move it up until it is the principal. */
+function GatewayRanking({ data, onConfigure }: { data: GatewayState; onConfigure: (id: GatewayId) => void }) {
+  const queryClient = useQueryClient();
+  const save = useMutation({
+    mutationFn: (rows: PriorityRow[]) =>
+      apiRequest<GatewayState>("/api/payment-gateways/priority", {
+        method: "PUT",
+        body: { items: rows.map(({ gateway, enabled, flow_ids }) => ({ gateway, enabled, flow_ids })) },
+      }),
+    onSuccess: (next) => queryClient.setQueryData(KEY, next),
+  });
+  const rows = data.priority;
+  const active = rows.filter((row) => row.enabled);
+  const inactive = rows.filter((row) => !row.enabled);
+  const info = (id: GatewayId) => data.gateways.find((g) => g.id === id);
+
+  // Swaps a gateway with the neighbouring active one; the full order is saved right away.
+  const move = (id: GatewayId, delta: -1 | 1) => {
+    const order = active.map((row) => row.gateway);
+    const from = order.indexOf(id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= order.length || save.isPending) return;
+    [order[from], order[to]] = [order[to], order[from]];
+    save.mutate([...order.map((name) => rows.find((row) => row.gateway === name)!), ...inactive]);
+  };
+  const toggle = (row: PriorityRow) => {
+    if (save.isPending) return;
+    if (!row.enabled && row.status === "configurar") return onConfigure(row.gateway);
+    const next = { ...row, enabled: !row.enabled, flow_ids: row.enabled ? row.flow_ids : null };
+    save.mutate(row.enabled ? [...active.filter((r) => r !== row), ...inactive.filter((r) => r !== row), next] : [...active, next, ...inactive.filter((r) => r !== row)]);
+  };
+  const onlyGlobal = active.filter((row) => row.flow_ids === null).length <= 1;
+  const scope = (row: PriorityRow) => (row.flow_ids === null ? "Todos os fluxos" : `${row.flow_ids.length} funil(is)`);
+
+  return (
+    <div className="glass-panel p-4 sm:p-5">
+      <div className="flex items-center gap-2">
+        <CreditCard className="text-accent" size={18} />
+        <h2 className="text-base font-semibold text-fg">Gateways ativos</h2>
+        <Badge>{active.length}</Badge>
+      </div>
+      <p className="mt-1 text-xs leading-5 text-muted">
+        Use os gateways em ordem de prioridade: se o primeiro falhar, o próximo assume. Toque em um card para subi-lo até ser o principal.
+        Vale para os seus funis próprios; funis compartilhados seguem o gateway de quem compartilhou.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {active.map((row, index) => {
+          const gateway = info(row.gateway);
+          return (
+            <div
+              className={`rounded-2xl border p-3 text-center transition ${index === 0 ? "border-accent bg-brand/10" : "border-line-soft hover:border-accent/60"}`}
+              key={row.gateway}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <span className={`grid size-6 place-items-center rounded-md text-[11px] font-bold ${index === 0 ? "bg-brand text-white" : "bg-surface-inset text-fg-2"}`}>{index + 1}</span>
+                  <Badge tone={index === 0 ? "success" : "neutral"}>{index === 0 ? "Principal" : `Fallback ${index}`}</Badge>
+                </span>
+                <span className="flex gap-1">
+                  <button aria-label="Subir" className="grid size-7 place-items-center rounded-lg border border-line-soft disabled:opacity-30" disabled={index === 0 || save.isPending} onClick={() => move(row.gateway, -1)} type="button">
+                    <ArrowUp size={13} />
+                  </button>
+                  <button aria-label="Descer" className="grid size-7 place-items-center rounded-lg border border-line-soft disabled:opacity-30" disabled={index === active.length - 1 || save.isPending} onClick={() => move(row.gateway, 1)} type="button">
+                    <ArrowDown size={13} />
+                  </button>
+                </span>
+              </div>
+              <button
+                aria-label={index === 0 ? `${gateway?.name} é o gateway principal` : `Subir ${gateway?.name} uma posição`}
+                className="mt-3 flex w-full flex-col items-center gap-2 disabled:cursor-default"
+                disabled={index === 0 || save.isPending}
+                onClick={() => move(row.gateway, -1)}
+                type="button"
+              >
+                <GatewayLogo className="size-14" id={row.gateway} />
+                <span className="text-sm font-semibold text-fg">{gateway?.name ?? row.gateway}</span>
+                <Badge tone={STATUS[row.status].tone}>{scope(row)}</Badge>
+                {row.status !== "ativo" && <span className="text-[11px] text-warning">{STATUS[row.status].label}</span>}
+              </button>
+              <div className="mt-3 flex items-center justify-center gap-3 border-t border-line-soft pt-2 text-[11px] text-muted">
+                <button className="flex items-center gap-1 hover:text-fg" onClick={() => onConfigure(row.gateway)} type="button">
+                  <Settings2 size={12} /> Config
+                </button>
+                <button className="hover:text-fg disabled:opacity-40" disabled={(row.flow_ids === null && onlyGlobal) || save.isPending} onClick={() => toggle(row)} type="button">
+                  Desativar
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {inactive.length > 0 && (
+        <>
+          <h3 className="mt-5 flex items-center gap-2 text-sm font-semibold text-fg">
+            Configurados (inativos) <Badge>{inactive.length}</Badge>
+          </h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {inactive.map((row) => {
+              const gateway = info(row.gateway);
+              return (
+                <div className="rounded-2xl border border-line-soft p-3 text-center opacity-70" key={row.gateway}>
+                  <GatewayLogo className="mx-auto size-12" id={row.gateway} />
+                  <p className="mt-2 text-sm font-semibold text-fg">{gateway?.name ?? row.gateway}</p>
+                  <p className="text-[11px] text-muted">{STATUS[row.status].label}</p>
+                  <div className="mt-3 flex items-center justify-center gap-3 border-t border-line-soft pt-2 text-[11px] text-muted">
+                    <button className="flex items-center gap-1 hover:text-fg" onClick={() => onConfigure(row.gateway)} type="button">
+                      <Settings2 size={12} /> Config
+                    </button>
+                    <button className="hover:text-fg disabled:opacity-40" disabled={row.status === "indisponivel" || save.isPending} onClick={() => toggle(row)} type="button">
+                      {row.status === "configurar" ? "Configurar" : "Ativar"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+      {save.error && <p className="mt-3 text-xs text-danger">{errorText(save.error)}</p>}
+    </div>
   );
 }
 

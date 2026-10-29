@@ -202,7 +202,7 @@ async def test_priority_principal_backups_and_funnel_association(client, db_sess
     second = await _new_flow(client, headers, "Funil B")
     state = (await client.get("/api/payment-gateways")).json()
     # nothing saved yet: what already happens (SmokePay only)
-    assert [(p["gateway"], p["enabled"]) for p in state["priority"]] == [("smokepay", True), ("snakepay", False)]
+    assert [(p["gateway"], p["enabled"]) for p in state["priority"]] == [("smokepay", True), ("snakepay", False), ("atenaspay", False)]
 
     # The Super Admin's SnakePay is set up via the server env, so it can be enabled right away.
     assert (await client.put("/api/payment-gateways", headers=headers, json={"gateway": "smokepay", "snakepay_recipient_id": CHIEF})).status_code == 200
@@ -221,7 +221,7 @@ async def test_priority_principal_backups_and_funnel_association(client, db_sess
         {"gateway": "snakepay", "enabled": True, "flow_ids": [first]}, {"gateway": "smokepay", "enabled": True},
     ]})
     assert saved.status_code == 200, saved.text
-    assert [(p["gateway"], p["priority"], p["status"]) for p in saved.json()["priority"]] == [("snakepay", 1, "ativo"), ("smokepay", 2, "ativo")]
+    assert [(p["gateway"], p["priority"], p["status"]) for p in saved.json()["priority"]] == [("snakepay", 1, "ativo"), ("smokepay", 2, "ativo"), ("atenaspay", 3, "indisponivel")]
     await db_session.commit()
     workspace = await db_session.get(Workspace, chief_ws.id)
     await db_session.refresh(workspace)

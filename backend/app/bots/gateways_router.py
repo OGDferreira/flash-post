@@ -186,6 +186,10 @@ async def _priority(db, workspace, catalog: list[dict], admin: bool) -> list[dic
         for name in gateways.GATEWAYS:
             if name not in {r.gateway for r in rows}:
                 items.append({"gateway": name, "enabled": False, "flow_ids": None})
+    elif not admin:
+        automatic = await gateways.automatic_order(db)
+        items = [{"gateway": name, "enabled": True, "flow_ids": None} for name in automatic]
+        items += [{"gateway": name, "enabled": False, "flow_ids": None} for name in gateways.GATEWAYS if name not in automatic]
     else:
         first = workspace.payment_gateway if workspace.payment_gateway in gateways.GATEWAYS else "smokepay"
         items = [{"gateway": first, "enabled": True, "flow_ids": None}]

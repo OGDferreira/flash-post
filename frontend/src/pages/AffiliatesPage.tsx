@@ -242,6 +242,7 @@ function DetailModal({ id, period, onClose, initialAccounts = "all" }: {
   const data = detail.data;
   const allLeads = data ? data.leads + (data.bot_leads ?? 0) : 0;
   const sales = data ? (data.total_sales ?? data.purchases) : 0;
+  const pixGenerated = data ? data.pix_generated + (data.bot_pix ?? 0) : 0;
   return (
     <Modal
       description="Métricas agregadas da operação do filiado no período selecionado."
@@ -269,8 +270,9 @@ function DetailModal({ id, period, onClose, initialAccounts = "all" }: {
               ["Funil", [
                 ["Leads", formatNumber(allLeads)],
                 ["Shark · Flash", `${formatNumber(data.leads)} · ${formatNumber(data.bot_leads ?? 0)}`],
-                ["PIX gerados", formatNumber(data.pix_generated + (data.bot_pix ?? 0))],
+                ["PIX gerados", formatNumber(pixGenerated)],
                 ["Lead → venda", allLeads ? `${((100 * sales) / allLeads).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—"],
+                ["Conversão PIX (pagos ÷ gerados)", pixGenerated ? `${Math.min(100, (100 * sales) / pixGenerated).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "—"],
               ]],
               ["Dinheiro", [
                 ["Saldo na conta", money(data.balance ?? "0"), "text-success"],

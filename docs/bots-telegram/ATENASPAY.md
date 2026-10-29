@@ -46,6 +46,16 @@ secret is used to verify payment notifications; both are required before the
 Super Admin can release Atenas Pay. A webhook URL is not a secret and is not an
 environment variable.
 
+## Choosing the gateway order
+
+In **Bots → Gateways de pagamento**, every user and partner sees their gateways as
+ordered cards (Principal, Fallback 1, Fallback 2). Tapping a card, or its arrows,
+moves it up one position until it is the principal; the order is saved right away.
+It applies only to the user's own funnels, and per funnel in "Gateway por funil".
+Funnels shared by another operation always use the gateway set by whoever shared
+them and cannot be changed by the receiver. Until someone orders their gateways,
+the automatic order is SnakePay (when released), SmokePay, then Atenas Pay (when released).
+
 ## Payments and webhook
 
 Each operation is charged through its Atenas Pay subaccount, using the workspace's stable

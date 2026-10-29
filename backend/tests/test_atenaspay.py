@@ -43,8 +43,9 @@ async def test_atenaspay_failover_webhook_and_admin_release(
     monkeypatch.setattr(settings, "atenaspay_api_key", SecretStr("smoke_test_key"))
     monkeypatch.setattr(settings, "atenaspay_webhook_secret", SecretStr("atenas_webhook_test"))
     monkeypatch.setattr(settings, "smokepay_api_key", None)
+    monkeypatch.setattr(settings, "flashbot_transaction_fee", Decimal("0.40"))
 
-    admin = await _as(client, "superadmin@example.com", "super admin password")
+    admin =  await _as(client, "superadmin@example.com", "super admin password")
     released = await client.put(
         "/api/payment-gateways/atenaspay/enabled",
         headers=admin,
