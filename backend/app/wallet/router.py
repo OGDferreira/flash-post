@@ -9,7 +9,7 @@ selected gateway's live balance when available, never trusted from the browser.
 import logging
 import re
 import uuid
-from datetime import timedelta, timezone
+from datetime import date, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 
+from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.auth.dependencies import AuthenticatedUser, DbSession, SuperAdminUser, require_csrf
 from app.core.time import BRAZIL_TIME_ZONE, utc_now
 from app.bots import atenaspay, smokepay
@@ -494,6 +495,22 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "min_withdrawal": float(MIN_WITHDRAWAL),
         "withdrawals": await _history(db, workspace.id),
     }
+
+
+@router.get("/falcon-fees")
+async def falcon_fees_period(
+    _admin: SuperAdminUser, db: DbSession, period: AnalyticsPeriod = "today",
+    start_date: date | None = None, end_date: date | None = None,
+) -> dict:
+    """Super Admin: per-sale Flash fee collected in the chosen period (Brazil-time days)."""
+    start, end = period_bounds(period, start_date, end_date, utc_now())
+    conditions = [TgOrder.status == "paid", TgOrder.transaction_fee > 0]
+    if start is not None and end is not None:
+        conditions += [TgOrder.paid_at >= start, TgOrder.paid_at < end]
+    total, count = (await db.execute(
+        select(func.coalesce(func.sum(TgOrder.transaction_fee), 0), func.count(TgOrder.id)).where(*conditions)
+    )).one()
+    return {"total": float(_money(total)), "count": int(count), "period_label": period_label(start, end)}
 
 
 def _gateway_message(exc: smokepay.SmokepayError) -> tuple[int, str]:

@@ -3,9 +3,40 @@ import { ArrowDownToLine, CheckCircle2, Clock, Trophy, Wallet as WalletIcon, XCi
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Modal } from "@/components/ui/Modal";
+import { PeriodFilter, isPeriodReady, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { AwardsCarousel } from "@/features/wallet/AwardsCarousel";
 import { brl, compact, useWallet, useWalletMutations, type GatewayBalance, type Wallet, type Withdrawal } from "@/features/wallet/api";
-import { ApiError } from "@/services/api";
+import { ApiError, apiRequest } from "@/services/api";
+import { useQuery } from "@tanstack/react-query";
+
+/** Super Admin: the per-sale Flash fee collected in the chosen period (default: today). */
+function FalconFeesCard() {
+  const [period, setPeriod] = useState<MetricsPeriod>({ period: "today", start: todayInput(), end: todayInput() });
+  const query = useQuery({
+    queryKey: ["wallet", "falcon-fees", periodParams(period)],
+    queryFn: () => apiRequest<{ total: number; count: number; period_label: string }>(`/api/wallet/falcon-fees?${new URLSearchParams(periodParams(period))}`),
+    enabled: isPeriodReady(period),
+    placeholderData: (previous) => previous,
+  });
+  return (
+    <section className="glass-panel space-y-3 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-base font-semibold text-fg">Arrecadação do Flash Bot</h3>
+        <PeriodFilter onChange={setPeriod} value={period} />
+      </div>
+      {query.error ? (
+        <p className="text-sm text-danger">Não foi possível carregar a arrecadação.</p>
+      ) : (
+        <div>
+          <p className="text-2xl font-semibold text-success">{query.data ? brl(query.data.total) : "—"}</p>
+          <p className="text-[11px] text-muted">
+            {query.data ? `Taxa por venda · ${query.data.count} venda(s) paga(s) · ${query.data.period_label}` : "Carregando…"}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
 
 const keyTypes = [
   { value: "cpf", label: "CPF", placeholder: "000.000.000-00" },
@@ -558,6 +589,7 @@ export function WalletPage() {
           </div>
         ))}
       </dl>
+      {data.falcon_fees_month !== undefined && <FalconFeesCard />}
       {!partner && <p className="text-[11px] text-muted">
         {data.balance_source === "smokepay" ? "Saldo lido agora da SmokePay" : "Saldo estimado (SmokePay indisponível)"}
         {data.shop_ref ? ` · subconta ${data.shop_ref}` : " · carteira principal"}. Ganho total no Flash (já sem taxas e comissões): {brl(data.earned)}

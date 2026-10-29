@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { PeriodFilter, isPeriodReady, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { brl } from "@/features/partners/api";
+import { PlatformFeeCard as FlashFeeTodayCard } from "@/components/PlatformFeeCard";
 import { apiRequest } from "@/services/api";
 
 type Data = {
@@ -230,6 +231,7 @@ export function AdminOperationsPage() {
         </div>
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>
+      <FlashFeeTodayCard />
       <PlatformFeeCard />
       {data && <TransactionFeeCard users={data.users} />}
       {query.isLoading && <LoadingState label="Carregando operações" />}

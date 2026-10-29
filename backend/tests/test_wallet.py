@@ -374,7 +374,15 @@ async def test_wallet_splits_month_revenue_between_sharkbot_and_flashbot(client,
     wallet = (await client.get("/api/wallet")).json()
     assert wallet["falcon_fees_month"] == 0.4 and wallet["falcon_fees_month_count"] == 1
     assert wallet["falcon_fees_today"] == 0.4 and wallet["falcon_fees_today_count"] == 1
-    # goals and awards count Falcon Bot sales only
+    for period in ("today", "30d", "all"):
+        ranged = (await client.get(f"/api/wallet/falcon-fees?period={period}")).json()
+        assert ranged["total"] == 0.4 and ranged["count"] == 1, period
+    assert (await client.get("/api/wallet/falcon-fees?period=yesterday")).json()["total"] == 0.0
+    chief.platform_role = "USER"
+    await db_session.commit()
+    assert (await client.get("/api/wallet/falcon-fees")).status_code == 403
+    chief.platform_role = "SUPER_ADMIN"
+    await db_session.commit()    # goals and awards count Falcon Bot sales only
     assert wallet["goal"]["percent"] == (await client.get("/api/wallet/goals")).json()["percent"]
     assert (await client.get("/api/wallet/goals")).json()["month_revenue"] == 19.9
 
