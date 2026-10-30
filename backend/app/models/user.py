@@ -60,6 +60,9 @@ class User(Base):
     withdrawals_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Only the Super Admin invites partners, unless they give this permission to a user.
     can_invite_partners: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # The Super Admin can take away the platform Instagram app from one user (they can no
+    # longer connect accounts through it). Off by default: everyone can use it.
+    platform_app_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Push notifications: what the user chose (changed only in Configurações) and whether the
     # "ativar notificações" prompt was already answered (it shows once).
     push_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

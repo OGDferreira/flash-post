@@ -101,12 +101,22 @@ class InstagramMetaAppResponse(BaseModel):
     connected_accounts: int = 0
 
 
+class InstagramPlatformApp(BaseModel):
+    # The platform app is configured (IG_APP_ID / IG_APP_SECRET on the server).
+    available: bool
+    # The Super Admin took the platform app away from this user.
+    blocked: bool = False
+    # Only shown to the Super Admin; regular users never see the app's details.
+    app_id: str | None = None
+
+
 class InstagramMetaAppsResponse(BaseModel):
     can_manage: bool
     # Exact URI to register under "OAuth redirect URIs" in the Meta app.
     callback_url: str
     selected_app_id: UUID | None
     apps: list[InstagramMetaAppResponse]
+    platform: InstagramPlatformApp = InstagramPlatformApp(available=False)
 
 
 class InstagramMetaAppActionResponse(BaseModel):

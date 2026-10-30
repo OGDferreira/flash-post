@@ -86,6 +86,36 @@ function PartnerPermissionsModal({ user, onClose }: { user: AdminUser; onClose: 
   );
 }
 
+/** The Super Admin gives or takes away the platform Instagram app from one user. */
+function PlatformAppToggle({ user }: { user: AdminUser }) {
+  const queryClient = useQueryClient();
+  const change = useMutation({
+    mutationFn: (blocked: boolean) =>
+      apiRequest<AdminUser>(`/api/admin/users/${user.id}/platform-app`, { method: "PUT", body: { blocked } }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+  if (user.role === "SUPER_ADMIN") return null;
+  const blocked = Boolean(user.platform_app_blocked);
+  return (
+    <button
+      className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs disabled:opacity-50 ${
+        blocked ? "border-warning/40 bg-warning-soft text-warning" : "border-line text-fg-2 hover:bg-surface-raised"
+      }`}
+      disabled={change.isPending}
+      onClick={async () => {
+        const message = blocked
+          ? `Liberar o app do Instagram da plataforma para ${user.full_name}?`
+          : `Remover o app do Instagram da plataforma de ${user.full_name}? Ele não consegue conectar novas contas; as já conectadas continuam.`;
+        if (await confirmAction(message)) change.mutate(!blocked);
+      }}
+      title="App do Instagram da plataforma"
+      type="button"
+    >
+      {blocked ? "App Instagram bloqueado" : "App Instagram liberado"}
+    </button>
+  );
+}
+
 function PartnerPermissionsButton({ user }: { user: AdminUser }) {
   const [open, setOpen] = useState(false);
   if (user.hierarchy !== "partner") return null;
@@ -293,6 +323,7 @@ export function AdminUsersPage() {
                             <AccessAccountButton name={user.full_name} userId={user.id} />
                           )}
                           <PartnerPermissionsButton user={user} />
+                          <PlatformAppToggle user={user} />
                           {user.role !== "SUPER_ADMIN" && (
                             user.status === "BLOCKED" ? (
                               <button

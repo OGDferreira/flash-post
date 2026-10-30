@@ -42,6 +42,8 @@ class AdminUser(BaseModel):
     invited_by_name: str | None = None
     withdrawals_blocked: bool = False
     can_invite_partners: bool = False
+    # The Super Admin removed the platform Instagram app from this user.
+    platform_app_blocked: bool = False
 
 
 class AdminUserAccessRequest(BaseModel):

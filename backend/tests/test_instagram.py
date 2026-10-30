@@ -1598,3 +1598,81 @@ async def test_meta_apps_report_connected_accounts_and_keep_empty_apps(
     assert response.status_code == 200
     counts = {app["display_name"]: app["connected_accounts"] for app in response.json()["apps"]}
     assert counts == {"App com contas": 2, "App vazio": 0}
+
+
+@pytest.mark.anyio
+async def test_platform_app_connects_everyone_and_the_super_admin_can_block_a_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    super_admin,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, _workspace = owner
+    settings = Settings(
+        public_base_url="http://testserver",
+        master_encryption_key=SecretStr(os.environ["MASTER_ENCRYPTION_KEY"]),
+        ig_app_id="1767450201069461",
+        ig_app_secret=SecretStr("platform-app-secret"),
+        _env_file=None,
+    )
+
+    async def fake_exchange(code: str, _redirect_uri: str, app_id: str, app_secret: str):
+        # the platform credentials, never a workspace app
+        assert (app_id, app_secret) == ("1767450201069461", "platform-app-secret")
+        return ("17841000000000001", "via_plataforma", None, 10, 2, "platform-token",
+                datetime.now(timezone.utc) + timedelta(days=59))
+
+    monkeypatch.setattr(instagram_router, "get_settings", lambda: settings)
+    monkeypatch.setattr(instagram_router, "exchange_instagram_authorization_code", fake_exchange)
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+
+    # a regular user never sees the app's details and cannot add an app of their own
+    apps = (await client.get("/api/instagram/apps")).json()
+    assert apps["apps"] == [] and apps["platform"] == {"available": True, "blocked": False, "app_id": None}
+    refused = await client.post(
+        "/api/instagram/apps", headers={"X-CSRF-Token": token},
+        json={"display_name": "Meu app", "app_id": "999", "app_secret": "s"},
+    )
+    assert refused.status_code == 403
+
+    # "Conectar" goes straight to Instagram Business Login with the platform app
+    start = await client.post("/api/instagram/connect", headers={"X-CSRF-Token": token})
+    assert start.status_code == 200, start.text
+    url = urlparse(start.json()["authorization_url"])
+    query = parse_qs(url.query)
+    assert url.netloc == "www.instagram.com" and url.path == "/oauth/authorize"
+    assert query["client_id"] == ["1767450201069461"]
+    assert query["redirect_uri"] == ["http://testserver/api/instagram/callback"]
+    assert "instagram_business_basic" in query["scope"][0] and "instagram_business_content_publish" in query["scope"][0]
+
+    # a forged state is refused (CSRF), the real one connects the account
+    forged = await client.get("/api/instagram/callback", params={"code": "c", "state": "forged"})
+    assert "instagram=error" in forged.headers["location"]
+    start = await client.post("/api/instagram/connect", headers={"X-CSRF-Token": token})
+    state = parse_qs(urlparse(start.json()["authorization_url"]).query)["state"][0]
+    callback = await client.get("/api/instagram/callback", params={"code": "c", "state": state})
+    assert callback.status_code == 303 and "instagram=connected" in callback.headers["location"]
+    account = await db_session.scalar(
+        select(InstagramAccount).where(InstagramAccount.instagram_user_id == "17841000000000001")
+    )
+    assert account is not None and account.app_credential_id is None
+    assert account.encrypted_access_token != "platform-token"
+    assert decrypt_value(account.encrypted_access_token) == "platform-token"
+
+    # the Super Admin takes the app away from this user
+    await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
+    await _login(client, "superadmin@example.com", "super admin password")
+    admin_token = await _csrf(client)
+    blocked = await client.put(
+        f"/api/admin/users/{user.id}/platform-app", headers={"X-CSRF-Token": admin_token}, json={"blocked": True}
+    )
+    assert blocked.status_code == 200 and blocked.json()["platform_app_blocked"] is True
+
+    # the blocked user can no longer connect
+    await client.post("/api/auth/logout", headers={"X-CSRF-Token": admin_token})
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+    assert (await client.get("/api/instagram/apps")).json()["platform"]["blocked"] is True
+    assert (await client.post("/api/instagram/connect", headers={"X-CSRF-Token": token})).status_code == 403

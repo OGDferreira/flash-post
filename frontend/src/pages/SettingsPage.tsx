@@ -27,7 +27,7 @@ import { scriptableWidgetScript, type WidgetTheme } from "@/lib/scriptableWidget
 import { applyTheme, getTheme, type Theme } from "@/lib/theme";
 import { ApiError, apiRequest } from "@/services/api";
 
-type Item = { to: string; title: string; text: string; icon: ReactNode; owner?: boolean };
+type Item = { to: string; title: string; text: string; icon: ReactNode; owner?: boolean; superAdmin?: boolean };
 
 const sections: { id: string; title: string; icon: ReactNode; items: Item[] }[] = [
   {
@@ -55,6 +55,7 @@ const sections: { id: string; title: string; icon: ReactNode; items: Item[] }[] 
         text: "Aplicativos da Meta usados para conectar as contas do Instagram.",
         icon: <Settings2 size={18} />,
         owner: true,
+        superAdmin: true,
       },
       {
         to: "/feature/extensions",
@@ -230,7 +231,7 @@ export function SettingsPage() {
       {owner && <IphoneWidgetCard />}
 
       {sections.map((section) => {
-        const items = section.items.filter((item) => owner || !item.owner);
+        const items = section.items.filter((item) => (owner || !item.owner) && (!item.superAdmin || user?.role === "SUPER_ADMIN"));
         if (items.length === 0) return null;
         return (
           <div className="space-y-3" id={section.id} key={section.id}>

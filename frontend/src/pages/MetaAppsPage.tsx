@@ -25,6 +25,7 @@ type InstagramMetaAppsResponse = {
   callback_url: string;
   selected_app_id: string | null;
   apps: InstagramMetaApp[];
+  platform?: { available: boolean; blocked: boolean; app_id: string | null };
 };
 
 
@@ -152,6 +153,18 @@ export function MetaAppsPage() {
             label="URL de callback (OAuth redirect URI)"
             value={metaApps.data.callback_url}
           />
+        )}
+        {metaApps.data?.platform && (
+          <div
+            className={`rounded-xl border px-4 py-3 text-sm ${
+              metaApps.data.platform.available ? "border-success/30 bg-success-soft text-success" : "border-warning/30 bg-warning-soft text-warning"
+            }`}
+            role="status"
+          >
+            {metaApps.data.platform.available
+              ? `App da plataforma ativo (App ID ${metaApps.data.platform.app_id ?? "—"}): todos os usuários conectam por ele, exceto quem você bloquear em Usuários.`
+              : "App da plataforma não configurado: defina IG_APP_ID e IG_APP_SECRET no Render. Até lá, cada workspace usa o próprio app."}
+          </div>
         )}
         <MetaSetupModal callbackUrl={metaApps.data?.callback_url} onClose={() => setSetupOpen(false)} open={setupOpen} />
         {mutationMessage && <ErrorState message={mutationMessage} />}

@@ -174,6 +174,7 @@ async def list_users(
             transaction_fee_effective=transaction_fee_for(user),
             withdrawals_blocked=user.withdrawals_blocked,
             can_invite_partners=user.can_invite_partners,
+            platform_app_blocked=user.platform_app_blocked,
         )
         for user, resolved_role, workspace in rows
     ]
@@ -229,6 +230,7 @@ async def _admin_user(db: AsyncSession, user: User) -> AdminUser:
         transaction_fee_effective=transaction_fee_for(user),
         withdrawals_blocked=user.withdrawals_blocked,
         can_invite_partners=user.can_invite_partners,
+        platform_app_blocked=user.platform_app_blocked,
     )
 
 
@@ -260,6 +262,17 @@ async def set_all_withdrawals_blocked(payload: _Flag, admin: SuperAdminUser, db:
         setting.value, setting.updated_by_user_id = value, admin.id
     await db.commit()
     return value
+
+
+@router.put("/users/{user_id}/platform-app", response_model=AdminUser, dependencies=[Depends(require_csrf)])
+async def set_platform_app_access(user_id: uuid.UUID, payload: _Flag, _admin: SuperAdminUser, db: DbSession) -> AdminUser:
+    """Give back or take away the platform Instagram app from one user (``blocked``)."""
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    user.platform_app_blocked = bool(payload.blocked)
+    await db.commit()
+    return await _admin_user(db, user)
 
 
 @router.put("/users/{user_id}/invite-partners", response_model=AdminUser, dependencies=[Depends(require_csrf)])

@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_service_role_key: SecretStr | None = None
     instagram_publishing_enabled: bool = False
+    # Platform-wide Instagram Business Login app (env IG_APP_ID / IG_APP_SECRET), shared by
+    # every user unless the Super Admin blocks someone. Never stored in the database or sent to
+    # the browser. When unset, connecting falls back to each workspace's own Meta app.
+    ig_app_id: str | None = None
+    ig_app_secret: SecretStr | None = None
     session_secret: SecretStr | None = None
     master_encryption_key: SecretStr | None = None
     # Web Push (optional): when unset, keys are generated once and stored

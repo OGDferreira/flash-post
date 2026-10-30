@@ -45,6 +45,7 @@ from app.schemas.instagram import (
     InstagramMetaAppCreateRequest,
     InstagramMetaAppResponse,
     InstagramMetaAppsResponse,
+    InstagramPlatformApp,
     InstagramMetaAppUpdateRequest,
     InstagramBulkRemoveResponse,
     InstagramConnectResponse,
@@ -58,6 +59,26 @@ router = APIRouter(prefix="/api/instagram", tags=["Instagram accounts"])
 logger = logging.getLogger(__name__)
 _OAUTH_SESSION_KEY = "instagram_oauth"
 _OAUTH_STATE_MAX_AGE_SECONDS = 600
+
+
+def _platform_app() -> tuple[str, str] | None:
+    """The platform Instagram app (IG_APP_ID, IG_APP_SECRET) when both are configured."""
+    settings = get_settings()
+    app_id = (settings.ig_app_id or "").strip()
+    secret = settings.ig_app_secret.get_secret_value().strip() if settings.ig_app_secret else ""
+    return (app_id, secret) if app_id and secret else None
+
+
+async def _ensure_own_apps_allowed(access, db) -> None:
+    """With the platform app on, only the Super Admin registers or picks workspace apps."""
+    if _platform_app() is None:
+        return
+    user = await db.get(User, access.membership.user_id)
+    if user is None or user.platform_role != "SUPER_ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="As contas agora são conectadas pelo app da plataforma; não é preciso cadastrar app próprio.",
+        )
 
 
 def _redirect_uri() -> str:
@@ -393,6 +414,19 @@ async def list_meta_apps(
             )
         ).all()
     )
+    platform = _platform_app()
+    user = await db.get(User, access.membership.user_id)
+    is_super_admin = user is not None and user.platform_role == "SUPER_ADMIN"
+    blocked = bool(user and user.platform_app_blocked) and not is_super_admin
+    if platform is not None and not is_super_admin:
+        # Everyone connects through the platform app; workspace apps are no longer offered.
+        return InstagramMetaAppsResponse(
+            can_manage=False,
+            callback_url=_redirect_uri(),
+            selected_app_id=None,
+            apps=[],
+            platform=InstagramPlatformApp(available=True, blocked=blocked),
+        )
     return InstagramMetaAppsResponse(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
         callback_url=_redirect_uri(),
@@ -400,6 +434,10 @@ async def list_meta_apps(
         apps=[
             _meta_app_response(app, connected_counts.get(app.id, 0)) for app in apps
         ],
+        platform=InstagramPlatformApp(
+            available=platform is not None,
+            app_id=platform[0] if platform is not None and is_super_admin else None,
+        ),
     )
 
 
@@ -414,6 +452,7 @@ async def create_meta_app(
     access: OwnerAccess,
     db: DbSession,
 ) -> InstagramMetaAppActionResponse:
+    await _ensure_own_apps_allowed(access, db)
     settings = get_settings()
     if settings.master_encryption_key is None:
         raise HTTPException(
@@ -478,6 +517,7 @@ async def select_meta_app(
     access: OwnerAccess,
     db: DbSession,
 ) -> InstagramMetaAppActionResponse:
+    await _ensure_own_apps_allowed(access, db)
     app = await _workspace_meta_app(access.workspace.id, app_id, db)
     if app is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meta app not found.")
@@ -587,6 +627,32 @@ async def connect_account(
     return_to: Literal["/dashboard", "/feature/accounts"] = "/feature/accounts",
 ) -> InstagramConnectResponse:
     settings = get_settings()
+    platform = _platform_app()
+    # The platform app connects everyone (no app to pick). An explicit app_id is only sent by
+    # the Super Admin's own Apps Meta page, which still works with workspace apps.
+    if platform is not None and app_id is None:
+        user = await db.get(User, access.membership.user_id)
+        if user is None or (user.platform_app_blocked and user.platform_role != "SUPER_ADMIN"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="A conexão de contas não está liberada para o seu usuário. Fale com o suporte.",
+            )
+        if settings.master_encryption_key is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Secure credential storage must be enabled to connect accounts.",
+            )
+        state = secrets.token_urlsafe(32)
+        request.session[_OAUTH_SESSION_KEY] = {
+            "state": state,
+            "user_id": request.session["user_id"],
+            "workspace_id": str(access.workspace.id),
+            "platform": True,
+            "created_at": int(time.time()),
+            "return_to": return_to,
+        }
+        return InstagramConnectResponse(authorization_url=build_authorization_url(platform[0], _redirect_uri(), state))
+
     credential_query = select(InstagramAppCredential).where(
         InstagramAppCredential.workspace_id == access.workspace.id,
     )
@@ -701,21 +767,30 @@ async def instagram_callback(
     if user is None or workspace is None or membership is None:
         return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
 
-    try:
-        meta_app_id = uuid.UUID(str(pending.get("meta_app_id")))
-    except (ValueError, TypeError, AttributeError):
-        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
-    credential = await _workspace_meta_app(workspace_id, meta_app_id, db)
-    if (
-        credential is None
-        or str(credential.revision) != pending.get("credential_revision")
-    ):
-        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
-    try:
-        app_secret = decrypt_value(credential.encrypted_app_secret)
-    except (RuntimeError, ValueError) as exc:
-        logger.error("Instagram App Secret could not be decrypted (%s).", type(exc).__name__)
-        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
+    credential: InstagramAppCredential | None = None
+    if pending.get("platform") is True:
+        # Re-checked here: the app may have been removed, or the user blocked, meanwhile.
+        platform = _platform_app()
+        if platform is None or (user.platform_app_blocked and user.platform_role != "SUPER_ADMIN"):
+            return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
+        meta_app_client_id, app_secret = platform
+    else:
+        try:
+            meta_app_id = uuid.UUID(str(pending.get("meta_app_id")))
+        except (ValueError, TypeError, AttributeError):
+            return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
+        credential = await _workspace_meta_app(workspace_id, meta_app_id, db)
+        if (
+            credential is None
+            or str(credential.revision) != pending.get("credential_revision")
+        ):
+            return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
+        try:
+            app_secret = decrypt_value(credential.encrypted_app_secret)
+        except (RuntimeError, ValueError) as exc:
+            logger.error("Instagram App Secret could not be decrypted (%s).", type(exc).__name__)
+            return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
+        meta_app_client_id = credential.app_id
 
     try:
         (
@@ -730,7 +805,7 @@ async def instagram_callback(
             await exchange_instagram_authorization_code(
                 code,
                 _redirect_uri(),
-                credential.app_id,
+                meta_app_client_id,
                 app_secret,
             )
         )
@@ -762,7 +837,7 @@ async def instagram_callback(
     if account is None:
         account = InstagramAccount(
             workspace_id=workspace_id,
-            app_credential_id=credential.id,
+            app_credential_id=credential.id if credential else None,
             instagram_user_id=instagram_user_id,
             username=username,
             profile_picture_url=profile_picture_url,
@@ -784,7 +859,7 @@ async def instagram_callback(
         # Auto-detect: file by name prefix and join the folder's loops.
         await automate_account(db, account, datetime.now(timezone.utc))
     else:
-        account.app_credential_id = credential.id
+        account.app_credential_id = credential.id if credential else None
         account.username = username
         account.profile_picture_url = profile_picture_url
         account.follower_count = follower_count

@@ -17,7 +17,16 @@ export type InstagramMetaAppsResponse = {
   selected_app_id: string | null;
   can_manage: boolean;
   apps: InstagramMetaApp[];
+  /** The platform Instagram app: when available everyone just taps "Conectar". */
+  platform?: { available: boolean; blocked: boolean; app_id: string | null };
 };
+
+/** Whether this user can start a connection right now (platform app or a workspace app). */
+export function canConnect(data: InstagramMetaAppsResponse | undefined): boolean {
+  if (!data) return false;
+  if (data.platform?.available) return !data.platform.blocked;
+  return data.apps.length > 0;
+}
 
 export const metaAppsQueryKey = ["instagram", "apps"] as const;
 
@@ -46,9 +55,10 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
     retry: false,
   });
   const connect = useMutation({
+    // appId "" = the platform app (no app to pick)
     mutationFn: (appId: string) =>
       apiRequest<{ authorization_url: string }>(
-        `/api/instagram/connect?${new URLSearchParams({ app_id: appId, return_to: returnTo })}`,
+        `/api/instagram/connect?${new URLSearchParams(appId ? { app_id: appId, return_to: returnTo } : { return_to: returnTo })}`,
         { method: "POST" },
       ),
     onMutate: (appId) => setPendingAppId(appId),
@@ -56,14 +66,17 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
     onError: () => setPendingAppId(null),
   });
   const appList = apps.data?.apps ?? [];
+  const platform = apps.data?.platform;
 
   return (
     <section aria-label="Conectar conta do Instagram" className="glass-panel p-4 sm:p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-fg">Escolha o aplicativo</h3>
+          <h3 className="text-base font-semibold text-fg">{platform?.available ? "Conectar conta do Instagram" : "Escolha o aplicativo"}</h3>
           <p className="mt-1 text-xs leading-5 text-muted">
-            A nova conta será vinculada ao aplicativo escolhido. As contas já conectadas não mudam.
+            {platform?.available
+              ? "Você será levado ao Instagram para autorizar a conta profissional. Depois volta para cá."
+              : "A nova conta será vinculada ao aplicativo escolhido. As contas já conectadas não mudam."}
           </p>
         </div>
         <button
@@ -96,7 +109,25 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
         </div>
       )}
 
-      {apps.data && appList.length === 0 && (
+      {platform?.available && (
+        platform.blocked ? (
+          <p className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning" role="status">
+            A conexão de contas não está liberada para o seu usuário. Fale com o suporte.
+          </p>
+        ) : (
+          <button
+            className="btn-primary w-full justify-center"
+            disabled={connect.isPending}
+            onClick={() => connect.mutate("")}
+            type="button"
+          >
+            {connect.isPending && pendingAppId === "" ? <LoaderCircle className="animate-spin" size={16} /> : <ArrowUpRight size={16} />}
+            Conectar com o Instagram
+          </button>
+        )
+      )}
+
+      {apps.data && !platform?.available && appList.length === 0 && (
         <div className="rounded-xl border border-dashed border-line px-4 py-5 text-center">
           <Smartphone className="mx-auto text-accent" size={22} />
           <p className="mt-3 text-sm text-fg-2">Nenhum aplicativo Meta configurado.</p>

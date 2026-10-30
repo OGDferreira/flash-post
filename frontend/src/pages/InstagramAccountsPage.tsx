@@ -16,6 +16,7 @@ import { InstagramAvatar } from "@/components/InstagramAvatar";
 import { ProfileLink } from "@/components/ProfileLink";
 import {
   ConnectAppsPanel,
+  canConnect,
   metaAppsQueryKey,
   type InstagramMetaAppsResponse,
 } from "@/components/ConnectAccountModal";
@@ -297,6 +298,7 @@ export function InstagramAccountsPage() {
                 Conectar conta
               </button>
               {accounts.data.can_manage &&
+                !metaApps.data?.platform?.available &&
                 !metaApps.data?.apps.length &&
                 !metaApps.isLoading &&
                 !metaApps.error && (
@@ -564,7 +566,7 @@ export function InstagramAccountsPage() {
                         className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-brand px-3 py-2 text-sm text-white disabled:opacity-60"
                         type="button"
                         onClick={startConnection}
-                        disabled={!metaApps.data?.apps.length}
+                        disabled={!canConnect(metaApps.data)}
                       >
                         <Link2 size={15} />
                         Reconectar
