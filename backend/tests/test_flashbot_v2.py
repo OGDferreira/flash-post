@@ -426,3 +426,32 @@ def test_previews_need_media() -> None:
 
     with pytest.raises(ValidationError):
         FlowDefinition.model_validate(_flow(previews={"enabled": True}))
+
+
+@pytest.mark.anyio
+async def test_reconciliation_asks_newest_first_in_parallel_and_approves_paid(client, db_session, owner, apis, monkeypatch) -> None:
+    import asyncio
+
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(welcome=[]))
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    order.created_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await db_session.commit()
+
+    running, peak, asked = 0, 0, []
+
+    async def fake_paid(target: TgOrder):
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await asyncio.sleep(0.01)
+        running -= 1
+        asked.append(target.id)
+        return (target.amount, "Fulano", None, None) if target.id == order.id else None
+
+    monkeypatch.setattr(engine, "_paid_charge", fake_paid)
+    assert await engine.reconcile_pending_orders(db_session) == 1
+    await db_session.refresh(order)
+    assert asked == [order.id] and order.status == "paid"

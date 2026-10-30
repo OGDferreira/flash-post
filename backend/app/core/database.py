@@ -17,9 +17,10 @@ def _create_engine() -> AsyncEngine:
     is_postgres = url.startswith("postgresql+asyncpg://")
     connect_args = {"ssl": "require"} if is_postgres else {}
     pool_options = (
-        # Each scheduler job holds one connection for its advisory lock plus one for its work;
-        # with only 10, Telegram webhooks waited seconds for a free connection.
-        {"pool_size": 15, "max_overflow": 10, "pool_recycle": 1800}
+        # Supabase's session pooler accepts 15 clients in all (both instances during a deploy,
+        # plus migrations). Going over makes every query fail with EMAXCONNSESSION, so the
+        # total stays at 10.
+        {"pool_size": 6, "max_overflow": 4, "pool_recycle": 1800, "pool_timeout": 15}
         if is_postgres
         else {}
     )
