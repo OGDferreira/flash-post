@@ -1342,26 +1342,26 @@ def pix_qr_png(code: str, fallback_b64: str | None = None) -> bytes | None:
     return None
 
 
-async def check_order(db: AsyncSession, order: TgOrder) -> None:
-    """Ask the gateway directly (the "Já paguei" button and the reconciliation job)."""
+async def _paid_charge(order: TgOrder) -> tuple[Decimal, str | None, Decimal | None, Decimal | None] | None:
+    """Ask the order's gateway whether it was paid: (amount, payer, fee, net), or None.
+    Network only (no database), so many orders can be asked at once."""
     if order.gateway == "atenaspay":
         from app.bots import atenaspay
 
         if not order.gateway_transaction_id:
-            return
+            return None
         try:
             charge = await atenaspay.get_pix(order.gateway_transaction_id)
         except atenaspay.AtenaspayError:
-            return
+            return None
         if charge.status == "paid":
-            await approve_order(db, order.id, charge.amount or order.amount, charge.payer_name, charge.fee, charge.net_amount)
-            await db.refresh(order)
-        return
+            return charge.amount or order.amount, charge.payer_name, charge.fee, charge.net_amount
+        return None
     if order.gateway == "snakepay":
         from app.bots import snakepay
 
         if not order.gateway_transaction_id:
-            return
+            return None
         try:
             from app.core.crypto import decrypt_value
 
@@ -1369,21 +1369,28 @@ async def check_order(db: AsyncSession, order: TgOrder) -> None:
             snake = await snakepay.get_charge(order.gateway_transaction_id, api_key=api_key)
         except (RuntimeError, ValueError):
             logger.exception("Could not decrypt SnakePay API key for order %s", order.id)
-            return
+            return None
         except snakepay.SnakepayError:
-            return
+            return None
         if snake.status == "paid":
             net = snake.net_amount
             fee = (snake.amount - net).quantize(Decimal("0.01")) if snake.amount is not None and net is not None else None
-            await approve_order(db, order.id, snake.amount or order.amount, None, fee, net)
-            await db.refresh(order)
-        return
+            return snake.amount or order.amount, None, fee, net
+        return None
     try:
         charge = await smokepay.get_pix(f"{ORDER_PREFIX}{order.id}")
     except smokepay.SmokepayError:
-        return
+        return None
     if charge.status == "paid":
-        await approve_order(db, order.id, charge.amount, charge.payer_name, charge.fee, charge.net_amount)
+        return charge.amount, charge.payer_name, charge.fee, charge.net_amount
+    return None
+
+
+async def check_order(db: AsyncSession, order: TgOrder) -> None:
+    """Ask the gateway directly (the "Já paguei" button and the reconciliation job)."""
+    paid = await _paid_charge(order)
+    if paid is not None:
+        await approve_order(db, order.id, *paid)
         await db.refresh(order)
 
 
@@ -1596,19 +1603,41 @@ async def end_subscription(db: AsyncSession, tg: TelegramClient, bot: TgBot, sub
         await tg.send_message(lead.chat_id, "Seu acesso terminou. Renove para continuar 👇", plans_keyboard(flow))
 
 
-async def reconcile_pending_orders(db: AsyncSession, limit: int = 25) -> int:
-    """Backup for lost webhooks: ask SmokePay about recent pending orders."""
+RECONCILE_CONCURRENCY = 8
+
+
+async def reconcile_pending_orders(db: AsyncSession, limit: int = 60) -> int:
+    """Backup for lost or rejected webhooks: ask the gateways about pending orders.
+
+    Newest first (the buyer who just paid is waiting in the chat), and the gateways are
+    asked in parallel without holding the database: one by one, 25 orders took the whole
+    bot tick and the newest ones waited until the old ones expired."""
+    import asyncio
+
     now = utcnow()
     orders = list(
         await db.scalars(
             select(TgOrder)
             .where(TgOrder.status == "pending", TgOrder.created_at <= now - timedelta(seconds=10), TgOrder.expires_at > now - timedelta(minutes=10))
-            .order_by(TgOrder.created_at)
+            .order_by(TgOrder.created_at.desc())
             .limit(limit)
         )
     )
-    for order in orders:
-        await check_order(db, order)
+    await db.commit()  # release the connection while the gateways answer
+    gate = asyncio.Semaphore(RECONCILE_CONCURRENCY)
+
+    async def ask(order: TgOrder):
+        async with gate:
+            try:
+                return await _paid_charge(order)
+            except Exception:  # one gateway failing never stops the others
+                logger.exception("Reconciliation of order %s failed", order.id)
+                return None
+
+    results = await asyncio.gather(*(ask(order) for order in orders))
+    for order, paid in zip(orders, results):
+        if paid is not None:
+            await approve_order(db, order.id, *paid)
     return len(orders)
 
 
