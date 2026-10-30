@@ -293,7 +293,7 @@ function only(groups: NavGroup[], keep: (to: string) => boolean): NavGroup[] {
     .filter(({ items }) => items.length > 0);
 }
 
-export function buildNavigation(opts: {
+function buildNavigationFor(opts: {
   isAdminRoute: boolean;
   isSuperAdmin: boolean;
   workspaceRole: string | null | undefined;
@@ -331,4 +331,14 @@ export function buildNavigation(opts: {
     return { app: "post", direct: postDirect.filter(({ to }) => keep(to)), flat: [], groups: only(postGroups, keep), admin };
   }
   return { app, direct: [], flat: [], groups: [], admin };
+}
+
+// Shown only to the Super Admin (the platform's Meta app is managed there).
+export const SUPER_ADMIN_ONLY_ROUTES = new Set(["/feature/meta-apps"]);
+
+export function buildNavigation(opts: Parameters<typeof buildNavigationFor>[0]): NavModel {
+  const model = buildNavigationFor(opts);
+  if (opts.isSuperAdmin) return model;
+  const keep = (to: string) => !SUPER_ADMIN_ONLY_ROUTES.has(to);
+  return { ...model, direct: model.direct.filter(({ to }) => keep(to)), groups: only(model.groups, keep) };
 }

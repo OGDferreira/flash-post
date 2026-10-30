@@ -212,6 +212,7 @@ export type AdminUser = {
   transaction_fee_effective?: string;
   withdrawals_blocked?: boolean;
   can_invite_partners?: boolean;
+  platform_app_blocked?: boolean;
   chief_name?: string | null;
   invited_by_name?: string | null;
 };
