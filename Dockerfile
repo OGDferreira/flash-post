@@ -4,7 +4,9 @@ WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
-RUN npm run build
+# Pre-compressed copies: the server sends them as is instead of gzipping on every request.
+RUN npm run build \
+    && find dist -type f \( -name "*.js" -o -name "*.css" -o -name "*.svg" -o -name "*.html" -o -name "*.webmanifest" \) -size +1k -exec gzip -9 -k {} \;
 
 FROM python:3.12-slim AS backend
 
