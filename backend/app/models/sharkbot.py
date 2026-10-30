@@ -75,6 +75,8 @@ class SharkTransaction(Base):
         CheckConstraint("status IN ('pending', 'paid')", name="ck_shark_transactions_status"),
         Index("ix_shark_transactions_workspace_created", "workspace_id", "created_at_source"),
         Index("ix_shark_transactions_workspace_paid", "workspace_id", "paid_at"),
+        # "did this lead buy?" (bot performance): one lookup instead of a scan
+        Index("ix_shark_transactions_workspace_lead", "workspace_id", "lead_key", "status"),
         Index("ix_shark_transactions_workspace_bot", "workspace_id", "bot_id", "flow_id"),
     )
 

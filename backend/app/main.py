@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 import traceback
 import uuid
 from contextlib import asynccontextmanager
@@ -288,7 +289,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
         resolved_frontend_dir = frontend_dir.resolve()
 
         @application.get("/{asset_path:path}", include_in_schema=False)
-        async def frontend_fallback(asset_path: str) -> FileResponse:
+        async def frontend_fallback(asset_path: str, request: Request) -> FileResponse:
             if asset_path == "api" or asset_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="Not found.")
             candidate = (frontend_dir / asset_path).resolve()
@@ -302,6 +303,14 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
                     if asset_path.startswith("assets/")
                     else "no-cache"
                 )
+                # A pre-compressed copy from the build is sent as is (no CPU spent gzipping).
+                compressed = candidate.with_name(candidate.name + ".gz")
+                if "gzip" in request.headers.get("accept-encoding", "") and compressed.is_file():
+                    return FileResponse(
+                        compressed,
+                        media_type=mimetypes.guess_type(candidate.name)[0] or "application/octet-stream",
+                        headers={"Cache-Control": cache, "Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+                    )
                 return FileResponse(candidate, headers={"Cache-Control": cache})
             if Path(asset_path).suffix:
                 raise HTTPException(status_code=404, detail="Not found.")

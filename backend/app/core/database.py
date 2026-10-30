@@ -17,7 +17,9 @@ def _create_engine() -> AsyncEngine:
     is_postgres = url.startswith("postgresql+asyncpg://")
     connect_args = {"ssl": "require"} if is_postgres else {}
     pool_options = (
-        {"pool_size": 5, "max_overflow": 5, "pool_recycle": 1800}
+        # Each scheduler job holds one connection for its advisory lock plus one for its work;
+        # with only 10, Telegram webhooks waited seconds for a free connection.
+        {"pool_size": 15, "max_overflow": 10, "pool_recycle": 1800}
         if is_postgres
         else {}
     )
