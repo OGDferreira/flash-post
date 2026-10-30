@@ -579,7 +579,8 @@ async def test_transaction_fee_on_every_sale_but_the_super_admins(db_session, ow
     await db_session.commit()
     route = await service.billing_route(db_session, partner_ws.id, shared.id)
     assert route.splits == [{"shop_id": f"fp-{chief_ws.id.hex}", "percent": 30.0}, {"parent": True, "amount": 0.4}]
-    assert route.preview(Decimal("100.00")) == (Decimal("30.00"), Decimal("69.60"))
+    # the chief's 30% is over the net after the gateway fee AND the Flash fee: 30% x (100 - 0,40)
+    assert route.preview(Decimal("100.00")) == (Decimal("29.88"), Decimal("69.72"))
 
     # the Super Admin's own bots pay nothing
     chief.platform_role = "SUPER_ADMIN"
@@ -954,3 +955,63 @@ async def test_partner_adds_own_meta_app_seen_only_by_them(client, db_session, o
     # the chief (and anyone else) never sees it
     await _as(client, "owner@example.com", CHIEF_PASSWORD)
     assert (await client.get("/api/instagram/apps")).json()["apps"] == []
+
+
+def test_partner_commission_is_over_the_net_after_every_fee() -> None:
+    """R$ 5,90 sale, R$ 0,65 gateway fee, R$ 0,50 Flash fee: net 4,75 -> 30% = R$ 1,42 (rounded down)."""
+    route = service.BillingRoute(origin="shared_funnel", percent=Decimal("30"), transaction_fee=Decimal("0.50"),
+                                 splits=[{"shop_id": "fp-chief", "percent": 30.0}, {"parent": True, "amount": 0.5}])
+    gateway_net = Decimal("5.90") - Decimal("0.65")
+    commission, seller = route.preview(gateway_net)
+    assert commission == Decimal("1.42") and seller == Decimal("3.33")
+    assert commission + seller + route.transaction_fee == gateway_net
+
+    # the split sent to a percent-of-net gateway pays the same commission (never more)
+    splits = route.gateway_splits(gateway_net)
+    assert splits[1] == {"parent": True, "amount": 0.5} and route.splits[0]["percent"] == 30.0
+    paid = (gateway_net * Decimal(str(splits[0]["percent"])) / 100).quantize(Decimal("0.01"))
+    assert paid <= Decimal("1.43") and paid >= Decimal("1.41")
+    assert (gateway_net * Decimal(str(splits[0]["percent"])) / 100) <= Decimal("1.425")
+
+    # no Flash fee (e.g. refused split): the commission is simply 30% of the gateway net
+    plain = service.BillingRoute(origin="shared_funnel", percent=Decimal("30"))
+    assert plain.preview(gateway_net)[0] == Decimal("1.57") and plain.chief_share_percent(gateway_net) == Decimal("30")
+
+
+@pytest.mark.anyio
+async def test_super_admin_opens_the_receipt_of_a_partner_sale(client, db_session, owner, super_admin) -> None:
+    from app.models import TgBot, TgLead
+
+    chief, _chief_ws = owner
+    partner, partner_ws, _link = await _partner(db_session, owner)
+    bot = TgBot(workspace_id=partner_ws.id, tg_bot_id=987654, username="b", name="b", encrypted_token="x", webhook_secret="s" * 32)
+    db_session.add(bot)
+    await db_session.flush()
+    lead = TgLead(workspace_id=partner_ws.id, bot_id=bot.id, tg_user_id=55, chat_id=1)
+    db_session.add(lead)
+    await db_session.flush()
+    now = utc_now()
+    order = TgOrder(
+        workspace_id=partner_ws.id, bot_id=bot.id, lead_id=lead.id, kind="plan", offer_id="vip", offer_name="VIP",
+        offer_snapshot={}, amount=Decimal("5.90"), status="paid", paid_at=now, expires_at=now, gateway="smokepay",
+        gateway_fee=Decimal("0.65"), net_amount=Decimal("5.25"), origin="shared_funnel", transaction_fee=Decimal("0.50"),
+        platform_fee=Decimal("0.50"), split_chief_user_id=chief.id, split_percent=Decimal("30"),
+        split_amount=Decimal("1.42"), partner_net=Decimal("3.33"),
+    )
+    db_session.add(order)
+    await db_session.commit()
+
+    # only the Super Admin opens it
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.get(f"/api/admin/orders/{order.id}/receipt")).status_code in (401, 403)
+    await _as(client, "superadmin@example.com", "super admin password")
+    receipt = (await client.get(f"/api/admin/orders/{order.id}/receipt")).json()
+
+    assert receipt["gross"] == 5.90 and receipt["gateway_fee"] == 0.65 and receipt["gateway_net"] == 5.25
+    assert receipt["flash_fee"] == 0.50 and receipt["platform_fee"] == 0.0
+    assert receipt["commission_base"] == 4.75
+    assert receipt["chief"] == {"name": chief.full_name, "percent": 30.0, "amount": 1.42}
+    assert receipt["seller"] == {"name": partner.full_name, "amount": 3.33}
+    assert receipt["platform_total"] == 0.50
+    # every centavo is accounted for
+    assert round(receipt["gateway_fee"] + receipt["platform_total"] + receipt["chief"]["amount"] + receipt["seller"]["amount"], 2) == 5.90

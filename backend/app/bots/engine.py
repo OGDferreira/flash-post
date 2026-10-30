@@ -16,7 +16,7 @@ import secrets
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1127,7 +1127,8 @@ async def _charge(
                 return None
             continue
         try:
-            return await _charge_with_smokepay(order, route, amount, description, expiration_minutes)
+            net_estimate = await gateways.estimated_net(db, "smokepay", amount)
+            return await _charge_with_smokepay(order, route, amount, description, expiration_minutes, net_estimate)
         except smokepay.SmokepayError as exc:
             error = exc
             order.gateway_attempts = [*(order.gateway_attempts or []), "smokepay"]
@@ -1154,7 +1155,7 @@ async def _charge_with_atenaspay(
             webhook_url=atenaspay_webhook_url(),
             expiration_seconds=expiration_minutes * 60,
             shop_id=route.shop_ref,
-            splits=route.splits,
+            splits=route.gateway_splits(await gateways.estimated_net(db, "atenaspay", amount)),
         )
     except atenaspay.AtenaspayError as exc:
         logger.warning("Athenas Pay charge failed (%s) for order %s; trying the next gateway, if any.", exc, order.id)
@@ -1193,7 +1194,9 @@ async def _charge_with_atenaspay(
     return True
 
 
-async def _charge_with_smokepay(order: TgOrder, route, amount: Decimal, description: str, expiration_minutes: int) -> str | None:
+async def _charge_with_smokepay(
+    order: TgOrder, route, amount: Decimal, description: str, expiration_minutes: int, net_estimate: Decimal | None = None,
+) -> str | None:
     pix = dict(
         amount=amount,
         external_id=f"{ORDER_PREFIX}{order.id}",
@@ -1203,7 +1206,7 @@ async def _charge_with_smokepay(order: TgOrder, route, amount: Decimal, descript
         shop_id=route.shop_ref,
     )
     try:
-        charge = await smokepay.create_pix(**pix, splits=route.splits)
+        charge = await smokepay.create_pix(**pix, splits=route.gateway_splits(net_estimate))
     except smokepay.SmokepayError as refused:
         # A refused split (400) creates no charge: never lose the sale over the
         # transaction fee; charge without it and leave a trace to look into.
@@ -1211,7 +1214,7 @@ async def _charge_with_smokepay(order: TgOrder, route, amount: Decimal, descript
             raise
         logger.warning("SmokePay refused the splits with the transaction fee (%s); charging without it.", refused)
         route.drop_transaction_fee()
-        charge = await smokepay.create_pix(**pix, splits=route.splits)
+        charge = await smokepay.create_pix(**pix, splits=route.gateway_splits(net_estimate))
     order.gateway = "smokepay"
     order.shop_ref = route.shop_ref
     order.gateway_transaction_id = charge.transaction_id or None
@@ -1412,8 +1415,11 @@ async def approve_order(
         return False
     await db.refresh(order)
     if order.split_percent is not None and order.net_amount is not None and order.partner_net is None:
-        commission = (order.net_amount * order.split_percent / Decimal(100)).quantize(Decimal("0.01"))
-        order.split_amount, order.partner_net = commission, order.net_amount - commission
+        # The chief's commission is over the net after every fee (gateway and Flash fee).
+        fee = order.transaction_fee or Decimal("0.00")
+        base = order.net_amount - fee
+        commission = (base * order.split_percent / Decimal(100)).quantize(Decimal("0.01"), ROUND_DOWN) if base > 0 else Decimal("0.00")
+        order.split_amount, order.partner_net = commission, order.net_amount - commission - fee
     bot = await db.get(TgBot, order.bot_id)
     lead = await db.get(TgLead, order.lead_id)
     if bot is None or lead is None:

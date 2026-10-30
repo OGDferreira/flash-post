@@ -18,11 +18,11 @@ import uuid
 from dataclasses import dataclass, field
 from decimal import ROUND_UP, Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots import atenaspay, snakepay
-from app.models import SystemSetting, TgFlow, TgFlowShare, TgGatewaySetting, User, Workspace
+from app.models import SystemSetting, TgFlow, TgFlowShare, TgGatewaySetting, TgOrder, User, Workspace
 from app.partners.service import BillingRoute, active_share, owner_workspace, shared_source
 
 SNAKEPAY_ENABLED_KEY = "snakepay_enabled"
@@ -169,6 +169,26 @@ async def gateway_order(db: AsyncSession, workspace: Workspace, flow: TgFlow | N
     return order or ["smokepay"]
 
 
+async def estimated_net(db: AsyncSession, gateway: str, amount: Decimal) -> Decimal:
+    """The gateway's net for ``amount`` before the charge answers: SnakePay's published fee, or
+    SmokePay / Athenas Pay's real average fee on the latest paid sales (their fee depends on the
+    contract). Only used to turn the chief's commission into a percentage of that net."""
+    if gateway == "snakepay":
+        return snakepay.expected_net(amount)
+    recent = (
+        select(TgOrder.amount, TgOrder.gateway_fee)
+        .where(TgOrder.gateway == gateway, TgOrder.status == "paid", TgOrder.gateway_fee.is_not(None), TgOrder.amount > 0)
+        .order_by(TgOrder.paid_at.desc())
+        .limit(50)
+        .subquery()
+    )
+    total, fees = (await db.execute(select(func.sum(recent.c.amount), func.sum(recent.c.gateway_fee)))).one()
+    if not total or fees is None:
+        return amount
+    fee = (amount * Decimal(fees) / Decimal(total)).quantize(Decimal("0.01"))
+    return max(Decimal("0.00"), amount - fee)
+
+
 async def snakepay_plan(
     db: AsyncSession, workspace: Workspace, route: BillingRoute, amount: Decimal, flow: TgFlow | None = None,
     *, chosen: bool = False,
@@ -210,7 +230,7 @@ async def snakepay_plan(
         net = snakepay.expected_net(amount)
         if net <= 0:
             return None
-        chief_percent = route.percent or Decimal("0")
+        chief_percent = route.chief_share_percent(net) or Decimal("0")
         fee_percent = route.fee_percent or Decimal("0")
         fixed = (route.fee_amount or Decimal("0")) + route.transaction_fee
         if fixed:
@@ -317,7 +337,7 @@ async def _split_plan(
     net = snakepay.expected_net(amount)
     if net <= 0:
         return None
-    chief_percent = route.percent or Decimal("0")
+    chief_percent = route.chief_share_percent(net) or Decimal("0")
     fee_percent = route.fee_percent or Decimal("0")
     fixed = (route.fee_amount or Decimal("0")) + route.transaction_fee
     if fixed:
