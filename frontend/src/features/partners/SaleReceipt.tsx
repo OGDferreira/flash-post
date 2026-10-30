@@ -20,7 +20,7 @@ type Receipt = {
   flash_fee: number | null;
   platform_fee: number | null;
   commission_base: number | null;
-  chief: { name: string; percent: number | null; amount: number | null } | null;
+  chief: { name: string; percent: number | null; amount: number | null; expected?: number | null } | null;
   seller: { name: string; amount: number | null };
   platform_total: number | null;
 };
@@ -74,6 +74,14 @@ export function SaleReceiptModal({ orderId, onClose }: { orderId: string | null;
                   label={`${data.origin === "owner_all" ? "Dono do funil" : "Chefe"} · ${data.chief.name}`}
                   tone="text-accent"
                   value={money(data.chief.amount)}
+                />
+              )}
+              {data.chief && data.chief.expected !== undefined && data.chief.expected !== null && data.chief.expected !== data.chief.amount && (
+                <Line
+                  hint="O split do gateway é definido antes do pagamento, com a taxa estimada"
+                  label="Comissão pela regra (estimado × real)"
+                  tone="text-warning"
+                  value={`${money(data.chief.expected)} · dif. ${money((data.chief.amount ?? 0) - data.chief.expected)}`}
                 />
               )}
               <Line label={`Vendedor · ${data.seller.name}`} tone="text-success" value={money(data.seller.amount)} />

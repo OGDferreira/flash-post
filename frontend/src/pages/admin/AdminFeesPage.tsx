@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { PlatformFeeCard as FlashFeeTodayCard } from "@/components/PlatformFeeCard";
+import { CommissionAuditCard } from "@/features/partners/CommissionAuditCard";
 import { FeeManagementPanel } from "@/features/partners/FeeManagementPanel";
 import { PlatformFeeCard, TransactionFeeCard, type Data } from "@/pages/admin/AdminOperationsPage";
 import { apiRequest } from "@/services/api";
@@ -18,6 +19,7 @@ export function AdminFeesPage() {
       {operations.data && <TransactionFeeCard users={operations.data.users} />}
       <PlatformFeeCard />
       <FeeManagementPanel />
+      <CommissionAuditCard />
     </div>
   );
 }

@@ -21,7 +21,8 @@ router = APIRouter(prefix="/api/rankings", tags=["Rankings"])
 async def _users(db: AsyncSession, owner_ids: list[uuid.UUID]) -> dict[uuid.UUID, User]:
     if not owner_ids:
         return {}
-    rows = await db.scalars(select(User).where(User.id.in_(owner_ids)))
+    # Users who opted out of the rankings are left out (positions close the gap).
+    rows = await db.scalars(select(User).where(User.id.in_(owner_ids), User.hide_from_rankings.is_(False)))
     return {user.id: user for user in rows}
 
 

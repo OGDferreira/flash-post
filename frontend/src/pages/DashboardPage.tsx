@@ -1,5 +1,5 @@
 import { EngagementCards } from "@/components/EngagementCards";
-import { ConnectedAccountsCard, PerformanceChart } from "@/features/dashboard/FlashPanelParts";
+import { ComparisonBadge, ConnectedAccountsCard, PerformanceChart, usePerformance } from "@/features/dashboard/FlashPanelParts";
 import { ViewsRankingCard } from "@/features/rankings/RankingLists";
 import { isPeriodReady, periodParams, type MetricsPeriod } from "@/features/analytics/period";
 import { usePartnerMe } from "@/features/partners/api";
@@ -210,6 +210,10 @@ export function DashboardPage({ partner = false, belowTop, showAccounts = true, 
   const partnerMe = usePartnerMe(periodParams(rankingPeriod), partner && isPeriodReady(rankingPeriod));
   const totals = partner ? partnerMe.data?.totals : undefined;
   const revenue = totals ? { amount: totals.gross, sales: totals.sales } : null;
+  const comparison = usePerformance(rankingPeriod).data?.comparison;
+  // The sócio's revenue comes from the partnership, so the workspace trend would not match it.
+  const trend = (field: "views" | "sales" | "revenue") =>
+    comparison && !partner ? <ComparisonBadge current={comparison.current[field]} previous={comparison.previous[field]} /> : undefined;
   // A lean panel: revenue, views, accounts and posts of the period. The money free to
   // withdraw lives only in the wallet.
   const metricsCards: Parameters<typeof MetricCard>[0][] = [
@@ -218,6 +222,7 @@ export function DashboardPage({ partner = false, belowTop, showAccounts = true, 
       target: revenue ? revenue.amount : metrics ? Number(metrics.period_revenue ?? 0) : null,
       loading: fastLoading,
       formatValue: formatMoney,
+      trend: trend("revenue"),
       icon: CircleDollarSign,
       color: "text-success",
     },
@@ -225,6 +230,7 @@ export function DashboardPage({ partner = false, belowTop, showAccounts = true, 
       title: "Vendas",
       target: revenue ? revenue.sales : metrics?.period_sales ?? null,
       loading: fastLoading,
+      trend: trend("sales"),
       icon: Receipt,
       color: "text-accent",
     },
@@ -250,6 +256,7 @@ export function DashboardPage({ partner = false, belowTop, showAccounts = true, 
           : metrics?.period_views_count === null || metrics?.period_views_count === undefined
             ? "A Meta não retornou o total do período"
             : "Ocorridas no período (Insights da Meta)",
+      trend: trend("views"),
       icon: ChartNoAxesCombined,
       color: "text-accent",
     },

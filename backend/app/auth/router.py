@@ -87,6 +87,8 @@ def _user_response(user: User, membership: WorkspaceMember | None) -> UserRespon
         created_at=user.created_at,
         updated_at=user.updated_at,
         last_login_at=user.last_login_at,
+        platform_app_blocked=bool(user.platform_app_blocked),
+        hide_from_rankings=bool(user.hide_from_rankings),
     )
 
 
@@ -391,7 +393,10 @@ async def update_preferences(payload: PreferencesUpdateRequest, user: Authentica
     membership = await _primary_membership(user, db)
     if payload.home_panel == "flashbot" and (membership is None or membership.role != "OWNER"):
         raise HTTPException(status_code=403, detail="O Flash está disponível para o dono da operação.")
-    user.home_panel = payload.home_panel
+    if payload.home_panel is not None:
+        user.home_panel = payload.home_panel
+    if payload.hide_from_rankings is not None:
+        user.hide_from_rankings = payload.hide_from_rankings
     await db.commit()
     await db.refresh(user)
     return _user_response(user, membership)

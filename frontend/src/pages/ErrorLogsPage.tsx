@@ -17,6 +17,7 @@ type DiagnosticsEvent = {
   account_id: string | null;
   loop_id: string | null;
   created_at: string;
+  workspace_name?: string | null;
 };
 
 type DiagnosticsResponse = { events: DiagnosticsEvent[] };
@@ -218,7 +219,10 @@ export function ErrorLogsPage() {
               <p className="mt-2 break-words text-sm leading-6 text-fg">
                 {event.message}
               </p>
-              <p className="mt-1 break-all text-xs text-muted">{event.path}</p>
+              <p className="mt-1 break-all text-xs text-muted">
+                {event.workspace_name && <span className="font-medium text-fg-2">{event.workspace_name} · </span>}
+                {event.path}
+              </p>
               {event.stack && (
                 <details className="mt-3">
                   <summary className="cursor-pointer text-xs text-accent">

@@ -62,15 +62,15 @@ export function ConnectedAccountsCard({ summary }: { summary: InstagramAnalytics
   );
 }
 
-type Performance = { days: { day: string; views: number; revenue: number }[] };
+type Totals = { views: number; sales: number; revenue: number };
+type Performance = {
+  comparison: { current: Totals; previous: Totals } | null;
+  days: { day: string; views: number; revenue: number }[];
+};
 
-const shortDay = (day: string) =>
-  new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`));
-
-/** Two lines over the same days: views and revenue, each on its own scale. */
-export function PerformanceChart({ period }: { period: MetricsPeriod }) {
+export function usePerformance(period: MetricsPeriod) {
   const params = new URLSearchParams(periodParams(period));
-  const query = useQuery({
+  return useQuery({
     queryKey: ["analytics", "performance", params.toString()],
     queryFn: () => apiRequest<Performance>(`/api/analytics/performance?${params}`),
     enabled: isPeriodReady(period),
@@ -78,7 +78,30 @@ export function PerformanceChart({ period }: { period: MetricsPeriod }) {
     staleTime: 60_000,
     placeholderData: (previous) => previous,
   });
+}
+
+/** "+12% vs. período anterior" (same length, just before). */
+export function ComparisonBadge({ current, previous }: { current: number; previous: number }) {
+  if (previous <= 0 && current <= 0) return null;
+  const change = previous > 0 ? Math.round(((current - previous) / previous) * 100) : null;
+  const up = change === null || change >= 0;
+  return (
+    <p className={`text-[11px] font-medium ${change === 0 ? "text-muted" : up ? "text-success" : "text-danger"}`}>
+      {change === null ? "novo" : `${change > 0 ? "+" : ""}${change}%`}
+      <span className="font-normal text-muted"> vs. período anterior</span>
+    </p>
+  );
+}
+
+const shortDay = (day: string) =>
+  new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`));
+
+/** Two lines over the same days: views and revenue, each on its own scale. */
+export function PerformanceChart({ period }: { period: MetricsPeriod }) {
+  const query = usePerformance(period);
+  const [hover, setHover] = useState<number | null>(null);
   const days = query.data?.days ?? [];
+  const hovered = hover !== null ? days[hover] : undefined;
   const totalViews = days.reduce((sum, { views }) => sum + views, 0);
   const totalRevenue = days.reduce((sum, { revenue }) => sum + revenue, 0);
   const line = (key: "views" | "revenue") => {
@@ -105,8 +128,21 @@ export function PerformanceChart({ period }: { period: MetricsPeriod }) {
         ))}
       </ul>
       {days.length ? (
-        <div className="mt-4 flex flex-1 flex-col">
+        <div className="relative mt-4 flex flex-1 flex-col">
+          {hovered && (
+            <div className="pointer-events-none absolute right-0 top-0 z-10 rounded-lg border border-line-soft bg-surface px-3 py-2 text-[11px] shadow-lg">
+              <p className="font-medium text-fg">{shortDay(hovered.day)}</p>
+              <p className="text-muted">Visualizações <strong className="text-fg tabular-nums">{count(hovered.views)}</strong></p>
+              <p className="text-muted">Faturamento <strong className="text-fg tabular-nums">{brl(hovered.revenue)}</strong></p>
+            </div>
+          )}
           <svg
+            onPointerLeave={() => setHover(null)}
+            onPointerMove={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              const ratio = Math.min(Math.max((event.clientX - box.left) / box.width, 0), 1);
+              setHover(Math.round(ratio * (days.length - 1)));
+            }}
             aria-label="Gráfico diário de visualizações e faturamento"
             className="min-h-40 w-full flex-1 overflow-visible"
             preserveAspectRatio="none"
@@ -116,6 +152,17 @@ export function PerformanceChart({ period }: { period: MetricsPeriod }) {
             {[6, 23, 40].map((y) => (
               <line key={y} stroke="currentColor" strokeOpacity="0.08" vectorEffect="non-scaling-stroke" x1="0" x2="100" y1={y} y2={y} />
             ))}
+            {hover !== null && days.length > 1 && (
+              <line
+                stroke="currentColor"
+                strokeOpacity="0.25"
+                vectorEffect="non-scaling-stroke"
+                x1={(hover / (days.length - 1)) * 100}
+                x2={(hover / (days.length - 1)) * 100}
+                y1="2"
+                y2="42"
+              />
+            )}
             {series.map(({ key, color }) => (
               <polyline
                 fill="none"

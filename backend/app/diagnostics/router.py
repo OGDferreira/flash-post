@@ -10,12 +10,12 @@ from sqlalchemy import delete, select
 
 from app.auth.dependencies import (
     DbSession,
+    SuperAdminUser,
     WorkspaceMemberAccess,
     require_csrf,
-    require_super_admin,
 )
 from app.core.time import utc_now
-from app.models import DiagnosticsEvent
+from app.models import DiagnosticsEvent, Workspace
 
 router = APIRouter(prefix="/api/diagnostics", tags=["Diagnostics"])
 MAX_EVENTS_PER_WORKSPACE = 1000
@@ -44,6 +44,8 @@ class DiagnosticsEventResponse(BaseModel):
     category: str | None = None
     meta_code: int | None = None
     created_at: datetime
+    workspace_id: UUID | None = None
+    workspace_name: str | None = None
 
 
 class DiagnosticsEventsResponse(BaseModel):
@@ -51,7 +53,7 @@ class DiagnosticsEventsResponse(BaseModel):
 
 
 def _filtered_events_query(
-    workspace_id: UUID,
+    workspace_id: UUID | None,
     source: str | None,
     account_id: UUID | None,
     loop_id: UUID | None,
@@ -59,7 +61,9 @@ def _filtered_events_query(
     q: str | None,
     since: datetime | None,
 ):
-    query = select(DiagnosticsEvent).where(DiagnosticsEvent.workspace_id == workspace_id)
+    query = select(DiagnosticsEvent)
+    if workspace_id is not None:  # None = every workspace (the Super Admin's platform log)
+        query = query.where(DiagnosticsEvent.workspace_id == workspace_id)
     if source:
         query = query.where(DiagnosticsEvent.source == source)
     if account_id:
@@ -75,11 +79,13 @@ def _filtered_events_query(
     return query.order_by(DiagnosticsEvent.created_at.desc(), DiagnosticsEvent.id.desc())
 
 
-# Reading the error log is for the Super Admin only; every member still reports errors.
-@router.get("/events", response_model=DiagnosticsEventsResponse, dependencies=[Depends(require_super_admin)])
+# Reading the error log is for the Super Admin only (every workspace, or one); every member
+# still reports errors.
+@router.get("/events", response_model=DiagnosticsEventsResponse)
 async def list_diagnostics_events(
-    access: WorkspaceMemberAccess,
+    _admin: SuperAdminUser,
     db: DbSession,
+    workspace_id: UUID | None = None,
     limit: int = Query(default=300, ge=1, le=1000),
     source: str | None = None,
     account_id: UUID | None = None,
@@ -91,19 +97,25 @@ async def list_diagnostics_events(
     events = (
         await db.scalars(
             _filtered_events_query(
-                access.workspace.id, source, account_id, loop_id, category, q, since
+                workspace_id, source, account_id, loop_id, category, q, since
             ).limit(limit)
         )
     ).all()
+    ids = {event.workspace_id for event in events}
+    names = dict((await db.execute(select(Workspace.id, Workspace.name).where(Workspace.id.in_(ids)))).all()) if ids else {}
     return DiagnosticsEventsResponse(
-        events=[DiagnosticsEventResponse.model_validate(event) for event in events]
+        events=[
+            DiagnosticsEventResponse.model_validate(event).model_copy(update={"workspace_name": names.get(event.workspace_id)})
+            for event in events
+        ]
     )
 
 
-@router.get("/events.csv", dependencies=[Depends(require_super_admin)])
+@router.get("/events.csv")
 async def export_diagnostics_events(
-    access: WorkspaceMemberAccess,
+    _admin: SuperAdminUser,
     db: DbSession,
+    workspace_id: UUID | None = None,
     source: str | None = None,
     account_id: UUID | None = None,
     loop_id: UUID | None = None,
@@ -114,7 +126,7 @@ async def export_diagnostics_events(
     events = (
         await db.scalars(
             _filtered_events_query(
-                access.workspace.id, source, account_id, loop_id, category, q, since
+                workspace_id, source, account_id, loop_id, category, q, since
             ).limit(MAX_EVENTS_PER_WORKSPACE)
         )
     ).all()

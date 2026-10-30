@@ -1,9 +1,38 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CircleDollarSign, Eye } from "lucide-react";
 import { useState } from "react";
 
 import { PeriodFilter, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { RevenueRankingList, ViewsRankingList } from "@/features/rankings/RankingLists";
+import { apiRequest, type User } from "@/services/api";
+
+/** Each user decides whether their name shows in the platform rankings. */
+function HideFromRankings() {
+  const { user } = useAuth();
+  const cache = useQueryClient();
+  const save = useMutation({
+    mutationFn: (hide: boolean) =>
+      apiRequest<User>("/api/profile/preferences", { method: "PATCH", body: { hide_from_rankings: hide } }),
+    onSuccess: (updated) => {
+      cache.setQueryData(["auth", "me"], updated);
+      cache.setQueryData(["profile"], updated);
+      void cache.invalidateQueries({ queryKey: ["rankings"] });
+    },
+  });
+  return (
+    <label className="flex items-center gap-2 text-xs text-muted">
+      <input
+        checked={Boolean(user?.hide_from_rankings)}
+        className="size-4 accent-[var(--color-accent)]"
+        disabled={save.isPending}
+        onChange={(event) => save.mutate(event.target.checked)}
+        type="checkbox"
+      />
+      Não aparecer nos rankings
+    </label>
+  );
+}
 
 type Tab = "views" | "revenue";
 
@@ -21,8 +50,9 @@ export function RankingPage() {
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4">
-      <header>
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-fg sm:text-3xl">Rankings</h1>
+        <HideFromRankings />
       </header>
 
       {tabs.length > 1 && (

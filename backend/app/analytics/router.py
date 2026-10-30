@@ -816,6 +816,30 @@ async def get_analytics_summary(
     )
 
 
+async def _period_totals(db, workspace_id: UUID, start: datetime, end: datetime) -> dict:
+    from app.models import InstagramAccountDailyViews
+
+    views = await db.scalar(
+        select(func.coalesce(func.sum(InstagramAccountDailyViews.views), 0)).where(
+            InstagramAccountDailyViews.workspace_id == workspace_id,
+            InstagramAccountDailyViews.day >= local_date(start),
+            InstagramAccountDailyViews.day < local_date(end),
+        )
+    )
+    sales, revenue = 0, Decimal("0.00")
+    for model, extra in ((TgOrder, ()), (SharkTransaction, (SharkTransaction.amount.is_not(None),))):
+        count, amount = (
+            await db.execute(
+                select(func.count(model.id), func.coalesce(func.sum(model.amount), 0)).where(
+                    model.workspace_id == workspace_id, model.status == "paid", model.paid_at >= start, model.paid_at < end, *extra
+                )
+            )
+        ).one()
+        sales += int(count or 0)
+        revenue += Decimal(str(amount or 0))
+    return {"views": int(views or 0), "sales": sales, "revenue": float(revenue)}
+
+
 @router.get("/performance")
 async def get_daily_performance(
     access: OwnerAccess,
@@ -880,7 +904,17 @@ async def get_daily_performance(
         revenue[day] = revenue.get(day, Decimal("0.00")) + Decimal(str(amount or 0))
 
     days = [first_day + timedelta(days=offset) for offset in range((last_day - first_day).days + 1)]
+    # Totals of the period and of the one just before it (same length), for the trend
+    # badges of the cards. "Total" has nothing before it.
+    comparison = None
+    if start is not None and end is not None:
+        length = end - start
+        comparison = {
+            "current": await _period_totals(db, workspace_id, start, end),
+            "previous": await _period_totals(db, workspace_id, start - length, start),
+        }
     return {
+        "comparison": comparison,
         "days": [
             {"day": day.isoformat(), "views": views.get(day, 0), "revenue": float(revenue.get(day, Decimal("0.00")))}
             for day in days

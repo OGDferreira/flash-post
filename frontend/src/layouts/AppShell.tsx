@@ -252,7 +252,17 @@ export function AppShell() {
       navigate("/login", { replace: true });
     },
   });
-  const navigation = buildNavigation({ isAdminRoute, isSuperAdmin, workspaceRole, pathname: location.pathname, isPartner, partnerPermissions: partnerMe.data?.permissions });
+  const navigation = buildNavigation({
+    isAdminRoute,
+    isSuperAdmin,
+    workspaceRole,
+    pathname: location.pathname,
+    isPartner,
+    partnerPermissions: partnerMe.data?.permissions,
+    platformAppBlocked: user?.platform_app_blocked,
+  });
+  // Unread notices, shown as a counter on "Avisos" (they no longer sit on the panel).
+  const unreadNotices = useNotices(!isAdminRoute).data?.unread ?? 0;
   // The phone bar holds a few shortcuts; everything else lives in "Mais", grouped.
   const sidebarDirect = navigation.groups.length === 0 ? navigation.direct : [];
   const mobileLinks = navigation.direct.slice(0, isAdminRoute ? 4 : 6);
@@ -468,6 +478,14 @@ export function AppShell() {
                 <span className="max-w-[170px] flex-1 overflow-hidden whitespace-nowrap lg:max-w-0 lg:opacity-0 lg:transition-[max-width,opacity] lg:duration-300 lg:group-data-[open=true]:max-w-[170px] lg:group-data-[open=true]:opacity-100">
                   {label}
                 </span>
+                {to === "/avisos" && unreadNotices > 0 && (
+                  <span
+                    aria-label={`${unreadNotices} avisos não lidos`}
+                    className="grid min-w-5 shrink-0 place-items-center rounded-full bg-brand px-1.5 text-[10px] font-semibold text-white"
+                  >
+                    {unreadNotices > 99 ? "99+" : unreadNotices}
+                  </span>
+                )}
               </NavLink>
             ))}
           </section>

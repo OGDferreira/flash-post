@@ -53,6 +53,7 @@ from app.wallet.router import admin_router as partner_wallets_router, router as 
 from app.extensions.router import router as extensions_router
 from app.support.router import router as support_router
 from app.ranking.router import router as ranking_router
+from app.analytics.flash_funnel import router as flash_funnel_router
 from app.links.router import router as links_router
 from app.workers.scheduler_service import create_scheduler
 
@@ -189,6 +190,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(extensions_router)
     application.include_router(support_router)
     application.include_router(ranking_router)
+    application.include_router(flash_funnel_router)
     application.include_router(links_router)
 
     @application.get("/readiness", tags=["health"])
