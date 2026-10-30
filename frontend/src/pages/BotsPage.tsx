@@ -9,6 +9,7 @@ import { ConversionOverview } from "@/features/bots/ConversionOverview";
 
 import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
 import { AnalyticsPanel } from "@/features/bots/AnalyticsPanel";
+import { FlashFunnelPanel } from "@/features/bots/FlashFunnelPanel";
 import { BotsListPanel } from "@/features/bots/BotsListPanel";
 import { FoldersPanel } from "@/features/bots/FoldersPanel";
 import { FlowsPanel } from "@/features/bots/FlowsPanel";
@@ -100,7 +101,12 @@ export function BotsPage() {
           period={period}
         />
       )}
-      {tab === "analises" && <AnalyticsPanel period={period} />}
+      {tab === "analises" && (
+        <div className="space-y-4">
+          <FlashFunnelPanel period={period} />
+          <AnalyticsPanel period={period} />
+        </div>
+      )}
       {tab === "folders" && <FoldersPanel />}
       {tab === "remarketing" && <RemarketingPanel flowId={remarketingFlow} onEditingChange={setEditing} onFlowChange={setRemarketingFlow} />}
       {tab === "shared" && <SharedFlowsPanel />}

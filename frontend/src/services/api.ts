@@ -170,6 +170,8 @@ export type User = {
   last_login_at: string | null;
   /** Set while a Super Admin is inside this account via "Entrar". */
   impersonator_name?: string | null;
+  platform_app_blocked?: boolean;
+  hide_from_rankings?: boolean;
 };
 
 export type Workspace = {

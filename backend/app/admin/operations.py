@@ -3,7 +3,7 @@ template, bot conversion and revenue/commissions per user. Never returns tokens.
 
 import uuid
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from typing import Literal
 
 from sqlalchemy import case, func, select, update
@@ -308,6 +308,75 @@ ORIGIN_LABELS = {
 }
 
 
+def _expected_commission(order: TgOrder) -> Decimal | None:
+    """What the chief should get by the rule: % over the net after every fee (rounded down).
+    The gateway split is set before the payment from an estimate of its fee, so the real
+    value may differ by a few cents on percent-of-net gateways."""
+    if order.split_percent is None or order.split_chief_user_id is None:
+        return None
+    net = order.net_amount
+    if net is None and order.gateway_fee is not None:
+        net = order.amount - order.gateway_fee
+    if net is None:
+        return None
+    flash_fee = order.transaction_fee or Decimal("0.00")
+    platform_extra = Decimal("0.00")
+    if order.platform_fee is not None and order.origin == "own_funnel":
+        platform_extra = max(Decimal("0.00"), order.platform_fee - flash_fee)
+    base = net - flash_fee - platform_extra
+    if base <= 0:
+        return Decimal("0.00")
+    return (base * order.split_percent / Decimal(100)).quantize(Decimal("0.01"), ROUND_DOWN)
+
+
+@router.get("/commission-audit")
+async def commission_audit(
+    _admin: SuperAdminUser,
+    db: DbSession,
+    period: AnalyticsPeriod = "30d",
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> dict:
+    """Estimated (gateway split) vs. expected commission of the paid partner sales."""
+    start, end = period_bounds(period, start_date, end_date, utc_now())
+    query = select(TgOrder).where(
+        TgOrder.status == "paid", TgOrder.split_chief_user_id.is_not(None), TgOrder.split_amount.is_not(None)
+    )
+    if start is not None:
+        query = query.where(TgOrder.paid_at >= start)
+    if end is not None:
+        query = query.where(TgOrder.paid_at < end)
+    orders = (await db.scalars(query.order_by(TgOrder.paid_at.desc()).limit(2000))).all()
+    real_total = expected_total = Decimal("0.00")
+    differing = []
+    for order in orders:
+        expected = _expected_commission(order)
+        if expected is None:
+            continue
+        real_total += order.split_amount
+        expected_total += expected
+        difference = order.split_amount - expected
+        if difference != 0:
+            differing.append({
+                "id": str(order.id),
+                "offer_name": order.offer_name,
+                "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+                "gateway": order.gateway,
+                "real": float(order.split_amount),
+                "expected": float(expected),
+                "difference": float(difference),
+            })
+    return {
+        "period_label": period_label(start, end),
+        "sales": len(orders),
+        "real": float(real_total),
+        "expected": float(expected_total),
+        "difference": float(real_total - expected_total),
+        "differing": differing[:50],
+        "differing_count": len(differing),
+    }
+
+
 @router.get("/orders/{order_id}/receipt")
 async def sale_receipt(order_id: uuid.UUID, _admin: SuperAdminUser, db: DbSession) -> dict:
     """Everything that happened to one sale's money: gross, the gateway fee, the Flash fee, the
@@ -352,6 +421,7 @@ async def sale_receipt(order_id: uuid.UUID, _admin: SuperAdminUser, db: DbSessio
             "name": chief.full_name,
             "percent": value(order.split_percent),
             "amount": value(order.split_amount),
+            "expected": value(_expected_commission(order)),
         } if chief else None,
         "seller": {
             "name": seller.full_name if seller else "—",

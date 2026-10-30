@@ -7,6 +7,8 @@ import pytest
 
 from app.core.crypto import encrypt_value
 from app.core.time import local_date
+from sqlalchemy import select
+
 from app.models import InstagramAccount, InstagramAccountDailyViews, TgBot, TgLead, TgOrder
 from tests.test_affiliates import PASSWORD
 from tests.test_partners import CHIEF_PASSWORD, _as, _partner
@@ -59,6 +61,13 @@ async def test_views_ranking_orders_users_by_views_in_the_period(client, db_sess
     # the whole history includes the old day
     everything = (await client.get("/api/rankings/views?period=all")).json()["ranking"]
     assert everything[0]["full_name"] == chief.full_name and everything[0]["views"] == 101199
+
+    # a user who opts out disappears and the positions close the gap
+    headers = await _as(client, "socio@example.com", PASSWORD)
+    saved = await client.patch("/api/profile/preferences", headers=headers, json={"hide_from_rankings": True})
+    assert saved.status_code == 200 and saved.json()["hide_from_rankings"] is True
+    ranking = (await client.get("/api/rankings/views?period=today")).json()["ranking"]
+    assert [(row["full_name"], row["position"]) for row in ranking] == [(chief.full_name, 1)]
 
 
 @pytest.mark.anyio
@@ -116,3 +125,42 @@ async def test_daily_performance_has_views_and_revenue_per_day(client, db_sessio
     assert len(days) == 7  # a one-day period still draws a week
     assert days[-1] == {"day": today.isoformat(), "views": 321, "revenue": 5.9}
     assert days[0]["day"] == (today - timedelta(days=6)).isoformat()
+
+
+@pytest.mark.anyio
+async def test_flash_funnel_counts_each_upsell_step(client, db_session, owner) -> None:
+    from app.models import TgJob
+
+    _user, workspace = owner
+    await _paid(db_session, workspace.id, "19.90")
+    await db_session.flush()
+    main = await db_session.scalar(select(TgOrder))
+    now = datetime.now(timezone.utc)
+    db_session.add_all([
+        TgOrder(workspace_id=workspace.id, bot_id=main.bot_id, lead_id=main.lead_id, kind="upsell", offer_id="up0", offer_name="Up",
+                offer_snapshot={}, amount=Decimal("9.90"), status="paid", paid_at=now, expires_at=now),
+        TgJob(workspace_id=workspace.id, bot_id=main.bot_id, lead_id=main.lead_id, kind="send_upsell", payload={"index": 0, "chain": "c"},
+              run_at=now, status="done", idempotency_key="upsell:c:0"),
+        TgJob(workspace_id=workspace.id, bot_id=main.bot_id, lead_id=main.lead_id, kind="send_upsell", payload={"index": 1, "chain": "c"},
+              run_at=now, status="done", idempotency_key="upsell:c:1"),
+    ])
+    await db_session.commit()
+
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    bots = (await client.get("/api/analytics/flash-funnel?period=today")).json()["bots"]
+    assert len(bots) == 1
+    bot = bots[0]
+    assert (bot["leads"], bot["pix"], bot["sales"], bot["revenue"]) == (1, 1, 1, 29.8)
+    assert [(u["step"], u["offered"], u["paid"], u["take_rate"]) for u in bot["upsells"]] == [(1, 1, 1, 100.0), (2, 1, 0, 0.0)]
+
+
+@pytest.mark.anyio
+async def test_super_admin_reads_the_error_log_of_every_workspace(client, db_session, owner, super_admin) -> None:
+    from app.models import DiagnosticsEvent
+
+    _user, workspace = owner
+    db_session.add(DiagnosticsEvent(workspace_id=workspace.id, source="browser", level="error", message="boom", path="/dashboard"))
+    await db_session.commit()
+    await _as(client, "superadmin@example.com", "super admin password")
+    events = (await client.get("/api/diagnostics/events")).json()["events"]
+    assert ("boom", workspace.name) in [(e["message"], e["workspace_name"]) for e in events]

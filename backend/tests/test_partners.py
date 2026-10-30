@@ -1010,8 +1010,10 @@ async def test_super_admin_opens_the_receipt_of_a_partner_sale(client, db_sessio
     assert receipt["gross"] == 5.90 and receipt["gateway_fee"] == 0.65 and receipt["gateway_net"] == 5.25
     assert receipt["flash_fee"] == 0.50 and receipt["platform_fee"] == 0.0
     assert receipt["commission_base"] == 4.75
-    assert receipt["chief"] == {"name": chief.full_name, "percent": 30.0, "amount": 1.42}
+    assert receipt["chief"] == {"name": chief.full_name, "percent": 30.0, "amount": 1.42, "expected": 1.42}
     assert receipt["seller"] == {"name": partner.full_name, "amount": 3.33}
     assert receipt["platform_total"] == 0.50
     # every centavo is accounted for
     assert round(receipt["gateway_fee"] + receipt["platform_total"] + receipt["chief"]["amount"] + receipt["seller"]["amount"], 2) == 5.90
+    audit = (await client.get("/api/admin/commission-audit?period=all")).json()
+    assert audit["sales"] == 1 and audit["real"] == audit["expected"] == 1.42 and audit["differing_count"] == 0

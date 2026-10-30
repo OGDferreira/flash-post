@@ -81,7 +81,8 @@ class ProfileUpdateRequest(BaseModel):
 
 
 class PreferencesUpdateRequest(BaseModel):
-    home_panel: Literal["flashpost", "flashbot"]
+    home_panel: Literal["flashpost", "flashbot"] | None = None
+    hide_from_rankings: bool | None = None
 
 
 class UserResponse(BaseModel):
@@ -104,6 +105,9 @@ class UserResponse(BaseModel):
     last_login_at: datetime | None
     # Set while a Super Admin is inside this account via "Entrar".
     impersonator_name: str | None = None
+    # Removed from the platform Instagram app: back to the workspace's own Meta apps.
+    platform_app_blocked: bool = False
+    hide_from_rankings: bool = False
 
 
 class AuthResponse(BaseModel):
