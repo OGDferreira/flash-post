@@ -115,7 +115,7 @@ export function RevenueRankingList({ period, limit = 20 }: { period: MetricsPeri
 /** Dashboard side card: top users by views in the dashboard's period. */
 export function ViewsRankingCard({ period }: { period: MetricsPeriod }) {
   return (
-    <article className="dashboard-card rounded-xl p-4">
+    <article className="dashboard-card h-full rounded-xl p-4">
       <p className="text-xs font-medium uppercase tracking-[0.12em] text-accent">Flash</p>
       <h2 className="mt-1 text-base font-semibold text-fg">Ranking de visualizações</h2>
       <p className="mb-4 mt-1 text-xs text-muted">Usuários com mais visualizações no período</p>

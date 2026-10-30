@@ -17,7 +17,7 @@ from app.core.crypto import decrypt_value
 from app.analytics.periods import period_bounds
 from app.auth.router import member_avatar_url
 from app.instagram.account_state import classify_inactive_account
-from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, local_date, local_day_bounds_utc, utc_now
+from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, day_bounds_utc, local_date, local_day_bounds_utc, utc_now
 from app.instagram.oauth import (
     INSTAGRAM_INSIGHTS_PERMISSION,
     InstagramInsightsPermissionError,
@@ -814,3 +814,75 @@ async def get_analytics_summary(
             for account in dropped_period[:50]
         ],
     )
+
+
+@router.get("/performance")
+async def get_daily_performance(
+    access: OwnerAccess,
+    db: DbSession,
+    period: AnalyticsPeriod = "7d",
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> dict:
+    """Views and revenue per local day (the dashboard's two-line chart). At least the last
+    7 days are shown so a one-day period still draws a line; at most 90."""
+    from app.models import InstagramAccountDailyViews
+
+    now = utc_now()
+    start, end = period_bounds(period, start_date, end_date, now)
+    last_day = local_date(min(end, now) - timedelta(microseconds=1)) if end else local_date(now)
+    first_day = local_date(start) if start else last_day - timedelta(days=29)
+    first_day = max(min(first_day, last_day - timedelta(days=6)), last_day - timedelta(days=89))
+    window_start = day_bounds_utc(first_day)[0]
+    window_end = day_bounds_utc(last_day)[1]
+    workspace_id = access.workspace.id
+
+    views: dict[date, int] = {}
+    for day, total in await db.execute(
+        select(InstagramAccountDailyViews.day, func.sum(InstagramAccountDailyViews.views))
+        .where(
+            InstagramAccountDailyViews.workspace_id == workspace_id,
+            InstagramAccountDailyViews.day >= first_day,
+            InstagramAccountDailyViews.day <= last_day,
+        )
+        .group_by(InstagramAccountDailyViews.day)
+    ):
+        views[day] = int(total or 0)
+
+    revenue: dict[date, Decimal] = {}
+    paid_rows = [
+        *(
+            await db.execute(
+                select(TgOrder.paid_at, TgOrder.amount).where(
+                    TgOrder.workspace_id == workspace_id,
+                    TgOrder.status == "paid",
+                    TgOrder.paid_at >= window_start,
+                    TgOrder.paid_at < window_end,
+                )
+            )
+        ).all(),
+        *(
+            await db.execute(
+                select(SharkTransaction.paid_at, SharkTransaction.amount).where(
+                    SharkTransaction.workspace_id == workspace_id,
+                    SharkTransaction.status == "paid",
+                    SharkTransaction.amount.is_not(None),
+                    SharkTransaction.paid_at >= window_start,
+                    SharkTransaction.paid_at < window_end,
+                )
+            )
+        ).all(),
+    ]
+    for paid_at, amount in paid_rows:
+        if paid_at is None:
+            continue
+        day = local_date(paid_at)
+        revenue[day] = revenue.get(day, Decimal("0.00")) + Decimal(str(amount or 0))
+
+    days = [first_day + timedelta(days=offset) for offset in range((last_day - first_day).days + 1)]
+    return {
+        "days": [
+            {"day": day.isoformat(), "views": views.get(day, 0), "revenue": float(revenue.get(day, Decimal("0.00")))}
+            for day in days
+        ]
+    }

@@ -95,3 +95,24 @@ async def test_super_admin_curates_useful_links_everyone_reads_them(client, db_s
     await _as(client, "owner@example.com", CHIEF_PASSWORD)
     links = (await client.get("/api/links")).json()["links"]
     assert links == [{"title": "Grupo de avisos", "url": "https://t.me/flash", "description": "Novidades da plataforma"}]
+
+
+
+@pytest.mark.anyio
+async def test_daily_performance_has_views_and_revenue_per_day(client, db_session, owner) -> None:
+    _user, workspace = owner
+    account = _account(workspace.id, "perf_one")
+    db_session.add(account)
+    await db_session.flush()
+    today = local_date(datetime.now(timezone.utc))
+    db_session.add(InstagramAccountDailyViews(workspace_id=workspace.id, account_id=account.id, day=today, views=321, fetched_at=datetime.now(timezone.utc)))
+    await _paid(db_session, workspace.id, "5.90")
+    await db_session.commit()
+
+    await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    response = await client.get("/api/analytics/performance?period=today")
+    assert response.status_code == 200, response.text
+    days = response.json()["days"]
+    assert len(days) == 7  # a one-day period still draws a week
+    assert days[-1] == {"day": today.isoformat(), "views": 321, "revenue": 5.9}
+    assert days[0]["day"] == (today - timedelta(days=6)).isoformat()

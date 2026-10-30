@@ -1,7 +1,8 @@
 import { EngagementCards } from "@/components/EngagementCards";
-import { NoticesCard } from "@/features/partners/PartnerPanel";
+import { ConnectedAccountsCard, PerformanceChart } from "@/features/dashboard/FlashPanelParts";
 import { ViewsRankingCard } from "@/features/rankings/RankingLists";
-import type { MetricsPeriod } from "@/features/analytics/period";
+import { isPeriodReady, periodParams, type MetricsPeriod } from "@/features/analytics/period";
+import { usePartnerMe } from "@/features/partners/api";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -122,7 +123,18 @@ function MetricCard({
   );
 }
 
-export function DashboardPage() {
+type DashboardPageProps = {
+  /** Sócio: revenue and sales come from the partnership (sales through shared funnels too). */
+  partner?: boolean;
+  /** Shown right below the top row (the loops shared with a sócio). */
+  belowTop?: ReactNode;
+  showAccounts?: boolean;
+  showRanking?: boolean;
+};
+
+/** The Flash panel, the same layout for everyone: accounts on the side, eight cards, then
+ *  the views ranking next to the views/revenue chart. Notices live only in their tab. */
+export function DashboardPage({ partner = false, belowTop, showAccounts = true, showRanking = true }: DashboardPageProps = {}) {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   useInstagramCallbackToast();
@@ -195,28 +207,27 @@ export function DashboardPage() {
     .filter(Boolean)
     .join(" · ");
   const rankingPeriod: MetricsPeriod = { period, start: startDate, end: endDate };
+  const partnerMe = usePartnerMe(periodParams(rankingPeriod), partner && isPeriodReady(rankingPeriod));
+  const totals = partner ? partnerMe.data?.totals : undefined;
+  const revenue = totals ? { amount: totals.gross, sales: totals.sales } : null;
   // A lean panel: revenue, views, accounts and posts of the period. The money free to
   // withdraw lives only in the wallet.
   const metricsCards: Parameters<typeof MetricCard>[0][] = [
     {
       title: isSuperAdmin ? "Faturado no período" : "Faturamento",
-      target: metrics ? Number(metrics.period_revenue ?? 0) : null,
+      target: revenue ? revenue.amount : metrics ? Number(metrics.period_revenue ?? 0) : null,
       loading: fastLoading,
       formatValue: formatMoney,
       icon: CircleDollarSign,
       color: "text-success",
     },
-    ...(isSuperAdmin
-      ? []
-      : [
-          {
-            title: "Vendas",
-            target: metrics?.period_sales ?? null,
-            loading: fastLoading,
-            icon: Receipt,
-            color: "text-accent",
-          },
-        ]),
+    {
+      title: "Vendas",
+      target: revenue ? revenue.sales : metrics?.period_sales ?? null,
+      loading: fastLoading,
+      icon: Receipt,
+      color: "text-accent",
+    },
     {
       title: "Visualizações no período",
       target: viewsUnavailable ? null : metrics?.period_views_count ?? null,
@@ -318,44 +329,43 @@ export function DashboardPage() {
         </p>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
-        <main className="dashboard-layout min-w-0">
-          <section
-            aria-label="Indicadores numéricos do workspace"
-            className="dashboard-metrics"
-          >
-            <article className="dashboard-card dashboard-metric-card">
-              <div className="dashboard-metric-heading">
-                <span className="dashboard-metric-icon text-accent">
-                  <Link2 size={16} />
-                </span>
-                <h2 className="dashboard-metric-title">Conexões do período</h2>
+      <div className={`grid gap-4 ${showAccounts ? "xl:grid-cols-[320px_minmax(0,1fr)]" : ""}`}>
+        {showAccounts && <ConnectedAccountsCard summary={summary.data} />}
+        <section
+          aria-label="Indicadores numéricos do workspace"
+          className="grid auto-rows-fr grid-cols-2 gap-3 md:grid-cols-4"
+        >
+          <article className="dashboard-card dashboard-metric-card">
+            <div className="dashboard-metric-heading">
+              <span className="dashboard-metric-icon text-accent">
+                <Link2 size={16} />
+              </span>
+              <h2 className="dashboard-metric-title">Conexões do período</h2>
+            </div>
+            <div className="flex items-end gap-3 sm:gap-4">
+              <div>
+                <p className="dashboard-metric-value text-success">{formatCount(metrics?.connected_period)}</p>
+                <p className="text-[10px] text-muted sm:text-[11px]">conectadas</p>
               </div>
-              <div className="flex items-end gap-3 sm:gap-4">
-                <div>
-                  <p className="dashboard-metric-value text-success">{formatCount(metrics?.connected_period)}</p>
-                  <p className="text-[10px] text-muted sm:text-[11px]">conectadas</p>
-                </div>
-                <div>
-                  <p className="dashboard-metric-value text-danger">{formatCount(metrics?.disconnected_period)}</p>
-                  <p className="text-[10px] text-muted sm:text-[11px]">desconectadas</p>
-                </div>
+              <div>
+                <p className="dashboard-metric-value text-danger">{formatCount(metrics?.disconnected_period)}</p>
+                <p className="text-[10px] text-muted sm:text-[11px]">desconectadas</p>
               </div>
-              <p className="dashboard-metric-detail">
-                {droppedDetail || "Nenhuma queda de conta no período"}
-              </p>
-            </article>
-            {metricsCards.map((metric) => (
-              <MetricCard key={metric.title} {...metric} />
-            ))}
-            <EngagementCards />
-          </section>
-        </main>
-        {/* Notices and ranking: right column on desktop, below everything on smaller screens. */}
-        <aside className="space-y-4 xl:sticky xl:top-20">
-          <NoticesCard side />
-          <ViewsRankingCard period={rankingPeriod} />
-        </aside>
+            </div>
+            <p className="dashboard-metric-detail">
+              {droppedDetail || "Nenhuma queda de conta no período"}
+            </p>
+          </article>
+          {metricsCards.map((metric) => (
+            <MetricCard key={metric.title} {...metric} />
+          ))}
+          <EngagementCards />
+        </section>
+      </div>
+      {belowTop}
+      <div className={`grid gap-4 ${showRanking ? "lg:grid-cols-2" : ""}`}>
+        {showRanking && <ViewsRankingCard period={rankingPeriod} />}
+        <PerformanceChart period={rankingPeriod} />
       </div>
     </div>
   );

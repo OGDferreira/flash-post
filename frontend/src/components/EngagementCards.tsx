@@ -29,8 +29,11 @@ export function EngagementCards() {
     refetchInterval: 120_000,
     retry: false,
   });
-  const data = query.data;
-  if (!data) return null;
+  // Placeholders keep the dashboard grid whole while loading or when unavailable.
+  const data = query.data ?? {
+    today: 0, goal: 0, streak: 0, streak_before_today: 0, met_today: false, missing_today: 0,
+    best_previous: 0, best_previous_date: null, is_record_today: false,
+  };
   const streakHint = data.met_today
     ? "meta de hoje batida ✅"
     : data.streak_before_today > 0
