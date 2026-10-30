@@ -1,175 +1,55 @@
-import { useQuery } from "@tanstack/react-query";
-import { Medal, UsersRound } from "lucide-react";
+import { CircleDollarSign, Eye } from "lucide-react";
 import { useState } from "react";
 
-import { Avatar } from "@/components/Avatar";
-import { ErrorState, LoadingState } from "@/components/PageState";
-import { apiRequest } from "@/services/api";
+import { PeriodFilter, todayInput, type MetricsPeriod } from "@/features/analytics/period";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { RevenueRankingList, ViewsRankingList } from "@/features/rankings/RankingLists";
 
-type RankingPeriod = "today" | "yesterday" | "7d" | "30d" | "all";
+type Tab = "views" | "revenue";
 
-type RankingResponse = {
-  period: string;
-  days_in_period: number;
-  total_connections: number;
-  collaborators: {
-    user_id: string;
-    full_name: string;
-    nickname: string;
-    avatar_url: string | null;
-    connections: number;
-    average_daily_connections: number;
-    position: number;
-  }[];
-};
-
-const periods: { value: RankingPeriod; label: string }[] = [
-  { value: "today", label: "Hoje" },
-  { value: "yesterday", label: "Ontem" },
-  { value: "7d", label: "7 dias" },
-  { value: "30d", label: "30 dias" },
-  { value: "all", label: "Todo o período" },
-];
-
-function count(value: number) {
-  return new Intl.NumberFormat("pt-BR").format(value);
-}
-
-function average(value: number) {
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
+/** Two rankings only: views (everyone) and revenue (Super Admin). */
 export function RankingPage() {
-  const [period, setPeriod] = useState<RankingPeriod>("30d");
-  const ranking = useQuery({
-    queryKey: ["collaborators", "ranking", period],
-    queryFn: () =>
-      apiRequest<RankingResponse>(
-        `/api/collaborators/ranking?period=${period}`,
-      ),
-    retry: false,
-  });
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const [tab, setTab] = useState<Tab>("views");
+  const [period, setPeriod] = useState<MetricsPeriod>({ period: "30d", start: todayInput(), end: todayInput() });
+  const tabs: { value: Tab; label: string; icon: typeof Eye }[] = [
+    { value: "views", label: "Ranking de Visualizações", icon: Eye },
+    ...(isSuperAdmin ? [{ value: "revenue" as const, label: "Ranking de Faturamento", icon: CircleDollarSign }] : []),
+  ];
+  const active = isSuperAdmin ? tab : "views";
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4">
       <header>
-        <h1 className="text-2xl font-semibold text-fg sm:text-3xl">
-          Ranking de conexões
-        </h1>
+        <h1 className="text-2xl font-semibold text-fg sm:text-3xl">Rankings</h1>
       </header>
 
-      <nav
-        aria-label="Período do ranking"
-        className="flex flex-wrap gap-2 rounded-xl border border-line-soft bg-surface p-2"
-      >
-        {periods.map((option) => (
-          <button
-            aria-pressed={period === option.value}
-            className={`min-h-9 rounded-lg px-3 text-xs font-medium transition ${
-              period === option.value
-                ? "bg-brand text-white"
-                : "text-muted hover:bg-brand-soft hover:text-white"
-            }`}
-            key={option.value}
-            onClick={() => setPeriod(option.value)}
-            type="button"
-          >
-            {option.label}
-          </button>
-        ))}
-      </nav>
-
-      {ranking.isLoading ? (
-        <LoadingState label="Carregando ranking da equipe" />
-      ) : ranking.error || !ranking.data ? (
-        <ErrorState message="Não foi possível carregar as conexões da equipe." />
-      ) : (
-        <>
-          <section className="grid gap-3 sm:grid-cols-2">
-            <article className="dashboard-card rounded-xl p-4">
-              <div className="flex items-center gap-2 text-xs text-muted">
-                <UsersRound className="text-accent" size={16} />
-                Contas conectadas no período
-              </div>
-              <p className="mt-2 text-3xl font-semibold text-fg">
-                {count(ranking.data.total_connections)}
-              </p>
-            </article>
-            <article className="dashboard-card rounded-xl p-4">
-              <div className="flex items-center gap-2 text-xs text-muted">
-                <Medal className="text-warning" size={16} />
-                Dias considerados na média
-              </div>
-              <p className="mt-2 text-3xl font-semibold text-fg">
-                {count(ranking.data.days_in_period)}
-              </p>
-            </article>
-          </section>
-
-          <section className="dashboard-card overflow-hidden rounded-xl">
-            <div className="border-b border-line-soft px-4 py-4">
-              <h2 className="font-semibold text-fg">
-                Produção por integrante
-              </h2>
-              <p className="mt-1 text-xs text-muted">
-                Média diária = contas conectadas ÷ dias do período selecionado.
-              </p>
-            </div>
-            {ranking.data.collaborators.length ? (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-left text-sm">
-                  <thead className="bg-surface text-xs text-muted">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">Posição</th>
-                      <th className="px-4 py-3 font-medium">Integrante</th>
-                      <th className="px-4 py-3 text-right font-medium">
-                        Contas conectadas
-                      </th>
-                      <th className="px-4 py-3 text-right font-medium">
-                        Média por dia
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ranking.data.collaborators.map((member) => (
-                      <tr
-                        className="border-t border-line-soft text-fg"
-                        key={member.user_id}
-                      >
-                        <td className="px-4 py-3 font-semibold text-warning">
-                          #{member.position}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="flex items-center gap-3">
-                            <Avatar className="size-9" name={member.full_name} src={member.avatar_url} />
-                            <span className="min-w-0">
-                              <span className="font-medium">{member.full_name}</span>
-                              <span className="ml-2 text-xs text-muted">@{member.nickname}</span>
-                            </span>
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-semibold">
-                          {count(member.connections)}
-                        </td>
-                        <td className="px-4 py-3 text-right text-accent">
-                          {average(member.average_daily_connections)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="p-4 text-sm text-muted">
-                Não há integrantes ativos neste workspace.
-              </p>
-            )}
-          </section>
-        </>
+      {tabs.length > 1 && (
+        <div aria-label="Tipo de ranking" className="inline-flex gap-1 rounded-full bg-well p-1" role="tablist">
+          {tabs.map(({ value, label, icon: Icon }) => (
+            <button
+              aria-selected={active === value}
+              className={`inline-flex min-h-9 items-center gap-2 rounded-full px-4 text-xs font-medium ${active === value ? "bg-brand text-white" : "text-muted"}`}
+              key={value}
+              onClick={() => setTab(value)}
+              role="tab"
+              type="button"
+            >
+              <Icon size={14} /> {label}
+            </button>
+          ))}
+        </div>
       )}
+
+      <PeriodFilter onChange={setPeriod} value={period} />
+
+      <section className="dashboard-card rounded-xl p-4 sm:p-5">
+        <h2 className="mb-4 font-semibold text-fg">
+          {active === "views" ? "Usuários do Flash com mais visualizações" : "Usuários do Flash que mais faturaram"}
+        </h2>
+        {active === "views" ? <ViewsRankingList period={period} /> : <RevenueRankingList period={period} />}
+      </section>
     </div>
   );
 }

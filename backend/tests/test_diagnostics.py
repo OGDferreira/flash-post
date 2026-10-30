@@ -22,9 +22,10 @@ async def _login(client: AsyncClient) -> None:
 
 
 @pytest.mark.anyio
-async def test_workspace_member_can_report_and_read_browser_errors(
+async def test_members_report_errors_but_only_the_super_admin_reads_them(
     client: AsyncClient,
     owner,
+    db_session,
 ) -> None:
     await _login(client)
     token = await _csrf(client)
@@ -45,6 +46,12 @@ async def test_workspace_member_can_report_and_read_browser_errors(
     assert created.json()["source"] == "browser"
     assert created.json()["message"] == "TypeError: example failure"
 
+    # The error log is visible only to the Super Admin.
+    assert (await client.get("/api/diagnostics/events")).status_code == 403
+    assert (await client.get("/api/diagnostics/events.csv")).status_code == 403
+
+    owner[0].platform_role = "SUPER_ADMIN"
+    await db_session.commit()
     listed = await client.get("/api/diagnostics/events")
 
     assert listed.status_code == 200, listed.text

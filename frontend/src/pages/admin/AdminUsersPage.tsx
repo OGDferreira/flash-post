@@ -7,7 +7,6 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Modal } from "@/components/ui/Modal";
 import { apiRequest, type AdminUser, type Page } from "@/services/api";
 import { confirmAction } from "@/lib/confirm";
-import { FeeManagementPanel } from "@/features/partners/FeeManagementPanel";
 
 type PartnerPerms = { post: Record<string, boolean>; bot: Record<string, boolean>; full_panel: boolean };
 const POST_FEATURE_LABELS: [string, string][] = [
@@ -178,8 +177,6 @@ export function AdminUsersPage() {
 
   return (
     <div className="space-y-4">
-      <FeeManagementPanel />
-
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-fg sm:text-3xl">
@@ -242,7 +239,6 @@ export function AdminUsersPage() {
                     <th className="px-4 py-3.5 font-medium">Role</th>
                     <th className="px-4 py-3.5 font-medium">Status</th>
                     <th className="px-4 py-3.5 font-medium">Workspace</th>
-                    <th className="px-4 py-3.5 font-medium">Taxa Flash</th>
                     <th className="px-4 py-3.5 font-medium">Criado em</th>
                     <th className="px-4 py-3.5 font-medium">Último login</th>
                     <th className="px-4 py-3.5 font-medium">Ações</th>
@@ -293,9 +289,6 @@ export function AdminUsersPage() {
                       </td>
                       <td className="px-4 py-4 text-muted">
                         {user.workspace_name ?? "—"}
-                      </td>
-                      <td className="px-4 py-4">
-                        <TransactionFeeCell user={user} />
                       </td>
                       <td className="px-4 py-4 text-muted">
                         {formatDate(user.created_at)}
@@ -396,80 +389,7 @@ export function AdminUsersPage() {
   );
 }
 
-const brl = (value: string | number) => Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-/** The Flash fee each sale of this user's operations pays; the Super Admin sets a special
- * one per user or goes back to the platform default. The Super Admin's own sales never pay. */
-function TransactionFeeCell({ user }: { user: AdminUser }) {
-  const queryClient = useQueryClient();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const save = useMutation({
-    mutationFn: (fee: string | null) =>
-      apiRequest<AdminUser>(`/api/admin/users/${user.id}/transaction-fee`, { method: "PUT", body: { transaction_fee: fee } }),
-    onSuccess: () => {
-      setEditing(false);
-      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
-      void queryClient.invalidateQueries({ queryKey: ["admin", "summary"] });
-    },
-  });
-  if (user.platform_role === "SUPER_ADMIN") return <span className="text-xs text-muted">Isento</span>;
-  const custom = user.transaction_fee !== null && user.transaction_fee !== undefined;
-  if (!editing) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-fg">{brl(user.transaction_fee_effective ?? 0)}</span>
-        <span className={`rounded-md px-1.5 py-0.5 text-[10px] ${custom ? "bg-brand-soft text-accent" : "bg-well text-muted"}`}>
-          {custom ? "especial" : "padrão"}
-        </span>
-        <button
-          className="text-xs text-accent hover:underline"
-          onClick={() => {
-            setDraft(String(user.transaction_fee_effective ?? "").replace(".", ","));
-            setEditing(true);
-          }}
-          type="button"
-        >
-          Alterar
-        </button>
-      </div>
-    );
-  }
-  const value = draft.replace(",", ".").trim();
-  const valid = /^\d{1,2}(\.\d{1,2})?$/.test(value) && Number(value) <= 50;
-  return (
-    <form
-      className="flex flex-wrap items-center gap-1.5"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (valid) save.mutate(Number(value).toFixed(2));
-      }}
-    >
-      <span className="text-xs text-muted">R$</span>
-      <input
-        aria-label={`Taxa Flash de ${user.full_name}`}
-        autoFocus
-        className="field h-8 px-2 text-xs"
-        style={{ width: "5.5rem" }}
-        inputMode="decimal"
-        onChange={(event) => setDraft(event.target.value)}
-        value={draft}
-      />
-      <button className="min-h-8 rounded-lg bg-brand px-2.5 text-xs font-medium text-white disabled:opacity-50" disabled={!valid || save.isPending} type="submit">
-        Salvar
-      </button>
-      {custom && (
-        <button className="text-xs text-muted hover:text-fg" disabled={save.isPending} onClick={() => save.mutate(null)} type="button">
-          Usar padrão
-        </button>
-      )}
-      <button className="text-xs text-muted hover:text-fg" onClick={() => setEditing(false)} type="button">
-        Cancelar
-      </button>
-      {save.error && <span className="w-full text-[11px] text-danger">Não foi possível salvar.</span>}
-    </form>
-  );
-}
 
 export function Pagination({
   page,

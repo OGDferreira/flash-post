@@ -54,6 +54,8 @@ const AdminSystemPage = lazyPage(() => import("@/pages/admin/AdminSystemPage"), 
 const AdminOperationsPage = lazyPage(() => import("@/pages/admin/AdminOperationsPage"), "AdminOperationsPage");
 const AdminFlowsPage = lazyPage(() => import("@/pages/admin/AdminFlowsPage"), "AdminFlowsPage");
 const AdminAwardsPage = lazyPage(() => import("@/pages/admin/AdminAwardsPage"), "AdminAwardsPage");
+const AdminFeesPage = lazyPage(() => import("@/pages/admin/AdminFeesPage"), "AdminFeesPage");
+const LinksPage = lazyPage(() => import("@/pages/LinksPage"), "LinksPage");
 const AdminUsersPage = lazyPage(() => import("@/pages/admin/AdminUsersPage"), "AdminUsersPage");
 const AdminWorkspacesPage = lazyPage(() => import("@/pages/admin/AdminWorkspacesPage"), "AdminWorkspacesPage");
 
@@ -84,7 +86,9 @@ export default function App() {
                   <Route path="/avisos" element={<NoticesPage />} />
                   <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
                   <Route path="/feature/loops" element={<LoopsPage />} />
-                  <Route path="/feature/error-logs" element={<ErrorLogsPage />} />
+                  <Route element={<RequireSuperAdmin />}>
+                    <Route path="/feature/error-logs" element={<ErrorLogsPage />} />
+                  </Route>
                   <Route path="/feature/emails" element={<EmailsPage />} />
                   <Route path="/feature/extensions" element={<ExtensionsPage />} />
                   <Route path="/feature/support" element={<SupportPage />} />
@@ -111,6 +115,7 @@ export default function App() {
                     <Route path="/feature/meta-apps" element={<MetaAppsPage />} />
                     <Route path="/feature/settings" element={<Navigate replace to="/configuracoes" />} />
                     <Route path="/feature/integrations" element={<IntegrationsPage />} />
+                    <Route path="/feature/links" element={<LinksPage />} />
                     <Route
                       path="/feature/finance"
                       element={
@@ -128,6 +133,7 @@ export default function App() {
               <Route element={<AppShell />}>
                 <Route path="/admin" element={<AdminOverviewPage />} />
                 <Route path="/admin/users" element={<AdminUsersPage />} />
+                <Route path="/admin/fees" element={<AdminFeesPage />} />
                 <Route path="/admin/workspaces" element={<AdminWorkspacesPage />} />
                 <Route path="/admin/system" element={<AdminSystemPage />} />
                 <Route path="/admin/operations" element={<AdminOperationsPage />} />

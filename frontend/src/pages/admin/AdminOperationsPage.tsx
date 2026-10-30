@@ -4,10 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { PeriodFilter, isPeriodReady, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { brl } from "@/features/partners/api";
-import { PlatformFeeCard as FlashFeeTodayCard } from "@/components/PlatformFeeCard";
 import { apiRequest } from "@/services/api";
 
-type Data = {
+export type Data = {
   period_label: string;
   users: {
     user_id: string; name: string; email: string; hierarchy: string; chief: string | null; commission_percent: number | null;
@@ -87,7 +86,7 @@ function Table({ title, head, rows }: { title: string; head: string[]; rows: Rea
   );
 }
 
-function PlatformFeeCard() {
+export function PlatformFeeCard() {
   const fee = useQuery({ queryKey: ["admin", "platform-fee"], queryFn: () => apiRequest<{ type: "percent" | "fixed"; value: number }>("/api/admin/platform-fee") });
   const [type, setType] = useState<"percent" | "fixed">("percent");
   const [value, setValue] = useState("0");
@@ -123,7 +122,7 @@ function PlatformFeeCard() {
 }
 
 /** Per-sale Flash fee: the default for everyone, and a custom value for one person. */
-function TransactionFeeCard({ users }: { users: Data["users"] }) {
+export function TransactionFeeCard({ users }: { users: Data["users"] }) {
   const queryClient = useQueryClient();
   const current = useQuery({ queryKey: ["admin", "transaction-fee"], queryFn: () => apiRequest<{ default: number }>("/api/admin/transaction-fee") });
   const [defaultValue, setDefaultValue] = useState("0,40");
@@ -231,9 +230,6 @@ export function AdminOperationsPage() {
         </div>
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>
-      <FlashFeeTodayCard />
-      <PlatformFeeCard />
-      {data && <TransactionFeeCard users={data.users} />}
       {query.isLoading && <LoadingState label="Carregando operações" />}
       {query.error && <ErrorState message="Não foi possível carregar." onRetry={() => void query.refetch()} />}
       {data && (
