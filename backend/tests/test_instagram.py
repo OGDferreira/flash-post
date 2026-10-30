@@ -1670,9 +1670,9 @@ async def test_platform_app_connects_everyone_and_the_super_admin_can_block_a_us
     )
     assert blocked.status_code == 200 and blocked.json()["platform_app_blocked"] is True
 
-    # the blocked user can no longer connect
+    # the blocked user no longer uses the platform app: back to their own Meta apps
     await client.post("/api/auth/logout", headers={"X-CSRF-Token": admin_token})
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
-    assert (await client.get("/api/instagram/apps")).json()["platform"]["blocked"] is True
+    assert (await client.get("/api/instagram/apps")).json()["platform"]["available"] is False
     assert (await client.post("/api/instagram/connect", headers={"X-CSRF-Token": token})).status_code == 403

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, CircleAlert, LoaderCircle, Smartphone, X } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -67,6 +67,14 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
   });
   const appList = apps.data?.apps ?? [];
   const platform = apps.data?.platform;
+  // With the platform app there is nothing to pick: go straight to the Instagram (one tap).
+  const direct = Boolean(platform?.available && !platform.blocked && appList.length === 0);
+  const started = useRef(false);
+  useEffect(() => {
+    if (!direct || started.current) return;
+    started.current = true;
+    connect.mutate("");
+  }, [direct, connect]);
 
   return (
     <section aria-label="Conectar conta do Instagram" className="glass-panel p-4 sm:p-5">
@@ -117,12 +125,12 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
         ) : (
           <button
             className="btn-primary w-full justify-center"
-            disabled={connect.isPending}
+            disabled={connect.isPending || (pendingAppId === "" && !connect.error)}
             onClick={() => connect.mutate("")}
             type="button"
           >
-            {connect.isPending && pendingAppId === "" ? <LoaderCircle className="animate-spin" size={16} /> : <ArrowUpRight size={16} />}
-            Conectar com o Instagram
+            {connect.isPending || (pendingAppId === "" && !connect.error) ? <LoaderCircle className="animate-spin" size={16} /> : <ArrowUpRight size={16} />}
+            {connect.error ? "Tentar novamente" : "Abrindo o Instagram…"}
           </button>
         )
       )}
