@@ -70,11 +70,12 @@ def _platform_app() -> tuple[str, str] | None:
 
 
 async def _ensure_own_apps_allowed(access, db) -> None:
-    """With the platform app on, only the Super Admin registers or picks workspace apps."""
+    """With the platform app on, workspace apps are only for the Super Admin and for users
+    the Super Admin removed from the platform app (they go back to their own apps)."""
     if _platform_app() is None:
         return
     user = await db.get(User, access.membership.user_id)
-    if user is None or user.platform_role != "SUPER_ADMIN":
+    if user is None or not (user.platform_role == "SUPER_ADMIN" or user.platform_app_blocked):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="As contas agora são conectadas pelo app da plataforma; não é preciso cadastrar app próprio.",
@@ -418,15 +419,16 @@ async def list_meta_apps(
     user = await db.get(User, access.membership.user_id)
     is_super_admin = user is not None and user.platform_role == "SUPER_ADMIN"
     blocked = bool(user and user.platform_app_blocked) and not is_super_admin
-    if platform is not None and not is_super_admin:
-        # Everyone connects through the platform app; workspace apps are no longer offered.
+    if platform is not None and not is_super_admin and not blocked:
+        # Everyone connects through the platform app; their own Meta apps stay hidden.
         return InstagramMetaAppsResponse(
             can_manage=False,
             callback_url=_redirect_uri(),
             selected_app_id=None,
             apps=[],
-            platform=InstagramPlatformApp(available=True, blocked=blocked),
+            platform=InstagramPlatformApp(available=True),
         )
+    # Users removed from the platform app go back to their workspace apps.
     return InstagramMetaAppsResponse(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
         callback_url=_redirect_uri(),
@@ -435,7 +437,7 @@ async def list_meta_apps(
             _meta_app_response(app, connected_counts.get(app.id, 0)) for app in apps
         ],
         platform=InstagramPlatformApp(
-            available=platform is not None,
+            available=platform is not None and not blocked,
             app_id=platform[0] if platform is not None and is_super_admin else None,
         ),
     )
