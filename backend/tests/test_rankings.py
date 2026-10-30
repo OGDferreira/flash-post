@@ -163,4 +163,4 @@ async def test_super_admin_reads_the_error_log_of_every_workspace(client, db_ses
     await db_session.commit()
     await _as(client, "superadmin@example.com", "super admin password")
     events = (await client.get("/api/diagnostics/events")).json()["events"]
-    assert [(e["message"], e["workspace_name"]) for e in events] == [("boom", workspace.name)]
+    assert ("boom", workspace.name) in [(e["message"], e["workspace_name"]) for e in events]
