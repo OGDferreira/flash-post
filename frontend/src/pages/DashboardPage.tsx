@@ -1,26 +1,22 @@
 import { EngagementCards } from "@/components/EngagementCards";
-import { NoticesCard, PartnerPanel } from "@/features/partners/PartnerPanel";
-import { TrendBadge } from "@/components/TrendBadge";
-import { MonthResultCards, useFinanceMonth } from "@/components/MonthResultCards";
-import { PlatformFeeCard } from "@/components/PlatformFeeCard";
+import { NoticesCard } from "@/features/partners/PartnerPanel";
+import { ViewsRankingCard } from "@/features/rankings/RankingLists";
+import type { MetricsPeriod } from "@/features/analytics/period";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle,
   ChartNoAxesCombined,
   CircleCheck,
-  Clock3,
-  UserRoundX,
-  UsersRound,
-  Wallet,
+  CircleDollarSign,
   Link2,
+  Receipt,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 
 import type { InstagramAnalyticsSummary } from "@/features/analytics/types";
 import { apiRequest } from "@/services/api";
-import { Avatar } from "@/components/Avatar";
 import { GreetingClock } from "@/components/GreetingClock";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { AlertsBanner } from "@/components/AlertsBanner";
@@ -52,8 +48,8 @@ function localDateInputValue() {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function formatPercent(value: number): string {
-  return `${Math.round(value)}%`;
+function formatMoney(value: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 }
 
 function AnimatedMetricValue({
@@ -100,7 +96,7 @@ function MetricCard({
   target: number | null;
   loading: boolean;
   formatValue?: (value: number) => string;
-  detail: string;
+  detail?: string;
   icon: LucideIcon;
   color: string;
   trend?: ReactNode;
@@ -121,26 +117,14 @@ function MetricCard({
         />
       </p>
       {trend}
-      <p className="dashboard-metric-detail">{detail}</p>
+      {detail && <p className="dashboard-metric-detail">{detail}</p>}
     </article>
   );
 }
 
-/** Days covered by the selected period (null for "Total", which is the average itself). */
-function periodDays(period: AnalyticsPeriod, startDate: string, endDate: string): number | null {
-  if (period === "today" || period === "yesterday") return 1;
-  if (period === "7d") return 7;
-  if (period === "30d") return 30;
-  if (period === "custom") {
-    const days = Math.round((Date.parse(endDate) - Date.parse(startDate)) / 86_400_000) + 1;
-    return days > 0 ? days : null;
-  }
-  return null;
-}
-
 export function DashboardPage() {
   const { user } = useAuth();
-  const [rankingTab, setRankingTab] = useState<"day" | "month">("day");
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
   useInstagramCallbackToast();
   const [period, setPeriod] = useState<AnalyticsPeriod>("today");
   const [startDate, setStartDate] = useState(localDateInputValue);
@@ -191,44 +175,13 @@ export function DashboardPage() {
     staleTime: 5 * 60_000,
   });
   const metrics = metaSummary.data ?? summary.data;
-  const pixGenerated = metrics?.pix_generated ?? 0;
-  const pixPaid = metrics?.pix_paid ?? 0;
-  const pixConversion =
-    pixGenerated > 0 ? Math.round((pixPaid / pixGenerated) * 100) : 0;
-  const accountsWithIssues =
-    (metrics?.errored_accounts ?? 0) +
-    (metrics?.disconnected_accounts ?? 0) +
-    (metrics?.expired_accounts ?? 0);
+  const fastLoading = summary.isFetching && !summary.data;
   const viewsUnavailable =
     !metrics ||
     !metrics.insights_checked ||
     metrics.active_accounts === 0 ||
     metrics.insights_unavailable ||
     metrics.missing_permissions.length > 0;
-  const dailyConnections = metrics?.daily_account_connections ?? [];
-  const dailyConnectionMaximum = Math.max(
-    ...dailyConnections.map(({ connected_accounts }) => connected_accounts),
-    1,
-  );
-  const dailyConnectionPoints = dailyConnections.map(({ connected_accounts }, index) => {
-    const x =
-      dailyConnections.length > 1
-        ? (index / (dailyConnections.length - 1)) * 100
-        : 50;
-    const y = 38 - (connected_accounts / dailyConnectionMaximum) * 30;
-    return `${x},${y}`;
-  });
-  const dailyConnectionArea = dailyConnectionPoints.length
-    ? `0,42 ${dailyConnectionPoints.join(" ")} 100,42`
-    : "";
-  const rankingList =
-    (rankingTab === "day"
-      ? metrics?.account_connection_ranking_today
-      : metrics?.account_connection_ranking_month) ?? [];
-  const topConnectionCount = Math.max(
-    ...rankingList.map(({ connected_accounts }) => connected_accounts),
-    1,
-  );
   const droppedKinds = (metrics?.disconnected_period_accounts ?? []).reduce<Record<string, number>>(
     (acc, item) => ({ ...acc, [item.kind]: (acc[item.kind] ?? 0) + 1 }),
     {},
@@ -241,21 +194,29 @@ export function DashboardPage() {
   ]
     .filter(Boolean)
     .join(" · ");
-  const finance = useFinanceMonth();
-  const days = periodDays(period, startDate, endDate);
-  // Period per-day value vs the all-time daily average (Sharkbot, same source as the cards).
-  const leadTrend = (value: number | undefined, field: "leads" | "pix_generated" | "pix_paid") => {
-    const history = finance.data?.history_per_day;
-    if (value === undefined || !days || !history || (finance.data?.history_days ?? 0) < 2) return undefined;
-    return (
-      <TrendBadge
-        average={history[field]}
-        averageLabel={`${history[field].toLocaleString("pt-BR")}/dia`}
-        current={value / days}
-      />
-    );
-  };
-  const metricsCards = [
+  const rankingPeriod: MetricsPeriod = { period, start: startDate, end: endDate };
+  // A lean panel: revenue, views, accounts and posts of the period. The money free to
+  // withdraw lives only in the wallet.
+  const metricsCards: Parameters<typeof MetricCard>[0][] = [
+    {
+      title: isSuperAdmin ? "Faturado no período" : "Faturamento",
+      target: metrics ? Number(metrics.period_revenue ?? 0) : null,
+      loading: fastLoading,
+      formatValue: formatMoney,
+      icon: CircleDollarSign,
+      color: "text-success",
+    },
+    ...(isSuperAdmin
+      ? []
+      : [
+          {
+            title: "Vendas",
+            target: metrics?.period_sales ?? null,
+            loading: fastLoading,
+            icon: Receipt,
+            color: "text-accent",
+          },
+        ]),
     {
       title: "Visualizações no período",
       target: viewsUnavailable ? null : metrics?.period_views_count ?? null,
@@ -271,113 +232,31 @@ export function DashboardPage() {
       detail:
         viewsUnavailable
           ? metaSummary.isFetching
-            ? "Consultando a Meta; número animado provisório"
+            ? "Consultando a Meta"
             : metaSummary.error
               ? "A Meta não retornou os Insights; consulte as notificações"
               : "Consulte as notificações para verificar os Insights da Meta"
           : metrics?.period_views_count === null || metrics?.period_views_count === undefined
             ? "A Meta não retornou o total do período"
-            : metrics?.views_count !== null && metrics?.views_count !== undefined
-              ? `Acumulado dos vídeos do período: ${formatCount(metrics.views_count)}`
-              : "Ocorridas no período (Insights da Meta)",
+            : "Ocorridas no período (Insights da Meta)",
       icon: ChartNoAxesCombined,
       color: "text-accent",
     },
     {
       title: "Contas ativas",
       target: metrics?.active_accounts ?? null,
-      loading: summary.isFetching && !summary.data,
+      loading: fastLoading,
       detail: "Com autorização válida",
       icon: UsersRound,
       color: "text-accent",
     },
     {
-      title: "Seguidores",
-      target: metrics?.followers_count ?? null,
-      loading: summary.isFetching && !summary.data,
-      detail: metrics?.profile_metrics_unavailable
-        ? "Meta indisponível; mostrando último valor salvo"
-        : "Atualizado diretamente pela Meta",
-      icon: UsersRound,
-      color: "text-accent",
-    },
-    {
-      title: "Mídias nos perfis",
-      target: metrics?.media_count ?? null,
-      loading: summary.isFetching && !summary.data,
-      detail: metrics?.profile_metrics_unavailable
-        ? "Meta indisponível; mostrando último valor salvo"
-        : "Atualizado diretamente pela Meta",
-      icon: ChartNoAxesCombined,
-      color: "text-[#b171ff]",
-    },
-    {
       title: "Posts no período",
       target: metrics?.published_posts ?? null,
-      loading: summary.isFetching && !summary.data,
+      loading: fastLoading,
       detail: "Publicados pelo Flash",
       icon: CircleCheck,
       color: "text-success",
-    },
-    {
-      title: "Na fila",
-      target: metrics?.queued_posts ?? null,
-      loading: summary.isFetching && !summary.data,
-      detail: "Aguardando processamento",
-      icon: Clock3,
-      color: "text-warning",
-    },
-    {
-      title: "Falhas",
-      target: metrics?.failed_posts ?? null,
-      loading: summary.isFetching && !summary.data,
-      detail: "Publicações que precisam de atenção",
-      icon: AlertTriangle,
-      color: "text-danger",
-    },
-    {
-      title: "Contas com erro",
-      target: metrics ? accountsWithIssues : null,
-      loading: summary.isFetching && !summary.data,
-      detail: "Desconectadas ou com autorização expirada",
-      icon: UserRoundX,
-      color: "text-danger",
-    },
-    {
-      title: "Leads Sharkbot",
-      target: metrics?.leads ?? null,
-      trend: leadTrend(metrics?.leads, "leads"),
-      loading: summary.isFetching && !summary.data,
-      detail: "Recebidos no período",
-      icon: UsersRound,
-      color: "text-accent",
-    },
-    {
-      title: "Pix gerados",
-      target: metrics?.pix_generated ?? null,
-      trend: leadTrend(metrics?.pix_generated, "pix_generated"),
-      loading: summary.isFetching && !summary.data,
-      detail: "Pagamentos iniciados no período",
-      icon: Wallet,
-      color: "text-warning",
-    },
-    {
-      title: "Pix pagos",
-      target: metrics?.pix_paid ?? null,
-      trend: leadTrend(metrics?.pix_paid, "pix_paid"),
-      loading: summary.isFetching && !summary.data,
-      detail: "Pagamentos aprovados no período",
-      icon: CircleCheck,
-      color: "text-success",
-    },
-    {
-      title: "Conversão de Pix",
-      target: metrics ? pixConversion : null,
-      loading: summary.isFetching && !summary.data,
-      formatValue: formatPercent,
-      detail: "Pagos em relação aos gerados no período",
-      icon: ChartNoAxesCombined,
-      color: "text-[#b171ff]",
     },
   ];
 
@@ -440,183 +319,42 @@ export function DashboardPage() {
       )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
-        <div className="min-w-0 space-y-4">
-          <main className="dashboard-layout">
-            <section
-              aria-label="Indicadores numéricos do workspace"
-              className="dashboard-metrics"
-            >
-              <article className="dashboard-card dashboard-metric-card">
-                <div className="dashboard-metric-heading">
-                  <span className="dashboard-metric-icon text-accent">
-                    <Link2 size={16} />
-                  </span>
-                  <h2 className="dashboard-metric-title">Conexões do período</h2>
-                </div>
-                <div className="flex items-end gap-3 sm:gap-4">
-                  <div>
-                    <p className="dashboard-metric-value text-success">{formatCount(metrics?.connected_period)}</p>
-                    <p className="text-[10px] text-muted sm:text-[11px]">conectadas</p>
-                  </div>
-                  <div>
-                    <p className="dashboard-metric-value text-danger">{formatCount(metrics?.disconnected_period)}</p>
-                    <p className="text-[10px] text-muted sm:text-[11px]">desconectadas</p>
-                  </div>
-                </div>
-                <p className="dashboard-metric-detail">
-                  {droppedDetail || "Nenhuma queda de conta no período"}
-                </p>
-              </article>
-              {user?.role === "SUPER_ADMIN" && <PlatformFeeCard />}
-              <MonthResultCards hideCollaboratorDue hideMonthlyProfit />
-              {metricsCards.map((metric) => (
-                <MetricCard key={metric.title} {...metric} />
-              ))}
-              <EngagementCards />
-            </section>
-            <div className="mt-4">
-              <PartnerPanel />
-            </div>
-          </main>
+        <main className="dashboard-layout min-w-0">
           <section
-            aria-label="Resumo da equipe e novas contas"
-            className="grid gap-4"
+            aria-label="Indicadores numéricos do workspace"
+            className="dashboard-metrics"
           >
-
-            <article className="dashboard-card rounded-xl p-4">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-[0.12em] text-accent">
-                  Crescimento
-                </p>
-                <h2 className="mt-1 text-base font-semibold text-fg">
-                  Novas contas por dia
-                </h2>
-                <p className="mt-1 text-xs text-muted">
-                  No máximo 30 dias do período selecionado
-                </p>
+            <article className="dashboard-card dashboard-metric-card">
+              <div className="dashboard-metric-heading">
+                <span className="dashboard-metric-icon text-accent">
+                  <Link2 size={16} />
+                </span>
+                <h2 className="dashboard-metric-title">Conexões do período</h2>
               </div>
-              {dailyConnections.length ? (
-                <>
-                  <svg
-                    aria-label="Gráfico diário de contas conectadas"
-                    className="mt-4 h-28 w-full overflow-visible"
-                    preserveAspectRatio="none"
-                    role="img"
-                    viewBox="0 0 100 44"
-                  >
-                    <defs>
-                      <linearGradient id="accountConnectionsFill" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="#7187ff" stopOpacity="0.34" />
-                        <stop offset="100%" stopColor="#7187ff" stopOpacity="0.01" />
-                      </linearGradient>
-                    </defs>
-                    <polygon fill="url(#accountConnectionsFill)" points={dailyConnectionArea} />
-                    <polyline
-                      fill="none"
-                      points={dailyConnectionPoints.join(" ")}
-                      stroke="#8295ff"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="1.5"
-                      vectorEffect="non-scaling-stroke"
-                    />
-                  </svg>
-                  <div className="flex justify-between text-[10px] text-muted">
-                    <span>
-                      {new Intl.DateTimeFormat("pt-BR", {
-                        day: "2-digit",
-                        month: "short",
-                        timeZone: "America/Sao_Paulo",
-                      }).format(new Date(`${dailyConnections[0].day}T12:00:00`))}
-                    </span>
-                    <span>
-                      {new Intl.DateTimeFormat("pt-BR", {
-                        day: "2-digit",
-                        month: "short",
-                        timeZone: "America/Sao_Paulo",
-                      }).format(
-                        new Date(
-                          `${dailyConnections[dailyConnections.length - 1].day}T12:00:00`,
-                        ),
-                      )}
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <p className="mt-4 text-sm text-muted">
-                  Sem dados diários de conexão para exibir.
-                </p>
-              )}
+              <div className="flex items-end gap-3 sm:gap-4">
+                <div>
+                  <p className="dashboard-metric-value text-success">{formatCount(metrics?.connected_period)}</p>
+                  <p className="text-[10px] text-muted sm:text-[11px]">conectadas</p>
+                </div>
+                <div>
+                  <p className="dashboard-metric-value text-danger">{formatCount(metrics?.disconnected_period)}</p>
+                  <p className="text-[10px] text-muted sm:text-[11px]">desconectadas</p>
+                </div>
+              </div>
+              <p className="dashboard-metric-detail">
+                {droppedDetail || "Nenhuma queda de conta no período"}
+              </p>
             </article>
+            {metricsCards.map((metric) => (
+              <MetricCard key={metric.title} {...metric} />
+            ))}
+            <EngagementCards />
           </section>
-        </div>
+        </main>
         {/* Notices and ranking: right column on desktop, below everything on smaller screens. */}
         <aside className="space-y-4 xl:sticky xl:top-20">
-          <NoticesCard />
-          <article className="dashboard-card rounded-xl p-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.12em] text-accent">
-                Equipe
-              </p>
-              <h2 className="mt-1 text-base font-semibold text-fg">
-                Ranking de conexões
-              </h2>
-              <p className="mt-1 text-xs text-muted">
-                Contas novas conectadas {rankingTab === "day" ? "hoje" : "neste mês"}
-              </p>
-            </div>
-            <div className="mt-3 inline-flex gap-1 rounded-full bg-well p-1" role="tablist" aria-label="Período do ranking">
-              {([["day", "Dia"], ["month", "Mensal"]] as const).map(([value, label]) => (
-                <button
-                  aria-selected={rankingTab === value}
-                  className={`min-h-8 rounded-full px-4 text-xs font-medium ${rankingTab === value ? "bg-brand text-white" : "text-muted"}`}
-                  key={value}
-                  onClick={() => setRankingTab(value)}
-                  role="tab"
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {rankingList.length ? (
-              <ol className="mt-4 space-y-3">
-                {rankingList.slice(0, 5).map((member, index) => (
-                  <li className="flex items-center gap-3" key={member.user_id}>
-                    <span className="w-4 shrink-0 text-center text-xs font-semibold text-muted">{index + 1}</span>
-                    <Avatar className="size-8" name={member.full_name} src={member.avatar_url} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="truncate text-sm text-fg">
-                          {member.full_name}
-                        </span>
-                        <span className="shrink-0 text-xs text-muted">
-                          {formatCount(member.connected_accounts)}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex items-center gap-2">
-                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-well">
-                          <div
-                            className="h-full rounded-full bg-brand-strong"
-                            style={{
-                              width: `${(member.connected_accounts / topConnectionCount) * 100}%`,
-                            }}
-                          />
-                        </div>
-                        <span className="text-[10px] text-muted">
-                          {member.role === "OWNER" ? "Chefe" : "Colaborador"}
-                        </span>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="mt-4 text-sm text-muted">
-                Nenhuma conexão registrada {rankingTab === "day" ? "hoje" : "neste mês"}.
-              </p>
-            )}
-          </article>
+          <NoticesCard side />
+          <ViewsRankingCard period={rankingPeriod} />
         </aside>
       </div>
     </div>

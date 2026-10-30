@@ -33,6 +33,7 @@ from app.models import (
     InstagramPublicationJob,
     SharkLead,
     SharkTransaction,
+    TgOrder,
     User,
     WorkspaceMember,
 )
@@ -517,6 +518,23 @@ async def get_analytics_summary(
         if event_account_id is not None:
             event_counts.setdefault(event_account_id, {})["pix_paid"] = count
             event_amounts[event_account_id] = Decimal(str(amount or 0))
+    # Sales of the period (Flash bot orders + SharkBot payments): the "Vendas" and
+    # "Faturamento" cards. Flash bot orders have no Instagram account, so an account
+    # filter keeps only SharkBot.
+    period_sales = total_event_counts.get("pix_paid", 0)
+    period_revenue = pix_paid_amount
+    if account_ids is None:
+        flash_sales, flash_revenue = (
+            await db.execute(
+                select(func.count(TgOrder.id), func.coalesce(func.sum(TgOrder.amount), 0)).where(
+                    TgOrder.workspace_id == access.workspace.id,
+                    TgOrder.status == "paid",
+                    *_in_period(TgOrder.paid_at),
+                )
+            )
+        ).one()
+        period_sales += int(flash_sales or 0)
+        period_revenue += Decimal(str(flash_revenue or 0))
     paid_without_amount = (
         await db.scalar(
             select(func.count(SharkTransaction.id)).where(
@@ -772,6 +790,8 @@ async def get_analytics_summary(
         pix_paid=total_event_counts.get("pix_paid", 0),
         pix_paid_amount=pix_paid_amount.quantize(Decimal("0.01")),
         pix_paid_without_amount=paid_without_amount,
+        period_sales=period_sales,
+        period_revenue=period_revenue.quantize(Decimal("0.01")),
         accounts=account_metrics,
         daily_publications=daily_publications,
         daily_revenue=daily_revenue,

@@ -15,7 +15,7 @@ import {
   Inbox,
   LayoutDashboard,
   LifeBuoy,
-  Mail,
+  Link2,
   Megaphone,
   MessageCircle,
   Puzzle,
@@ -53,7 +53,7 @@ export const PARTNER_FEATURE_BY_ROUTE: Record<string, ["post" | "bot", string]> 
   "/carteira": ["bot", "wallet"],
 };
 // Essential account pages a sócio can always reach.
-const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos"]);
+const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/feature/links"]);
 
 function matchBase(path: string): string | null {
   const keys = [...Object.keys(PARTNER_FEATURE_BY_ROUTE), ...PARTNER_ALWAYS_ALLOWED];
@@ -77,6 +77,7 @@ export function partnerCanOpen(permissions: PartnerPermissions | null | undefine
 export const adminLinks: NavItem[] = [
   { label: "Visão geral", short: "Início", to: "/admin", icon: Home },
   { label: "Usuários", to: "/admin/users", icon: Users },
+  { label: "Gerenciamento de Taxas", short: "Taxas", to: "/admin/fees", icon: Receipt },
   { label: "Saques dos sócios", short: "Saques", to: "/admin/partner-wallets", icon: Wallet },
   { label: "Gateways de pagamento", short: "Gateways", to: "/bot/gateways", icon: CircleDollarSign },
   { label: "Operações", to: "/admin/operations", icon: BarChart3 },
@@ -115,53 +116,38 @@ const postGroups: NavGroup[] = [
     icon: Users,
     items: [
       { label: "Contas conectadas", short: "Contas", to: "/feature/accounts", icon: Users },
-      { label: "E-mails das contas", short: "E-mails", to: "/feature/emails", icon: Mail },
+      { label: "Pastas de perfis", short: "Pastas", to: "/feature/profile-folders", icon: Folder },
+      { label: "Loops", to: "/feature/loops", icon: InfinityIcon },
+      { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
     ],
   },
   {
-    id: "pastas",
-    title: "Pastas",
-    icon: Folder,
-    items: [{ label: "Pastas de perfis", short: "Pastas", to: "/feature/profile-folders", icon: Folder }],
-  },
-  {
-    id: "loops",
-    title: "Loops",
-    icon: InfinityIcon,
-    items: [{ label: "Loops de publicação", short: "Loops", to: "/feature/loops", icon: InfinityIcon }],
-  },
-  {
     id: "metricas",
-    title: "Métricas e relatórios",
+    title: "Métricas e Relatórios",
     icon: ChartNoAxesCombined,
     items: [
       { label: "Métricas", to: "/feature/analytics", icon: ChartNoAxesCombined },
       { label: "Financeiro", to: "/feature/finance", icon: CircleDollarSign },
-    ],
-  },
-  {
-    id: "automacoes",
-    title: "Automações e filas",
-    icon: Clapperboard,
-    items: [
       { label: "Feed", to: "/feature/feed", icon: Clapperboard },
-      { label: "Log de erros", to: "/feature/error-logs", icon: Bug },
     ],
   },
   {
-    id: "equipe",
-    title: "Colaboradores e compartilhamentos",
-    icon: UsersRound,
-    items: [{ label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound }],
+    id: "integracoes",
+    title: "Integrações",
+    icon: Blocks,
+    items: [
+      { label: "Apps Meta", to: "/feature/meta-apps", icon: Settings2 },
+      { label: "Webhooks", to: "/feature/integrations", icon: Blocks },
+      { label: "Extensões", to: "/feature/extensions", icon: Puzzle },
+      { label: "Links", to: "/feature/links", icon: Link2 },
+    ],
   },
   {
     id: "configuracoes",
     title: "Configurações",
     icon: Settings,
     items: [
-      { label: "Apps Meta", to: "/feature/meta-apps", icon: Settings2 },
-      { label: "Webhooks", to: "/feature/integrations", icon: Blocks },
-      { label: "Extensões", to: "/feature/extensions", icon: Puzzle },
+      { label: "Log de erros", to: "/feature/error-logs", icon: Bug },
       { label: "Notificações", to: "/feature/notifications", icon: Bell },
       { label: "Avisos", to: "/avisos", icon: Bell },
       { label: "Configurações", to: "/configuracoes", icon: Settings },
@@ -186,6 +172,7 @@ const partnerPostRoutes = new Set([
   "/feature/meta-apps", // their own Meta apps, to connect their own accounts (only they see them)
   "/feature/loops",
   "/feature/ranking",
+  "/feature/links",
   "/configuracoes",
   "/avisos",
   "/feature/support",
@@ -198,11 +185,10 @@ const collaboratorRoutes = new Set([
   "/dashboard",
   "/feature/accounts",
   "/feature/loops",
-  "/feature/error-logs",
-  "/feature/emails",
   "/feature/extensions",
   "/feature/support",
   "/feature/contacts",
+  "/feature/links",
   "/configuracoes",
   "/avisos",
 ]);
@@ -333,8 +319,8 @@ function buildNavigationFor(opts: {
   return { app, direct: [], flat: [], groups: [], admin };
 }
 
-// Shown only to the Super Admin (the platform's Meta app is managed there).
-export const SUPER_ADMIN_ONLY_ROUTES = new Set(["/feature/meta-apps"]);
+// Shown only to the Super Admin (the platform's Meta app and the error log).
+export const SUPER_ADMIN_ONLY_ROUTES = new Set(["/feature/meta-apps", "/feature/error-logs"]);
 
 export function buildNavigation(opts: Parameters<typeof buildNavigationFor>[0]): NavModel {
   const model = buildNavigationFor(opts);

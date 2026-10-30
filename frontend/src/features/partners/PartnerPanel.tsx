@@ -1,10 +1,8 @@
 import { useState } from "react";
-import { Bell, Handshake, Info } from "lucide-react";
+import { Bell } from "lucide-react";
 
-import { PeriodFilter, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { useWallet } from "@/features/wallet/api";
-import { brl, useMarkNoticesRead, useNotices, usePartnerMe, type Sale, type SaleTotals } from "./api";
+import { brl, useMarkNoticesRead, useNotices, type Sale, type SaleTotals } from "./api";
 import { SaleReceiptModal } from "./SaleReceipt";
 
 const percent = (value: number | null | undefined) =>
@@ -84,60 +82,6 @@ export function SalesTable({ sales, showCommission = true }: { sales: Sale[]; sh
         </tbody>
       </table>
     </div>
-  );
-}
-
-/** Partners only see what they billed, the net free to withdraw and what was already paid out. */
-function PartnerBalance({ totals }: { totals: SaleTotals | null }) {
-  const wallet = useWallet();
-  const items: [string, string, string?][] = [
-    ["Faturado", brl(totals?.gross ?? 0)],
-    ["Líquido para saque", wallet.data ? brl(wallet.data.available) : "—", "text-success"],
-    ["Já sacado", wallet.data ? brl(wallet.data.withdrawn) : "—"],
-  ];
-  return (
-    <dl className="grid grid-cols-3 gap-2">
-      {items.map(([title, value, tone]) => (
-        <div className="min-w-0 rounded-xl border border-line-soft bg-surface-inset px-3 py-2" key={title}>
-          <dt className="truncate text-[11px] text-muted" title={title}>{title}</dt>
-          <dd className={`mt-1 text-base font-semibold ${tone ?? "text-fg"}`}>{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-/** Dashboard card for partners: see what they billed and their balance. */
-export function PartnerPanel() {
-  const [period, setPeriod] = useState<MetricsPeriod>({
-    period: "30d",
-    start: todayInput(),
-    end: todayInput(),
-  });
-  const me = usePartnerMe(periodParams(period));
-  const data = me.data;
-  if (!data?.partnership) return null;
-  const p = data.partnership;
-  return (
-    <section className="dashboard-card glass-panel space-y-3 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="flex items-center gap-2 text-base font-semibold text-fg">
-            <Handshake className="text-accent" size={17} /> Sociedade com {p.chief_name}
-          </h3>
-          <p className="mt-1 text-xs text-muted">
-            Comissão definida pelo sócio que convidou: <strong className="text-fg">{percent(p.proposed_percent)}</strong> · {data.period_label}
-          </p>
-        </div>
-      </div>
-      <PeriodFilter onChange={setPeriod} showCustom={false} value={period} />
-      <PartnerBalance totals={data.totals} />
-      <SalesTable sales={data.sales.slice(0, 8)} showCommission={false} />
-      <p className="flex gap-2 text-[11px] leading-5 text-muted">
-        <Info className="mt-0.5 shrink-0" size={13} />
-        {data.basis}
-      </p>
-    </section>
   );
 }
 

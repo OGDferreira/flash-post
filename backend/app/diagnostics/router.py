@@ -12,6 +12,7 @@ from app.auth.dependencies import (
     DbSession,
     WorkspaceMemberAccess,
     require_csrf,
+    require_super_admin,
 )
 from app.core.time import utc_now
 from app.models import DiagnosticsEvent
@@ -74,7 +75,8 @@ def _filtered_events_query(
     return query.order_by(DiagnosticsEvent.created_at.desc(), DiagnosticsEvent.id.desc())
 
 
-@router.get("/events", response_model=DiagnosticsEventsResponse)
+# Reading the error log is for the Super Admin only; every member still reports errors.
+@router.get("/events", response_model=DiagnosticsEventsResponse, dependencies=[Depends(require_super_admin)])
 async def list_diagnostics_events(
     access: WorkspaceMemberAccess,
     db: DbSession,
@@ -98,7 +100,7 @@ async def list_diagnostics_events(
     )
 
 
-@router.get("/events.csv")
+@router.get("/events.csv", dependencies=[Depends(require_super_admin)])
 async def export_diagnostics_events(
     access: WorkspaceMemberAccess,
     db: DbSession,

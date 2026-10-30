@@ -50,6 +50,9 @@ export type InstagramAnalyticsSummary = {
   pix_generated: number;
   pix_paid: number;
   pix_paid_amount: string;
+  /** Paid sales of the period (Flash bot + SharkBot): count and gross amount. */
+  period_sales?: number;
+  period_revenue?: string;
   accounts: InstagramAnalyticsAccount[];
   daily_publications: { day: string; published_posts: number }[];
   daily_revenue: { day: string; amount: string }[];
