@@ -213,7 +213,7 @@ export function UpsellSection({ draft, set }: SectionProps) {
             open={open === index}
             onToggle={() => toggle(index)}
             title={`Sequência ${index + 1} · ${step.name}`}
-            subtitle={`${brl(step.price || 0)} · ${delayLabel(step.delay_minutes)}`}
+            subtitle={`${brl(step.price || 0)} · na hora`}
             actions={
               <StepActions
                 canCopy={draft.upsells.length < 20}
@@ -223,9 +223,6 @@ export function UpsellSection({ draft, set }: SectionProps) {
             }
           >
             <MediaGrid max={3} value={step.media_ids} onChange={(media_ids) => setStep(index, { media_ids })} />
-            <Field label={index === 0 ? "Enviar (depois do pagamento)" : "Enviar (depois da resposta anterior)"}>
-              <DelayInput value={step.delay_minutes} onChange={(delay_minutes) => setStep(index, { delay_minutes })} />
-            </Field>
             <RichTextEditor
               label="Mensagem"
               required

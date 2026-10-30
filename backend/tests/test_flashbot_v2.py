@@ -204,8 +204,10 @@ async def test_upsell_after_payment_accept_and_decline_move_through_the_sequence
     apis.pix_amount = 49.90
     await _pay(client, db_session, up_order)
     assert "Chamada agendada" in [m["text"] for m in apis.methods("sendMessage")]
-    await _run_jobs_now(db_session)
+    # no wait at all: the next step goes out with the payment, even with a delay set
     assert apis.methods("sendMessage")[-1]["text"] == "Pack?"
+    # an upsell follows every payment, so no "payment approved" message is sent
+    assert not any(m["text"].startswith("Pagamento aprovado") for m in apis.methods("sendMessage"))
     # declining the last step just ends the series (double tap is harmless)
     await _send(client, db_session, bot["id"], _tap(f"upn:1:{chain}"))
     await _send(client, db_session, bot["id"], _tap(f"upn:1:{chain}"))

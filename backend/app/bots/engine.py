@@ -588,13 +588,12 @@ def upsell_plan(index: int, step: UpsellStep) -> Plan:
     return Plan(id=f"up{index}", name=step.name, price=step.price, duration_days=step.duration_days, delivery=step.delivery)
 
 
-async def schedule_upsell(
-    db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, chain: str, immediate: bool = False,
-) -> None:
-    """``chain`` (the first order of the series) keys the jobs so double taps never repeat a step."""
+async def schedule_upsell(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, chain: str) -> None:
+    """Upsells never wait: each step goes out right after the payment (or the "no" tap) of the
+    previous one. ``chain`` (the first order of the series) keys the jobs so double taps
+    never repeat a step."""
     if 0 <= index < len(flow.upsells):
-        run = utcnow() + (timedelta() if immediate else timedelta(minutes=flow.upsells[index].delay_minutes))
-        await schedule(db, bot, "send_upsell", run, f"upsell:{chain}:{index}", lead, {"index": index, "chain": chain})
+        await schedule(db, bot, "send_upsell", utcnow(), f"upsell:{chain}:{index}", lead, {"index": index, "chain": chain})
 
 
 async def send_upsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, chain: str) -> None:
@@ -1431,8 +1430,13 @@ async def approve_order(
     flow = await load_flow(db, bot, lead)
     plan, bump, info = order_parts(order)
     delivery = plan.delivery or (flow.default_delivery if flow else None)
+    # When an upsell follows, there is no "payment approved" message: the next offer goes
+    # out at once, so the buyer feels no pause.
+    upsell_next = bool(flow and flow.upsells) and (
+        info.get("kind") == "upsell" or delivery is None or delivery.type == "upsell" or delivery.start_upsell
+    )
     try:
-        if flow:
+        if flow and not upsell_next:
             await tg.send_message(lead.chat_id, render(flow.payment.approved_text, lead, order.offer_name, order.amount, bot))
         if delivery and delivery.type != "upsell":
             await deliver(db, tg, bot, lead, order, plan, delivery)
@@ -1442,11 +1446,11 @@ async def approve_order(
     except TelegramError as exc:
         bot.last_error = str(exc)[:500]
         logger.warning("Delivery for order %s failed: %s", order.id, exc)
-    if flow and flow.upsells:
+    if flow and upsell_next:
         if info.get("kind") == "upsell":
-            await schedule_upsell(db, bot, lead, flow, int(info.get("step") or 0) + 1, str(info.get("chain") or order.id.hex), True)
-        elif delivery is None or delivery.type == "upsell" or delivery.start_upsell:
-            await schedule_upsell(db, bot, lead, flow, 0, order.id.hex, True)
+            await schedule_upsell(db, bot, lead, flow, int(info.get("step") or 0) + 1, str(info.get("chain") or order.id.hex))
+        else:
+            await schedule_upsell(db, bot, lead, flow, 0, order.id.hex)
     await db.commit()
     # The next step of the sequence goes out right after the payment, no tap needed.
     try:
