@@ -2,8 +2,10 @@ import { useState } from "react";
 import { Bell, Handshake, Info } from "lucide-react";
 
 import { PeriodFilter, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { useWallet } from "@/features/wallet/api";
 import { brl, useMarkNoticesRead, useNotices, usePartnerMe, type Sale, type SaleTotals } from "./api";
+import { SaleReceiptModal } from "./SaleReceipt";
 
 const percent = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
@@ -37,9 +39,14 @@ export function TotalsGrid({ totals, commissionLabel = "Comissão do sócio", ne
 }
 
 export function SalesTable({ sales, showCommission = true }: { sales: Sale[]; showCommission?: boolean }) {
+  const { user } = useAuth();
+  // The "contracheque" of each sale is for the Super Admin only.
+  const canOpenReceipt = user?.role === "SUPER_ADMIN";
+  const [receiptFor, setReceiptFor] = useState<string | null>(null);
   if (sales.length === 0) return <p className="text-xs text-muted">Nenhuma venda paga no período.</p>;
   return (
     <div className="overflow-x-auto rounded-xl border border-line-soft">
+      <SaleReceiptModal onClose={() => setReceiptFor(null)} orderId={receiptFor} />
       <table className="w-full min-w-[560px] text-left text-xs">
         <thead className="text-muted">
           <tr className="border-b border-line-soft">
@@ -48,6 +55,7 @@ export function SalesTable({ sales, showCommission = true }: { sales: Sale[]; sh
             <th className="px-2 py-2 text-right font-medium">Taxa</th>
             {showCommission && <th className="px-2 py-2 text-right font-medium">Comissão</th>}
             <th className="px-3 py-2 text-right font-medium">Líquido</th>
+            {canOpenReceipt && <th className="px-3 py-2 text-right font-medium">Dados</th>}
           </tr>
         </thead>
         <tbody>
@@ -64,6 +72,13 @@ export function SalesTable({ sales, showCommission = true }: { sales: Sale[]; sh
               <td className="px-2 py-2 text-right text-muted">{brl(sale.fee)}</td>
               {showCommission && <td className="px-2 py-2 text-right text-fg">{brl(sale.commission)}</td>}
               <td className="px-3 py-2 text-right font-semibold text-success">{brl(sale.net)}</td>
+              {canOpenReceipt && (
+                <td className="px-3 py-2 text-right">
+                  <button className="text-accent hover:underline" onClick={() => setReceiptFor(sale.id)} type="button">
+                    Dados da venda
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

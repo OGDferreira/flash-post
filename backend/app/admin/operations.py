@@ -298,6 +298,69 @@ async def set_platform_fee(payload: PlatformFee, admin: SuperAdminUser, db: DbSe
     return {"type": payload.type, "value": float(payload.value)}
 
 
+# ------------------------------------------------------------------ sale receipt ("contracheque")
+
+ORIGIN_LABELS = {
+    "main": "Venda própria da plataforma",
+    "own_funnel": "Funil próprio do vendedor",
+    "shared_funnel": "Funil compartilhado (comissão do chefe)",
+    "owner_all": "Funil compartilhado (100% do dono)",
+}
+
+
+@router.get("/orders/{order_id}/receipt")
+async def sale_receipt(order_id: uuid.UUID, _admin: SuperAdminUser, db: DbSession) -> dict:
+    """Everything that happened to one sale's money: gross, the gateway fee, the Flash fee, the
+    platform fee, the chief's commission (and its base) and what was left to the seller."""
+    order = await db.get(TgOrder, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Venda não encontrada.")
+    workspace = await db.get(Workspace, order.workspace_id)
+    seller = await db.get(User, workspace.owner_id) if workspace else None
+    chief = await db.get(User, order.split_chief_user_id) if order.split_chief_user_id else None
+
+    def value(amount: Decimal | None) -> float | None:
+        return float(amount) if amount is not None else None
+
+    cent = Decimal("0.01")
+    gross = order.amount
+    net = order.net_amount
+    if net is None and order.gateway_fee is not None:
+        net = (gross - order.gateway_fee).quantize(cent)
+    flash_fee = order.transaction_fee or Decimal("0.00")
+    platform_extra = Decimal("0.00")
+    if order.platform_fee is not None and order.origin == "own_funnel":
+        platform_extra = max(Decimal("0.00"), (order.platform_fee - flash_fee).quantize(cent))
+    base = (net - flash_fee - platform_extra).quantize(cent) if net is not None else None
+    platform_total = (flash_fee + platform_extra).quantize(cent)
+    return {
+        "id": str(order.id),
+        "offer_name": order.offer_name,
+        "status": order.status,
+        "origin": order.origin,
+        "origin_label": ORIGIN_LABELS.get(order.origin or "", "Venda"),
+        "gateway": order.gateway,
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+        "gross": value(gross),
+        "gateway_fee": value(order.gateway_fee),
+        "gateway_net": value(net),
+        "flash_fee": value(flash_fee),
+        "platform_fee": value(platform_extra),
+        "commission_base": value(base),
+        "chief": {
+            "name": chief.full_name,
+            "percent": value(order.split_percent),
+            "amount": value(order.split_amount),
+        } if chief else None,
+        "seller": {
+            "name": seller.full_name if seller else "—",
+            "amount": value(order.partner_net),
+        },
+        "platform_total": value(platform_total),
+    }
+
+
 # ------------------------------------------------------------------ per-sale fee (Flash Bot)
 
 

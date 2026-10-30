@@ -15,7 +15,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -171,12 +171,45 @@ class BillingRoute:
     # A shared SnakePay funnel the seller can only sell after saving their own SnakePay key.
     needs_seller_snakepay: bool = False
 
+    def chief_commission(self, net: Decimal) -> Decimal:
+        """The chief's commission: ``percent`` of the sale's net after EVERY fee (the gateway's,
+        already out of ``net``, and the Flash fee), rounded down to the centavo.
+        Ex.: R$ 5,90 − 0,65 gateway − 0,50 Flash = 4,75 → 30% = R$ 1,42."""
+        base = net - self.transaction_fee
+        if self.percent is None or base <= 0:
+            return Decimal("0.00")
+        return (base * self.percent / Decimal(100)).quantize(CENT, ROUND_DOWN)
+
     def preview(self, net: Decimal | None) -> tuple[Decimal | None, Decimal | None]:
         """(chief commission, partner net) from the net after the gateway fee."""
         if net is None or self.percent is None:
             return None, None
-        commission = money(net * self.percent / Decimal(100))
+        commission = self.chief_commission(net)
         return commission, money(net - commission - self.transaction_fee)
+
+    def chief_share_percent(self, net: Decimal | None) -> Decimal | None:
+        """The chief's commission as a percentage of the gateway's net (what a split rule takes),
+        so that it equals ``percent`` of the net after the Flash fee. Rounded down: the chief
+        never gets more than the rule. ``net`` is the gateway net (exact or estimated); the result
+        barely depends on small errors in it."""
+        if self.percent is None:
+            return None
+        if net is None or net <= 0:
+            return self.percent
+        base = net - self.transaction_fee
+        if base <= 0:
+            return Decimal("0.00")
+        return (self.percent * base / net).quantize(CENT, ROUND_DOWN)
+
+    def gateway_splits(self, net: Decimal | None) -> list[dict]:
+        """The split rules to send to a percent-of-net gateway (SmokePay, Athenas Pay): the chief's
+        rule (the first one on a shared funnel) carries the commission over the net after fees."""
+        splits = [dict(rule) for rule in self.splits]
+        if self.origin == "shared_funnel" and not self.owner_all and self.percent is not None and splits:
+            chief = splits[0]
+            if "percent" in chief:
+                chief["percent"] = float(self.chief_share_percent(net) or Decimal("0"))
+        return splits
 
     def drop_transaction_fee(self) -> None:
         """Take the transaction fee back out of the splits (when the gateway refuses them)."""

@@ -41,8 +41,10 @@ from app.partners import service
 router = APIRouter(prefix="/api/partners", tags=["Partners"])
 
 SPLIT_BASIS = (
-    "O split é feito pelo gateway na cobrança: do valor líquido após a taxa, o percentual definido "
-    "pelo sócio que convida vai para ele e o restante fica para o sócio dono da operação."
+    "O split é feito pelo gateway na cobrança. A comissão do sócio que convida é o percentual definido "
+    "sobre o líquido da venda depois de TODAS as taxas (taxa do gateway e taxa Flash por venda), "
+    "arredondada para baixo no centavo; o restante fica para o sócio dono da operação. "
+    "Ex.: venda de R$ 5,90 − R$ 0,65 de gateway − R$ 0,50 de taxa Flash = R$ 4,75; 30% = R$ 1,42."
 )
 
 
