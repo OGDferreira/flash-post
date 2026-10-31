@@ -39,7 +39,7 @@ async def test_campaign_reaches_the_funnel_audience_and_sells(client, db_session
     await _send(client, db_session, bot["id"], _start())
 
     reach = await client.post("/api/bots/campaigns/estimate", headers=headers, json={"flow_id": flow["id"], "audience": {"target": "not_bought"}})
-    assert reach.json() == {"reach": 1, "blocked": 0}
+    assert reach.json() == {"reach": 1, "blocked": 0, "partners": 0}
     bought = await client.post("/api/bots/campaigns/estimate", headers=headers, json={"flow_id": flow["id"], "audience": {"target": "bought"}})
     assert bought.json()["reach"] == 0
 

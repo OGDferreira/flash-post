@@ -166,7 +166,7 @@ export function CampaignEditor({
   const estimate = useQuery({
     queryKey: ["bots", "campaign-estimate", flowId, audienceKey],
     queryFn: () =>
-      apiRequest<{ reach: number; blocked: number }>("/api/bots/campaigns/estimate", {
+      apiRequest<{ reach: number; blocked: number; partners?: number }>("/api/bots/campaigns/estimate", {
         method: "POST",
         body: { flow_id: flowId, audience: payload(definition).audience },
       }),
@@ -360,6 +360,11 @@ export function CampaignEditor({
                       <span className="block text-xs text-muted">Alcance estimado</span>
                       <span className="text-2xl font-semibold text-fg">{estimate.data ? estimate.data.reach.toLocaleString("pt-BR") : "…"}</span>{" "}
                       <span className="text-sm text-muted">leads</span>
+                      {Boolean(estimate.data?.partners) && (
+                        <span className="block text-xs text-accent">
+                          Funil compartilhado: inclui os leads de {estimate.data?.partners} sócio(s) que usam este funil, enviados pelo bot de cada um
+                        </span>
+                      )}
                       {estimate.data && estimate.data.blocked > 0 && (
                         <span className="block text-xs text-muted">{estimate.data.blocked.toLocaleString("pt-BR")} já bloquearam o bot e ficam de fora</span>
                       )}

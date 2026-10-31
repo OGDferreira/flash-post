@@ -1017,3 +1017,46 @@ async def test_super_admin_opens_the_receipt_of_a_partner_sale(client, db_sessio
     assert round(receipt["gateway_fee"] + receipt["platform_total"] + receipt["chief"]["amount"] + receipt["seller"]["amount"], 2) == 5.90
     audit = (await client.get("/api/admin/commission-audit?period=all")).json()
     assert audit["sales"] == 1 and audit["real"] == audit["expected"] == 1.42 and audit["differing_count"] == 0
+
+
+@pytest.mark.anyio
+async def test_remarketing_of_a_shared_funnel_reaches_the_partners_leads(client, db_session, owner, apis, storage) -> None:
+    from app.bots import campaigns
+    from app.models import TgOrder
+
+    chief, chief_ws = owner
+    partner, partner_ws, _ = await _partner(db_session, owner, accepted=True)
+    flow_id = await _chief_shares_funnel(client, db_session, chief_ws)
+    headers = await _as(client, "socio@example.com")
+    assert (await client.post(f"/api/partners/shared/flows/{flow_id}/use", headers=headers)).status_code == 201
+    bot = (await client.post("/api/bots", headers=headers, json={"token": TOKEN, "flow_id": flow_id})).json()
+    await _send(client, db_session, bot["id"], _start())
+
+    # the chief's campaign on the shared funnel counts and messages the partner's lead
+    chief_headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    payload = {
+        "name": "Volta", "flow_id": flow_id,
+        "definition": {"audience": {"target": "not_bought"}, "messages": [{"text": "Volta, {nome}!"}],
+                       "offer": {"plans": [{"name": "VIP Volta", "price": "9.90", "duration_days": 30,
+                                            "delivery": {"type": "default", "text": "Bem-vindo de volta"}}]}},
+    }
+    reach = await client.post("/api/bots/campaigns/estimate", headers=chief_headers, json={"flow_id": flow_id, "audience": {"target": "not_bought"}})
+    assert reach.json()["reach"] == 1
+    created = await client.post("/api/bots/campaigns", headers=chief_headers, json=payload)
+    assert created.status_code == 201, created.text
+    campaign = created.json()
+    assert (await client.post(f"/api/bots/campaigns/{campaign['id']}/send", headers=chief_headers)).status_code == 200
+    await campaigns.run_campaigns(db_session)
+    message = apis.methods("sendMessage")[-1]
+    assert message["text"] == "Volta, Lucas!"
+
+    # the lead buys in the partner's bot: a sale of the partner on the shared funnel
+    await _send(client, db_session, bot["id"], _tap(message["reply_markup"]["inline_keyboard"][0][0]["callback_data"]))
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder).where(TgOrder.kind == "remarketing"))
+    assert order is not None and order.workspace_id == partner_ws.id
+
+    # once the chief stops sharing, the partner's leads leave the audience
+    await client.post(f"/api/partners/flows/{flow_id}/share", headers=chief_headers, json={"shared": False})
+    reach = await client.post("/api/bots/campaigns/estimate", headers=chief_headers, json={"flow_id": flow_id, "audience": {"target": "all"}})
+    assert reach.json()["reach"] == 0

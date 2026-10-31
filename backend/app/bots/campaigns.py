@@ -26,7 +26,7 @@ from app.bots.flow_schema import ButtonStyle, Delivery, FlowDefinition, LinkButt
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.time import BRAZIL_TIME_ZONE
 from app.bots.hidden import admin_view, mark_admin_view
-from app.models import TgBot, TgCampaign, TgCampaignRun, TgFlow, TgLead, TgMedia, TgOrder, TgSubscription
+from app.models import TgBot, TgCampaign, TgCampaignRun, TgFlow, TgLead, TgMedia, TgOrder, TgSubscription, Workspace
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/bots/campaigns", tags=["Bots"], dependencies=[Depends(mark_admin_view)])
@@ -161,13 +161,41 @@ def _period_bounds(audience: CampaignAudience, now: datetime) -> tuple[datetime 
     return None, None
 
 
-def audience_filter(workspace_id: uuid.UUID, flow_id: uuid.UUID, audience: CampaignAudience, now: datetime | None = None) -> list:
+async def audience_workspaces(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.UUID) -> list[uuid.UUID]:
+    """Whose leads a campaign reaches: the campaign's workspace and, for a funnel the owner
+    shares, the partners who run it (their bots run the owner's funnel as is, so their
+    leads carry its id). The remarketing goes with the shared funnel."""
+    from app.partners import service
+
+    workspaces = [workspace_id]
+    flow = await db.get(TgFlow, flow_id)
+    if flow is None or flow.workspace_id != workspace_id or not flow.shared:
+        return workspaces
+    owner = await db.get(Workspace, workspace_id)
+    partners = await service.partner_ids(db, owner.owner_id) if owner else set()
+    others = await db.scalars(
+        select(TgLead.workspace_id).where(TgLead.flow_id == flow_id, TgLead.workspace_id != workspace_id).distinct()
+    )
+    for other in list(others):
+        partner_workspace = await db.get(Workspace, other)
+        if (
+            partner_workspace is not None
+            and str(partner_workspace.owner_id) in partners
+            and await service.flow_offered_to(db, flow, partner_workspace.owner_id)
+        ):
+            workspaces.append(other)
+    return workspaces
+
+
+def audience_filter(
+    workspace_ids: list[uuid.UUID], flow_id: uuid.UUID, audience: CampaignAudience, now: datetime | None = None,
+) -> list:
     """WHERE clauses selecting the funnel's leads in the audience (blocked ones included)."""
     paid = exists().where(TgOrder.lead_id == TgLead.id, TgOrder.status == "paid")
     any_order = exists().where(TgOrder.lead_id == TgLead.id)
     active = exists().where(TgSubscription.lead_id == TgLead.id, TgSubscription.status == "active")
     expired = exists().where(TgSubscription.lead_id == TgLead.id, TgSubscription.status == "expired")
-    clauses = [TgLead.workspace_id == workspace_id, TgLead.flow_id == flow_id]
+    clauses = [TgLead.workspace_id.in_(workspace_ids), TgLead.flow_id == flow_id]
     clauses += {
         "all": [],
         "not_bought": [~paid],
@@ -185,10 +213,12 @@ def audience_filter(workspace_id: uuid.UUID, flow_id: uuid.UUID, audience: Campa
 
 
 async def estimate(db: AsyncSession, workspace_id: uuid.UUID, flow_id: uuid.UUID, audience: CampaignAudience) -> dict:
-    clauses = audience_filter(workspace_id, flow_id, audience)
+    workspaces = await audience_workspaces(db, workspace_id, flow_id)
+    clauses = audience_filter(workspaces, flow_id, audience)
     total = await db.scalar(select(func.count(TgLead.id)).where(*clauses))
     blocked = await db.scalar(select(func.count(TgLead.id)).where(*clauses, TgLead.blocked_bot.is_(True)))
-    return {"reach": int(total or 0) - int(blocked or 0), "blocked": int(blocked or 0)}
+    # partners: how many partners' operations a shared funnel's campaign also reaches
+    return {"reach": int(total or 0) - int(blocked or 0), "blocked": int(blocked or 0), "partners": len(workspaces) - 1}
 
 
 # ---------------------------------------------------------------- sending
@@ -285,7 +315,10 @@ async def run_campaign_batch(db: AsyncSession, campaign_id: uuid.UUID, deadline:
         return
     query = (
         select(TgLead)
-        .where(*audience_filter(campaign.workspace_id, campaign.flow_id, definition.audience), TgLead.blocked_bot.is_(False))
+        .where(
+            *audience_filter(await audience_workspaces(db, campaign.workspace_id, campaign.flow_id), campaign.flow_id, definition.audience),
+            TgLead.blocked_bot.is_(False),
+        )
         .order_by(TgLead.id)
         .limit(BATCH)
     )
@@ -357,7 +390,12 @@ async def handle_campaign_tap(
         definition = CampaignDefinition.model_validate(campaign.definition) if campaign else None
     except (ValueError, ValidationError):
         campaign, definition, index = None, None, -1
-    if campaign is None or definition is None or campaign.workspace_id != bot.workspace_id or not 0 <= index < len(definition.offer.plans):
+    # A partner's lead on the owner's shared funnel taps the owner's campaign in the partner's bot.
+    reachable = campaign is not None and (
+        campaign.workspace_id == bot.workspace_id
+        or (lead.flow_id == campaign.flow_id and bot.workspace_id in await audience_workspaces(db, campaign.workspace_id, campaign.flow_id))
+    )
+    if not reachable or definition is None or not 0 <= index < len(definition.offer.plans):
         await tg.answer_callback(callback_id, gone)
         return None
     item = definition.offer.plans[index]
@@ -443,7 +481,8 @@ async def _sales(db: AsyncSession, campaigns: list[TgCampaign]) -> dict[uuid.UUI
     for campaign in campaigns:
         row = (await db.execute(
             select(func.count(TgOrder.id), func.coalesce(func.sum(TgOrder.amount), 0)).where(
-                TgOrder.workspace_id == campaign.workspace_id, TgOrder.kind == "remarketing", TgOrder.status == "paid",
+                # the funnel, not the workspace: partners' sales of a shared funnel count too
+                TgOrder.flow_id == campaign.flow_id, TgOrder.kind == "remarketing", TgOrder.status == "paid",
                 TgOrder.offer_id.like(f"rm{campaign.id.hex[:12]}-%"),
             )
         )).one()
