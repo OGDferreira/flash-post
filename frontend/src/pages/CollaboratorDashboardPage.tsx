@@ -2,7 +2,7 @@ import { EngagementCards } from "@/components/EngagementCards";
 import { useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { GreetingClock } from "@/components/GreetingClock";
-import { Link } from "react-router-dom";
+import { ConnectInstagramButton } from "@/components/ConnectAccountModal";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -161,10 +161,7 @@ export function CollaboratorDashboardPage() {
           </span>
         )}
         <GreetingClock nickname={data.nickname || data.full_name || "colaborador"} />
-        <Link className="btn-primary ml-auto shrink-0 whitespace-nowrap max-sm:!px-3" to="/feature/accounts?connect=1">
-          <Link2 size={16} />
-          Conectar conta
-        </Link>
+        <ConnectInstagramButton className="btn-primary ml-auto shrink-0 whitespace-nowrap max-sm:!px-3" returnTo="/dashboard" />
       </header>
 
       <section aria-label="Resumo de produção e pagamentos" className="dashboard-metrics">

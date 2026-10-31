@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, CircleAlert, LoaderCircle, Smartphone, X } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ArrowUpRight, CircleAlert, Link2, LoaderCircle, Smartphone, X } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 
 import { apiRequest } from "@/services/api";
 
@@ -68,7 +68,9 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
   const appList = apps.data?.apps ?? [];
   const platform = apps.data?.platform;
   // With the platform app there is nothing to pick: go straight to the Instagram (one tap).
-  const direct = Boolean(platform?.available && !platform.blocked && appList.length === 0);
+  // Everyone with the platform app goes straight to the Instagram (the Super Admin manages
+  // workspace apps in Apps Meta).
+  const direct = Boolean(platform?.available && !platform.blocked);
   const started = useRef(false);
   useEffect(() => {
     if (!direct || started.current) return;
@@ -207,5 +209,52 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * One tap to the Instagram: with the platform app the "Conectar conta" button itself starts
+ * the authorization (no picker, no second button). Without it, the app picker opens.
+ */
+export function useConnectInstagram(returnTo: ConnectAppsPanelProps["returnTo"], openPicker: () => void) {
+  const apps = useQuery({
+    queryKey: metaAppsQueryKey,
+    queryFn: () => apiRequest<InstagramMetaAppsResponse>("/api/instagram/apps"),
+    staleTime: 30_000,
+    retry: false,
+  });
+  const connect = useMutation({
+    mutationFn: () =>
+      apiRequest<{ authorization_url: string }>(`/api/instagram/connect?${new URLSearchParams({ return_to: returnTo })}`, {
+        method: "POST",
+      }),
+    onSuccess: ({ authorization_url }) => window.location.assign(authorization_url),
+    onError: openPicker, // the picker shows the error and the other ways to connect
+  });
+  const platform = apps.data?.platform;
+  const direct = Boolean(platform?.available && !platform.blocked);
+  return {
+    start: () => (direct ? connect.mutate() : openPicker()),
+    // Stays busy while the browser leaves for the Instagram.
+    pending: connect.isPending || connect.isSuccess,
+  };
+}
+
+export function ConnectInstagramButton({
+  returnTo,
+  className = "btn-primary",
+  label = "Conectar conta",
+}: {
+  returnTo: ConnectAppsPanelProps["returnTo"];
+  className?: string;
+  label?: string;
+}) {
+  const navigate = useNavigate();
+  const { start, pending } = useConnectInstagram(returnTo, () => navigate("/feature/accounts?connect=1"));
+  return (
+    <button className={className} disabled={pending} onClick={start} type="button">
+      {pending ? <LoaderCircle className="animate-spin" size={16} /> : <Link2 size={16} />}
+      {pending ? "Abrindo o Instagram…" : label}
+    </button>
   );
 }
