@@ -103,7 +103,7 @@ export function PlansSection({ draft, set }: SectionProps) {
     name: base ? `${base.name} (cópia)`.slice(0, 60) : "Plano mensal",
   });
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start [&>*]:min-w-0">
     <Panel
       icon={<CreditCard size={18} />}
       title="Planos de pagamento"

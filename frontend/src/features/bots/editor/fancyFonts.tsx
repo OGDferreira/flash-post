@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Type } from "lucide-react";
 
 /**
  * "Custom letters" for Telegram copy: Unicode look-alike alphabets (𝐁𝐨𝐥𝐝, 𝓢𝓬𝓻𝓲𝓹𝓽…). They are
@@ -86,7 +85,7 @@ export function FontMenu({ onPick, compact = false }: { onPick: (style: FontStyl
         title="Letras personalizadas"
         type="button"
       >
-        <Type size={16} />
+        <span className="text-sm font-semibold">Aa</span>
       </button>
       {open && (
         <div className={`absolute z-30 mt-1 w-56 ${compact ? "right-0" : "left-0"} rounded-xl border border-line bg-surface p-1 shadow-lg`} role="menu">
