@@ -658,6 +658,10 @@ function DefaultDeliveryPanel({ draft, set }: Pick<SectionProps, "draft" | "set"
   );
 }
 
+const STEPS_TEXT =
+  "✅ <b>Como realizar o pagamento:</b>\n\n1. Abra o aplicativo do seu banco.\n2. Selecione a opção \"Pagar\" ou \"PIX\".\n" +
+  "3. Escolha \"PIX Copia e Cola\".\n4. Cole a chave que está abaixo e finalize o pagamento com segurança.";
+
 export function PaymentSection({ draft, set }: SectionProps) {
   const payment = draft.payment;
   const setPayment = (patch: Partial<typeof payment>) => set({ payment: { ...payment, ...patch } });
@@ -674,7 +678,50 @@ export function PaymentSection({ draft, set }: SectionProps) {
           onChange={(event) => setPayment({ expiration_minutes: Math.min(1440, Math.max(5, Number(event.target.value) || 30)) })}
         />
       </Field>
-      <RichTextEditor label="Mensagem do Pix" rows={3} value={payment.pix_text} variables={vars} onChange={(pix_text) => setPayment({ pix_text })} />
+      <Field label="Formato do Pix">
+        <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
+          {([
+            ["qr", "QR Code", "Uma mensagem: QR Code, texto e o código Pix."],
+            ["steps", "Passo a passo", "Instruções de pagamento, o código numa caixa “copy” e os botões Verificar status / Copiar código."],
+          ] as const).map(([value, title, hint]) => (
+            <button
+              aria-checked={(payment.layout ?? "qr") === value}
+              className={`rounded-xl border p-3 text-left ${(payment.layout ?? "qr") === value ? "border-brand bg-brand-soft" : "border-line hover:border-brand"}`}
+              key={value}
+              onClick={() => setPayment({ layout: value })}
+              role="radio"
+              type="button"
+            >
+              <span className="block text-sm font-medium text-fg">{title}</span>
+              <span className="mt-1 block text-xs text-muted">{hint}</span>
+            </button>
+          ))}
+        </div>
+      </Field>
+      {(payment.layout ?? "qr") === "steps" ? (
+        <>
+          <RichTextEditor
+            label="Instruções de pagamento"
+            rows={6}
+            value={payment.steps_text ?? STEPS_TEXT}
+            variables={vars}
+            onChange={(steps_text) => setPayment({ steps_text })}
+          />
+          <Field label="Texto acima do código">
+            <input className="field" maxLength={200} value={payment.code_intro ?? "Copie o código abaixo:"} onChange={(event) => setPayment({ code_intro: event.target.value })} />
+          </Field>
+          <Field label="Texto junto dos botões">
+            <input
+              className="field"
+              maxLength={500}
+              value={payment.after_code_text ?? "Após efetuar o pagamento, clique no botão abaixo ⤵️"}
+              onChange={(event) => setPayment({ after_code_text: event.target.value })}
+            />
+          </Field>
+        </>
+      ) : (
+        <RichTextEditor label="Mensagem do Pix" rows={3} value={payment.pix_text} variables={vars} onChange={(pix_text) => setPayment({ pix_text })} />
+      )}
       <RichTextEditor label="Pagamento aprovado" rows={2} value={payment.approved_text} variables={vars} onChange={(approved_text) => setPayment({ approved_text })} />
       <RichTextEditor label="Pix expirado" rows={2} value={payment.expired_text} variables={vars} onChange={(expired_text) => setPayment({ expired_text })} />
       <div className="grid gap-3 sm:grid-cols-2">

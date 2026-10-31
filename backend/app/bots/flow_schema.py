@@ -222,6 +222,18 @@ class Payment(_Model):
     pending_text: Annotated[str, Field(max_length=200)] = "Ainda não identificamos seu pagamento. Aguarde alguns segundos."
     approved_text: Text = "Pagamento aprovado! 🎉 Obrigado, {nome}."
     expired_text: Text = "Seu Pix expirou. Toque abaixo para gerar um novo."
+    # How the Pix is shown: "qr" = QR code + text + code in one message; "steps" = the
+    # payment instructions, then the code in a copy box, then the buttons.
+    layout: Literal["qr", "steps"] = "qr"
+    steps_text: Text = (
+        "✅ <b>Como realizar o pagamento:</b>\n\n"
+        "1. Abra o aplicativo do seu banco.\n"
+        "2. Selecione a opção \"Pagar\" ou \"PIX\".\n"
+        "3. Escolha \"PIX Copia e Cola\".\n"
+        "4. Cole a chave que está abaixo e finalize o pagamento com segurança."
+    )
+    code_intro: Annotated[str, Field(max_length=200)] = "Copie o código abaixo:"
+    after_code_text: Annotated[str, Field(max_length=500)] = "Após efetuar o pagamento, clique no botão abaixo ⤵️"
 
 
 class FlowDefinition(_Model):
