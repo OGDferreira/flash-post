@@ -9,7 +9,6 @@ import {
   CalendarCheck2,
   CircleDollarSign,
   Flame,
-  Link2,
   Medal,
   Target,
   TrendingUp,
