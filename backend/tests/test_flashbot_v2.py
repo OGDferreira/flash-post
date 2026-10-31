@@ -455,3 +455,20 @@ async def test_reconciliation_asks_newest_first_in_parallel_and_approves_paid(cl
     assert await engine.reconcile_pending_orders(db_session) == 1
     await db_session.refresh(order)
     assert asked == [order.id] and order.status == "paid"
+
+
+@pytest.mark.anyio
+async def test_pix_steps_layout_sends_instructions_copy_box_and_buttons(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    flow = _flow(welcome=[])
+    flow["payment"] = {"layout": "steps"}
+    bot, _ = await _setup(client, headers, flow)
+    await _send(client, db_session, bot["id"], _start())
+    before = len(apis.methods("sendMessage"))
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    steps, code, last = apis.methods("sendMessage")[before:][-3:]
+    assert "Como realizar o pagamento" in steps["text"]
+    assert code["text"].startswith("Copie o código abaixo:") and '<pre><code class="language-copy">' in code["text"]
+    assert not apis.methods("sendPhoto")
+    rows = last["reply_markup"]["inline_keyboard"]
+    assert rows[0][0]["callback_data"].startswith("chk:") and "copy_text" in rows[1][0]

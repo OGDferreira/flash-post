@@ -1079,6 +1079,24 @@ async def create_order(
         keyboard["inline_keyboard"].pop(0)
     if flow.support_username:
         keyboard["inline_keyboard"].append([button("💬 Suporte", url=f"https://t.me/{flow.support_username}")])
+    if flow.payment.layout == "steps":
+        # Instructions, the code in a copy box, then "check" first and "copy" below it.
+        rows = keyboard["inline_keyboard"]
+        if rows and "copy_text" in rows[0][0]:
+            rows[0], rows[1] = rows[1], rows[0]
+        try:
+            steps = render(flow.payment.steps_text, lead, order.offer_name, order.amount, bot)
+            if steps:
+                await tg.send_message(lead.chat_id, steps)
+            intro = html.escape(flow.payment.code_intro)
+            await tg.send_message(
+                lead.chat_id, (intro + "\n\n" if intro else "") + f'<pre><code class="language-copy">{html.escape(code)}</code></pre>'
+            )
+            await tg.send_message(lead.chat_id, render(flow.payment.after_code_text, lead, order.offer_name, order.amount, bot) or "👇", keyboard)
+            return order
+        finally:
+            timings["telegram"] = time.perf_counter() - mark
+            logger.info("pix steps: %s", " ".join(f"{k}={v * 1000:.0f}ms" for k, v in timings.items()))
     body = (caption + "\n\n" if caption else "") + f"<code>{html.escape(code)}</code>"
     png = pix_qr_png(code, qr)
     try:

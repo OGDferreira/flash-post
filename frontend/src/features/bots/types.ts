@@ -121,6 +121,11 @@ export type FlowDefinition = {
     pending_text: string;
     approved_text: string;
     expired_text: string;
+    /** "qr": QR + text + code in one message; "steps": instructions, copy box, buttons. */
+    layout?: "qr" | "steps";
+    steps_text?: string;
+    code_intro?: string;
+    after_code_text?: string;
   };
   default_delivery?: Delivery | null;
   order_bump?: OrderBump | null;
