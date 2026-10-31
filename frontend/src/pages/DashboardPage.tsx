@@ -4,7 +4,7 @@ import { ViewsRankingCard } from "@/features/rankings/RankingLists";
 import { isPeriodReady, periodParams, type MetricsPeriod } from "@/features/analytics/period";
 import { usePartnerMe } from "@/features/partners/api";
 import { useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { ConnectInstagramButton } from "@/components/ConnectAccountModal";
 import { useQuery } from "@tanstack/react-query";
 import {
   ChartNoAxesCombined,
@@ -284,10 +284,7 @@ export function DashboardPage({ partner = false, belowTop, showAccounts = true, 
       <AlertsBanner />
       <header className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link className="btn-primary" to="/feature/accounts?connect=1">
-            <Link2 size={16} />
-            Conectar conta
-          </Link>
+          <ConnectInstagramButton returnTo="/dashboard" />
         </div>
         <div aria-label="Filtrar por período" className="dashboard-periods" role="group">
           {periodOptions.map(({ value, label }) => (

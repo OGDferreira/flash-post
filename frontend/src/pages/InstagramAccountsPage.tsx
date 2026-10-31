@@ -16,6 +16,7 @@ import { InstagramAvatar } from "@/components/InstagramAvatar";
 import { ProfileLink } from "@/components/ProfileLink";
 import {
   ConnectAppsPanel,
+  useConnectInstagram,
   canConnect,
   metaAppsQueryKey,
   type InstagramMetaAppsResponse,
@@ -104,7 +105,7 @@ export function InstagramAccountsPage() {
     queryFn: () => apiRequest<ProfileFoldersResponse>("/api/instagram/folders?include_accounts=false"),
     retry: false,
   });
-  const startConnection = () => setShowAppSelector(true);
+  const { start: startConnection } = useConnectInstagram("/feature/accounts", () => setShowAppSelector(true));
   useEffect(() => {
     if (searchParams.get("connect") !== "1") return;
     const next = new URLSearchParams(searchParams);
