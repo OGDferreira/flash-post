@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef } from "react";
 import { Bold, Code, EyeOff, Italic, Quote, Strikethrough, Underline } from "lucide-react";
 
+import { FontMenu, toFancy } from "./fancyFonts";
+
 const tools = [
   { tag: "b", label: "Negrito", icon: Bold },
   { tag: "i", label: "Itálico", icon: Italic },
@@ -58,12 +60,26 @@ export function RichTextEditor({
     });
   };
 
+  // Custom letters: the selection (or the whole text when nothing is selected) is converted.
+  const restyle = (style: Parameters<typeof toFancy>[1]) => {
+    const element = area.current;
+    if (!element) return;
+    const { selectionStart: start, selectionEnd: end } = element;
+    const [from, to] = start === end ? [0, value.length] : [start, end];
+    const converted = toFancy(value.slice(from, to), style);
+    onChange((value.slice(0, from) + converted + value.slice(to)).slice(0, max));
+    requestAnimationFrame(() => {
+      element.focus();
+      element.setSelectionRange(from, from + converted.length);
+    });
+  };
+
   return (
     <div className="grid gap-2 text-sm text-fg-2">
       <span>
         {label} {required && <span className="text-danger">*</span>}
       </span>
-      <div className="overflow-hidden rounded-xl border border-line bg-surface-inset focus-within:border-brand">
+      <div className="rounded-xl border border-line bg-surface-inset focus-within:border-brand">
         <div className="flex flex-wrap gap-0.5 border-b border-line-soft p-1.5" role="toolbar" aria-label="Formatação">
           {tools.map(({ tag, label: toolLabel, icon: Icon }) => (
             <button
@@ -78,6 +94,7 @@ export function RichTextEditor({
               <Icon size={16} />
             </button>
           ))}
+          <FontMenu onPick={restyle} />
         </div>
         <textarea
           aria-label={label}

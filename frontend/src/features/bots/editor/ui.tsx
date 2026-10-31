@@ -206,6 +206,7 @@ export function Collapsible({
   open,
   onToggle,
   actions,
+  leading,
   children,
 }: {
   title: ReactNode;
@@ -213,11 +214,14 @@ export function Collapsible({
   open: boolean;
   onToggle: () => void;
   actions?: ReactNode;
+  /** Before the title, e.g. a drag handle. */
+  leading?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-line bg-surface-inset">
       <div className="flex items-center gap-2 p-3 sm:p-4">
+        {leading}
         <button aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={onToggle} type="button">
           <span className={`text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
           <span className="min-w-0">
