@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/Button";
 import { brl, emptyBump, emptyDelivery, emptyPreviews, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type Plan, type UpsellStep } from "../types";
 import { BumpEditor, DeliveryEditor } from "./DeliveryEditor";
 import { MediaGrid } from "./MediaGrid";
+import { FontMenu, toFancy } from "./fancyFonts";
 import { BASE_VARIABLES, RichTextEditor } from "./RichTextEditor";
+import { SortableList } from "./SortableList";
 import type { SectionProps } from "./sectionsTop";
 import { Collapsible, DelayInput, DurationSelect, Field, MoneyInput, Panel, StylePicker, Switch } from "./ui";
 
@@ -46,8 +48,14 @@ function PlanEditor({ plan, onChange, hasDefaultBump }: { plan: Plan; onChange: 
         <MoneyInput value={plan.price} onChange={(price) => set({ price })} />
         <DurationSelect value={plan.duration_days} onChange={(duration_days) => set({ duration_days })} />
       </div>
-      <Field label="Texto do botão (opcional)" hint="Vazio = “Nome · Preço”.">
-        <input className="field" maxLength={64} value={plan.button_text ?? ""} onChange={(event) => set({ button_text: event.target.value })} />
+      <Field label="Texto do botão (opcional)" hint="Vazio = “Nome · Preço”. Use o Aa para letras personalizadas.">
+        <div className="flex gap-1">
+          <input className="field" maxLength={64} value={plan.button_text ?? ""} onChange={(event) => set({ button_text: event.target.value })} />
+          <FontMenu
+            compact
+            onPick={(style) => set({ button_text: toFancy(plan.button_text || `${plan.name} · ${brl(plan.price || 0)}`, style).slice(0, 64) })}
+          />
+        </div>
       </Field>
       <StylePicker value={plan.button_style} onChange={(button_style) => set({ button_style })} />
       <div className="space-y-2 border-t border-line-soft pt-4">
@@ -102,10 +110,15 @@ export function PlansSection({ draft, set }: SectionProps) {
       description="Cada plano vira um botão. O mínimo do Pix é R$ 1,00."
       aside={<span className="text-xs text-muted">{draft.plans.length}/10</span>}
     >
-      <div className="space-y-2">
-        {draft.plans.map((plan, index) => (
+      <p className="text-xs text-muted">Segure e arraste o ⋮⋮ para mudar a ordem dos botões no bot.</p>
+      <SortableList
+        getKey={(plan) => plan.id}
+        items={draft.plans}
+        onDragStart={() => setOpen(null)}
+        onReorder={(plans) => set({ plans })}
+        render={(plan, index, handle) => (
           <Collapsible
-            key={plan.id}
+            leading={handle}
             open={open === index}
             onToggle={() => toggle(index)}
             title={plan.name || "Sem nome"}
@@ -120,8 +133,8 @@ export function PlansSection({ draft, set }: SectionProps) {
           >
             <PlanEditor hasDefaultBump={Boolean(draft.order_bump)} plan={plan} onChange={(next) => setPlan(index, next)} />
           </Collapsible>
-        ))}
-      </div>
+        )}
+      />
       <Button
         disabled={draft.plans.length >= 10}
         onClick={() => {
