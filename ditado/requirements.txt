@@ -1,0 +1,9 @@
+faster-whisper>=1.1
+sounddevice>=0.4.6
+numpy>=1.24
+pynput>=1.7.7
+pyperclip>=1.8
+pystray>=0.19
+pillow>=10
+# Opcional, apenas para "engine": "openai":
+# openai>=1.40
