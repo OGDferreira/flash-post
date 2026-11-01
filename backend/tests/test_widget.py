@@ -34,6 +34,31 @@ async def test_widget_token_reads_today_and_is_replaced_by_a_new_one(client, db_
     assert data["commissions"] == 0.0 and data["commission_series"][-1] == 0.0 and data["is_admin"] is False
     assert data["fees"] == 0.0 and data["total"] == 19.9  # the Flash fees are the Super Admin's only
 
+    # a SharkBot sale reported by webhook counts in the sales and the total; the Flash Post
+    # views of the day come along for the eye icon
+    from datetime import datetime, timezone
+    from decimal import Decimal as D
+
+    from app.analytics.periods import user_time_zone
+    from app.models import InstagramAccountDailyViews, User as U
+    from app.models.sharkbot import SharkTransaction
+    from tests.test_affiliates import _active_account
+
+    me = await db_session.scalar(select(U).where(U.email == "owner@example.com"))
+    ws_id = order.workspace_id
+    stamp = datetime.now(timezone.utc)
+    db_session.add(SharkTransaction(workspace_id=ws_id, transaction_key="w1", status="paid", amount=D("30.00"),
+                                    created_at_source=stamp, paid_at=stamp))
+    account = _active_account(ws_id, "widget_ig")
+    db_session.add(account)
+    await db_session.flush()
+    local_day = stamp.astimezone(await user_time_zone(db_session, ws_id, me.id)).date()
+    db_session.add(InstagramAccountDailyViews(workspace_id=ws_id, account_id=account.id, day=local_day, views=4321, fetched_at=stamp))
+    await db_session.commit()
+    data = (await client.get("/api/widget/today", headers={"Authorization": f"Bearer {token}"})).json()
+    assert data["sales"] == 49.9 and data["sales_count"] == 2 and data["shark_sales"] == 1 and data["total"] == 49.9
+    assert data["views"] == 4321 and data["pix_paid"] == 1  # conversion stays Pix paid / generated
+
     # the Super Admin also sees the Flash fees collected today on the whole platform
     from decimal import Decimal
 
@@ -44,7 +69,7 @@ async def test_widget_token_reads_today_and_is_replaced_by_a_new_one(client, db_
     owner_user.platform_role = "SUPER_ADMIN"
     await db_session.commit()
     admin = (await client.get("/api/widget/today", headers={"Authorization": f"Bearer {token}"})).json()
-    assert admin["is_admin"] is True and admin["fees"] == 0.5 and admin["total"] == 20.4
+    assert admin["is_admin"] is True and admin["fees"] == 0.5 and admin["total"] == 50.4
     owner_user.platform_role = "USER"
     await db_session.commit()
 

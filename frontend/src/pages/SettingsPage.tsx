@@ -115,14 +115,24 @@ function ThemeSwitch() {
 
 /** The Flash sales widget for the iPhone home screen, through the free Scriptable app. */
 const WIDGET_THEMES: { id: WidgetTheme; label: string; swatch: string; text: string }[] = [
-  { id: "azul", label: "Roxo", swatch: "linear-gradient(135deg,#8f1dff,#7a00ff 55%,#5b00c4)", text: "#fff" },
-  { id: "dark", label: "Escuro", swatch: "linear-gradient(135deg,#12141c,#20264a)", text: "#fff" },
-  { id: "white", label: "Branco", swatch: "linear-gradient(135deg,#ffffff,#e7edff)", text: "#0b1530" },
+  { id: "claro", label: "Claro", swatch: "linear-gradient(180deg,#ffffff,#f6f0ff 55%,#ece2ff)", text: "#17082e" },
+  { id: "escuro", label: "Escuro", swatch: "linear-gradient(180deg,#0e0f16,#161322 55%,#211836)", text: "#fff" },
+  { id: "pb", label: "Preto e branco", swatch: "linear-gradient(180deg,#000000,#0b0b0b 55%,#1a1a1a)", text: "#fff" },
+  { id: "roxo", label: "Roxo", swatch: "linear-gradient(180deg,#8f1dff,#7a00ff 55%,#5b00c4)", text: "#fff" },
+  {
+    id: "galaxia",
+    label: "Galáxia",
+    swatch:
+      "radial-gradient(1px 1px at 20% 30%,#fff,transparent),radial-gradient(1px 1px at 70% 20%,#fff,transparent),radial-gradient(1px 1px at 45% 70%,#fff,transparent),linear-gradient(180deg,#05041a,#1d0b4a 55%,#4a1592)",
+    text: "#fff",
+  },
+  { id: "rosa", label: "Rosa", swatch: "linear-gradient(180deg,#ff5fb0,#ec2a8a 55%,#b0136a)", text: "#fff" },
 ];
 
 function IphoneWidgetCard() {
+  const isAdmin = useAuth().user?.role === "SUPER_ADMIN";
   const [copied, setCopied] = useState(false);
-  const [theme, setTheme] = useState<WidgetTheme>("azul");
+  const [theme, setTheme] = useState<WidgetTheme>("roxo");
   const [token, setToken] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState("");
@@ -158,7 +168,7 @@ function IphoneWidgetCard() {
         <h2 className="text-base font-semibold text-fg">Widget de vendas no iPhone</h2>
       </div>
       <p className="mt-1 text-sm text-muted">
-        Faturamento, lucro, Pix gerados e pagos e o gráfico do dia na tela inicial, pelo app gratuito Scriptable.
+        Faturamento total do dia, vendas (inclusive as da Shark), conversão dos Pix, visualizações do Flash Post e o gráfico do dia na tela inicial, pelo app gratuito Scriptable.
       </p>
       <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs leading-5 text-fg-2">
         <li>Instale o <b>Scriptable</b> na App Store.</li>
@@ -166,8 +176,8 @@ function IphoneWidgetCard() {
         <li>Na tela inicial, segure um espaço vazio → <b>+</b> → Scriptable → escolha o tamanho → toque no widget e selecione o script.</li>
       </ol>
       <p className="mt-2 text-[11px] leading-5 text-muted">
-        Médio e pequeno: faturamento do dia, taxa de conversão, vendas e gráfico. Grande: também lucro e Pix gerados/pagos. Tela de bloqueio: logo,
-        valor e número de vendas. Venda nova aparece com um selo verde; tocar no widget abre a versão animada. O iPhone decide quando
+        Médio e grande: total do dia em destaque, as linhas de vendas{isAdmin ? ", comissão e arrecadação" : ""}, conversão dos Pix gerados para pagos,
+        visualizações do dia e gráfico. Pequeno: total, conversão e visualizações. Tela de bloqueio: logo, valor e número de vendas. Venda nova aparece com um selo verde; tocar no widget abre a versão animada. O iPhone decide quando
         atualizar (pedimos a cada minuto; costuma ser a cada 5 a 15 min). Já instalou antes? Copie de novo e cole por cima no Scriptable.
         O script tem uma chave só de leitura. Gerar um novo script em outra visita desliga a chave anterior; repetir a cópia aqui mantém a mesma chave.
       </p>
@@ -189,7 +199,7 @@ function IphoneWidgetCard() {
         ))}
       </div>
       <p className="mt-1.5 text-[11px] text-muted">
-        Dá para trocar em cada widget: segure o widget → Editar widget → em <b>Parameter</b> escreva dark, white ou roxo.
+        Dá para trocar em cada widget: segure o widget → Editar widget → em <b>Parameter</b> escreva claro, escuro, pb, roxo, galaxia ou rosa.
       </p>
       <button className="btn-primary mt-3" disabled={copying} onClick={() => void copy()} type="button">
         {copying ? "Preparando…" : copied ? "Script copiado ✓" : "Copiar script"}
