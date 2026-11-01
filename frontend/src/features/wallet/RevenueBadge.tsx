@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import { brl, compact, useWalletSummary } from "./api";
 
-/** Header pill: this month's revenue and the progress to the next goal; opens the wallet. */
+/** Header pill: Flash revenue of the whole history and the progress to the next goal; opens the wallet. */
 export function RevenueBadge({ enabled }: { enabled: boolean }) {
   const summary = useWalletSummary(enabled);
   const data = summary.data;
@@ -11,7 +11,7 @@ export function RevenueBadge({ enabled }: { enabled: boolean }) {
   const percent = Math.min(100, data.percent ?? 0);
   return (
     <Link
-      aria-label={`Faturamento do mês ${brl(data.month_revenue ?? 0)}, ${percent}% da meta. Abrir carteira`}
+      aria-label={`Faturamento total ${brl(data.month_revenue ?? 0)}, ${percent}% da meta. Abrir carteira`}
       className="mr-1 flex items-center gap-2 rounded-full border border-line-soft bg-surface-raised/80 py-1 pl-1 pr-3 shadow-sm transition hover:border-brand"
       to="/carteira"
     >

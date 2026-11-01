@@ -9,7 +9,7 @@ selected gateway's live balance when available, never trusted from the browser.
 import logging
 import re
 import uuid
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
@@ -211,14 +211,16 @@ def _month_start():
     return now.astimezone(BRAZIL_TIME_ZONE).replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc), now
 
 
-async def month_commissions(db, workspace_id: uuid.UUID) -> Decimal:
-    """Commissions the workspace's owner received this month from partners' sales (any gateway)."""
+async def month_commissions(db, workspace_id: uuid.UUID, start=None) -> Decimal:
+    """Commissions the workspace's owner received from partners' sales (any gateway), this
+    month or since ``start``."""
     from app.bots.hidden import not_hidden_bot
 
     workspace = await db.get(Workspace, workspace_id)
     if workspace is None:
         return Decimal("0.00")
-    start, now = _month_start()
+    month_start, now = _month_start()
+    start = start or month_start
     return _money(await db.scalar(
         select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
             TgOrder.split_chief_user_id == workspace.owner_id, TgOrder.status == "paid",
@@ -237,6 +239,16 @@ async def month_revenue_by_bot(db, workspace_id: uuid.UUID) -> tuple[Decimal, De
     commissions = await month_commissions(db, workspace_id)
     shark = _money(gross) - _money(flash)
     return _money(gross) + commissions, shark, _money(flash) + commissions
+
+
+async def total_flash_revenue(db, workspace_id: uuid.UUID) -> Decimal:
+    """Flash revenue of the whole history: the operation's own sales plus the commissions
+    received from partners' sales (the header pill and the award goals)."""
+    from app.finance.router import _revenue_between
+
+    since = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    _gross, _net, _sales, _no_amount, flash = await _revenue_between(db, workspace_id, since, utc_now())
+    return _money(flash) + await month_commissions(db, workspace_id, since)
 
 
 def goal_progress(revenue: Decimal) -> dict:
@@ -314,8 +326,9 @@ async def goals(user: AuthenticatedUser, db: DbSession) -> dict:
     workspace = await owner_workspace(db, user.id)
     if workspace is None:
         return {"available": False}
-    _total, _shark, revenue = await month_revenue_by_bot(db, workspace.id)  # goals count Flash sales only
-    return {"available": True, "month_revenue": float(revenue), **_goals_out(revenue, await award_image_urls(db))}
+    # Goals count Flash sales (with commissions received) over the whole history.
+    revenue = await total_flash_revenue(db, workspace.id)
+    return {"available": True, "month_revenue": float(revenue), "total_revenue": float(revenue), **_goals_out(revenue, await award_image_urls(db))}
 
 
 def _withdrawal_out(item: FinancialWithdrawal, owner: str | None = None) -> dict:
@@ -336,9 +349,9 @@ async def summary(user: AuthenticatedUser, db: DbSession) -> dict:
     workspace = await owner_workspace(db, user.id)
     if workspace is None:
         return {"available": False}
-    # The pill shows Flash's revenue only (SharkBot sales stay out of it).
-    _total, _shark, revenue = await month_revenue_by_bot(db, workspace.id)
-    return {"available": True, "month_revenue": float(revenue), **{k: float(v) if isinstance(v, Decimal) else v for k, v in goal_progress(revenue).items() if k in ("target", "percent", "prize")}}
+    # The pill shows Flash's revenue of the whole history (SharkBot sales stay out of it).
+    revenue = await total_flash_revenue(db, workspace.id)
+    return {"available": True, "month_revenue": float(revenue), "total_revenue": float(revenue), **{k: float(v) if isinstance(v, Decimal) else v for k, v in goal_progress(revenue).items() if k in ("target", "percent", "prize")}}
 
 
 def _shop_for(user: User, workspace: Workspace) -> str | None:
@@ -490,7 +503,8 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "month_flash_revenue": float(flash_revenue),
         "month_commissions": float(await month_commissions(db, workspace.id)),
         **(await _falcon_fees(db) if user.platform_role == "SUPER_ADMIN" else {}),
-        "goal": _goals_out(flash_revenue, await award_image_urls(db)),  # goals count Flash sales only
+        # goals count Flash sales over the whole history, like the header pill
+        "goal": _goals_out(await total_flash_revenue(db, workspace.id), await award_image_urls(db)),
         **numbers,
         "min_withdrawal": float(MIN_WITHDRAWAL),
         "withdrawals": await _history(db, workspace.id),
