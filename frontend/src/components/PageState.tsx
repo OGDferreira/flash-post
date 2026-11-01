@@ -1,16 +1,17 @@
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { BrandLogo } from "@/components/BrandLogo";
 import { appForPath } from "@/lib/brand";
 import { CircleAlert, Inbox, RotateCw } from "lucide-react";
 
 export function LoadingState({ label = "Carregando", fullscreen = false }: { label?: string; fullscreen?: boolean }) {
-  return (
+  const content = (
     <div
       aria-busy="true"
       aria-live="polite"
       className={
         fullscreen
-          ? "fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-[var(--nm-bg)] text-sm text-muted backdrop-blur-sm"
+          ? "fixed inset-0 z-[200] flex h-[100dvh] w-screen flex-col items-center justify-center gap-4 bg-[var(--nm-bg)] px-4 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-sm text-muted"
           : "flex min-h-48 flex-col items-center justify-center gap-3 text-sm text-muted"
       }
       role="status"
@@ -19,6 +20,9 @@ export function LoadingState({ label = "Carregando", fullscreen = false }: { lab
       {label}
     </div>
   );
+  // Full screen: drawn on <body>, so a parent with a transform (page animations) can't pull
+  // it up under the top bar; it always sits in the middle of the screen.
+  return fullscreen && typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }
 
 export function ErrorState({
