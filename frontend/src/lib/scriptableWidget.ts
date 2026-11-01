@@ -1,39 +1,56 @@
 /**
  * The iPhone widget script for the Scriptable app. It reads /api/widget/today with a
- * read-only token (made when the user copies it in Configurações) and draws, in the logo's
- * blue gradient:
- * - medium and small (the SharkBot-style cards): Flash, sales pill, "Faturamento hoje",
- *   the day's total and the revenue-by-hour chart;
- * - large: revenue, profit, Pix generated/paid and a bigger chart;
- * - lock screen: logo, Flash, revenue and number of sales.
+ * read-only token (made when the user copies it in Configurações) and draws:
+ * - the day's TOTAL in evidence, then one line each for sales (Flash + SharkBot webhook),
+ *   commission and Flash fees (the last two for the Super Admin only);
+ * - Pix conversion (generated → paid), the Flash Post views of the day (eye icon), the chart;
+ * - six looks (claro, escuro, preto e branco, roxo, galáxia, rosa) with the big Flash mark
+ *   faded in the background.
  * iOS widgets are still images the system refreshes on its own (it asks for 1 min; iOS
  * usually allows every 5-15 min), so a new sale shows as a green "+R$" badge, and tapping
  * the widget opens an animated view (chart drawing itself, numbers counting up).
  */
-export type WidgetTheme = "azul" | "dark" | "white";
+export type WidgetTheme = "claro" | "escuro" | "pb" | "roxo" | "galaxia" | "rosa";
 
-export function scriptableWidgetScript(baseUrl: string, token: string, theme: WidgetTheme = "azul"): string {
+export const WIDGET_THEME_IDS: WidgetTheme[] = ["claro", "escuro", "pb", "roxo", "galaxia", "rosa"];
+
+export function scriptableWidgetScript(baseUrl: string, token: string, theme: WidgetTheme = "roxo"): string {
   const base = baseUrl.replace(/\/$/, "");
   return `// Flash — widget de vendas do Flash para o Scriptable
 // Gerado em ${new Date().toLocaleDateString("pt-BR")}. Copiar o script de novo no site desliga este.
 const API = ${JSON.stringify(`${base}/api/widget/today`)};
 const TOKEN = ${JSON.stringify(token)};
 const LOGO = ${JSON.stringify(`${base}/brand/flash-icon-bot-192.png`)};
+const MARKS = { white: ${JSON.stringify(`${base}/brand/flash-mark-white-512.png`)}, purple: ${JSON.stringify(`${base}/brand/flash-mark-purple-512.png`)} };
 const SITE = ${JSON.stringify(`${base}/bot`)};
 
-// Three looks in the Flash Bot colors (roxo). Pick one per widget in its "Parameter"
-// field (dark, white or roxo); empty = the one chosen when the script was copied. "comm" is the
-// commission tone used on the Super Admin's commission line and dotted chart.
+// Six looks. Pick one per widget in its "Parameter" field (claro, escuro, pb, roxo, galaxia
+// or rosa); empty = the one chosen when the script was copied. "comm" colors the commission
+// line, "fee" the Flash fees line; "mark" is the big logo faded in the background.
 const THEMES = {
-  azul: { bg: ["#8f1dff", "#7a00ff", "#5b00c4"], text: "#ffffff", soft: ["#ffffff", 0.82], faint: ["#ffffff", 0.62],
-          pill: ["#ffffff", 0.2], line: "#ffffff", fill: 0.16, profit: "#b6ffcf", rate: "#ffffff", comm: "#f0d4ff" },
-  dark: { bg: ["#12141c", "#1c1630", "#2a1a4a"], text: "#ffffff", soft: ["#b7a6d4", 1], faint: ["#7a6b99", 1],
-          pill: ["#8f1dff", 0.26], line: "#a64bff", fill: 0.2, profit: "#22c55e", rate: "#d19bff", comm: "#d6a0ff" },
-  white: { bg: ["#ffffff", "#f6f2ff", "#efe7ff"], text: "#17082e", soft: ["#574b71", 1], faint: ["#938ab4", 1],
-           pill: ["#8f1dff", 0.12], line: "#7412d1", fill: 0.14, profit: "#16a34a", rate: "#8f1dff", comm: "#8b3fd6" },
+  claro: { bg: ["#ffffff", "#f6f0ff", "#ece2ff"], text: "#17082e", soft: ["#574b71", 1], faint: ["#938ab4", 1],
+           pill: ["#8f1dff", 0.12], line: "#7412d1", fill: 0.14, profit: "#16a34a", rate: "#8f1dff", comm: "#8b3fd6",
+           mark: "purple", markAlpha: 0.1 },
+  escuro: { bg: ["#0e0f16", "#161322", "#211836"], text: "#ffffff", soft: ["#b7a6d4", 1], faint: ["#7a6b99", 1],
+            pill: ["#8f1dff", 0.28], line: "#a64bff", fill: 0.2, profit: "#22c55e", rate: "#d19bff", comm: "#d6a0ff",
+            mark: "white", markAlpha: 0.07 },
+  pb: { bg: ["#000000", "#0b0b0b", "#1a1a1a"], text: "#ffffff", soft: ["#d4d4d4", 1], faint: ["#8a8a8a", 1],
+        pill: ["#ffffff", 0.16], line: "#ffffff", fill: 0.14, profit: "#ffffff", rate: "#ffffff", comm: "#bdbdbd",
+        mark: "white", markAlpha: 0.08 },
+  roxo: { bg: ["#8f1dff", "#7a00ff", "#5b00c4"], text: "#ffffff", soft: ["#ffffff", 0.82], faint: ["#ffffff", 0.62],
+          pill: ["#ffffff", 0.2], line: "#ffffff", fill: 0.16, profit: "#b6ffcf", rate: "#ffffff", comm: "#f0d4ff",
+          mark: "white", markAlpha: 0.12 },
+  galaxia: { bg: ["#05041a", "#1d0b4a", "#4a1592"], text: "#ffffff", soft: ["#c9b8ff", 1], faint: ["#8c7bc4", 1],
+             pill: ["#b06bff", 0.26], line: "#c48bff", fill: 0.2, profit: "#5ef0b0", rate: "#e0c4ff", comm: "#ff9ee8",
+             mark: "white", markAlpha: 0.09, stars: true },
+  rosa: { bg: ["#ff5fb0", "#ec2a8a", "#b0136a"], text: "#ffffff", soft: ["#ffffff", 0.85], faint: ["#ffffff", 0.65],
+          pill: ["#ffffff", 0.22], line: "#ffffff", fill: 0.18, profit: "#d9ffe8", rate: "#ffffff", comm: "#ffe0f1",
+          mark: "white", markAlpha: 0.13 },
 };
+const ALIASES = { azul: "roxo", purple: "roxo", dark: "escuro", white: "claro", branco: "claro", light: "claro",
+  preto: "pb", "preto e branco": "pb", mono: "pb", "galáxia": "galaxia", galaxy: "galaxia", pink: "rosa" };
 const PICK = String(args.widgetParameter || ${JSON.stringify(theme)}).trim().toLowerCase();
-const T = THEMES[PICK === "branco" ? "white" : PICK === "escuro" ? "dark" : PICK] || THEMES.azul;
+const T = THEMES[ALIASES[PICK] || PICK] || THEMES.roxo;
 const BLUE = T.bg;
 const C = {
   text: new Color(T.text), soft: new Color(...T.soft), faint: new Color(...T.faint),
@@ -71,16 +88,28 @@ async function loadData() {
   }
 }
 
-async function loadLogo() {
-  const path = fm.joinPath(dir, "flashbot-logo-v3.png");
+async function loadImage(url, name) {
+  const path = fm.joinPath(dir, name);
   if (fm.fileExists(path)) return fm.readImage(path);
   try {
-    const image = await new Request(LOGO).loadImage();
+    const image = await new Request(url).loadImage();
     fm.writeImage(path, image);
     return image;
   } catch (error) {
     return null;
   }
+}
+function loadLogo() { return loadImage(LOGO, "flash-logo-v4.png"); }
+function loadMark() { return loadImage(MARKS[T.mark], "flash-mark-" + T.mark + "-v1.png"); }
+
+// Older servers send only "revenue": fall back to it.
+function total(data) { return data.total != null ? data.total : data.revenue || 0; }
+function salesValue(data) { return data.sales != null ? data.sales : data.revenue || 0; }
+function salesCount(data) { return data.sales_count != null ? data.sales_count : data.pix_paid; }
+function viewsText(n) {
+  n = n || 0;
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(".", ",") + " mi";
+  return String(n).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ".");
 }
 
 // A sale since the last refresh: shown as a green "+R$" badge until the next one.
@@ -89,16 +118,65 @@ function newSales(data) {
   try { last = fm.fileExists(statePath) ? JSON.parse(fm.readString(statePath)) : null; } catch (error) {}
   const day = new Date().toDateString();
   let delta = null;
-  if (last && last.day === day && data.pix_paid > last.paid) {
-    delta = { amount: data.revenue - last.revenue, count: data.pix_paid - last.paid, until: Date.now() + 15 * 60 * 1000 };
+  const count = salesCount(data), amount = salesValue(data);
+  if (last && last.day === day && count > last.paid) {
+    delta = { amount: amount - last.revenue, count: count - last.paid, until: Date.now() + 15 * 60 * 1000 };
   } else if (last && last.day === day && last.delta && last.delta.until > Date.now()) {
     delta = last.delta;
   }
-  fm.writeString(statePath, JSON.stringify({ day, paid: data.pix_paid, revenue: data.revenue, delta }));
+  fm.writeString(statePath, JSON.stringify({ day, paid: count, revenue: amount, delta }));
   return delta;
 }
 
-function background(widget) {
+// Point sizes of each widget family, for the background picture.
+const SIZES = { small: [158, 158], medium: [338, 158], large: [338, 354], extraLarge: [715, 354] };
+function hexRgb(hex) { const n = parseInt(hex.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+function toHex(rgb) { return "#" + rgb.map((v) => Math.round(v).toString(16).padStart(2, "0")).join(""); }
+function gradientAt(k) {
+  const i = k < 0.55 ? 0 : 1;
+  const t = i === 0 ? k / 0.55 : (k - 0.55) / 0.45;
+  const a = hexRgb(T.bg[i]), b = hexRgb(T.bg[i + 1]);
+  return toHex([0, 1, 2].map((j) => a[j] + (b[j] - a[j]) * t));
+}
+function paint(ctx, w, h, alpha) {
+  const bands = 64;
+  for (let i = 0; i < bands; i++) {
+    const y0 = Math.floor((i * h) / bands), y1 = Math.floor(((i + 1) * h) / bands);
+    ctx.setFillColor(new Color(gradientAt(i / (bands - 1)), alpha));
+    ctx.fillRect(new Rect(0, y0, w, y1 - y0));
+  }
+}
+// The theme's gradient with the big Flash mark faded in (a second, almost opaque coat of the
+// gradient over the mark leaves it at low opacity); galáxia gets its stars on top.
+function backgroundImage(family, mark) {
+  const size = SIZES[family] || SIZES.medium;
+  const w = size[0], h = size[1];
+  const ctx = new DrawContext();
+  ctx.size = new Size(w, h);
+  ctx.opaque = true;
+  ctx.respectScreenScale = true;
+  paint(ctx, w, h, 1);
+  if (mark) {
+    const m = Math.min(h * 1.3, w * 0.95);
+    ctx.drawImageInRect(mark, new Rect(w - m * 0.78, (h - m) / 2 + h * 0.05, m, m));
+    paint(ctx, w, h, 1 - T.markAlpha);
+  }
+  if (T.stars) {
+    let seed = 11;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < Math.round((w * h) / 700); i++) {
+      const r = rnd() * 1.4 + 0.4;
+      ctx.setFillColor(new Color("#ffffff", 0.2 + rnd() * 0.65));
+      ctx.fillEllipse(new Rect(rnd() * w, rnd() * h, r, r));
+    }
+  }
+  return ctx.getImage();
+}
+function background(widget, family, mark) {
+  if (family) {
+    widget.backgroundImage = backgroundImage(family, mark);
+    return;
+  }
   const gradient = new LinearGradient();
   gradient.colors = BLUE.map((c) => new Color(c));
   gradient.locations = [0, 0.55, 1];
@@ -107,15 +185,28 @@ function background(widget) {
   widget.backgroundGradient = gradient;
 }
 
-function header(stack, logo, size, pill) {
+// Eye icon + the Flash Post views of the day.
+function eye(stack, data, size) {
+  if (data.views == null) return;
+  const box = stack.addStack();
+  box.centerAlignContent();
+  const icon = box.addImage(SFSymbol.named("eye.fill").image);
+  icon.imageSize = new Size(size, size);
+  icon.tintColor = C.soft;
+  box.addSpacer(3);
+  const t = box.addText(viewsText(data.views));
+  t.font = Font.semiboldSystemFont(size * 0.85);
+  t.textColor = C.soft;
+  t.lineLimit = 1;
+}
+
+function header(stack, logo, size, pill, data) {
   const row = stack.addStack();
   row.centerAlignContent();
   if (logo) {
     const image = row.addImage(logo);
     image.imageSize = new Size(size, size);
     image.cornerRadius = size * 0.24;
-    image.borderWidth = 1;
-    image.borderColor = new Color(T.text, 0.25);
     row.addSpacer(6);
   }
   const name = row.addText("Flash");
@@ -124,6 +215,10 @@ function header(stack, logo, size, pill) {
   name.lineLimit = 1;
   name.minimumScaleFactor = 0.7;
   row.addSpacer();
+  if (data) {
+    eye(row, data, size * 0.62);
+    row.addSpacer(8);
+  }
   if (pill) {
     const tag = row.addStack();
     tag.backgroundColor = C.pill;
@@ -150,19 +245,60 @@ function value(stack, amount, size) {
   v.lineLimit = 1;
 }
 
-// "45% conversão · 31 pix": paid over generated Pix today
-function conversion(stack, data, size) {
+// "22% conversão" and "51 pix → 11 pagos": paid over generated Pix today.
+function conversionBlock(stack, data, size) {
   const row = stack.addStack();
   row.centerAlignContent();
   const pct = row.addText(rate(data) + "%");
-  pct.font = Font.boldRoundedSystemFont(size + 1);
+  pct.font = Font.boldRoundedSystemFont(size + 6);
   pct.textColor = C.rate;
   row.addSpacer(4);
-  const rest = row.addText("conversão · " + data.pix_generated + " pix");
-  rest.font = Font.mediumSystemFont(size);
-  rest.textColor = C.soft;
-  rest.lineLimit = 1;
-  rest.minimumScaleFactor = 0.7;
+  const word = row.addText("conversão");
+  word.font = Font.mediumSystemFont(size);
+  word.textColor = C.soft;
+  const detail = stack.addText(data.pix_generated + " pix → " + data.pix_paid + " pagos");
+  detail.font = Font.mediumSystemFont(size - 1);
+  detail.textColor = C.faint;
+  detail.lineLimit = 1;
+  detail.minimumScaleFactor = 0.7;
+}
+
+// "● R$ X em vendas" (+ commission and fees for the Super Admin); the amount in bold.
+function amountLine(stack, amount, text, color, size) {
+  const row = stack.addStack();
+  row.centerAlignContent();
+  const dot = row.addText("●");
+  dot.font = Font.systemFont(size * 0.7);
+  dot.textColor = color;
+  row.addSpacer(4);
+  const v = row.addText(brl(amount));
+  v.font = Font.boldRoundedSystemFont(size);
+  v.textColor = C.text;
+  v.lineLimit = 1;
+  v.minimumScaleFactor = 0.6;
+  row.addSpacer(4);
+  const t = row.addText(text);
+  t.font = Font.mediumSystemFont(size * 0.88);
+  t.textColor = C.soft;
+  t.lineLimit = 1;
+  t.minimumScaleFactor = 0.6;
+}
+function breakdown(stack, data, size, gap, sharkNote) {
+  amountLine(stack, salesValue(data), "em vendas", C.rate, size);
+  if (data.is_admin) {
+    stack.addSpacer(gap);
+    amountLine(stack, data.commissions || 0, "em comissão", C.comm, size);
+    stack.addSpacer(gap);
+    amountLine(stack, data.fees || 0, "em arrecadação", C.green, size);
+  }
+  if (sharkNote && data.shark_sales) {
+    stack.addSpacer(gap);
+    const t = stack.addText("inclui " + brl(data.shark_revenue || 0) + " da Shark (" + sales(data.shark_sales) + ")");
+    t.font = Font.mediumSystemFont(size * 0.78);
+    t.textColor = C.faint;
+    t.lineLimit = 1;
+    t.minimumScaleFactor = 0.7;
+  }
 }
 
 function badge(stack, delta, size) {
@@ -247,28 +383,6 @@ function chart(series, width, height, opts) {
   return ctx.getImage();
 }
 
-// Super Admin lines below the sales: commissions and the Flash fees collected, then the total
-// (sales + commissions + fees).
-function commissionLine(stack, data, size) {
-  if (!data.is_admin) return;
-  const fees = data.fees || 0;
-  const total = data.total != null ? data.total : (data.revenue || 0) + (data.commissions || 0) + fees;
-  const row = stack.addStack();
-  row.centerAlignContent();
-  const plus = row.addText("Comissão " + brl(data.commissions || 0));
-  plus.font = Font.semiboldSystemFont(size);
-  plus.textColor = C.comm;
-  const fee = row.addText(" · Arrecadação " + brl(fees));
-  fee.font = Font.semiboldSystemFont(size);
-  fee.textColor = C.green;
-  fee.lineLimit = 1;
-  fee.minimumScaleFactor = 0.7;
-  stack.addSpacer(2);
-  const sum = stack.addText("Total " + brl(total));
-  sum.font = Font.boldSystemFont(size + 1);
-  sum.textColor = C.text;
-}
-
 function footer(stack, data, size) {
   const row = stack.addStack();
   row.addSpacer();
@@ -277,106 +391,102 @@ function footer(stack, data, size) {
   t.textColor = C.faint;
 }
 
-function medium(data, logo, delta) {
+function medium(data, logo, mark, delta) {
   const w = new ListWidget();
-  background(w);
-  w.setPadding(14, 16, 10, 16);
-  header(w, logo, 20, sales(data.pix_paid));
-  w.addSpacer(8);
+  background(w, "medium", mark);
+  w.setPadding(13, 15, 11, 15);
+  header(w, logo, 20, sales(salesCount(data)), data);
+  w.addSpacer(6);
   const body = w.addStack();
   const left = body.addStack();
   left.layoutVertically();
-  label(left, data.is_admin ? "Vendas hoje" : "Faturamento hoje", 11);
-  left.addSpacer(2);
-  value(left, data.revenue, 34);
-  left.addSpacer(3);
-  conversion(left, data, 11);
+  label(left, data.is_admin ? "Total hoje" : "Faturamento hoje", 10);
+  left.addSpacer(1);
+  value(left, total(data), 30);
   left.addSpacer(4);
-  badge(left, delta, 10);
-  if (data.is_admin) { left.addSpacer(4); commissionLine(left, data, 10); }
-  body.addSpacer(10);
+  breakdown(left, data, 11, 2, !data.is_admin);
+  left.addSpacer();
+  body.addSpacer(8);
   const right = body.addStack();
   right.layoutVertically();
-  right.addSpacer();
-  if (data.is_admin) {
-    // Revenue chart plus the dotted commission chart below it.
-    const g1 = right.addImage(chart(data.series || [0], 120, 34));
-    g1.imageSize = new Size(120, 34);
+  const graph = right.addImage(chart(data.series || [0], 112, 48));
+  graph.imageSize = new Size(112, 48);
+  right.addSpacer(4);
+  if (delta) {
+    badge(right, delta, 8);
     right.addSpacer(3);
-    const g2 = right.addImage(chart(data.commission_series || [0], 120, 22, { dotted: true, color: T.comm }));
-    g2.imageSize = new Size(120, 22);
-  } else {
-    const graph = right.addImage(chart(data.series || [0], 120, 56));
-    graph.imageSize = new Size(120, 56);
   }
-  w.addSpacer();
-  footer(w, data, 9);
+  conversionBlock(right, data, 10);
+  right.addSpacer();
+  footer(right, data, 8);
   return w;
 }
 
-function small(data, logo, delta) {
+function small(data, logo, mark, delta) {
   const w = new ListWidget();
-  background(w);
+  background(w, "small", mark);
   w.setPadding(12, 13, 9, 13);
-  header(w, logo, 17, String(data.pix_paid));
-  w.addSpacer(6);
-  label(w, "Faturamento hoje", 9);
+  header(w, logo, 17, String(salesCount(data)));
+  w.addSpacer(5);
+  label(w, data.is_admin ? "Total hoje" : "Faturamento hoje", 9);
   w.addSpacer(1);
-  value(w, data.revenue, 24);
+  value(w, total(data), 24);
   w.addSpacer(2);
   if (delta) badge(w, delta, 8);
-  else conversion(w, data, 10);
+  else {
+    const row = w.addStack();
+    row.centerAlignContent();
+    const pct = row.addText(rate(data) + "% ");
+    pct.font = Font.boldRoundedSystemFont(11);
+    pct.textColor = C.rate;
+    const rest = row.addText(data.pix_paid + "/" + data.pix_generated + " pix");
+    rest.font = Font.mediumSystemFont(10);
+    rest.textColor = C.soft;
+  }
+  w.addSpacer(2);
+  eye(w, data, 10);
   w.addSpacer();
-  const graph = w.addImage(chart(data.series || [0], 132, 30));
-  graph.imageSize = new Size(132, 30);
+  const graph = w.addImage(chart(data.series || [0], 132, 26));
+  graph.imageSize = new Size(132, 26);
   return w;
 }
 
-function large(data, logo, delta) {
+function large(data, logo, mark, delta) {
   const w = new ListWidget();
-  background(w);
+  background(w, "large", mark);
   w.setPadding(16, 16, 12, 16);
-  header(w, logo, 22, sales(data.pix_paid));
-  w.addSpacer(10);
-  label(w, data.is_admin ? "Vendas hoje" : "Faturamento hoje", 11);
+  header(w, logo, 22, sales(salesCount(data)), data);
+  w.addSpacer(12);
+  label(w, data.is_admin ? "Total do dia" : "Faturamento do dia", 12);
   w.addSpacer(2);
-  const row = w.addStack();
-  row.bottomAlignContent();
-  value(row, data.revenue, 34);
-  row.addSpacer();
-  const profit = row.addStack();
-  profit.layoutVertically();
-  label(profit, "Lucro", 10);
-  const p = profit.addText(brl(data.profit));
-  p.font = Font.boldRoundedSystemFont(18);
-  p.textColor = C.green;
-  w.addSpacer(4);
-  badge(w, delta, 11);
-  if (data.is_admin) { w.addSpacer(6); commissionLine(w, data, 12); }
-  w.addSpacer(8);
+  value(w, total(data), 40);
+  if (delta) {
+    w.addSpacer(4);
+    badge(w, delta, 11);
+  }
+  w.addSpacer(10);
+  breakdown(w, data, 15, 5, true);
+  w.addSpacer(12);
   const pix = w.addStack();
   pix.backgroundColor = C.pill;
   pix.cornerRadius = 10;
   pix.setPadding(6, 10, 6, 10);
-  const pixText = pix.addText(data.pix_generated + " pix gerados  ·  " + data.pix_paid + " pagos  ·  " + rate(data) + "% conversão");
+  pix.centerAlignContent();
+  const pct = pix.addText(rate(data) + "% conversão");
+  pct.font = Font.boldSystemFont(12);
+  pct.textColor = C.rate;
+  const pixText = pix.addText("  ·  " + data.pix_generated + " pix gerados → " + data.pix_paid + " pagos");
   pixText.font = Font.semiboldSystemFont(12);
   pixText.textColor = C.text;
-  w.addSpacer(8);
+  pixText.lineLimit = 1;
+  pixText.minimumScaleFactor = 0.7;
+  w.addSpacer(10);
+  const graph = w.addImage(chart(data.series || [0], 306, data.is_admin ? 84 : 110));
+  graph.imageSize = new Size(306, data.is_admin ? 84 : 110);
   if (data.is_admin) {
-    const graph = w.addImage(chart(data.series || [0], 306, 86));
-    graph.imageSize = new Size(306, 86);
-    w.addSpacer(4);
-    const crow = w.addStack();
-    crow.centerAlignContent();
-    const tag = crow.addText("comissões");
-    tag.font = Font.mediumSystemFont(9);
-    tag.textColor = C.comm;
-    crow.addSpacer();
-    const cg = w.addImage(chart(data.commission_series || [0], 306, 30, { dotted: true, color: T.comm }));
-    cg.imageSize = new Size(306, 30);
-  } else {
-    const graph = w.addImage(chart(data.series || [0], 306, 120));
-    graph.imageSize = new Size(306, 120);
+    w.addSpacer(3);
+    const cg = w.addImage(chart(data.commission_series || [0], 306, 24, { dotted: true, color: T.comm }));
+    cg.imageSize = new Size(306, 24);
   }
   w.addSpacer();
   footer(w, data, 10);
@@ -387,12 +497,12 @@ function large(data, logo, delta) {
 function lockScreen(data, logo, family) {
   const w = new ListWidget();
   if (family === "accessoryInline") {
-    w.addText("Flash " + brl(data.revenue) + " · " + sales(data.pix_paid));
+    w.addText("Flash " + brl(total(data)) + " · " + sales(salesCount(data)));
     return w;
   }
   if (family === "accessoryCircular") {
     w.addSpacer();
-    const n = w.addText(String(data.pix_paid));
+    const n = w.addText(String(salesCount(data)));
     n.font = Font.boldRoundedSystemFont(20);
     n.centerAlignText();
     const t = w.addText("vendas");
@@ -411,11 +521,11 @@ function lockScreen(data, logo, family) {
   }
   const name = top.addText("Flash");
   name.font = Font.boldSystemFont(12);
-  const amount = w.addText(brl(data.revenue));
+  const amount = w.addText(brl(total(data)));
   amount.font = Font.boldRoundedSystemFont(20);
   amount.minimumScaleFactor = 0.6;
   amount.lineLimit = 1;
-  const count = w.addText(sales(data.pix_paid));
+  const count = w.addText(sales(salesCount(data)) + (data.views != null ? " · " + viewsText(data.views) + " views" : ""));
   count.font = Font.mediumSystemFont(11);
   return w;
 }
@@ -435,14 +545,14 @@ function failure(message) {
 
 // Opened from the widget (or run in the app): the chart draws itself and the numbers count up.
 async function animatedView(data) {
-  const series = data.series && data.series.length > 1 ? data.series : [0, data.revenue];
+  const series = data.series && data.series.length > 1 ? data.series : [0, salesValue(data)];
   const max = Math.max(...series, 1);
   const pts = series.map((v, i) => [(i / (series.length - 1)) * 320, 150 - (v / max) * 130]);
   const d = "M" + pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" L");
   const conversion = rate(data);
   const html = \`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-body{margin:0;min-height:100vh;font-family:-apple-system,system-ui;color:\${T.text};background:linear-gradient(135deg,\${BLUE[0]},\${BLUE[1]} 55%,\${BLUE[2]});display:flex;flex-direction:column;gap:18px;padding:28px 22px;box-sizing:border-box}
+body{margin:0;min-height:100vh;font-family:-apple-system,system-ui;color:\${T.text};background:linear-gradient(135deg,\${BLUE[0]},\${BLUE[1]} 55%,\${BLUE[2]});background-attachment:fixed;display:flex;flex-direction:column;gap:18px;padding:28px 22px;box-sizing:border-box}
 .top{display:flex;align-items:center;gap:10px;font-weight:700;font-size:22px}.top img{width:34px;height:34px;border-radius:9px;border:1px solid \${rgba(T.text, 0.3)}}
 .pill{margin-left:auto;background:\${rgba(...T.pill)};border-radius:99px;padding:5px 12px;font-size:14px}
 .lbl{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.8;font-weight:600}
@@ -453,11 +563,12 @@ svg{width:100%;height:auto;overflow:visible}.line{fill:none;stroke:\${T.line};st
 @keyframes draw{to{stroke-dashoffset:0}}@keyframes fade{to{opacity:1}}@keyframes pulse{0%,100%{opacity:1;r:5}50%{opacity:.5;r:9}}
 a{color:#fff;text-align:center;background:\${T.line === "#ffffff" ? "rgba(0,0,0,.18)" : T.line};border-radius:14px;padding:13px;text-decoration:none;font-weight:600}
 </style></head><body>
-<div class="top"><img src="\${LOGO}">Flash<span class="pill">\${sales(data.pix_paid)}</span></div>
-<div><div class="lbl">\${data.is_admin ? "Vendas hoje" : "Faturamento hoje"}</div><div class="big" data-to="\${data.revenue}">R$ 0,00</div></div>
-<div class="row"><div class="card"><div class="lbl">Lucro</div><b data-to="\${data.profit}">R$ 0,00</b></div>
-<div class="card"><div class="lbl">Pix</div><b>\${data.pix_generated} gerados</b><span style="opacity:.8">\${data.pix_paid} pagos · \${conversion}%</span></div></div>
-\${data.is_admin ? '<div class="row"><div class="card"><div class="lbl">Comissão</div><b data-to="' + (data.commissions || 0) + '">R$ 0,00</b></div><div class="card"><div class="lbl">Arrecadação</div><b data-to="' + (data.fees || 0) + '">R$ 0,00</b></div></div><div><div class="lbl">Total do dia</div><div class="big" data-to="' + (data.total || 0) + '">R$ 0,00</div></div>' : ""}
+<div class="top"><img src="\${LOGO}">Flash<span class="pill">\${data.views != null ? "👁 " + viewsText(data.views) : ""}</span><span class="pill" style="margin-left:6px">\${sales(salesCount(data))}</span></div>
+<div><div class="lbl">\${data.is_admin ? "Total do dia" : "Faturamento do dia"}</div><div class="big" data-to="\${total(data)}">R$ 0,00</div></div>
+<div class="row"><div class="card"><div class="lbl">Vendas</div><b data-to="\${salesValue(data)}">R$ 0,00</b></div>
+\${data.is_admin ? '<div class="card"><div class="lbl">Comissão</div><b data-to="' + (data.commissions || 0) + '">R$ 0,00</b></div><div class="card"><div class="lbl">Arrecadação</div><b data-to="' + (data.fees || 0) + '">R$ 0,00</b></div>' : ""}</div>
+<div class="row"><div class="card"><div class="lbl">Conversão</div><b>\${conversion}%</b><span style="opacity:.8">\${data.pix_generated} pix → \${data.pix_paid} pagos</span></div>
+\${data.shark_sales ? '<div class="card"><div class="lbl">Shark</div><b data-to="' + (data.shark_revenue || 0) + '">R$ 0,00</b></div>' : ""}</div>
 <svg viewBox="0 0 320 160"><path class="area" d="\${d} L320,160 L0,160 Z"/><path class="line" d="\${d}"/><circle class="dot" cx="\${pts[pts.length-1][0]}" cy="\${pts[pts.length-1][1]}" r="5"/></svg>
 <div class="lbl" style="text-align:right">atualizado \${data.updated_at}</div>
 <a href="\${SITE}">Abrir o Flash</a>
@@ -475,13 +586,13 @@ const family = config.widgetFamily || "medium";
 let widget;
 let data = null;
 try {
-  const [loaded, logo] = await Promise.all([loadData(), loadLogo()]);
+  const [loaded, logo, mark] = await Promise.all([loadData(), loadLogo(), loadMark()]);
   data = loaded;
   const delta = newSales(data);
   if (family.startsWith("accessory")) widget = lockScreen(data, logo, family);
-  else if (family === "small") widget = small(data, logo, delta);
-  else if (family === "large" || family === "extraLarge") widget = large(data, logo, delta);
-  else widget = medium(data, logo, delta);
+  else if (family === "small") widget = small(data, logo, mark, delta);
+  else if (family === "large" || family === "extraLarge") widget = large(data, logo, mark, delta);
+  else widget = medium(data, logo, mark, delta);
 } catch (error) {
   widget = failure(String(error.message || error));
 }

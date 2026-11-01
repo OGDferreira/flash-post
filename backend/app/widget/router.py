@@ -16,7 +16,8 @@ from sqlalchemy import and_, func, select
 from app.auth.dependencies import AuthenticatedUser, DbSession, require_csrf
 from app.core.time import day_bounds_utc
 from app.analytics.periods import user_time_zone
-from app.models import TgOrder, User
+from app.models import InstagramAccountDailyViews, TgOrder, User
+from app.models.sharkbot import SharkTransaction
 from app.partners.service import owner_workspace
 
 router = APIRouter(prefix="/api/widget", tags=["widget"])
@@ -72,6 +73,19 @@ async def today(
             TgOrder.paid_at >= midnight, TgOrder.paid_at < tomorrow, TgOrder.split_amount.is_not(None),
         )
     )).all()
+    # SharkBot sales reported by its webhook today: they count in the sales and the total.
+    shark_rows = (await db.execute(
+        select(SharkTransaction.paid_at, SharkTransaction.amount).where(
+            SharkTransaction.workspace_id == workspace.id, SharkTransaction.status == "paid",
+            SharkTransaction.paid_at >= midnight, SharkTransaction.paid_at < tomorrow,
+        )
+    )).all()
+    # Flash Post: Meta's views of the operation's Instagram accounts today.
+    views = int(await db.scalar(
+        select(func.coalesce(func.sum(InstagramAccountDailyViews.views), 0)).where(
+            InstagramAccountDailyViews.workspace_id == workspace.id, InstagramAccountDailyViews.day == now.date(),
+        )
+    ) or 0)
     hours = [Decimal("0")] * 24
     commission_hours = [Decimal("0")] * 24
     revenue = profit = commissions = Decimal("0")
@@ -80,6 +94,11 @@ async def today(
         hours[moment.astimezone(zone).hour] += Decimal(amount)
         revenue += Decimal(amount)
         profit += Decimal(kept)
+    shark = Decimal("0")
+    for paid_at, amount in shark_rows:
+        moment = paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc)
+        hours[moment.astimezone(zone).hour] += Decimal(amount or 0)
+        shark += Decimal(amount or 0)
     for paid_at, amount in commission_rows:
         moment = paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc)
         commission_hours[moment.astimezone(zone).hour] += Decimal(amount)
@@ -101,8 +120,15 @@ async def today(
         crunning += commission_hours[hour]
         series.append(float(running.quantize(CENT)))
         commission_series.append(float(crunning.quantize(CENT)))
+    sales = revenue + shark
+    total = sales + commissions + fees if is_admin else sales
     return {
         "name": "Flash",
+        "sales": float(sales.quantize(CENT)),  # Flash + SharkBot
+        "sales_count": len(paid_rows) + len(shark_rows),
+        "shark_revenue": float(shark.quantize(CENT)),
+        "shark_sales": len(shark_rows),
+        "views": views,
         "pix_generated": generated,
         "pix_paid": len(paid_rows),
         "revenue": float(revenue.quantize(CENT)),
@@ -111,8 +137,8 @@ async def today(
         "series": series,
         "commission_series": commission_series,
         "fees": float(fees.quantize(CENT)),
-        # sales + commissions + fees (the Super Admin's day)
-        "total": float((revenue + commissions + fees).quantize(CENT)),
+        # Super Admin: sales + commissions + fees; everyone else: the sales
+        "total": float(total.quantize(CENT)),
         "is_admin": is_admin,
         "updated_at": now.strftime("%H:%M"),
     }
