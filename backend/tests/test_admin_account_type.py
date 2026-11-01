@@ -20,20 +20,16 @@ async def test_super_admin_switches_owner_partner_collaborator_and_back(client, 
 
     admin = await _as(client, "superadmin@example.com", "super admin password")
     options = (await client.get(f"/api/admin/users/{ana.id}/account-type")).json()
-    assert str(chief.id) in {c["id"] for c in options["chiefs"]}
     assert str(chief_ws.id) in {w["id"] for w in options["workspaces"]}
 
-    # sócio of the chief: the partnership is active and the commission already agreed
+    # sócio: always of the Super Admin; the partnership is active and the commission agreed
     as_partner = await client.put(f"/api/admin/users/{ana.id}/account-type", headers=admin,
-                                  json={"type": "partner", "chief_user_id": str(chief.id), "percent": "10"})
+                                  json={"type": "partner", "percent": "10"})
     assert as_partner.status_code == 200, as_partner.text
     link = await db_session.scalar(select(Affiliation).where(Affiliation.affiliate_user_id == ana.id))
     await db_session.refresh(link)
-    assert link.chief_user_id == chief.id and link.status == "ACTIVE" and link.accepted_at is not None
+    assert link.chief_user_id == super_admin.id and link.status == "ACTIVE" and link.accepted_at is not None
     assert str(link.participation_percent) == "10.00"
-    bad = await client.put(f"/api/admin/users/{ana.id}/account-type", headers=admin,
-                           json={"type": "partner", "chief_user_id": str(ana.id)})
-    assert bad.status_code == 422
 
     # collaborator in the chief's operation: her own operation is kept, suspended
     as_collab = await client.put(f"/api/admin/users/{ana.id}/account-type", headers=admin,

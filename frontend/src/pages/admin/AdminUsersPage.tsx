@@ -117,13 +117,12 @@ function PlatformAppToggle({ user }: { user: AdminUser }) {
 
 type AccountType = "owner" | "partner" | "collaborator";
 type AccountOptions = {
-  chiefs: { id: string; name: string }[];
   workspaces: { id: string; name: string; owner_name: string }[];
-  current: { chief_user_id: string | null; percent: string | null };
+  current: { percent: string | null };
 };
 const ACCOUNT_TYPES: { id: AccountType; label: string; hint: string }[] = [
   { id: "owner", label: "Dono independente", hint: "Operação própria, sem chefe. Painel completo de dono." },
-  { id: "partner", label: "Sócio", hint: "Operação própria ligada a um dono, que pode compartilhar funis e loops com ele." },
+  { id: "partner", label: "Sócio", hint: "Seu sócio: operação própria, e você compartilha funis e loops com ele." },
   { id: "collaborator", label: "Colaborador", hint: "Trabalha na operação de outro dono, com o painel de colaborador." },
 ];
 
@@ -141,10 +140,8 @@ function AccountTypeModal({ user, onClose }: { user: AdminUser; onClose: () => v
     queryFn: () => apiRequest<AccountOptions>(`/api/admin/users/${user.id}/account-type`),
   });
   const [type, setType] = useState<AccountType>(currentType(user));
-  const [chief, setChief] = useState("");
   const [percent, setPercent] = useState("");
   const [workspace, setWorkspace] = useState("");
-  const chiefValue = chief || options.data?.current.chief_user_id || "";
   const percentValue = percent || options.data?.current.percent || "0";
   const save = useMutation({
     mutationFn: () =>
@@ -152,7 +149,7 @@ function AccountTypeModal({ user, onClose }: { user: AdminUser; onClose: () => v
         method: "PUT",
         body:
           type === "partner"
-            ? { type, chief_user_id: chiefValue, percent: percentValue.replace(",", ".") }
+            ? { type, percent: percentValue.replace(",", ".") }
             : type === "collaborator"
               ? { type, workspace_id: workspace }
               : { type },
@@ -162,7 +159,7 @@ function AccountTypeModal({ user, onClose }: { user: AdminUser; onClose: () => v
       onClose();
     },
   });
-  const ready = type === "owner" || (type === "partner" && Boolean(chiefValue)) || (type === "collaborator" && Boolean(workspace));
+  const ready = type === "owner" || type === "partner" || (type === "collaborator" && Boolean(workspace));
   return (
     <Modal
       description="O painel dele muda na próxima vez que abrir ou atualizar o app, sem precisar entrar de novo. Nada da operação dele é apagado."
@@ -198,21 +195,11 @@ function AccountTypeModal({ user, onClose }: { user: AdminUser; onClose: () => v
             ))}
           </div>
           {type === "partner" && (
-            <div className="grid gap-2 sm:grid-cols-[1fr_120px]">
-              <label className="text-xs font-medium text-fg-2">
-                Sócio de
-                <select className="field mt-1" onChange={(event) => setChief(event.target.value)} value={chiefValue}>
-                  <option value="">Escolha o dono</option>
-                  {options.data?.chiefs.map((item) => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-xs font-medium text-fg-2">
-                Comissão do dono (%)
-                <input className="field mt-1" inputMode="decimal" onChange={(event) => setPercent(event.target.value)} value={percentValue} />
-              </label>
-            </div>
+            <label className="block text-xs font-medium text-fg-2">
+              Sua comissão sobre as vendas dele (%)
+              <input className="field mt-1" inputMode="decimal" onChange={(event) => setPercent(event.target.value)} value={percentValue} />
+              <span className="mt-1 block text-[11px] font-normal text-muted">Ele vira seu sócio. Use 0 para não cobrar comissão.</span>
+            </label>
           )}
           {type === "collaborator" && (
             <label className="block text-xs font-medium text-fg-2">

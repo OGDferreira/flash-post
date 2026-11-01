@@ -2,8 +2,8 @@
 next request, with no new sign-in.
 
 * owner        — independent owner of their own operation (created if they never had one)
-* partner      — owner of their own operation and "sócio" of a chief (the chief can share
-                 funnels and loops with them; the chief's commission is the given percent)
+* partner      — owner of their own operation and "sócio" of the Super Admin (who can share
+                 funnels and loops with them; the Super Admin's commission is the given percent)
 * collaborator — works in another owner's operation (Flash Post collaborator panel)
 
 Nothing is deleted: the user's own operation and old team memberships are only suspended
@@ -29,15 +29,12 @@ AccountType = Literal["owner", "partner", "collaborator"]
 
 class AccountTypeRequest(BaseModel):
     type: AccountType
-    chief_user_id: uuid.UUID | None = None  # partner
     percent: Decimal = Field(default=Decimal("0"), ge=0, le=90, decimal_places=2)  # partner
     workspace_id: uuid.UUID | None = None  # collaborator
 
 
 async def options(db: AsyncSession, user: User) -> dict:
-    """Who can be the chief (owners that are not partners themselves) and which operations
-    can take a collaborator."""
-    partners = set(await db.scalars(select(Affiliation.affiliate_user_id).where(Affiliation.status == "ACTIVE")))
+    """The operations that can take a collaborator (a sócio is always the Super Admin's)."""
     owners = (await db.execute(
         select(User.id, User.full_name, Workspace.id, Workspace.name)
         .join(Workspace, Workspace.owner_id == User.id)
@@ -48,15 +45,10 @@ async def options(db: AsyncSession, user: User) -> dict:
     )).all()
     link = await db.scalar(select(Affiliation).where(Affiliation.affiliate_user_id == user.id))
     return {
-        "chiefs": [
-            {"id": str(uid), "name": name} for uid, name, _wid, _wname in owners
-            if uid != user.id and uid not in partners
-        ],
         "workspaces": [
             {"id": str(wid), "name": wname, "owner_name": name} for uid, name, wid, wname in owners if uid != user.id
         ],
         "current": {
-            "chief_user_id": str(link.chief_user_id) if link and link.status == "ACTIVE" else None,
             "percent": str(link.participation_percent) if link and link.status == "ACTIVE" else None,
         },
     }
@@ -109,7 +101,7 @@ async def _has_partners(db: AsyncSession, user: User) -> bool:
     ))
 
 
-async def change(db: AsyncSession, user: User, payload: AccountTypeRequest) -> None:
+async def change(db: AsyncSession, user: User, payload: AccountTypeRequest, admin: User) -> None:
     if user.platform_role == "SUPER_ADMIN":
         raise HTTPException(status_code=409, detail="O Super Admin não muda de tipo de conta.")
 
@@ -120,15 +112,7 @@ async def change(db: AsyncSession, user: User, payload: AccountTypeRequest) -> N
         return
 
     if payload.type == "partner":
-        if payload.chief_user_id is None or payload.chief_user_id == user.id:
-            raise HTTPException(status_code=422, detail="Escolha de quem ele vai ser sócio.")
-        chief = await db.get(User, payload.chief_user_id)
-        if chief is None or not chief.is_active:
-            raise HTTPException(status_code=422, detail="Dono não encontrado.")
-        if await db.scalar(select(Affiliation.id).where(
-            Affiliation.affiliate_user_id == chief.id, Affiliation.status == "ACTIVE"
-        )):
-            raise HTTPException(status_code=422, detail="Esse dono já é sócio de outra pessoa: escolha um dono principal.")
+        chief = admin  # a sócio is always the Super Admin's
         if await _has_partners(db, user):
             raise HTTPException(status_code=409, detail="Este usuário tem sócios próprios. Encerre essas sociedades antes.")
         await _own_workspace(db, user)
