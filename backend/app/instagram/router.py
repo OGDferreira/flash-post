@@ -1,3 +1,8 @@
+import asyncio
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import secrets
 import time
@@ -59,6 +64,40 @@ router = APIRouter(prefix="/api/instagram", tags=["Instagram accounts"])
 logger = logging.getLogger(__name__)
 _OAUTH_SESSION_KEY = "instagram_oauth"
 _OAUTH_STATE_MAX_AGE_SECONDS = 600
+
+
+def _sign_state(pending: dict) -> str:
+    """The OAuth ``state`` carries the pending connection itself, signed with the server key.
+    The callback then needs no session cookie: on a phone the Instagram login often returns
+    through another browser (the Instagram app hands back to Safari), and several connections
+    started in a row no longer overwrite each other."""
+    body = base64.urlsafe_b64encode(json.dumps(pending, separators=(",", ":")).encode()).decode().rstrip("=")
+    signature = hmac.new(get_settings().session_signing_key.encode(), body.encode(), hashlib.sha256).hexdigest()[:32]
+    return f"{body}.{signature}"
+
+
+def _read_state(state: str | None) -> dict | None:
+    if not state or "." not in state:
+        return None
+    body, signature = state.rsplit(".", 1)
+    expected = hmac.new(get_settings().session_signing_key.encode(), body.encode(), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(expected, signature):
+        return None
+    try:
+        pending = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(pending, dict) or not isinstance(pending.get("created_at"), int):
+        return None
+    if int(time.time()) - pending["created_at"] > _OAUTH_STATE_MAX_AGE_SECONDS:
+        return None
+    return pending
+
+
+# Instagram sometimes calls the callback twice for one login. The first call connects the
+# account; a repeat of the same code (already used at Meta) gets the first call's result
+# instead of an error page.
+_CALLBACKS_IN_FLIGHT: dict[str, tuple[float, "asyncio.Future[str]"]] = {}
 
 
 def _platform_app() -> tuple[str, str] | None:
@@ -644,15 +683,14 @@ async def connect_account(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Secure credential storage must be enabled to connect accounts.",
             )
-        state = secrets.token_urlsafe(32)
-        request.session[_OAUTH_SESSION_KEY] = {
-            "state": state,
+        state = _sign_state({
+            "nonce": secrets.token_urlsafe(8),
             "user_id": request.session["user_id"],
             "workspace_id": str(access.workspace.id),
             "platform": True,
             "created_at": int(time.time()),
             "return_to": return_to,
-        }
+        })
         return InstagramConnectResponse(authorization_url=build_authorization_url(platform[0], _redirect_uri(), state))
 
     credential_query = select(InstagramAppCredential).where(
@@ -689,16 +727,15 @@ async def connect_account(
             detail="The workspace Meta App Secret cannot be read securely.",
         ) from None
 
-    state = secrets.token_urlsafe(32)
-    request.session[_OAUTH_SESSION_KEY] = {
-        "state": state,
+    state = _sign_state({
+        "nonce": secrets.token_urlsafe(8),
         "user_id": request.session["user_id"],
         "workspace_id": str(access.workspace.id),
         "meta_app_id": str(credential.id),
         "credential_revision": str(credential.revision),
         "created_at": int(time.time()),
         "return_to": return_to,
-    }
+    })
     return InstagramConnectResponse(
         authorization_url=build_authorization_url(
             credential.app_id,
@@ -713,27 +750,46 @@ async def instagram_callback(
     request: Request,
     db: DbSession,
     code: str | None = Query(default=None, max_length=4096),
-    state: str | None = Query(default=None, max_length=256),
+    state: str | None = Query(default=None, max_length=2048),
     error: str | None = Query(default=None, max_length=128),
 ) -> Response:
-    pending = request.session.get(_OAUTH_SESSION_KEY)
-    if not isinstance(pending, dict):
-        return RedirectResponse(_accounts_page("error"), status_code=303)
-    expected_state = pending.get("state")
-    created_at = pending.get("created_at")
-    if (
-        not isinstance(state, str)
-        or not isinstance(expected_state, str)
-        or not secrets.compare_digest(state, expected_state)
-        or not isinstance(created_at, int)
-        or int(time.time()) - created_at > _OAUTH_STATE_MAX_AGE_SECONDS
-        or request.session.get("user_id") != pending.get("user_id")
-    ):
+    if not code:
+        return await _instagram_callback(request, db, code, state, error)
+    # code + state: only the very same login (not a forged state reusing a code) is a repeat
+    key = hashlib.sha256(f"{code}|{state}".encode()).hexdigest()
+    now = time.monotonic()
+    for stale in [k for k, (at, _) in _CALLBACKS_IN_FLIGHT.items() if now - at > _OAUTH_STATE_MAX_AGE_SECONDS]:
+        _CALLBACKS_IN_FLIGHT.pop(stale, None)
+    running = _CALLBACKS_IN_FLIGHT.get(key)
+    if running is not None:
+        try:
+            location = await asyncio.wait_for(asyncio.shield(running[1]), timeout=60)
+        except Exception:
+            return RedirectResponse(_accounts_page("error"), status_code=303)
+        return RedirectResponse(location, status_code=303)
+    future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+    _CALLBACKS_IN_FLIGHT[key] = (now, future)
+    try:
+        response = await _instagram_callback(request, db, code, state, error)
+    except BaseException as exc:
+        future.set_exception(exc)
+        future.exception()  # mark retrieved: a repeat may never come
+        raise
+    future.set_result(response.headers.get("location") or _accounts_page("error"))
+    return response
+
+
+async def _instagram_callback(
+    request: Request, db, code: str | None, state: str | None, error: str | None,
+) -> Response:
+    pending = _read_state(state)
+    session_user = request.session.get("user_id")
+    if pending is None or (session_user is not None and session_user != pending.get("user_id")):
+        logger.warning("Instagram OAuth callback with an invalid or expired state.")
         return RedirectResponse(_accounts_page("error"), status_code=303)
     return_to = pending.get("return_to")
     if return_to not in {"/dashboard", "/feature/accounts"}:
         return_to = "/feature/accounts"
-    request.session.pop(_OAUTH_SESSION_KEY, None)
 
     if error:
         outcome = "cancelled" if error == "access_denied" else "error"
@@ -794,6 +850,9 @@ async def instagram_callback(
             return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
         meta_app_client_id = credential.app_id
 
+    # Release the database connection while Meta answers (several HTTP calls): the pool is
+    # small and busy, and holding it here made other requests (and this one) time out.
+    await db.commit()
     try:
         (
             instagram_user_id,

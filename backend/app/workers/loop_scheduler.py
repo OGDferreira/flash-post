@@ -146,6 +146,9 @@ def _is_account_connection_failure(error: Exception) -> bool:
     return _connection_failure_kind(error) is not None
 
 
+
+PUBLICATION_WORKERS = 4
+
 async def verify_account_token(account: InstagramAccount) -> str:
     """Ask Meta who the saved token belongs to: "valid", "invalid" or "unknown".
 
@@ -876,9 +879,11 @@ async def run_loop_scheduler_tick() -> int:
                     )
                 )
             ) or 0
-        # One worker per ready job: there is no fixed concurrency cap.
+        # Workers drain the queue in parallel, but at most PUBLICATION_WORKERS at once: each
+        # one takes a database connection at its start and the pool is small (one worker per
+        # job left the bot, the panel and the Instagram login without connections).
         worker_results = await asyncio.gather(
-            *(drain_queue() for _ in range(max(queued_now, 1)))
+            *(drain_queue() for _ in range(min(max(queued_now, 1), PUBLICATION_WORKERS)))
         )
         published_jobs = sum(worker_results)
         await prune_old_records()

@@ -1676,3 +1676,51 @@ async def test_platform_app_connects_everyone_and_the_super_admin_can_block_a_us
     token = await _csrf(client)
     assert (await client.get("/api/instagram/apps")).json()["platform"]["available"] is False
     assert (await client.post("/api/instagram/connect", headers={"X-CSRF-Token": token})).status_code == 403
+
+
+@pytest.mark.anyio
+async def test_platform_connect_survives_a_repeated_callback_and_another_browser(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        public_base_url="http://testserver",
+        master_encryption_key=SecretStr(os.environ["MASTER_ENCRYPTION_KEY"]),
+        ig_app_id="1767450201069461",
+        ig_app_secret=SecretStr("platform-app-secret"),
+        _env_file=None,
+    )
+    calls = []
+
+    async def fake_exchange(code: str, _redirect_uri: str, app_id: str, app_secret: str):
+        calls.append(code)
+        if len(calls) > 1:
+            raise RuntimeError("code already used")  # Meta refuses a reused code
+        return ("17841000000000009", "duas_vezes", None, 10, 2, "platform-token",
+                datetime.now(timezone.utc) + timedelta(days=59))
+
+    monkeypatch.setattr(instagram_router, "get_settings", lambda: settings)
+    monkeypatch.setattr(instagram_router, "exchange_instagram_authorization_code", fake_exchange)
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+    start = await client.post("/api/instagram/connect", headers={"X-CSRF-Token": token})
+    state = parse_qs(urlparse(start.json()["authorization_url"]).query)["state"][0]
+
+    # the login comes back in another browser (no session cookie): still connected
+    client.cookies.clear()
+    first = await client.get("/api/instagram/callback", params={"code": "abc", "state": state})
+    assert "instagram=connected" in first.headers["location"]
+    # Instagram calls the callback again with the same code: same result, no red error
+    again = await client.get("/api/instagram/callback", params={"code": "abc", "state": state})
+    assert again.headers["location"] == first.headers["location"]
+    assert calls == ["abc"]
+    assert await db_session.scalar(
+        select(InstagramAccount).where(InstagramAccount.instagram_user_id == "17841000000000009")
+    ) is not None
+
+    # a tampered or expired state is still refused
+    tampered = state[:-2] + ("00" if not state.endswith("00") else "11")
+    refused = await client.get("/api/instagram/callback", params={"code": "zzz", "state": tampered})
+    assert "instagram=error" in refused.headers["location"]

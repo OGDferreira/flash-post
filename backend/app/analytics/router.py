@@ -645,6 +645,9 @@ async def get_analytics_summary(
         # Accounts are independent, so query Meta concurrently (bounded) instead
         # of one account after another.
         semaphore = asyncio.Semaphore(_META_ACCOUNT_CONCURRENCY)
+        # Release the database connection while Meta answers for every account (seconds):
+        # the pool is small and the Instagram login and the bots need it meanwhile.
+        await db.commit()
 
         async def load(account: InstagramAccount) -> None:
             async with semaphore:
