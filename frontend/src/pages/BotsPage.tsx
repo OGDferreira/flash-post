@@ -26,7 +26,7 @@ export const BOT_SECTIONS = {
   bots: { slug: "robos", title: "Meus bots", eyebrow: "Bots e leads", hint: "Conecte bots do Telegram e escolha o funil (ou a pasta de funis) de cada um." },
   flows: { slug: "funis", title: "Meus funis", eyebrow: "Funis", hint: "Funis criados por você: conteúdo, planos, entregas e o gateway de cada um." },
   folders: { slug: "pastas", title: "Pastas de funis", eyebrow: "Funis", hint: "Junte vários funis numa pasta: o bot sorteia um por lead no /start." },
-  analises: { slug: "analises", title: "Análises", eyebrow: "Visão geral", hint: "Quais funis e quais planos mais venderam no período." },
+  analises: { slug: "analises", title: "Análises", eyebrow: "Visão geral", hint: "O que vende e o que não: bots, fluxos, planos, ofertas e clientes, com filtros." },
   remarketing: { slug: "remarketing", title: "Remarketing", eyebrow: "Bots e leads", hint: "Disparos para os leads de um funil, pelos próprios bots." },
   sharedByMe: { slug: "compartilhei", title: "Que compartilhei", eyebrow: "Funis", hint: "Seus funis compartilhados com cada sócio: gateway, a parte do vendedor, a sua comissão e as vendas. Só você altera essas regras." },
   shared: { slug: "compartilhados-comigo", title: "Compartilhados comigo", eyebrow: "Funis", hint: "Funis de outro proprietário que você pode usar nos seus bots. Gateway e comissão são definidos por quem compartilhou." },
