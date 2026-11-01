@@ -4,15 +4,15 @@
  * - the day's TOTAL in evidence, then one line each for sales (Flash + SharkBot webhook),
  *   commission and Flash fees (the last two for the Super Admin only);
  * - Pix conversion (generated → paid), the Flash Post views of the day (eye icon), the chart;
- * - six looks (claro, escuro, preto e branco, roxo, galáxia, rosa) with the big Flash mark
+ * - seven looks (claro, escuro, preto e branco, roxo, galáxia, rosa, flores) with the big Flash mark
  *   faded in the background.
  * iOS widgets are still images the system refreshes on its own (it asks for 1 min; iOS
  * usually allows every 5-15 min), so a new sale shows as a green "+R$" badge, and tapping
  * the widget opens an animated view (chart drawing itself, numbers counting up).
  */
-export type WidgetTheme = "claro" | "escuro" | "pb" | "roxo" | "galaxia" | "rosa";
+export type WidgetTheme = "claro" | "escuro" | "pb" | "roxo" | "galaxia" | "rosa" | "flores";
 
-export const WIDGET_THEME_IDS: WidgetTheme[] = ["claro", "escuro", "pb", "roxo", "galaxia", "rosa"];
+export const WIDGET_THEME_IDS: WidgetTheme[] = ["claro", "escuro", "pb", "roxo", "galaxia", "rosa", "flores"];
 
 export function scriptableWidgetScript(baseUrl: string, token: string, theme: WidgetTheme = "roxo"): string {
   const base = baseUrl.replace(/\/$/, "");
@@ -21,11 +21,15 @@ export function scriptableWidgetScript(baseUrl: string, token: string, theme: Wi
 const API = ${JSON.stringify(`${base}/api/widget/today`)};
 const TOKEN = ${JSON.stringify(token)};
 const LOGO = ${JSON.stringify(`${base}/brand/flash-icon-bot-192.png`)};
-const MARKS = { white: ${JSON.stringify(`${base}/brand/flash-mark-white-512.png`)}, purple: ${JSON.stringify(`${base}/brand/flash-mark-purple-512.png`)} };
+const MARKS = {
+  white: ${JSON.stringify(`${base}/brand/flash-mark-white-512.png`)},
+  purple: ${JSON.stringify(`${base}/brand/flash-mark-purple-512.png`)},
+  pink: ${JSON.stringify(`${base}/brand/flash-mark-pink-512.png`)},
+};
 const SITE = ${JSON.stringify(`${base}/bot`)};
 
-// Six looks. Pick one per widget in its "Parameter" field (claro, escuro, pb, roxo, galaxia
-// or rosa); empty = the one chosen when the script was copied. "comm" colors the commission
+// Seven looks. Pick one per widget in its "Parameter" field (claro, escuro, pb, roxo, galaxia,
+// rosa or flores); empty = the one chosen when the script was copied. "comm" colors the commission
 // line, "fee" the Flash fees line; "mark" is the big logo faded in the background.
 const THEMES = {
   claro: { bg: ["#ffffff", "#f6f0ff", "#ece2ff"], text: "#17082e", soft: ["#574b71", 1], faint: ["#938ab4", 1],
@@ -46,9 +50,14 @@ const THEMES = {
   rosa: { bg: ["#ff5fb0", "#ec2a8a", "#b0136a"], text: "#ffffff", soft: ["#ffffff", 0.85], faint: ["#ffffff", 0.65],
           pill: ["#ffffff", 0.22], line: "#ffffff", fill: 0.18, profit: "#d9ffe8", rate: "#ffffff", comm: "#ffe0f1",
           mark: "white", markAlpha: 0.13 },
+  // Delicate: pastel pink with little flowers drawn in the background.
+  flores: { bg: ["#fff7fa", "#ffe6f0", "#ffd3e4"], text: "#5a1236", soft: ["#8d3d62", 1], faint: ["#c27f9e", 1],
+            pill: ["#ff6fa8", 0.18], line: "#e8559a", fill: 0.18, profit: "#2f9e6e", rate: "#e0408a", comm: "#b04ad6",
+            mark: "pink", markAlpha: 0.1, flowers: true },
 };
 const ALIASES = { azul: "roxo", purple: "roxo", dark: "escuro", white: "claro", branco: "claro", light: "claro",
-  preto: "pb", "preto e branco": "pb", mono: "pb", "galáxia": "galaxia", galaxy: "galaxia", pink: "rosa" };
+  preto: "pb", "preto e branco": "pb", mono: "pb", "galáxia": "galaxia", galaxy: "galaxia", pink: "rosa",
+  flor: "flores", floral: "flores", flowers: "flores", feminino: "flores", delicado: "flores" };
 const PICK = String(args.widgetParameter || ${JSON.stringify(theme)}).trim().toLowerCase();
 const T = THEMES[ALIASES[PICK] || PICK] || THEMES.roxo;
 const BLUE = T.bg;
@@ -170,7 +179,48 @@ function backgroundImage(family, mark) {
       ctx.fillEllipse(new Rect(rnd() * w, rnd() * h, r, r));
     }
   }
+  if (T.flowers) drawFlowers(ctx, w, h);
   return ctx.getImage();
+}
+// Five round petals around a little golden center; leaves and pollen dots around them.
+function flower(ctx, x, y, r, petal, alpha) {
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+    const px = x + Math.cos(a) * r * 0.55, py = y + Math.sin(a) * r * 0.55, pr = r * 0.52;
+    ctx.setFillColor(new Color(petal, alpha));
+    ctx.fillEllipse(new Rect(px - pr, py - pr, pr * 2, pr * 2));
+  }
+  ctx.setFillColor(new Color("#ffffff", alpha * 0.7));
+  ctx.fillEllipse(new Rect(x - r * 0.3, y - r * 0.3, r * 0.6, r * 0.6));
+  ctx.setFillColor(new Color("#f7c96b", Math.min(1, alpha + 0.2)));
+  ctx.fillEllipse(new Rect(x - r * 0.2, y - r * 0.2, r * 0.4, r * 0.4));
+}
+function leaf(ctx, x, y, s, alpha) {
+  ctx.setFillColor(new Color("#8fcf9f", alpha));
+  ctx.fillEllipse(new Rect(x - s, y - s * 0.4, s * 2, s * 0.8));
+}
+function drawFlowers(ctx, w, h) {
+  // Kept to the edges and corners, so the numbers stay easy to read.
+  const k = Math.min(w, h) / 158;
+  const spots = [
+    [w - 14 * k, 12 * k, 20, "#ff8fbf", 0.55], [w - 46 * k, 30 * k, 11, "#ffb3d1", 0.6],
+    [w - 30 * k, h - 14 * k, 24, "#ff7fb4", 0.5], [w - 72 * k, h - 6 * k, 12, "#ffc2da", 0.65],
+    [10 * k, h - 10 * k, 16, "#ff9cc6", 0.45], [w * 0.5, h - 4 * k, 8, "#ffb3d1", 0.5],
+    [w * 0.62, 8 * k, 7, "#ffc2da", 0.55],
+  ];
+  if (h > 250) spots.push([12 * k, h * 0.55, 13, "#ffb3d1", 0.45], [w - 10 * k, h * 0.5, 15, "#ff9cc6", 0.45]);
+  spots.forEach(([x, y, r, color, alpha]) => {
+    leaf(ctx, x - r * k * 0.95, y + r * k * 0.55, r * k * 0.45, 0.35);
+    leaf(ctx, x + r * k * 0.95, y + r * k * 0.5, r * k * 0.4, 0.3);
+    flower(ctx, x, y, r * k, color, alpha);
+  });
+  let seed = 23;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < Math.round((w * h) / 1400); i++) {
+    const d = rnd() * 2 + 1;
+    ctx.setFillColor(new Color(rnd() > 0.5 ? "#ff8fbf" : "#f7c96b", 0.25 + rnd() * 0.35));
+    ctx.fillEllipse(new Rect(rnd() * w, rnd() * h, d, d));
+  }
 }
 function background(widget, family, mark) {
   if (family) {

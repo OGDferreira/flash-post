@@ -127,6 +127,13 @@ const WIDGET_THEMES: { id: WidgetTheme; label: string; swatch: string; text: str
     text: "#fff",
   },
   { id: "rosa", label: "Rosa", swatch: "linear-gradient(180deg,#ff5fb0,#ec2a8a 55%,#b0136a)", text: "#fff" },
+  {
+    id: "flores",
+    label: "Flores 🌸",
+    swatch:
+      "radial-gradient(circle at 82% 22%,#ff8fbf 0 5px,transparent 6px),radial-gradient(circle at 70% 70%,#ffb3d1 0 4px,transparent 5px),linear-gradient(180deg,#fff7fa,#ffe6f0 55%,#ffd3e4)",
+    text: "#5a1236",
+  },
 ];
 
 function IphoneWidgetCard() {
@@ -199,7 +206,7 @@ function IphoneWidgetCard() {
         ))}
       </div>
       <p className="mt-1.5 text-[11px] text-muted">
-        Dá para trocar em cada widget: segure o widget → Editar widget → em <b>Parameter</b> escreva claro, escuro, pb, roxo, galaxia ou rosa.
+        Dá para trocar em cada widget: segure o widget → Editar widget → em <b>Parameter</b> escreva claro, escuro, pb, roxo, galaxia, rosa ou flores.
       </p>
       <button className="btn-primary mt-3" disabled={copying} onClick={() => void copy()} type="button">
         {copying ? "Preparando…" : copied ? "Script copiado ✓" : "Copiar script"}
