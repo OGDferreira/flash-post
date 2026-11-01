@@ -318,7 +318,7 @@ async def test_only_super_admin_releases_snakepay_and_only_when_configured(clien
     monkeypatch.setattr(get_settings(), "snakepay_api_key", None)
     admin = await _as(client, "superadmin@example.com", "super admin password")
     refused = await client.put("/api/payment-gateways/snakepay/enabled", headers=admin, json={"enabled": True})
-    assert refused.status_code == 409 and "SNAKEPAY_API_KEY" in refused.json()["detail"]
+    assert refused.status_code == 409 and "Gateways" in refused.json()["detail"]
     owner_headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
     forbidden = await client.put("/api/payment-gateways/snakepay/enabled", headers=owner_headers, json={"enabled": True})
     assert forbidden.status_code == 403

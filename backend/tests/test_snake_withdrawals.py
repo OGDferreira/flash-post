@@ -34,12 +34,20 @@ class FakeCashout:
         self.status = "pending"
         self.by_request: dict[str, str] = {}
         self.smoke = FakeSmokePay()
+        self.wallets: dict[str, dict] = {}  # x-api-key -> GET /api/wallet answer (else 503)
+        self.wallet_keys: list[str] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if "snake.test" not in str(request.url):
             if "/api/shops/" in request.url.path:
                 return httpx.Response(404, json={"error": "not found"})
             return self.smoke.handler(request)
+        if request.url.path == "/api/wallet":
+            key = request.headers.get("x-api-key", "")
+            self.wallet_keys.append(key)
+            if key in self.wallets:
+                return httpx.Response(200, json=self.wallets[key])
+            return httpx.Response(503, json={"error": "unavailable"})
         raw = request.content.decode()
         timestamp = request.headers["x-snakepay-timestamp"]
         assert abs(int(timestamp) - int(utc_now().timestamp())) < 300
@@ -161,7 +169,7 @@ async def test_refusals_fail_the_withdrawal_with_a_clear_message(client, db_sess
 
 
 @pytest.mark.anyio
-async def test_user_withdraws_with_their_own_key_and_everything_in_reais(client, db_session, owner, cash) -> None:
+async def test_user_withdraws_with_their_own_key_and_everything_with_max(client, db_session, owner, cash) -> None:
     partner, partner_ws = await _make_owner(db_session, "socio")
     await _snake_sale(db_session, partner_ws, "80.00")
     headers = await _as(client, "socio@example.com")
@@ -175,9 +183,8 @@ async def test_user_withdraws_with_their_own_key_and_everything_in_reais(client,
     assert SELLER_SECRET not in saved.text
     done = await client.post("/api/wallet/withdrawals", headers=headers, json={"gateway": "snakepay", "withdraw_all": True, **PIX})
     assert done.status_code == 201, done.text
-    # "Sacar tudo" asks the whole calculated balance in reais (the API has no "MAX")
-    assert cash.posts[-1]["amount"] == 80.0 and cash.posts[-1]["_auth"] == "Bearer seller_sk"
-    assert done.json()["amount"] == 80.0
+    assert cash.posts[-1]["amount"] == "MAX" and cash.posts[-1]["_auth"] == "Bearer seller_sk"
+    assert done.json()["amount"] == 80.0  # SnakePay's total debit
 
 
 @pytest.mark.anyio
@@ -218,3 +225,40 @@ async def test_super_admin_blocks_one_user_or_everyone_but_still_withdraws_for_a
                              json={"gateway": "snakepay", "amount": "20", **PIX})
     assert sent.status_code == 201, sent.text
     assert cash.posts[-1]["_auth"] == "Bearer seller_sk"
+
+
+@pytest.mark.anyio
+async def test_wallet_shows_the_real_snakepay_balance_and_admin_saves_keys_on_the_platform(
+    client, db_session, owner, cash, monkeypatch
+) -> None:
+    """The balance is SnakePay's own (GET /api/wallet); the Super Admin's keys are saved in
+    Gateways like anyone's and win over the server settings (SnakePay has no subaccounts)."""
+    chief, chief_ws = owner
+    chief.platform_role = "SUPER_ADMIN"
+    await db_session.commit()
+    await _snake_sale(db_session, chief_ws, "100.00")
+    headers = await _as(client, "owner@example.com", "correct horse battery staple")
+    saved = await client.put("/api/payment-gateways/snakepay/credentials", headers=headers,
+                             json={"api_key": "admin_sk", "webhook_secret": "whsec_admin", "cashout_secret": "admin_cash"})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["snakepay_configured"] and "admin_sk" not in saved.text
+    cash.secrets["Bearer admin_sk"] = "admin_cash"
+    cash.wallets["admin_sk"] = {"balance": 1250.40, "available": 1250.40, "blocked": 0, "pending": 48.25,
+                                "month": {"received": 1300, "net_received": 1250.4, "withdrawn": 0, "payments": 9}}
+    snake = next(g for g in (await client.get("/api/wallet")).json()["gateways"] if g["gateway"] == "snakepay")
+    assert snake["available"] == 1250.4 and not snake["estimated"] and snake["ready"]
+    assert cash.wallet_keys[-1] == "admin_sk"
+    done = await client.post("/api/wallet/withdrawals", headers=headers, json={"gateway": "snakepay", "withdraw_all": True, **PIX})
+    assert done.status_code == 201, done.text
+    assert cash.posts[-1]["amount"] == "MAX" and cash.posts[-1]["_auth"] == "Bearer admin_sk"
+    # SnakePay down: the estimate is shown and flagged
+    cash.wallets.clear()
+    snake = next(g for g in (await client.get("/api/wallet")).json()["gateways"] if g["gateway"] == "snakepay")
+    assert snake["estimated"]
+    # no server settings needed any more: the saved account is the platform's
+    settings = get_settings()
+    monkeypatch.setattr(settings, "snakepay_api_key", None)
+    monkeypatch.setattr(settings, "snakepay_webhook_secret", None)
+    from app.bots import gateways
+
+    assert await gateways.platform_snakepay(db_session) == ("admin_sk", "whsec_admin")

@@ -2,9 +2,9 @@
 
 The money of SnakePay sales sits in each account at SnakePay (the seller's share, the
 owner's commission). Flash withdraws it with that account's key and Cash Out secret: the
-platform's (server settings) for the Super Admin, the ones the user saved in Gateways for
-everyone else. There is no balance API, so the balance shown is our estimate (what SnakePay
-sent to the account minus what was withdrawn through Flash); SnakePay checks the real one.
+ones saved in Gateways (everyone, the Super Admin included; the server settings are only a
+fallback for the Super Admin). The balance shown is the real one, read from SnakePay
+(``GET /api/wallet``); the estimate below is used only when SnakePay can't be asked.
 
 Every withdrawal is saved with its ``request_id`` BEFORE the first call and the same id is
 reused on retries, so a lost answer can never pay twice.
@@ -13,7 +13,7 @@ reused on retries, so a lost answer can never pay twice.
 import logging
 import uuid
 from datetime import timedelta
-from decimal import ROUND_DOWN, Decimal
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -31,20 +31,36 @@ GIVE_UP_AFTER = timedelta(hours=24)
 
 async def credentials(db, workspace: Workspace) -> tuple[str, str] | None:
     """(api key, Cash Out secret) of the workspace's SnakePay account, or None."""
+    key = await api_key(db, workspace)
+    secret = None
+    if workspace.snakepay_cashout_secret_encrypted:
+        try:
+            secret = decrypt_value(workspace.snakepay_cashout_secret_encrypted)
+        except (RuntimeError, ValueError):
+            logger.exception("Could not decrypt the SnakePay Cash Out secret of workspace %s", workspace.id)
+    elif await _is_admin(db, workspace):
+        value = get_settings().snakepay_cashout_secret
+        secret = value.get_secret_value().strip() if value else None
+    return (key, secret) if key and secret else None
+
+
+async def _is_admin(db, workspace: Workspace) -> bool:
     owner = await db.get(User, workspace.owner_id)
-    if owner is not None and owner.platform_role == "SUPER_ADMIN":
-        settings = get_settings()
-        key, secret = settings.snakepay_api_key, settings.snakepay_cashout_secret
-        if key and secret and key.get_secret_value().strip() and secret.get_secret_value().strip():
-            return key.get_secret_value().strip(), secret.get_secret_value().strip()
-        return None
-    if not (workspace.snakepay_api_key_encrypted and workspace.snakepay_cashout_secret_encrypted):
-        return None
-    try:
-        return decrypt_value(workspace.snakepay_api_key_encrypted), decrypt_value(workspace.snakepay_cashout_secret_encrypted)
-    except (RuntimeError, ValueError):
-        logger.exception("Could not decrypt SnakePay Cash Out credentials of workspace %s", workspace.id)
-        return None
+    return owner is not None and owner.platform_role == "SUPER_ADMIN"
+
+
+async def api_key(db, workspace: Workspace) -> str | None:
+    """The SnakePay API key saved in Gateways (Super Admin: server setting as a fallback)."""
+    if workspace.snakepay_api_key_encrypted:
+        try:
+            return decrypt_value(workspace.snakepay_api_key_encrypted)
+        except (RuntimeError, ValueError):
+            logger.exception("Could not decrypt the SnakePay API key of workspace %s", workspace.id)
+            return None
+    if await _is_admin(db, workspace):
+        value = get_settings().snakepay_api_key
+        return (value.get_secret_value().strip() or None) if value else None
+    return None
 
 
 async def estimated_balance(db, workspace_id: uuid.UUID, received: Decimal) -> Decimal:
@@ -80,13 +96,7 @@ async def withdraw(
             status_code=422,
             detail="Para sacar a SnakePay por aqui, cadastre em Gateways a chave API e o segredo de saque (Cash Out) da sua conta SnakePay.",
         )
-    if amount is None:
-        # "Sacar tudo": the current API takes the amount in reais only (no "MAX"), so the
-        # whole calculated balance is asked; SnakePay refuses it if the real one is lower.
-        amount = estimate.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
-        if amount < cashout.MIN_AMOUNT:
-            raise HTTPException(status_code=422, detail="O saldo da SnakePay é menor que o saque mínimo de R$ 10,00.")
-    if not (cashout.MIN_AMOUNT <= amount <= cashout.MAX_AMOUNT):
+    if amount is not None and not (cashout.MIN_AMOUNT <= amount <= cashout.MAX_AMOUNT):
         raise HTTPException(status_code=422, detail="Na SnakePay o saque vai de R$ 10,00 a R$ 100.000,00.")
     if await db.scalar(
         select(FinancialWithdrawal.id).where(
@@ -97,7 +107,7 @@ async def withdraw(
         raise HTTPException(status_code=409, detail="Há um saque da SnakePay em andamento. Aguarde a confirmação.")
     item = FinancialWithdrawal(
         workspace_id=workspace.id, created_by_user_id=actor.id, gateway="snakepay", status="PROCESSING",
-        amount=amount, requested_max=False,
+        amount=amount if amount is not None else max(estimate, Decimal("0.01")), requested_max=amount is None,
         request_id=str(uuid.uuid4()), pix_key_type=key_type, pix_key=pix_key, processed_by_user_id=actor.id,
     )
     db.add(item)

@@ -598,9 +598,15 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
           </div>
         ) : (
           <>
+            {data.is_admin ? (
+              <p className="rounded-xl border border-line-soft px-3 py-2 text-[11px] leading-5 text-muted">
+                A SnakePay não tem subcontas: a conta da plataforma é a sua. Cadastre abaixo a chave API, o segredo do webhook e o segredo de saque (Cash Out) dela — as vendas sem conta própria são cobradas nela, e a Carteira mostra o saldo real e saca por aqui.
+              </p>
+            ) : (
             <p className="rounded-xl border border-line-soft px-3 py-2 text-[11px] leading-5 text-muted">
               Com a conta SnakePay própria (abaixo), as vendas — inclusive dos funis compartilhados com você — são cobradas na sua conta e só a comissão do dono sai por split. Para vender funis compartilhados pela SnakePay, a conta própria é obrigatória.
             </p>
+            )}
             {/* The ShopID (platform-key split) only matters for the operation's own funnels. */}
             {(data.has_own_flow || data.snakepay_recipient_id) && (
             <div>
@@ -630,10 +636,10 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
             </div>
             )}
 
-            {!data.is_admin && (
-              <details className="rounded-xl border border-line-soft p-3" open={data.snakepay_account_key_set}>
+            {(
+              <details className="rounded-xl border border-line-soft p-3" open={data.is_admin || data.snakepay_account_key_set}>
                 <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg">
-                  <KeyRound size={15} /> Conta SnakePay própria (opcional)
+                  <KeyRound size={15} /> {data.is_admin ? "Conta SnakePay da plataforma" : "Conta SnakePay própria (opcional)"}
                 </summary>
                 <p className="mt-2 text-xs leading-5 text-muted">
                   Com a chave e o segredo da sua conta, as vendas dos seus funis são criadas direto nela. Ficam criptografadas e nunca são mostradas de novo.

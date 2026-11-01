@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from decimal import ROUND_DOWN, ROUND_UP, Decimal
 
 import httpx
+from urllib.parse import urlsplit
 
 from app.bots import http
 from app.core.config import get_settings
@@ -157,6 +158,32 @@ async def create_charge(
     if not charge.charge_id or not charge.copy_paste:
         raise SnakepayError("SnakePay answered without the Pix code.")
     return charge
+
+
+async def wallet_balance(api_key: str) -> Decimal:
+    """The account's real available balance (``GET /api/wallet``, reais): what can be withdrawn.
+
+    Answer ``{balance, available, blocked, pending, month: {...}}``; ``available`` is the
+    balance free to withdraw. One quick attempt: the wallet falls back to its estimate."""
+    parts = urlsplit(get_settings().snakepay_base_url)
+    url = f"{parts.scheme}://{parts.netloc}/api/wallet"
+    try:
+        async with http.client(8.0) as session:
+            response = await session.get(url, headers={"x-api-key": api_key.strip(), "Accept": "application/json"})
+    except httpx.HTTPError as exc:
+        raise SnakepayError(f"SnakePay unreachable ({type(exc).__name__}).") from exc
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    if response.is_error or not isinstance(body, dict):
+        raise SnakepayError(f"SnakePay wallet HTTP {response.status_code}.", response.status_code)
+    data = body.get("wallet") if isinstance(body.get("wallet"), dict) else body
+    value = data.get("available", data.get("balance"))
+    try:
+        return max(Decimal("0.00"), Decimal(str(value)).quantize(CENT))
+    except (ArithmeticError, ValueError, TypeError):
+        raise SnakepayError("SnakePay wallet answered without a balance.") from None
 
 
 async def get_charge(charge_id: str, *, api_key: str | None = None) -> SnakeCharge:
