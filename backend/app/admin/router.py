@@ -438,7 +438,7 @@ async def change_account_type(user_id: uuid.UUID, payload: AccountTypeRequest, a
     from app.admin import account_type
 
     user = await _target_user(db, admin, user_id, "mudar o tipo de conta do")
-    await account_type.change(db, user, payload)
+    await account_type.change(db, user, payload, admin)
     await db.commit()
     return await _admin_user(db, user)
 
