@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.auth.dependencies import AuthenticatedUser, DbSession, SuperAdminUser, require_csrf
 from app.core.time import BRAZIL_TIME_ZONE, utc_now
-from app.bots import atenaspay, smokepay
+from app.bots import atenaspay, smokepay, snakepay
 from app.core.config import get_settings
 from app.models import FinancialWithdrawal, TgOrder, User, Workspace
 from app.models import Affiliation
@@ -438,16 +438,16 @@ async def _wallet_numbers(db, user: User, workspace: Workspace, shop: str | None
     out["balance_source"] = "smokepay" if gateway is not None else "estimate"
     # One card per gateway in the "Sacar" pop-up.
     snake_received = sum((await snakepay_breakdown(db, user, workspace.id)).values(), Decimal("0.00"))
-    snake_balance = await snake_withdrawals.estimated_balance(db, workspace.id, snake_received)
+    snake_balance, snake_estimated = await _snake_balance(db, workspace, snake_received)
     snake_ready = await snake_withdrawals.credentials(db, workspace) is not None
     out["gateways"] = [
         {"gateway": "smokepay", "available": out["available"], "withdrawable": out["withdrawable"], "fee": float(fee),
          "ready": True, "estimated": gateway is None, "min": float(MIN_WITHDRAWAL)},
     ]
-    if snake_received > 0 or snake_ready:
+    if snake_received > 0 or snake_ready or not snake_estimated:
         out["gateways"].append({
             "gateway": "snakepay", "available": float(snake_balance), "withdrawable": float(snake_balance), "fee": None,
-            "ready": snake_ready, "estimated": True, "min": float(snake_withdrawals.cashout.MIN_AMOUNT),
+            "ready": snake_ready, "estimated": snake_estimated, "min": float(snake_withdrawals.cashout.MIN_AMOUNT),
         })
     if shop is not None and atenaspay.api_configured():
         try:
@@ -469,6 +469,32 @@ async def _wallet_numbers(db, user: User, workspace: Workspace, shop: str | None
         })
     out["withdrawals_blocked"] = await withdrawals_blocked_for(db, user)
     return out
+
+
+SNAKE_BALANCE_TTL = 10.0  # seconds: quick reopenings of the wallet don't wait on SnakePay
+_SNAKE_BALANCES: dict[str, tuple[float, Decimal]] = {}
+
+
+async def _snake_balance(db, workspace: Workspace, received: Decimal) -> tuple[Decimal, bool]:
+    """(balance, estimated): the real one read from SnakePay with the saved key; our
+    estimate only when there is no key or SnakePay doesn't answer."""
+    key = await snake_withdrawals.api_key(db, workspace)
+    if key:
+        import hashlib
+        import time
+
+        tag = hashlib.sha256(key.encode()).hexdigest()
+        cached = _SNAKE_BALANCES.get(tag)
+        if cached and time.monotonic() - cached[0] < SNAKE_BALANCE_TTL:
+            return cached[1], False
+        try:
+            value = await snakepay.wallet_balance(key)
+        except snakepay.SnakepayError as exc:
+            logger.warning("SnakePay wallet lookup failed (HTTP %s).", exc.status)
+        else:
+            _SNAKE_BALANCES[tag] = (time.monotonic(), value)
+            return value, False
+    return await snake_withdrawals.estimated_balance(db, workspace.id, received), True
 
 
 async def _history(db, workspace_id: uuid.UUID, limit: int = 50) -> list[dict]:
@@ -621,6 +647,7 @@ async def _dispatch(db, actor: User, owner: User, workspace: Workspace, payload:
             db, actor, workspace, amount=None if payload.withdraw_all else payload.amount.quantize(CENT),
             pix_key=pix_key, key_type=payload.pix_key_type, estimate=estimate,
         )
+        _SNAKE_BALANCES.clear()  # the next look shows the balance after this withdrawal
         await db.refresh(item)
         return _withdrawal_out(item)
     if payload.gateway == "atenaspay":

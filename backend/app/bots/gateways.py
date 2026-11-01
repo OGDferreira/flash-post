@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots import atenaspay, snakepay
+from app.core.config import get_settings
 from app.models import SystemSetting, TgFlow, TgFlowShare, TgGatewaySetting, TgOrder, User, Workspace
 from app.partners.service import BillingRoute, active_share, owner_workspace, shared_source
 
@@ -44,8 +45,44 @@ async def snakepay_enabled(db: AsyncSession) -> bool:
     return bool(row and isinstance(row.value, dict) and row.value.get("enabled"))
 
 
+async def platform_snakepay(db: AsyncSession) -> tuple[str, str] | None:
+    """(api key, webhook secret) of the platform's SnakePay account: the ones the Super Admin
+    saved in Gateways; the server settings only as a fallback. SnakePay has no subaccounts,
+    so this is just the Super Admin's own account."""
+    from app.core.crypto import decrypt_value
+
+    rows = await db.execute(
+        select(Workspace.snakepay_api_key_encrypted, Workspace.snakepay_webhook_secret_encrypted)
+        .join(User, User.id == Workspace.owner_id)
+        .where(
+            User.platform_role == "SUPER_ADMIN",
+            Workspace.snakepay_api_key_encrypted.is_not(None),
+            Workspace.snakepay_webhook_secret_encrypted.is_not(None),
+        )
+        .order_by(Workspace.created_at, Workspace.id)
+        .limit(1)
+    )
+    row = rows.first()
+    if row is not None:
+        try:
+            return decrypt_value(row[0]), decrypt_value(row[1])
+        except (RuntimeError, ValueError) as exc:
+            raise RuntimeError("Saved SnakePay credentials could not be decrypted.") from exc
+    if snakepay.configured():
+        settings = get_settings()
+        return (
+            settings.snakepay_api_key.get_secret_value().strip(),
+            settings.snakepay_webhook_secret.get_secret_value().strip(),
+        )
+    return None
+
+
+async def snakepay_configured(db: AsyncSession) -> bool:
+    return await platform_snakepay(db) is not None
+
+
 async def snakepay_available(db: AsyncSession) -> bool:
-    return snakepay.configured() and await snakepay_enabled(db)
+    return await snakepay_enabled(db) and await snakepay_configured(db)
 
 
 async def atenaspay_enabled(db: AsyncSession) -> bool:
@@ -68,6 +105,7 @@ class SnakePlan:
     chief_percent: Decimal = Decimal("0")
     api_key: str | None = None
     webhook_secret: str | None = None
+    platform_key: bool = False  # charged with the platform's account (not the seller's own)
 
 
 def same_recipient(a: str, b: str) -> bool:
@@ -194,7 +232,22 @@ async def snakepay_plan(
     *, chosen: bool = False,
 ) -> SnakePlan | None:
     """The SnakePay plan for this sale, or None to charge with another gateway instead.
-    ``chosen``: the gateway order already put SnakePay here (see ``gateway_order``)."""
+    ``chosen``: the gateway order already put SnakePay here (see ``gateway_order``).
+    A plan without its own account's key is charged with the platform's account."""
+    plan = await _snakepay_plan(db, workspace, route, amount, flow, chosen=chosen)
+    if plan is not None and not plan.api_key:
+        platform = await platform_snakepay(db)
+        if platform is None:
+            return None
+        plan.api_key, plan.webhook_secret = platform
+        plan.platform_key = True
+    return plan
+
+
+async def _snakepay_plan(
+    db: AsyncSession, workspace: Workspace, route: BillingRoute, amount: Decimal, flow: TgFlow | None = None,
+    *, chosen: bool = False,
+) -> SnakePlan | None:
     if not chosen and await gateway_choice(db, workspace, flow) != "snakepay":
         return None
     if not await snakepay_available(db):
@@ -392,7 +445,7 @@ def apply_snake_charge(order, route: BillingRoute, plan: SnakePlan, charge: snak
         order.split_amount = owner
         order.platform_fee = (net - owner).quantize(Decimal("0.01")) or None
         return
-    if plan.api_key is not None:
+    if plan.api_key is not None and not plan.platform_key:  # the seller's own account
         split_total = Decimal("0.00")
         for rule in plan.split:
             recipient = rule["recipient_id"].lower()

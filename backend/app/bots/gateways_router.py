@@ -98,6 +98,7 @@ async def _has_own_flow(db, workspace_id) -> bool:
 async def _state(db, user, workspace) -> dict:
     admin = user.platform_role == "SUPER_ADMIN"
     enabled = await gateways.snakepay_enabled(db)
+    snake_configured = await gateways.snakepay_configured(db)
     atenas_enabled = await gateways.atenaspay_enabled(db)
     state = {
         "current": workspace.payment_gateway if workspace.payment_gateway in gateways.GATEWAYS else "smokepay",
@@ -105,8 +106,7 @@ async def _state(db, user, workspace) -> dict:
         "snakepay_account_key_set": bool(workspace.snakepay_api_key_encrypted),
         "snakepay_account_secret_set": bool(workspace.snakepay_webhook_secret_encrypted),
         "snakepay_cashout_secret_set": bool(workspace.snakepay_cashout_secret_encrypted),
-        # The platform's own withdrawals use the server settings.
-        "snakepay_platform_cashout_configured": admin and bool(get_settings().snakepay_cashout_secret),
+        "snakepay_configured": snake_configured,
         "snakepay_webhook_url": f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/snakepay",
         "atenaspay_webhook_url": engine.atenaspay_webhook_url(),
         "is_admin": admin,
@@ -129,7 +129,7 @@ async def _state(db, user, workspace) -> dict:
                 "fee": await _smokepay_fee_text(db), "description": "Pix com subconta própria e saque pelo Flash.",
             },
             {
-                "id": "snakepay", "name": "SnakePay", "available": snakepay.configured() and enabled,
+                "id": "snakepay", "name": "SnakePay", "available": snake_configured and enabled,
                 "fee": "3% + R$ 0,25 por venda · saque pela SnakePay",
                 "description": "Pix com repasse automático (split) para a sua conta SnakePay.",
             },
@@ -274,7 +274,7 @@ async def _state_catalog(db) -> list[dict]:
     enabled = await gateways.snakepay_enabled(db)
     return [
         {"id": "smokepay", "available": _smokepay_configured()},
-        {"id": "snakepay", "available": snakepay.configured() and enabled},
+        {"id": "snakepay", "available": enabled and await gateways.snakepay_configured(db)},
         {"id": "atenaspay", "available": atenaspay.configured() and await gateways.atenaspay_enabled(db)},
     ]
 
@@ -388,8 +388,6 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
 async def save_snakepay_credentials(
     payload: SnakepayCredentials, access: OwnerAccess, user: AuthenticatedUser, db: DbSession
 ) -> dict:
-    if user.platform_role == "SUPER_ADMIN":
-        raise HTTPException(status_code=403, detail="Use a configuração de servidor da SnakePay.")
     workspace = access.workspace
     if payload.clear:
         if payload.api_key or payload.webhook_secret or payload.cashout_secret:
@@ -452,10 +450,10 @@ async def flow_gateway(
 
 @router.put("/snakepay/enabled", dependencies=[Depends(require_csrf)])
 async def switch_snakepay(payload: SnakepaySwitch, user: SuperAdminUser, db: DbSession) -> dict:
-    if payload.enabled and not snakepay.configured():
+    if payload.enabled and not await gateways.snakepay_configured(db):
         raise HTTPException(
             status_code=409,
-            detail="Configure SNAKEPAY_API_KEY e SNAKEPAY_WEBHOOK_SECRET no Render antes de liberar a SnakePay.",
+            detail="Cadastre em Gateways a chave API e o segredo de webhook da sua conta SnakePay antes de liberar a SnakePay.",
         )
     row = await db.get(SystemSetting, gateways.SNAKEPAY_ENABLED_KEY)
     if row is None:
