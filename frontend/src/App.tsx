@@ -98,7 +98,7 @@ export default function App() {
                     <Route
                       path="/feature/analytics"
                       element={
-                        <Suspense fallback={<LoadingState label="Carregando Analytics" />}>
+                        <Suspense fallback={<LoadingState fullscreen label="Carregando Analytics" />}>
                           <AnalyticsPage />
                         </Suspense>
                       }
@@ -119,7 +119,7 @@ export default function App() {
                     <Route
                       path="/feature/finance"
                       element={
-                        <Suspense fallback={<LoadingState label="Carregando Financeiro" />}>
+                        <Suspense fallback={<LoadingState fullscreen label="Carregando Financeiro" />}>
                           <FinancePage />
                         </Suspense>
                       }
