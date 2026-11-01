@@ -18,8 +18,15 @@ async function publishedBundle(): Promise<string | null> {
   return match ? match[0] : null;
 }
 
+// Never reload under someone filling a form or with a pop-up open: try again later.
+function busy(): boolean {
+  const active = document.activeElement;
+  if (active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)) return true;
+  return document.querySelector('[role="dialog"], dialog[open]') !== null;
+}
+
 async function check() {
-  if (Date.now() - lastCheck < CHECK_EVERY_MS) return;
+  if (Date.now() - lastCheck < CHECK_EVERY_MS || busy()) return;
   lastCheck = Date.now();
   const mine = currentBundle();
   if (!mine) return; // dev server: nothing to compare
