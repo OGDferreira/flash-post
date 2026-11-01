@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin.account_type import AccountTypeRequest
 from app.auth.dependencies import DbSession, SuperAdminUser, require_csrf
 from app.core.config import get_settings
 from app.core.time import BRAZIL_TIME_ZONE
@@ -108,7 +109,9 @@ async def list_users(
             # pending collaborators still show whose team they joined
             WorkspaceMember.status.in_(("ACTIVE", "INVITED", "SUSPENDED")),
         )
-        .order_by(WorkspaceMember.created_at, WorkspaceMember.workspace_id)
+        # the membership in use first (an account switched by the Super Admin keeps the old one suspended)
+        .order_by(case((WorkspaceMember.status == "ACTIVE", 0), (WorkspaceMember.status == "INVITED", 1), else_=2),
+                  WorkspaceMember.created_at, WorkspaceMember.workspace_id)
         .limit(1)
         .scalar_subquery()
     )
@@ -120,7 +123,9 @@ async def list_users(
             # pending collaborators still show whose team they joined
             WorkspaceMember.status.in_(("ACTIVE", "INVITED", "SUSPENDED")),
         )
-        .order_by(WorkspaceMember.created_at, WorkspaceMember.workspace_id)
+        # the membership in use first (an account switched by the Super Admin keeps the old one suspended)
+        .order_by(case((WorkspaceMember.status == "ACTIVE", 0), (WorkspaceMember.status == "INVITED", 1), else_=2),
+                  WorkspaceMember.created_at, WorkspaceMember.workspace_id)
         .limit(1)
         .scalar_subquery()
     )
@@ -413,6 +418,27 @@ async def update_user_role(
             detail="O Super Admin é único e não pode ser atribuído por aqui.",
         )
     user.platform_role = payload.platform_role
+    await db.commit()
+    return await _admin_user(db, user)
+
+
+@router.get("/users/{user_id}/account-type")
+async def account_type_options(user_id: uuid.UUID, _admin: SuperAdminUser, db: DbSession) -> dict:
+    from app.admin import account_type
+
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    return await account_type.options(db, user)
+
+
+@router.put("/users/{user_id}/account-type", response_model=AdminUser, dependencies=[Depends(require_csrf)])
+async def change_account_type(user_id: uuid.UUID, payload: AccountTypeRequest, admin: SuperAdminUser, db: DbSession) -> AdminUser:
+    """Owner, partner (sócio) or collaborator: the user's panel follows on their next request."""
+    from app.admin import account_type
+
+    user = await _target_user(db, admin, user_id, "mudar o tipo de conta do")
+    await account_type.change(db, user, payload)
     await db.commit()
     return await _admin_user(db, user)
 
