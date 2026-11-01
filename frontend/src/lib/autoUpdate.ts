@@ -1,9 +1,9 @@
 /**
  * A tab (or the installed app) left open keeps running the version it loaded. When the person
- * comes back to it, check whether a newer version was published and, if so, reload once, so
+ * comes back to it (or every 2 min while it stays open), check whether a newer version was published and, if so, reload once, so
  * fixes reach everyone without asking them to close and reopen the app.
  */
-const CHECK_EVERY_MS = 5 * 60 * 1000;
+const CHECK_EVERY_MS = 2 * 60 * 1000;
 let lastCheck = 0;
 
 function currentBundle(): string | null {
@@ -18,8 +18,15 @@ async function publishedBundle(): Promise<string | null> {
   return match ? match[0] : null;
 }
 
+// Never reload under someone filling a form or with a pop-up open: try again later.
+function busy(): boolean {
+  const active = document.activeElement;
+  if (active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)) return true;
+  return document.querySelector('[role="dialog"], dialog[open]') !== null;
+}
+
 async function check() {
-  if (Date.now() - lastCheck < CHECK_EVERY_MS) return;
+  if (Date.now() - lastCheck < CHECK_EVERY_MS || busy()) return;
   lastCheck = Date.now();
   const mine = currentBundle();
   if (!mine) return; // dev server: nothing to compare
@@ -37,4 +44,8 @@ export function startAutoUpdate() {
     if (document.visibilityState === "visible") void check();
   });
   window.addEventListener("focus", () => void check());
+  // The app kept open on screen gets no focus/visibility event: look every 2 min too.
+  window.setInterval(() => {
+    if (document.visibilityState === "visible") void check();
+  }, CHECK_EVERY_MS);
 }
