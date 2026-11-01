@@ -52,6 +52,7 @@ export type Wallet = {
   snakepay_commissions?: number;
   snakepay_fees?: number; // Super Admin: platform and per-sale fees kept in the charging account
   month_flash_revenue?: number;
+  total_flash_revenue?: number;
   month_commissions?: number;
   gateways?: GatewayBalance[];
   withdrawals_blocked?: boolean;

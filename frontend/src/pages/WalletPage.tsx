@@ -9,33 +9,24 @@ import { brl, compact, useWallet, useWalletMutations, type GatewayBalance, type 
 import { ApiError, apiRequest } from "@/services/api";
 import { useQuery } from "@tanstack/react-query";
 
-/** Super Admin: the per-sale Flash fee collected in the chosen period (default: today). */
-function FalconFeesCard() {
-  const [period, setPeriod] = useState<MetricsPeriod>({ period: "today", start: todayInput(), end: todayInput() });
-  const query = useQuery({
-    queryKey: ["wallet", "falcon-fees", periodParams(period)],
-    queryFn: () => apiRequest<{ total: number; count: number; period_label: string }>(`/api/wallet/falcon-fees?${new URLSearchParams(periodParams(period))}`),
+type PeriodNumbers = {
+  period_label: string;
+  flash_sales: number;
+  commissions: number;
+  flash_revenue: number;
+  shark_revenue: number;
+  fees?: number;
+  fees_count?: number;
+};
+
+/** The cards that follow the wallet's period filter (revenue, commissions, Flash fees). */
+function useWalletPeriod(period: MetricsPeriod) {
+  return useQuery({
+    queryKey: ["wallet", "period", periodParams(period)],
+    queryFn: () => apiRequest<PeriodNumbers>(`/api/wallet/period?${new URLSearchParams(periodParams(period))}`),
     enabled: isPeriodReady(period),
     placeholderData: (previous) => previous,
   });
-  return (
-    <section className="glass-panel space-y-3 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold text-fg">Arrecadação do Flash Bot</h3>
-        <PeriodFilter onChange={setPeriod} value={period} />
-      </div>
-      {query.error ? (
-        <p className="text-sm text-danger">Não foi possível carregar a arrecadação.</p>
-      ) : (
-        <div>
-          <p className="text-2xl font-semibold text-success">{query.data ? brl(query.data.total) : "—"}</p>
-          <p className="text-[11px] text-muted">
-            {query.data ? `Taxa por venda · ${query.data.count} venda(s) paga(s) · ${query.data.period_label}` : "Carregando…"}
-          </p>
-        </div>
-      )}
-    </section>
-  );
 }
 
 const keyTypes = [
@@ -520,6 +511,8 @@ export function WithdrawalHistory({ items }: { items: Withdrawal[] }) {
 export function WalletPage() {
   const wallet = useWallet();
   const [open, setOpen] = useState(false);
+  const [period, setPeriod] = useState<MetricsPeriod>({ period: "today", start: todayInput(), end: todayInput() });
+  const numbers = useWalletPeriod(period);
   if (wallet.isLoading) return <LoadingState label="Carregando carteira" />;
   if (wallet.error) return <ErrorState message={errorText(wallet.error)} onRetry={() => void wallet.refetch()} />;
   const data = wallet.data!;
@@ -529,39 +522,49 @@ export function WalletPage() {
   // and (Super Admin) what the per-sale Flash fee brought in.
   // Every gateway's balance together; the "Sacar" pop-up splits it again, one card per gateway.
   const gateways = data.gateways ?? [];
-  // The headline remains SmokePay's confirmed balance; other gateways stay visible separately.
-  const smoke = gateways.find((item) => item.gateway === "smokepay");
-  const confirmedAvailable = smoke ? smoke.available : data.available;
-  const otherGateways = gateways.filter((item) => item.gateway !== "smokepay");
+  // What is in the wallet now: every gateway's balance together (SmokePay and Athenas are
+  // read from the gateway; SnakePay has no balance API, so its part is what it received
+  // minus what was withdrawn). The "Sacar" pop-up splits it again, one card per gateway.
+  const available = gateways.length ? gateways.reduce((sum, item) => sum + item.available, 0) : data.available;
   // The "Sacar" pop-up handles each gateway on its own, so allow it whenever any has a balance.
   const canWithdraw = gateways.length ? gateways.some((item) => item.available > 0) : data.available > 0;
-  const perGateway = [
-    `SmokePay ${brl(confirmedAvailable)}${smoke?.estimated ? " (estimado)" : ""}`,
-    ...otherGateways.map((item) => `${GATEWAY_NAMES[item.gateway]} ${brl(item.available)}${item.estimated ? " (estimado · fora do total)" : ""}`),
-  ].join(" · ");
-  const commissions = data.month_commissions ?? 0;
-  const cards: [string, string, string?, string?][] = [
+  const perGateway = gateways
+    .map((item) => `${GATEWAY_NAMES[item.gateway]} ${brl(item.available)}${item.gateway === "snakepay" ? " (calculado)" : item.estimated ? " (estimado)" : ""}`)
+    .join(" · ");
+  const n = numbers.data;
+  const money = (value: number | undefined) => (value === undefined ? "…" : brl(value));
+  const label = n?.period_label ?? "";
+  // Now: the balance and what was already withdrawn. Below, the period filter's cards.
+  const balanceCards: [string, string, string?, string?][] = [
+    [partner ? "Disponível para saque" : "Disponível para sacar", brl(available), "text-success", perGateway || `Taxa por saque ${brl(fee)}`],
+    ["Já sacado", brl(data.withdrawn)],
+  ];
+  const periodCards: [string, string, string?, string?][] = [
     [
       partner ? "Faturamento" : "Faturamento Flash",
-      brl(data.month_flash_revenue ?? 0),
+      money(n?.flash_revenue),
       "text-fg",
-      commissions > 0 ? `Vendas ${brl((data.month_flash_revenue ?? 0) - commissions)} + comissões ${brl(commissions)} no mês` : "Vendas do mês no Flash",
+      n && n.commissions > 0 ? `Vendas ${brl(n.flash_sales)} + comissões ${brl(n.commissions)}` : `Vendas no Flash · ${label}`,
     ],
-    ...(!partner || (data.month_shark_revenue ?? 0) > 0
-      ? [["Faturamento Shark", brl(data.month_shark_revenue ?? 0), "text-fg", "Vendas do mês na SharkBot"] as [string, string, string, string]]
+    ...(!partner || (n?.shark_revenue ?? 0) > 0
+      ? [["Faturamento Shark", money(n?.shark_revenue), "text-fg", `Vendas na SharkBot · ${label}`] as [string, string, string, string]]
       : []),
-    [partner ? "Disponível para saque" : "Disponível para sacar", brl(confirmedAvailable), "text-success", perGateway || `Taxa por saque ${brl(fee)}`],
-    ["Já sacado", brl(data.withdrawn)],
-    ...(!partner ? [["Comissões recebidas", brl(commissions), "text-success", "Dos sócios, no mês (todas as gateways)"] as [string, string, string, string]] : []),
+    ...(!partner ? [["Comissões recebidas", money(n?.commissions), "text-success", `Dos sócios (todas as gateways) · ${label}`] as [string, string, string, string]] : []),
+    ...(n?.fees !== undefined
+      ? [["Arrecadado com o Flash", money(n.fees), "text-success", `Taxa por venda · ${n.fees_count ?? 0} venda(s) · ${label}`] as [string, string, string, string]]
+      : []),
   ];
-  if (data.falcon_fees_month !== undefined) {
-    cards.push([
-      "Arrecadado com o Flash",
-      brl(data.falcon_fees_month),
-      "text-success",
-      `Taxa por venda · ${data.falcon_fees_month_count ?? 0} no mês · hoje ${brl(data.falcon_fees_today ?? 0)} (${data.falcon_fees_today_count ?? 0})`,
-    ]);
-  }
+  const renderCards = (items: [string, string, string?, string?][]) => (
+    <dl className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      {items.map(([title, value, tone, hint]) => (
+        <div className="glass-panel min-w-0 px-4 py-3" key={title}>
+          <dt className="truncate text-[11px] text-muted">{title}</dt>
+          <dd className={`mt-1 truncate text-xl font-semibold ${tone ?? "text-fg"}`}>{value}</dd>
+          {hint && <dd className="mt-0.5 text-[10px] leading-tight text-muted">{hint}</dd>}
+        </div>
+      ))}
+    </dl>
+  );
   return (
     <div className="mx-auto max-w-[1100px] space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -580,16 +583,11 @@ export function WalletPage() {
         </p>
       )}
 
-      <dl className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        {cards.map(([title, value, tone, hint]) => (
-          <div className="glass-panel min-w-0 px-4 py-3" key={title}>
-            <dt className="truncate text-[11px] text-muted">{title}</dt>
-            <dd className={`mt-1 truncate text-xl font-semibold ${tone ?? "text-fg"}`}>{value}</dd>
-            {hint && <dd className="mt-0.5 text-[10px] leading-tight text-muted">{hint}</dd>}
-          </div>
-        ))}
-      </dl>
-      {data.falcon_fees_month !== undefined && <FalconFeesCard />}
+      {renderCards(balanceCards)}
+      <section className="space-y-2">
+        <PeriodFilter onChange={setPeriod} value={period} />
+        {numbers.error ? <p className="text-sm text-danger">Não foi possível carregar os números do período.</p> : renderCards(periodCards)}
+      </section>
       {!partner && <p className="text-[11px] text-muted">
         {data.balance_source === "smokepay" ? "Saldo lido agora da SmokePay" : "Saldo estimado (SmokePay indisponível)"}
         {data.shop_ref ? ` · subconta ${data.shop_ref}` : " · carteira principal"}. Ganho total no Flash (já sem taxas e comissões): {brl(data.earned)}
@@ -606,7 +604,7 @@ export function WalletPage() {
         <div className="h-2 overflow-hidden rounded-full bg-well">
           <div className="h-full rounded-full bg-success" style={{ width: `${Math.min(100, data.goal.percent)}%` }} />
         </div>
-        <AwardsCarousel goals={data.goal.goals} revenue={data.month_flash_revenue ?? 0} />
+        <AwardsCarousel goals={data.goal.goals} revenue={data.total_flash_revenue ?? data.month_flash_revenue ?? 0} />
       </section>
 
       <section className="glass-panel space-y-2 p-4">
