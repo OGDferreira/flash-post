@@ -472,3 +472,28 @@ async def test_pix_steps_layout_sends_instructions_copy_box_and_buttons(client, 
     assert not apis.methods("sendPhoto")
     rows = last["reply_markup"]["inline_keyboard"]
     assert rows[0][0]["callback_data"].startswith("chk:") and "copy_text" in rows[1][0]
+
+
+@pytest.mark.anyio
+async def test_order_bump_can_use_the_funnel_default_delivery(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    flow = _flow(welcome=[], order_bump={"name": "Pack extra", "price": "5.00", "delivery": None})
+    flow["plans"][0]["delivery"] = {"type": "default", "text": "Acesso VIP"}
+    flow["default_delivery"] = PACK
+    bot, _ = await _setup(client, headers, flow)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("bump:y:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    apis.pix_amount = 24.90
+    await _pay(client, db_session, order)
+    texts = [m["text"] for m in apis.methods("sendMessage")]
+    assert "Acesso VIP" in texts and "Seu conteúdo 💕" in texts  # the bump got the funnel's default
+
+    # without a default delivery in the funnel, a bump set to use it is refused
+    from app.bots.flow_schema import FlowDefinition
+
+    broken = _flow(welcome=[], order_bump={"name": "Pack extra", "price": "5.00", "delivery": None})
+    broken["plans"][0]["delivery"] = {"type": "default", "text": "Acesso VIP"}
+    broken.pop("default_delivery", None)
+    with pytest.raises(ValueError, match="entrega padrão"):
+        FlowDefinition.model_validate(broken)

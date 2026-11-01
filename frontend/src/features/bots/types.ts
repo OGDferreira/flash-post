@@ -30,7 +30,7 @@ export type OrderBump = {
   media_ids: string[];
   accept_label: string;
   decline_label: string;
-  delivery: Delivery;
+  delivery: Delivery | null; // null = the funnel's default delivery
 };
 
 export type Plan = {
