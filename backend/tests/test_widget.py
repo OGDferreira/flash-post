@@ -32,6 +32,21 @@ async def test_widget_token_reads_today_and_is_replaced_by_a_new_one(client, db_
     assert data["series"][-1] == 19.9 and data["name"] == "Flash"
     # a plain owner: no commissions and not the Super Admin (no commission line/chart)
     assert data["commissions"] == 0.0 and data["commission_series"][-1] == 0.0 and data["is_admin"] is False
+    assert data["fees"] == 0.0 and data["total"] == 19.9  # the Flash fees are the Super Admin's only
+
+    # the Super Admin also sees the Flash fees collected today on the whole platform
+    from decimal import Decimal
+
+    from app.models import User
+
+    order.transaction_fee = Decimal("0.50")
+    owner_user = await db_session.scalar(select(User).where(User.email == "owner@example.com"))
+    owner_user.platform_role = "SUPER_ADMIN"
+    await db_session.commit()
+    admin = (await client.get("/api/widget/today", headers={"Authorization": f"Bearer {token}"})).json()
+    assert admin["is_admin"] is True and admin["fees"] == 0.5 and admin["total"] == 20.4
+    owner_user.platform_role = "USER"
+    await db_session.commit()
 
     # the token reads nothing else, a wrong one is refused, and a new script turns the old one off
     assert (await client.get("/api/wallet", headers={"Authorization": f"Bearer {token}"})).status_code in (401, 403)

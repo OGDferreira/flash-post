@@ -247,18 +247,26 @@ function chart(series, width, height, opts) {
   return ctx.getImage();
 }
 
-// Super Admin line: "+R$x em comissões · total R$y", shown below the sales.
+// Super Admin lines below the sales: commissions and the Flash fees collected, then the total
+// (sales + commissions + fees).
 function commissionLine(stack, data, size) {
   if (!data.is_admin) return;
-  const total = (data.revenue || 0) + (data.commissions || 0);
+  const fees = data.fees || 0;
+  const total = data.total != null ? data.total : (data.revenue || 0) + (data.commissions || 0) + fees;
   const row = stack.addStack();
   row.centerAlignContent();
-  const plus = row.addText("+" + brl(data.commissions || 0) + " em comissões");
+  const plus = row.addText("Comissão " + brl(data.commissions || 0));
   plus.font = Font.semiboldSystemFont(size);
   plus.textColor = C.comm;
-  const rest = row.addText(" · total " + brl(total));
-  rest.font = Font.mediumSystemFont(size);
-  rest.textColor = C.soft;
+  const fee = row.addText(" · Arrecadação " + brl(fees));
+  fee.font = Font.semiboldSystemFont(size);
+  fee.textColor = C.green;
+  fee.lineLimit = 1;
+  fee.minimumScaleFactor = 0.7;
+  stack.addSpacer(2);
+  const sum = stack.addText("Total " + brl(total));
+  sum.font = Font.boldSystemFont(size + 1);
+  sum.textColor = C.text;
 }
 
 function footer(stack, data, size) {
@@ -278,7 +286,7 @@ function medium(data, logo, delta) {
   const body = w.addStack();
   const left = body.addStack();
   left.layoutVertically();
-  label(left, "Faturamento hoje", 11);
+  label(left, data.is_admin ? "Vendas hoje" : "Faturamento hoje", 11);
   left.addSpacer(2);
   value(left, data.revenue, 34);
   left.addSpacer(3);
@@ -330,7 +338,7 @@ function large(data, logo, delta) {
   w.setPadding(16, 16, 12, 16);
   header(w, logo, 22, sales(data.pix_paid));
   w.addSpacer(10);
-  label(w, "Faturamento hoje", 11);
+  label(w, data.is_admin ? "Vendas hoje" : "Faturamento hoje", 11);
   w.addSpacer(2);
   const row = w.addStack();
   row.bottomAlignContent();
@@ -446,9 +454,10 @@ svg{width:100%;height:auto;overflow:visible}.line{fill:none;stroke:\${T.line};st
 a{color:#fff;text-align:center;background:\${T.line === "#ffffff" ? "rgba(0,0,0,.18)" : T.line};border-radius:14px;padding:13px;text-decoration:none;font-weight:600}
 </style></head><body>
 <div class="top"><img src="\${LOGO}">Flash<span class="pill">\${sales(data.pix_paid)}</span></div>
-<div><div class="lbl">Faturamento hoje</div><div class="big" data-to="\${data.revenue}">R$ 0,00</div></div>
+<div><div class="lbl">\${data.is_admin ? "Vendas hoje" : "Faturamento hoje"}</div><div class="big" data-to="\${data.revenue}">R$ 0,00</div></div>
 <div class="row"><div class="card"><div class="lbl">Lucro</div><b data-to="\${data.profit}">R$ 0,00</b></div>
 <div class="card"><div class="lbl">Pix</div><b>\${data.pix_generated} gerados</b><span style="opacity:.8">\${data.pix_paid} pagos · \${conversion}%</span></div></div>
+\${data.is_admin ? '<div class="row"><div class="card"><div class="lbl">Comissão</div><b data-to="' + (data.commissions || 0) + '">R$ 0,00</b></div><div class="card"><div class="lbl">Arrecadação</div><b data-to="' + (data.fees || 0) + '">R$ 0,00</b></div></div><div><div class="lbl">Total do dia</div><div class="big" data-to="' + (data.total || 0) + '">R$ 0,00</div></div>' : ""}
 <svg viewBox="0 0 320 160"><path class="area" d="\${d} L320,160 L0,160 Z"/><path class="line" d="\${d}"/><circle class="dot" cx="\${pts[pts.length-1][0]}" cy="\${pts[pts.length-1][1]}" r="5"/></svg>
 <div class="lbl" style="text-align:right">atualizado \${data.updated_at}</div>
 <a href="\${SITE}">Abrir o Flash</a>
