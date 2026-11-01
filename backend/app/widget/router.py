@@ -85,6 +85,15 @@ async def today(
         commission_hours[moment.astimezone(zone).hour] += Decimal(amount)
         commissions += Decimal(amount)
     profit += commissions
+    # Super Admin: the Flash fee collected today on every paid sale of the platform.
+    is_admin = user.platform_role == "SUPER_ADMIN"
+    fees = Decimal("0")
+    if is_admin:
+        fees = Decimal(await db.scalar(
+            select(func.coalesce(func.sum(TgOrder.transaction_fee), 0)).where(
+                TgOrder.status == "paid", TgOrder.paid_at >= midnight, TgOrder.paid_at < tomorrow,
+            )
+        ) or 0)
     running = crunning = Decimal("0")
     series, commission_series = [], []
     for hour in range(now.hour + 1):  # cumulative up to now
@@ -101,6 +110,9 @@ async def today(
         "commissions": float(commissions.quantize(CENT)),
         "series": series,
         "commission_series": commission_series,
-        "is_admin": user.platform_role == "SUPER_ADMIN",
+        "fees": float(fees.quantize(CENT)),
+        # sales + commissions + fees (the Super Admin's day)
+        "total": float((revenue + commissions + fees).quantize(CENT)),
+        "is_admin": is_admin,
         "updated_at": now.strftime("%H:%M"),
     }
