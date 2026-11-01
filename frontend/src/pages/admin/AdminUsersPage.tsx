@@ -115,6 +115,144 @@ function PlatformAppToggle({ user }: { user: AdminUser }) {
   );
 }
 
+type AccountType = "owner" | "partner" | "collaborator";
+type AccountOptions = {
+  chiefs: { id: string; name: string }[];
+  workspaces: { id: string; name: string; owner_name: string }[];
+  current: { chief_user_id: string | null; percent: string | null };
+};
+const ACCOUNT_TYPES: { id: AccountType; label: string; hint: string }[] = [
+  { id: "owner", label: "Dono independente", hint: "Operação própria, sem chefe. Painel completo de dono." },
+  { id: "partner", label: "Sócio", hint: "Operação própria ligada a um dono, que pode compartilhar funis e loops com ele." },
+  { id: "collaborator", label: "Colaborador", hint: "Trabalha na operação de outro dono, com o painel de colaborador." },
+];
+
+function currentType(user: AdminUser): AccountType {
+  if (user.hierarchy === "partner") return "partner";
+  return user.role === "COLLABORATOR" ? "collaborator" : "owner";
+}
+
+/** The Super Admin switches a user between owner, partner (sócio) and collaborator; the
+ * user's panel changes on their next request. Nothing of their operation is deleted. */
+function AccountTypeModal({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const options = useQuery({
+    queryKey: ["admin", "account-type", user.id],
+    queryFn: () => apiRequest<AccountOptions>(`/api/admin/users/${user.id}/account-type`),
+  });
+  const [type, setType] = useState<AccountType>(currentType(user));
+  const [chief, setChief] = useState("");
+  const [percent, setPercent] = useState("");
+  const [workspace, setWorkspace] = useState("");
+  const chiefValue = chief || options.data?.current.chief_user_id || "";
+  const percentValue = percent || options.data?.current.percent || "0";
+  const save = useMutation({
+    mutationFn: () =>
+      apiRequest<AdminUser>(`/api/admin/users/${user.id}/account-type`, {
+        method: "PUT",
+        body:
+          type === "partner"
+            ? { type, chief_user_id: chiefValue, percent: percentValue.replace(",", ".") }
+            : type === "collaborator"
+              ? { type, workspace_id: workspace }
+              : { type },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      onClose();
+    },
+  });
+  const ready = type === "owner" || (type === "partner" && Boolean(chiefValue)) || (type === "collaborator" && Boolean(workspace));
+  return (
+    <Modal
+      description="O painel dele muda na próxima vez que abrir ou atualizar o app, sem precisar entrar de novo. Nada da operação dele é apagado."
+      footer={
+        <>
+          <button className="btn-ghost" onClick={onClose} type="button">Cancelar</button>
+          <button className="btn-primary" disabled={save.isPending || !ready} onClick={() => save.mutate()} type="button">
+            {save.isPending ? "Salvando…" : "Mudar tipo de conta"}
+          </button>
+        </>
+      }
+      onClose={onClose}
+      open
+      title={`Tipo de conta · ${user.full_name}`}
+    >
+      {options.isLoading ? (
+        <LoadingState label="Carregando" />
+      ) : (
+        <div className="space-y-3">
+          <div className="grid gap-2" role="radiogroup">
+            {ACCOUNT_TYPES.map((item) => (
+              <button
+                aria-checked={type === item.id}
+                className={`rounded-xl border p-3 text-left transition ${type === item.id ? "border-accent bg-brand-soft" : "border-line-soft hover:bg-surface-raised"}`}
+                key={item.id}
+                onClick={() => setType(item.id)}
+                role="radio"
+                type="button"
+              >
+                <span className="block text-sm font-semibold text-fg">{item.label}</span>
+                <span className="mt-0.5 block text-xs text-muted">{item.hint}</span>
+              </button>
+            ))}
+          </div>
+          {type === "partner" && (
+            <div className="grid gap-2 sm:grid-cols-[1fr_120px]">
+              <label className="text-xs font-medium text-fg-2">
+                Sócio de
+                <select className="field mt-1" onChange={(event) => setChief(event.target.value)} value={chiefValue}>
+                  <option value="">Escolha o dono</option>
+                  {options.data?.chiefs.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-medium text-fg-2">
+                Comissão do dono (%)
+                <input className="field mt-1" inputMode="decimal" onChange={(event) => setPercent(event.target.value)} value={percentValue} />
+              </label>
+            </div>
+          )}
+          {type === "collaborator" && (
+            <label className="block text-xs font-medium text-fg-2">
+              Colaborador da operação
+              <select className="field mt-1" onChange={(event) => setWorkspace(event.target.value)} value={workspace}>
+                <option value="">Escolha a operação</option>
+                {options.data?.workspaces.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name} · {item.owner_name}</option>
+                ))}
+              </select>
+              <span className="mt-1 block text-[11px] font-normal text-muted">
+                A operação própria dele fica guardada e volta se ele virar dono de novo.
+              </span>
+            </label>
+          )}
+          {save.error && <p className="text-xs text-danger">{save.error.message}</p>}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function AccountTypeButton({ user }: { user: AdminUser }) {
+  const [open, setOpen] = useState(false);
+  if (user.role === "SUPER_ADMIN") return null;
+  return (
+    <>
+      <button
+        className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs text-fg-2 hover:bg-surface-raised"
+        onClick={() => setOpen(true)}
+        title="Dono, sócio ou colaborador"
+        type="button"
+      >
+        Mudar tipo de conta
+      </button>
+      {open && <AccountTypeModal onClose={() => setOpen(false)} user={user} />}
+    </>
+  );
+}
+
 function PartnerPermissionsButton({ user }: { user: AdminUser }) {
   const [open, setOpen] = useState(false);
   if (user.hierarchy !== "partner") return null;
@@ -272,6 +410,9 @@ export function AdminUsersPage() {
                                 ? `Colaborador de ${user.workspace_name ?? "—"}`
                                 : "Independente"}
                           {user.invited_by_name && ` · convidado por ${user.invited_by_name}`}
+                        </span>
+                        <span className="mt-2 block">
+                          <AccountTypeButton user={user} />
                         </span>
                       </td>
                       <td className="px-4 py-4">

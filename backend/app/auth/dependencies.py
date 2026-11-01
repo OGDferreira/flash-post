@@ -121,10 +121,12 @@ async def require_workspace_member(
         )
         .order_by(WorkspaceMember.created_at, Workspace.id)
     )
-    if workspace_id is not None:
-        query = query.where(Workspace.id == workspace_id)
-
-    result = (await db.execute(query)).first()
+    result = (await db.execute(query.where(Workspace.id == workspace_id) if workspace_id is not None else query)).first()
+    if result is None and workspace_id is not None and workspace_id_header is None:
+        # The operation remembered in the session is no longer theirs (e.g. the Super Admin
+        # changed their account type): fall back to the one they have now.
+        request.session.pop("workspace_id", None)
+        result = (await db.execute(query)).first()
     if result is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active workspace membership required.")
     workspace, membership = result
