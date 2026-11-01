@@ -13,7 +13,7 @@ reused on retries, so a lost answer can never pay twice.
 import logging
 import uuid
 from datetime import timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -80,7 +80,13 @@ async def withdraw(
             status_code=422,
             detail="Para sacar a SnakePay por aqui, cadastre em Gateways a chave API e o segredo de saque (Cash Out) da sua conta SnakePay.",
         )
-    if amount is not None and not (cashout.MIN_AMOUNT <= amount <= cashout.MAX_AMOUNT):
+    if amount is None:
+        # "Sacar tudo": the current API takes the amount in reais only (no "MAX"), so the
+        # whole calculated balance is asked; SnakePay refuses it if the real one is lower.
+        amount = estimate.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        if amount < cashout.MIN_AMOUNT:
+            raise HTTPException(status_code=422, detail="O saldo da SnakePay é menor que o saque mínimo de R$ 10,00.")
+    if not (cashout.MIN_AMOUNT <= amount <= cashout.MAX_AMOUNT):
         raise HTTPException(status_code=422, detail="Na SnakePay o saque vai de R$ 10,00 a R$ 100.000,00.")
     if await db.scalar(
         select(FinancialWithdrawal.id).where(
@@ -91,7 +97,7 @@ async def withdraw(
         raise HTTPException(status_code=409, detail="Há um saque da SnakePay em andamento. Aguarde a confirmação.")
     item = FinancialWithdrawal(
         workspace_id=workspace.id, created_by_user_id=actor.id, gateway="snakepay", status="PROCESSING",
-        amount=amount if amount is not None else max(estimate, Decimal("0.01")), requested_max=amount is None,
+        amount=amount, requested_max=False,
         request_id=str(uuid.uuid4()), pix_key_type=key_type, pix_key=pix_key, processed_by_user_id=actor.id,
     )
     db.add(item)
