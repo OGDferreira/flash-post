@@ -14,10 +14,23 @@ export type WidgetTheme = "claro" | "escuro" | "pb" | "roxo" | "galaxia" | "rosa
 
 export const WIDGET_THEME_IDS: WidgetTheme[] = ["claro", "escuro", "pb", "roxo", "galaxia", "rosa", "flores"];
 
-export function scriptableWidgetScript(baseUrl: string, token: string, theme: WidgetTheme = "roxo"): string {
+/** Placeholders of the published template (/widget/flash-widget.js): the installed widget
+ * fills them with its own site and key when it updates itself. */
+export const WIDGET_TEMPLATE_BASE = "__FLASH_BASE__";
+export const WIDGET_TEMPLATE_TOKEN = "__FLASH_WIDGET_TOKEN__";
+export const WIDGET_TEMPLATE_VERSION = "__WIDGET_VERSION__";
+
+export function scriptableWidgetScript(
+  baseUrl: string,
+  token: string,
+  theme: WidgetTheme = "roxo",
+  version = "site",
+): string {
   const base = baseUrl.replace(/\/$/, "");
   return `// Flash — widget de vendas do Flash para o Scriptable
-// Gerado em ${new Date().toLocaleDateString("pt-BR")}. Copiar o script de novo no site desliga este.
+// Copiar o script de novo no site desliga este. O botão "Atualizar widget" do site o atualiza sozinho.
+const BASE = ${JSON.stringify(base)};
+const SCRIPT_VERSION = ${JSON.stringify(version)};
 const API = ${JSON.stringify(`${base}/api/widget/today`)};
 const TOKEN = ${JSON.stringify(token)};
 const THEME_API = ${JSON.stringify(`${base}/api/widget/theme/phone`)};
@@ -696,12 +709,51 @@ async function animatedView(data) {
   await view.present(true);
 }
 
+// Updates this script in place with the newest published version, when the site asked for
+// it ("Atualizar widget") or, at most every 6 h, when a new version is out. The placeholders
+// are spelled in pieces so filling them never touches this code itself.
+async function selfUpdate(data) {
+  const checkPath = fm.joinPath(dir, "flash-widget-update.json");
+  let last = 0;
+  try { last = fm.fileExists(checkPath) ? JSON.parse(fm.readString(checkPath)).at || 0 : 0; } catch (error) {}
+  if (!data.update_requested && Date.now() - last < 6 * 3600 * 1000) return false;
+  try { fm.writeString(checkPath, JSON.stringify({ at: Date.now() })); } catch (error) {}
+  let updated = false;
+  try {
+    const info = await new Request(BASE + "/widget/version.json?t=" + Date.now()).loadJSON();
+    if (info && info.version && info.version !== SCRIPT_VERSION) {
+      const code = await new Request(BASE + "/widget/flash-widget.js?v=" + info.version).loadString();
+      const basePlaceholder = "__FLASH_" + "BASE__", tokenPlaceholder = "__FLASH_WIDGET_" + "TOKEN__";
+      if (code.indexOf(tokenPlaceholder) >= 0 && code.indexOf("Script.complete()") >= 0) {
+        const next = code.split(basePlaceholder).join(BASE).split(tokenPlaceholder).join(TOKEN);
+        let files = fm;
+        try {
+          const cloud = FileManager.iCloud();
+          if (cloud.isFileStoredIniCloud(module.filename)) files = cloud;
+        } catch (error) {}
+        files.writeString(module.filename, next);
+        updated = true;
+      }
+    }
+    if (data.update_requested) {
+      const done = new Request(BASE + "/api/widget/updated");
+      done.method = "POST";
+      done.headers = { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" };
+      done.body = JSON.stringify({ version: updated ? "new" : SCRIPT_VERSION });
+      await done.loadJSON();
+    }
+  } catch (error) {}
+  return updated;
+}
+
 const family = config.widgetFamily || "medium";
 let widget;
 let data = null;
 try {
   const [loaded, logo] = await Promise.all([loadData(), loadLogo()]);
   data = loaded;
+  // a new version takes over on the next refresh; this one still draws now
+  if (!data.offline) await selfUpdate(data);
   const picked = themeOf(data.theme);
   if (!PARAM && picked) {
     if (picked !== THEME) useTheme(picked);

@@ -79,6 +79,26 @@ async def set_theme_from_phone(
     return {"theme": user.widget_theme}
 
 
+@router.post("/update", dependencies=[Depends(require_csrf)])
+async def request_update(user: AuthenticatedUser, db: DbSession) -> dict:
+    """The "Atualizar widget" button: the installed widget downloads the newest script (and
+    the chosen theme) on its next refresh, or at once when tapped."""
+    from app.core.time import utc_now
+
+    user.widget_update_requested_at = utc_now()
+    await db.commit()
+    return {"requested": True}
+
+
+@router.post("/updated")
+async def update_done(db: DbSession, authorization: str | None = Header(default=None)) -> dict:
+    """The widget confirms it ran the update the site asked for."""
+    user = await _token_user(db, authorization, None)
+    user.widget_update_requested_at = None
+    await db.commit()
+    return {"requested": False}
+
+
 @router.get("/today")
 async def today(
     db: DbSession,
@@ -163,6 +183,7 @@ async def today(
     return {
         "name": "Flash",
         "theme": user.widget_theme,
+        "update_requested": user.widget_update_requested_at is not None,
         "sales": float(sales.quantize(CENT)),  # Flash + SharkBot
         "sales_count": len(paid_rows) + len(shark_rows),
         "shark_revenue": float(shark.quantize(CENT)),

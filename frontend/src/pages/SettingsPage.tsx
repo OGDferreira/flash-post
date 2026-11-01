@@ -149,6 +149,9 @@ function IphoneWidgetCard() {
   useEffect(() => {
     if (savedTheme.data?.theme) setTheme(savedTheme.data.theme);
   }, [savedTheme.data?.theme]);
+  const requestUpdate = useMutation({
+    mutationFn: () => apiRequest<{ requested: boolean }>("/api/widget/update", { method: "POST" }),
+  });
   const pickTheme = useMutation({
     mutationFn: (next: WidgetTheme) =>
       apiRequest<{ theme: WidgetTheme }>("/api/widget/theme", { method: "PUT", body: { theme: next } }),
@@ -229,9 +232,30 @@ function IphoneWidgetCard() {
           <span className="text-muted">Toque num tema para aplicar. No iPhone, também dá para trocar tocando no widget e escolhendo o tema.</span>
         )}
       </p>
-      <button className="btn-primary mt-3" disabled={copying} onClick={() => void copy()} type="button">
-        {copying ? "Preparando…" : copied ? "Script copiado ✓" : "Copiar script"}
-      </button>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          className="btn-primary"
+          disabled={requestUpdate.isPending}
+          onClick={() => requestUpdate.mutate()}
+          type="button"
+        >
+          {requestUpdate.isPending ? "Enviando…" : requestUpdate.isSuccess ? "Atualização enviada ✓" : "Atualizar widget"}
+        </button>
+        <button className="btn-secondary" disabled={copying} onClick={() => void copy()} type="button">
+          {copying ? "Preparando…" : copied ? "Script copiado ✓" : "Copiar script"}
+        </button>
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted" role="status">
+        {requestUpdate.isSuccess ? (
+          <span className="text-success">
+            Pedido enviado. O widget baixa a versão nova e o tema sozinho na próxima atualização do iPhone; para ser na hora, toque no widget uma vez.
+          </span>
+        ) : requestUpdate.isError ? (
+          <span className="text-danger">Não foi possível enviar. Toque de novo.</span>
+        ) : (
+          "Atualizar widget: o widget já instalado baixa sozinho a versão nova do script e o tema escolhido, sem copiar e colar. Copiar script: só para instalar pela primeira vez."
+        )}
+      </p>
       <p role="status" className="mt-2 text-xs text-success">{copied ? "Script completo copiado. Cole no Scriptable." : ""}</p>
       {copyError && <p role="alert" className="mt-2 text-xs text-danger">{copyError}</p>}
       {script && <details className="mt-3" open={!!copyError}>

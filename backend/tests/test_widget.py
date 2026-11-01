@@ -81,6 +81,17 @@ async def test_widget_token_reads_today_and_is_replaced_by_a_new_one(client, db_
                               json={"theme": "nope"})).status_code == 422
     assert (await client.post("/api/widget/theme/phone", json={"theme": "roxo"})).status_code == 401
 
+    # "Atualizar widget": the site asks, the widget sees it with the numbers and confirms
+    bearer = {"Authorization": f"Bearer {token}"}
+    assert (await client.get("/api/widget/today", headers=bearer)).json()["update_requested"] is False
+    headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    assert (await client.post("/api/widget/update", headers=headers)).status_code == 200
+    client.cookies.clear()
+    assert (await client.get("/api/widget/today", headers=bearer)).json()["update_requested"] is True
+    assert (await client.post("/api/widget/updated", headers=bearer, json={"version": "new"})).status_code == 200
+    assert (await client.get("/api/widget/today", headers=bearer)).json()["update_requested"] is False
+    assert (await client.post("/api/widget/updated", json={})).status_code == 401
+
     # the token reads nothing else, a wrong one is refused, and a new script turns the old one off
     assert (await client.get("/api/wallet", headers={"Authorization": f"Bearer {token}"})).status_code in (401, 403)
     assert (await client.get("/api/widget/today", headers={"Authorization": "Bearer fpw_wrong"})).status_code == 401
