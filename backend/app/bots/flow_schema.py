@@ -91,7 +91,7 @@ class OrderBump(_Model):
     media_ids: MediaList3
     accept_label: Label = "✅ Sim, quero!"
     decline_label: Label = "Não, obrigado"
-    delivery: Delivery
+    delivery: Delivery | None = None  # None = the funnel's default delivery
 
 
 class Plan(_Model):
@@ -283,6 +283,8 @@ class FlowDefinition(_Model):
         needs_default = [step.delivery is None for step in self.upsells] + [
             bool(step.custom_offer and step.custom_offer.delivery is None) for step in self.all_downsells()
         ]
+        bumps = [self.order_bump] + [plan.order_bump for plan in self.plans]
+        needs_default += [bool(bump and bump.delivery is None) for bump in bumps]
         if any(needs_default) and self.default_delivery is None:
             raise ValueError("Uma oferta usa a entrega padrão, mas o fluxo não tem entrega padrão.")
         return self

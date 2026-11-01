@@ -75,6 +75,13 @@ class CampaignOffer(_Model):
     order_bump: OrderBump | None = None
     redirect: LinkButton | None = None  # e.g. a free previews channel
 
+    @model_validator(mode="after")
+    def _bump_delivery(self) -> "CampaignOffer":
+        # A campaign has no funnel default to fall back on: its bump brings its own delivery.
+        if self.order_bump is not None and self.order_bump.delivery is None:
+            raise ValueError("Escolha a entrega do order bump da campanha.")
+        return self
+
 
 class CampaignDefinition(_Model):
     audience: CampaignAudience = Field(default_factory=CampaignAudience)

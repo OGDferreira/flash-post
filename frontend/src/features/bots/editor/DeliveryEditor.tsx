@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiRequest } from "@/services/api";
-import type { BotGroup, Delivery, OrderBump } from "../types";
+import { emptyDelivery, type BotGroup, type Delivery, type OrderBump } from "../types";
 import { MediaGrid } from "./MediaGrid";
 import { BASE_VARIABLES, RichTextEditor } from "./RichTextEditor";
 import { Field, MoneyInput, Switch } from "./ui";
@@ -145,7 +145,17 @@ function TypeTabs({
   );
 }
 
-export function BumpEditor({ value, onChange }: { value: OrderBump; onChange: (next: OrderBump) => void }) {
+/** ``allowDefault``: the funnel editor offers "use the funnel's default delivery" (a
+ * remarketing campaign has no funnel default, so its bump always brings its own). */
+export function BumpEditor({
+  value,
+  onChange,
+  allowDefault = false,
+}: {
+  value: OrderBump;
+  onChange: (next: OrderBump) => void;
+  allowDefault?: boolean;
+}) {
   const set = (patch: Partial<OrderBump>) => onChange({ ...value, ...patch });
   return (
     <div className="grid gap-4">
@@ -174,7 +184,25 @@ export function BumpEditor({ value, onChange }: { value: OrderBump; onChange: (n
       </div>
       <div className="space-y-2">
         <p className="text-sm font-medium text-fg">Entrega do adicional</p>
-        <DeliveryEditor allowUpsell={false} value={value.delivery} onChange={(delivery) => set({ delivery })} />
+        {allowDefault && (
+          <select
+            className="field"
+            value={value.delivery ? "own" : "default"}
+            onChange={(event) => set({ delivery: event.target.value === "own" ? emptyDelivery("default") : null })}
+          >
+            <option value="default">Usar entrega padrão do funil</option>
+            <option value="own">Entrega própria do adicional</option>
+          </select>
+        )}
+        {value.delivery ? (
+          <DeliveryEditor allowUpsell={false} value={value.delivery} onChange={(delivery) => set({ delivery })} />
+        ) : allowDefault ? (
+          <p className="text-xs text-muted">Quem comprar o adicional recebe a entrega padrão do funil (em Entrega padrão).</p>
+        ) : (
+          <button className="btn-secondary" onClick={() => set({ delivery: emptyDelivery("default") })} type="button">
+            Definir a entrega do adicional
+          </button>
+        )}
       </div>
     </div>
   );

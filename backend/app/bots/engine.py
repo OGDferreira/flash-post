@@ -1466,7 +1466,13 @@ async def approve_order(
         if delivery and delivery.type != "upsell":
             await deliver(db, tg, bot, lead, order, plan, delivery)
         if bump:
-            await deliver(db, tg, bot, lead, order, plan.model_copy(update={"name": bump.name}), bump.delivery)
+            # The bump's own delivery, or the funnel's default one (not sent twice when the
+            # plan already delivered that same default).
+            bump_delivery = bump.delivery or (flow.default_delivery if flow else None)
+            if bump_delivery is not None and bump_delivery.type != "upsell" and not (
+                bump.delivery is None and bump_delivery is delivery
+            ):
+                await deliver(db, tg, bot, lead, order, plan.model_copy(update={"name": bump.name}), bump_delivery)
         order.delivered_at = utcnow()
     except TelegramError as exc:
         bot.last_error = str(exc)[:500]

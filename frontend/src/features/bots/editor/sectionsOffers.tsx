@@ -88,7 +88,7 @@ function PlanEditor({ plan, onChange, hasDefaultBump }: { plan: Plan; onChange: 
           <option value="custom">Order bump personalizado</option>
           <option value="off">Sem order bump neste plano</option>
         </select>
-        {plan.bump_mode === "custom" && plan.order_bump && <BumpEditor value={plan.order_bump} onChange={(order_bump) => set({ order_bump })} />}
+        {plan.bump_mode === "custom" && plan.order_bump && <BumpEditor allowDefault value={plan.order_bump} onChange={(order_bump) => set({ order_bump })} />}
       </div>
     </>
   );
@@ -167,7 +167,7 @@ export function BumpSection({ draft, set }: SectionProps) {
           <p className="text-xs text-muted">
             Vale para: {using.length ? using.join(", ") : "nenhum plano (todos têm bump personalizado ou desligado)"}.
           </p>
-          <BumpEditor value={draft.order_bump} onChange={(order_bump) => set({ order_bump })} />
+          <BumpEditor allowDefault value={draft.order_bump} onChange={(order_bump) => set({ order_bump })} />
         </>
       ) : (
         <p className="text-sm text-muted">Desligado. Cada plano ainda pode ter um order bump personalizado na seção Planos.</p>
