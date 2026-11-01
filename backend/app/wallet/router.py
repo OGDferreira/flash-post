@@ -211,7 +211,7 @@ def _month_start():
     return now.astimezone(BRAZIL_TIME_ZONE).replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc), now
 
 
-async def month_commissions(db, workspace_id: uuid.UUID, start=None) -> Decimal:
+async def month_commissions(db, workspace_id: uuid.UUID, start=None, end=None) -> Decimal:
     """Commissions the workspace's owner received from partners' sales (any gateway), this
     month or since ``start``."""
     from app.bots.hidden import not_hidden_bot
@@ -221,6 +221,7 @@ async def month_commissions(db, workspace_id: uuid.UUID, start=None) -> Decimal:
         return Decimal("0.00")
     month_start, now = _month_start()
     start = start or month_start
+    now = end or now
     return _money(await db.scalar(
         select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
             TgOrder.split_chief_user_id == workspace.owner_id, TgOrder.status == "paid",
@@ -504,11 +505,44 @@ async def wallet(user: AuthenticatedUser, db: DbSession) -> dict:
         "month_commissions": float(await month_commissions(db, workspace.id)),
         **(await _falcon_fees(db) if user.platform_role == "SUPER_ADMIN" else {}),
         # goals count Flash sales over the whole history, like the header pill
-        "goal": _goals_out(await total_flash_revenue(db, workspace.id), await award_image_urls(db)),
+        "goal": _goals_out(total_revenue := await total_flash_revenue(db, workspace.id), await award_image_urls(db)),
+        "total_flash_revenue": float(total_revenue),
         **numbers,
         "min_withdrawal": float(MIN_WITHDRAWAL),
         "withdrawals": await _history(db, workspace.id),
     }
+
+
+@router.get("/period")
+async def wallet_period(
+    user: AuthenticatedUser, db: DbSession, period: AnalyticsPeriod = "today",
+    start_date: date | None = None, end_date: date | None = None,
+) -> dict:
+    """The wallet cards that follow the period filter: Flash revenue (own sales +
+    commissions received), SharkBot revenue, commissions and (Super Admin) the Flash fees."""
+    from app.finance.router import _revenue_between
+
+    workspace = await _workspace_for(db, user)
+    start, end = period_bounds(period, start_date, end_date, utc_now())
+    since = start or datetime(2000, 1, 1, tzinfo=timezone.utc)
+    until = min(end, utc_now()) if end else utc_now()
+    gross, _net, _sales, _no_amount, flash = await _revenue_between(db, workspace.id, since, until)
+    commissions = await month_commissions(db, workspace.id, since, until)
+    out = {
+        "period_label": period_label(start, end),
+        "flash_sales": float(_money(flash)),
+        "commissions": float(commissions),
+        "flash_revenue": float(_money(flash) + commissions),
+        "shark_revenue": float(_money(gross) - _money(flash)),
+    }
+    if user.platform_role == "SUPER_ADMIN":
+        total, count = (await db.execute(
+            select(func.coalesce(func.sum(TgOrder.transaction_fee), 0), func.count(TgOrder.id)).where(
+                TgOrder.status == "paid", TgOrder.transaction_fee > 0, TgOrder.paid_at >= since, TgOrder.paid_at < until,
+            )
+        )).one()
+        out["fees"], out["fees_count"] = float(_money(total)), int(count)
+    return out
 
 
 @router.get("/falcon-fees")

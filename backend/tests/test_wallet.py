@@ -478,3 +478,4 @@ async def test_workspace_owner_and_partner_withdraw_from_atenas_subaccounts(
     refreshed = (await client.get("/api/wallet")).json()
     assert refreshed["withdrawn"] == 15.0
     assert refreshed["withdrawals"][0]["gateway"] == "atenaspay"
+
