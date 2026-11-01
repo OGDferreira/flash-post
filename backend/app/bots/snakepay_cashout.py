@@ -1,6 +1,6 @@
 """SnakePay Cash Out: withdraw an account's balance by Pix (docs shared by the platform owner, 2026-10).
 
-* ``POST /withdrawals`` ``{amount (reais, 10–100000, or "MAX"), key, keyType, requestId}`` →
+* ``POST /withdrawals`` ``{amount (reais, 10–100000, two decimals), key, keyType, requestId}`` →
   202 ``{id, status: pending, total_debit, ...}``. ``requestId`` is a UUID saved BEFORE sending
   and reused on every retry of the same withdrawal (idempotency).
 * ``GET /withdrawals/{id}`` → ``{id, status: pending|paid|failed, ...}``; ask at most every 30 s.
@@ -98,10 +98,10 @@ async def _call(method: str, path: str, body: dict | None, *, api_key: str, secr
     return data
 
 
-async def create(*, amount: Decimal | None, pix_key: str, key_type: str, request_id: str, api_key: str, secret: str) -> Cashout:
-    """``amount`` None = "MAX" (everything available). Same ``request_id`` on every retry."""
+async def create(*, amount: Decimal, pix_key: str, key_type: str, request_id: str, api_key: str, secret: str) -> Cashout:
+    """``amount`` in reais (10 to 100000, two decimals). Same ``request_id`` on every retry."""
     body = {
-        "amount": "MAX" if amount is None else float(amount.quantize(Decimal("0.01"))),
+        "amount": float(amount.quantize(Decimal("0.01"))),
         "key": pix_key,
         "keyType": key_type,
         "requestId": request_id,

@@ -161,7 +161,7 @@ async def test_refusals_fail_the_withdrawal_with_a_clear_message(client, db_sess
 
 
 @pytest.mark.anyio
-async def test_user_withdraws_with_their_own_key_and_everything_with_max(client, db_session, owner, cash) -> None:
+async def test_user_withdraws_with_their_own_key_and_everything_in_reais(client, db_session, owner, cash) -> None:
     partner, partner_ws = await _make_owner(db_session, "socio")
     await _snake_sale(db_session, partner_ws, "80.00")
     headers = await _as(client, "socio@example.com")
@@ -175,8 +175,9 @@ async def test_user_withdraws_with_their_own_key_and_everything_with_max(client,
     assert SELLER_SECRET not in saved.text
     done = await client.post("/api/wallet/withdrawals", headers=headers, json={"gateway": "snakepay", "withdraw_all": True, **PIX})
     assert done.status_code == 201, done.text
-    assert cash.posts[-1]["amount"] == "MAX" and cash.posts[-1]["_auth"] == "Bearer seller_sk"
-    assert done.json()["amount"] == 80.0  # SnakePay's total debit
+    # "Sacar tudo" asks the whole calculated balance in reais (the API has no "MAX")
+    assert cash.posts[-1]["amount"] == 80.0 and cash.posts[-1]["_auth"] == "Bearer seller_sk"
+    assert done.json()["amount"] == 80.0
 
 
 @pytest.mark.anyio
