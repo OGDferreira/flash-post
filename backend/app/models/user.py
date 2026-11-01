@@ -72,6 +72,7 @@ class User(Base):
     home_panel: Mapped[str | None] = mapped_column(String(16))
     # iPhone widget (Scriptable): SHA-256 of a read-only token for today's Flash numbers
     widget_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    widget_theme: Mapped[str | None] = mapped_column(String(16))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_approved: Mapped[bool] = mapped_column(

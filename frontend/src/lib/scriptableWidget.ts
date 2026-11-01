@@ -20,6 +20,7 @@ export function scriptableWidgetScript(baseUrl: string, token: string, theme: Wi
 // Gerado em ${new Date().toLocaleDateString("pt-BR")}. Copiar o script de novo no site desliga este.
 const API = ${JSON.stringify(`${base}/api/widget/today`)};
 const TOKEN = ${JSON.stringify(token)};
+const THEME_API = ${JSON.stringify(`${base}/api/widget/theme/phone`)};
 const LOGO = ${JSON.stringify(`${base}/brand/flash-icon-bot-192.png`)};
 const MARKS = {
   white: ${JSON.stringify(`${base}/brand/flash-mark-white-512.png`)},
@@ -58,21 +59,39 @@ const THEMES = {
 const ALIASES = { azul: "roxo", purple: "roxo", dark: "escuro", white: "claro", branco: "claro", light: "claro",
   preto: "pb", "preto e branco": "pb", mono: "pb", "galáxia": "galaxia", galaxy: "galaxia", pink: "rosa",
   flor: "flores", floral: "flores", flowers: "flores", feminino: "flores", delicado: "flores" };
-const PICK = String(args.widgetParameter || ${JSON.stringify(theme)}).trim().toLowerCase();
-const T = THEMES[ALIASES[PICK] || PICK] || THEMES.roxo;
-const BLUE = T.bg;
-const C = {
-  text: new Color(T.text), soft: new Color(...T.soft), faint: new Color(...T.faint),
-  pill: new Color(...T.pill), green: new Color(T.profit), rate: new Color(T.rate), badge: new Color("#22c55e", 0.92),
-  comm: new Color(T.comm),
-};
+const fm = FileManager.local();
+const dir = fm.documentsDirectory();
+const themePath = fm.joinPath(dir, "flash-widget-theme.txt");
+function themeOf(name) {
+  const key = String(name || "").trim().toLowerCase();
+  const id = ALIASES[key] || key;
+  return THEMES[id] ? id : null;
+}
+// The look: a name typed in the widget's Parameter field (optional) wins; otherwise the
+// one picked with a tap (on the site or on the phone), which comes with the numbers.
+const PARAM = themeOf(args.widgetParameter);
+let saved = null;
+try { saved = fm.fileExists(themePath) ? themeOf(fm.readString(themePath)) : null; } catch (error) {}
+let THEME, T, BLUE, C;
+function useTheme(name) {
+  THEME = name;
+  T = THEMES[name];
+  BLUE = T.bg;
+  C = {
+    text: new Color(T.text), soft: new Color(...T.soft), faint: new Color(...T.faint),
+    pill: new Color(...T.pill), green: new Color(T.profit), rate: new Color(T.rate), badge: new Color("#22c55e", 0.92),
+    comm: new Color(T.comm),
+  };
+}
+function rememberTheme(name) {
+  try { fm.writeString(themePath, name); } catch (error) {}
+}
+useTheme(PARAM || saved || themeOf(${JSON.stringify(theme)}) || "roxo");
 function rgba(hex, alpha = 1) {
   const n = parseInt(hex.slice(1), 16);
   return "rgba(" + (n >> 16) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + alpha + ")";
 }
 function rate(data) { return data.pix_generated ? Math.round((100 * data.pix_paid) / data.pix_generated) : 0; }
-const fm = FileManager.local();
-const dir = fm.documentsDirectory();
 const statePath = fm.joinPath(dir, "flashbot-widget-state.json");
 
 function brl(value) {
@@ -459,8 +478,17 @@ function medium(data, logo, mark, delta) {
   body.addSpacer(8);
   const right = body.addStack();
   right.layoutVertically();
-  const graph = right.addImage(chart(data.series || [0], 112, 48));
-  graph.imageSize = new Size(112, 48);
+  if (data.is_admin) {
+    // Sales line and, below it, the dotted commission line.
+    const g1 = right.addImage(chart(data.series || [0], 112, 36));
+    g1.imageSize = new Size(112, 36);
+    right.addSpacer(2);
+    const g2 = right.addImage(chart(data.commission_series || [0], 112, 16, { dotted: true, color: T.comm }));
+    g2.imageSize = new Size(112, 16);
+  } else {
+    const graph = right.addImage(chart(data.series || [0], 112, 48));
+    graph.imageSize = new Size(112, 48);
+  }
   right.addSpacer(4);
   if (delta) {
     badge(right, delta, 8);
@@ -594,7 +622,10 @@ function failure(message) {
 }
 
 // Opened from the widget (or run in the app): the chart draws itself and the numbers count up.
-async function animatedView(data) {
+const THEME_CHIPS = [["claro", "☀️ Claro"], ["escuro", "🌙 Escuro"], ["pb", "◐ Preto e branco"], ["roxo", "💜 Roxo"],
+  ["galaxia", "✨ Galáxia"], ["rosa", "💗 Rosa"], ["flores", "🌸 Flores"]];
+
+function viewHtml(data) {
   const series = data.series && data.series.length > 1 ? data.series : [0, salesValue(data)];
   const max = Math.max(...series, 1);
   const pts = series.map((v, i) => [(i / (series.length - 1)) * 320, 150 - (v / max) * 130]);
@@ -611,7 +642,9 @@ body{margin:0;min-height:100vh;font-family:-apple-system,system-ui;color:\${T.te
 svg{width:100%;height:auto;overflow:visible}.line{fill:none;stroke:\${T.line};stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px \${rgba(T.line, 0.7)});stroke-dasharray:2000;stroke-dashoffset:2000;animation:draw 1.6s .2s ease-out forwards}
 .area{fill:\${rgba(T.line, T.fill)};opacity:0;animation:fade .8s 1.2s forwards}.dot{fill:\${T.line};opacity:0;animation:pulse 1.4s 1.6s ease-in-out infinite}
 @keyframes draw{to{stroke-dashoffset:0}}@keyframes fade{to{opacity:1}}@keyframes pulse{0%,100%{opacity:1;r:5}50%{opacity:.5;r:9}}
-a{color:#fff;text-align:center;background:\${T.line === "#ffffff" ? "rgba(0,0,0,.18)" : T.line};border-radius:14px;padding:13px;text-decoration:none;font-weight:600}
+a.open{color:#fff;text-align:center;background:\${T.line === "#ffffff" ? "rgba(0,0,0,.18)" : T.line};border-radius:14px;padding:13px;text-decoration:none;font-weight:600}
+.themes{display:flex;flex-wrap:wrap;gap:8px}.chip{color:\${T.text};text-decoration:none;background:\${rgba(...T.pill)};border:2px solid transparent;border-radius:99px;padding:8px 12px;font-size:14px;font-weight:600}
+.chip.on{border-color:\${T.text}}
 </style></head><body>
 <div class="top"><img src="\${LOGO}">Flash<span class="pill">\${data.views != null ? "👁 " + viewsText(data.views) : ""}</span><span class="pill" style="margin-left:6px">\${sales(salesCount(data))}</span></div>
 <div><div class="lbl">\${data.is_admin ? "Total do dia" : "Faturamento do dia"}</div><div class="big" data-to="\${total(data)}">R$ 0,00</div></div>
@@ -621,14 +654,45 @@ a{color:#fff;text-align:center;background:\${T.line === "#ffffff" ? "rgba(0,0,0,
 \${data.shark_sales ? '<div class="card"><div class="lbl">Shark</div><b data-to="' + (data.shark_revenue || 0) + '">R$ 0,00</b></div>' : ""}</div>
 <svg viewBox="0 0 320 160"><path class="area" d="\${d} L320,160 L0,160 Z"/><path class="line" d="\${d}"/><circle class="dot" cx="\${pts[pts.length-1][0]}" cy="\${pts[pts.length-1][1]}" r="5"/></svg>
 <div class="lbl" style="text-align:right">atualizado \${data.updated_at}</div>
-<a href="\${SITE}">Abrir o Flash</a>
+<div class="lbl">Tema do widget · toque para trocar</div>
+<div class="themes">\${THEME_CHIPS.map((item) => '<a class="chip' + (item[0] === THEME ? " on" : "") + '" href="flashtheme://' + item[0] + '">' + item[1] + "</a>").join("")}</div>
+\${PARAM ? '<div class="lbl" style="text-transform:none;letter-spacing:0">Este widget tem um tema escrito em Parameter, que vale antes do escolhido aqui.</div>' : ""}
+<a class="open" href="\${SITE}">Abrir o Flash</a>
 <script>
 const fmt=v=>"R$ "+v.toFixed(2).replace(".",",").replace(/\\\\B(?=(\\\\d{3})+(?!\\\\d))/g,".");
 document.querySelectorAll("[data-to]").forEach(el=>{const to=+el.dataset.to,t0=performance.now();
 (function tick(t){const k=Math.min(1,(t-t0)/1400),e=1-Math.pow(1-k,3);el.textContent=fmt(to*e);if(k<1)requestAnimationFrame(tick)})(t0)});
 </script></body></html>\`;
+  return html;
+}
+
+// Opened from the widget: tapping a theme chip applies it at once here, saves it on the
+// account (the widget takes it on its next refresh) and on the phone.
+async function saveTheme(name) {
+  rememberTheme(name);
+  try {
+    const request = new Request(THEME_API);
+    request.method = "POST";
+    request.headers = { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" };
+    request.body = JSON.stringify({ theme: name });
+    request.timeoutInterval = 15;
+    await request.loadJSON();
+  } catch (error) {}
+}
+async function animatedView(data) {
   const view = new WebView();
-  await view.loadHTML(html);
+  view.shouldAllowRequest = (request) => {
+    const url = String(request.url || "");
+    if (url.indexOf("flashtheme://") !== 0) return true;
+    const name = themeOf(url.slice("flashtheme://".length));
+    if (name) {
+      useTheme(name);
+      view.loadHTML(viewHtml(data));
+      saveTheme(name);
+    }
+    return false;
+  };
+  await view.loadHTML(viewHtml(data));
   await view.present(true);
 }
 
@@ -636,8 +700,14 @@ const family = config.widgetFamily || "medium";
 let widget;
 let data = null;
 try {
-  const [loaded, logo, mark] = await Promise.all([loadData(), loadLogo(), loadMark()]);
+  const [loaded, logo] = await Promise.all([loadData(), loadLogo()]);
   data = loaded;
+  const picked = themeOf(data.theme);
+  if (!PARAM && picked) {
+    if (picked !== THEME) useTheme(picked);
+    rememberTheme(picked);
+  }
+  const mark = await loadMark();
   const delta = newSales(data);
   if (family.startsWith("accessory")) widget = lockScreen(data, logo, family);
   else if (family === "small") widget = small(data, logo, mark, delta);

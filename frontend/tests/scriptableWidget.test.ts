@@ -10,7 +10,8 @@ for (const theme of ['claro', 'escuro', 'pb', 'roxo', 'galaxia', 'rosa', 'flores
     assert.ok(script.includes('const API = "https://flashpost.example/api/widget/today"'));
     assert.ok(script.includes('const TOKEN = "fpw_test_token"'));
     assert.ok(script.includes('Authorization: "Bearer " + TOKEN'));
-    assert.ok(script.includes(`args.widgetParameter || "${theme}"`));
+    assert.ok(script.includes(`themeOf("${theme}")`));
+    assert.ok(script.includes("api/widget/theme/phone"));
     assert.ok(script.includes('Script.complete()'));
     assert.ok(!script.includes('undefined'));
   });

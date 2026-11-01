@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   Bell,
@@ -140,6 +140,19 @@ function IphoneWidgetCard() {
   const isAdmin = useAuth().user?.role === "SUPER_ADMIN";
   const [copied, setCopied] = useState(false);
   const [theme, setTheme] = useState<WidgetTheme>("roxo");
+  // The look is saved on the account: a tap here changes the installed widget on its next
+  // refresh, with no script to copy again.
+  const savedTheme = useQuery({
+    queryKey: ["widget-theme"],
+    queryFn: () => apiRequest<{ theme: WidgetTheme | null }>("/api/widget/theme"),
+  });
+  useEffect(() => {
+    if (savedTheme.data?.theme) setTheme(savedTheme.data.theme);
+  }, [savedTheme.data?.theme]);
+  const pickTheme = useMutation({
+    mutationFn: (next: WidgetTheme) =>
+      apiRequest<{ theme: WidgetTheme }>("/api/widget/theme", { method: "PUT", body: { theme: next } }),
+  });
   const [token, setToken] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState("");
@@ -196,7 +209,7 @@ function IphoneWidgetCard() {
               theme === item.id ? "border-accent ring-2 ring-accent/40" : "border-line-soft"
             }`}
             key={item.id}
-            onClick={() => { setTheme(item.id); setCopied(false); }}
+            onClick={() => { setTheme(item.id); setCopied(false); pickTheme.mutate(item.id); }}
             role="radio"
             style={{ background: item.swatch, color: item.text }}
             type="button"
@@ -205,8 +218,16 @@ function IphoneWidgetCard() {
           </button>
         ))}
       </div>
-      <p className="mt-1.5 text-[11px] text-muted">
-        Dá para trocar em cada widget: segure o widget → Editar widget → em <b>Parameter</b> escreva claro, escuro, pb, roxo, galaxia, rosa ou flores.
+      <p className="mt-1.5 min-h-4 text-[11px]" role="status">
+        {pickTheme.isPending ? (
+          <span className="text-muted">Aplicando…</span>
+        ) : pickTheme.isSuccess ? (
+          <span className="text-success">Tema aplicado ✓ O widget já instalado muda sozinho na próxima atualização.</span>
+        ) : pickTheme.isError ? (
+          <span className="text-danger">Não foi possível salvar o tema. Toque de novo.</span>
+        ) : (
+          <span className="text-muted">Toque num tema para aplicar. No iPhone, também dá para trocar tocando no widget e escolhendo o tema.</span>
+        )}
       </p>
       <button className="btn-primary mt-3" disabled={copying} onClick={() => void copy()} type="button">
         {copying ? "Preparando…" : copied ? "Script copiado ✓" : "Copiar script"}

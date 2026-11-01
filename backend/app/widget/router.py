@@ -10,7 +10,10 @@ import secrets
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import and_, func, select
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, require_csrf
@@ -22,6 +25,11 @@ from app.partners.service import owner_workspace
 
 router = APIRouter(prefix="/api/widget", tags=["widget"])
 CENT = Decimal("0.01")
+WidgetTheme = Literal["claro", "escuro", "pb", "roxo", "galaxia", "rosa", "flores"]
+
+
+class ThemeChoice(BaseModel):
+    theme: WidgetTheme
 
 
 def _digest(token: str) -> str:
@@ -38,16 +46,46 @@ async def new_token(user: AuthenticatedUser, db: DbSession) -> dict:
     return {"token": token}
 
 
+async def _token_user(db, authorization: str | None, token: str | None) -> User:
+    raw = (authorization or "").removeprefix("Bearer ").strip() or (token or "").strip()
+    user = await db.scalar(select(User).where(User.widget_token_hash == _digest(raw))) if raw.startswith("fpw_") else None
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=401, detail="Widget desconectado: copie o script de novo em Configurações.")
+    return user
+
+
+@router.get("/theme")
+async def get_theme(user: AuthenticatedUser) -> dict:
+    return {"theme": user.widget_theme}
+
+
+@router.put("/theme", dependencies=[Depends(require_csrf)])
+async def set_theme(payload: ThemeChoice, user: AuthenticatedUser, db: DbSession) -> dict:
+    """Picked with a tap in Configurações: the widget takes it on its next refresh."""
+    user.widget_theme = payload.theme
+    await db.commit()
+    return {"theme": user.widget_theme}
+
+
+@router.post("/theme/phone")
+async def set_theme_from_phone(
+    payload: ThemeChoice, db: DbSession, authorization: str | None = Header(default=None)
+) -> dict:
+    """Picked with a tap on the phone (the widget's own view). The widget token may change
+    only this look, nothing else."""
+    user = await _token_user(db, authorization, None)
+    user.widget_theme = payload.theme
+    await db.commit()
+    return {"theme": user.widget_theme}
+
+
 @router.get("/today")
 async def today(
     db: DbSession,
     authorization: str | None = Header(default=None),
     token: str | None = Query(default=None, max_length=120),
 ) -> dict:
-    raw = (authorization or "").removeprefix("Bearer ").strip() or (token or "").strip()
-    user = await db.scalar(select(User).where(User.widget_token_hash == _digest(raw))) if raw.startswith("fpw_") else None
-    if user is None or not user.is_active:
-        raise HTTPException(status_code=401, detail="Widget desconectado: copie o script de novo em Configurações.")
+    user = await _token_user(db, authorization, token)
     workspace = await owner_workspace(db, user.id)
     if workspace is None:
         raise HTTPException(status_code=403, detail="Sem operação.")
@@ -124,6 +162,7 @@ async def today(
     total = sales + commissions + fees if is_admin else sales
     return {
         "name": "Flash",
+        "theme": user.widget_theme,
         "sales": float(sales.quantize(CENT)),  # Flash + SharkBot
         "sales_count": len(paid_rows) + len(shark_rows),
         "shark_revenue": float(shark.quantize(CENT)),

@@ -73,10 +73,20 @@ async def test_widget_token_reads_today_and_is_replaced_by_a_new_one(client, db_
     owner_user.platform_role = "USER"
     await db_session.commit()
 
+    # the look is picked with a tap (site or phone) and comes along with the numbers
+    phone = await client.post("/api/widget/theme/phone", headers={"Authorization": f"Bearer {token}"}, json={"theme": "flores"})
+    assert phone.status_code == 200 and phone.json()["theme"] == "flores"
+    assert (await client.get("/api/widget/today", headers={"Authorization": f"Bearer {token}"})).json()["theme"] == "flores"
+    assert (await client.post("/api/widget/theme/phone", headers={"Authorization": f"Bearer {token}"},
+                              json={"theme": "nope"})).status_code == 422
+    assert (await client.post("/api/widget/theme/phone", json={"theme": "roxo"})).status_code == 401
+
     # the token reads nothing else, a wrong one is refused, and a new script turns the old one off
     assert (await client.get("/api/wallet", headers={"Authorization": f"Bearer {token}"})).status_code in (401, 403)
     assert (await client.get("/api/widget/today", headers={"Authorization": "Bearer fpw_wrong"})).status_code == 401
     headers = await _as(client, "owner@example.com", CHIEF_PASSWORD)
+    picked = await client.put("/api/widget/theme", headers=headers, json={"theme": "galaxia"})
+    assert picked.status_code == 200 and (await client.get("/api/widget/theme")).json()["theme"] == "galaxia"
     newer = (await client.post("/api/widget/token", headers=headers)).json()["token"]
     client.cookies.clear()
     assert (await client.get(f"/api/widget/today?token={token}")).status_code == 401
