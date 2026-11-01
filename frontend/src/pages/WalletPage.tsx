@@ -284,7 +284,8 @@ function SnakeWithdrawModal({ gateway, open, onClose, request, title }: {
   const value = Number(amount.replace(/\./g, "").replace(",", "."));
   const valid = (all || (Number.isFinite(value) && value >= gateway.min && value <= 100000)) && pixKey.trim().length > 3;
   const keyLabel = keyTypes.find((item) => item.value === keyType)?.label ?? keyType;
-  const shown = all ? "Todo o saldo disponível" : brl(value > 0 ? value : 0);
+  const shown = all ? `${brl(gateway.available)} (todo o saldo disponível)` : brl(value > 0 ? value : 0);
+  const maxText = gateway.available.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!reviewing) {
@@ -300,7 +301,11 @@ function SnakeWithdrawModal({ gateway, open, onClose, request, title }: {
   }
   return (
     <Modal
-      description={`Saldo estimado: ${brl(gateway.available)} (a SnakePay confere o real)`}
+      description={
+        gateway.estimated
+          ? `Saldo estimado: ${brl(gateway.available)} (cadastre a chave em Gateways para ver o real)`
+          : `Saldo disponível na SnakePay: ${brl(gateway.available)}`
+      }
       onClose={() => { setReviewing(false); onClose(); }}
       open={open}
       title={reviewing ? "Confira antes de enviar" : title ?? "Saque — SnakePay"}
@@ -331,8 +336,8 @@ function SnakeWithdrawModal({ gateway, open, onClose, request, title }: {
                   disabled={all}
                   inputMode="decimal"
                   onChange={(event) => setAmount(event.target.value)}
-                  placeholder={all ? "Tudo" : "0,00"}
-                  value={all ? "" : amount}
+                  placeholder="0,00"
+                  value={all ? maxText : amount}
                 />
                 <button
                   aria-pressed={all}
@@ -529,7 +534,7 @@ export function WalletPage() {
   // The "Sacar" pop-up handles each gateway on its own, so allow it whenever any has a balance.
   const canWithdraw = gateways.length ? gateways.some((item) => item.available > 0) : data.available > 0;
   const perGateway = gateways
-    .map((item) => `${GATEWAY_NAMES[item.gateway]} ${brl(item.available)}${item.gateway === "snakepay" ? " (calculado)" : item.estimated ? " (estimado)" : ""}`)
+    .map((item) => `${GATEWAY_NAMES[item.gateway]} ${brl(item.available)}${item.estimated ? (item.gateway === "snakepay" ? " (calculado)" : " (estimado)") : ""}`)
     .join(" · ");
   const n = numbers.data;
   const money = (value: number | undefined) => (value === undefined ? "…" : brl(value));
