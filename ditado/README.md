@@ -12,17 +12,34 @@ A transcrição usa o **Whisper rodando no seu próprio computador**: é grátis
 funciona sem internet (depois de baixar o modelo uma vez) e seu áudio não sai
 da máquina.
 
-## Instalação no Windows
+## Gerar o executável (Ditado.exe) no Windows
 
 1. Instale o [Python 3.10 ou mais novo](https://www.python.org/downloads/).
    Na instalação, marque **"Add python.exe to PATH"**.
-2. Baixe esta pasta `ditado/` para o seu computador.
-3. Dê dois cliques em **`instalar.bat`**. Ele instala tudo e baixa o modelo de
+2. Descompacte esta pasta em qualquer lugar, por exemplo `C:\Ditado`.
+3. Dê dois cliques em **`gerar_executavel.bat`**. Leva alguns minutos. No fim,
+   abre a pasta `dist\Ditado` com o **`Ditado.exe`**.
+4. Copie a pasta `dist\Ditado` **inteira** para onde quiser (o `.exe` precisa
+   dos arquivos que estão ao lado dele) e abra o `Ditado.exe`.
+5. Na primeira vez ele baixa o modelo de voz (~500 MB), então precisa de
+   internet. O ícone fica cinza enquanto baixa e verde quando está pronto.
+6. Para abrir sozinho quando ligar o PC: botão direito no ícone →
+   **Iniciar com o Windows**.
+
+Depois de gerado, o Python não é mais necessário para usar o `Ditado.exe`.
+Você pode copiar a pasta `dist\Ditado` para outro computador Windows.
+
+O Windows SmartScreen ou o antivírus podem desconfiar do `.exe`, porque ele é
+novo e não tem assinatura digital. Clique em "Mais informações" → "Executar
+assim mesmo".
+
+## Rodar sem gerar executável (Windows)
+
+1. Com o Python instalado, dê dois cliques em **`instalar.bat`**. Ele instala tudo e baixa o modelo de
    voz (~500 MB, só na primeira vez).
-4. Dê dois cliques em **`iniciar.bat`**. Um ícone de microfone aparece perto do
+2. Dê dois cliques em **`iniciar.bat`**. Um ícone de microfone aparece perto do
    relógio (pode estar escondido na setinha `^`). Verde quer dizer pronto.
-5. (Opcional) Dê dois cliques em **`iniciar_com_windows.bat`** para o Ditado
-   abrir sozinho toda vez que ligar o PC.
+3. (Opcional) Botão direito no ícone → **Iniciar com o Windows**.
 
 ## Instalação no macOS / Linux
 
@@ -49,8 +66,8 @@ da máquina.
 | Vermelho | Gravando                             |
 | Amarelo  | Transcrevendo                        |
 
-Clique com o botão direito no ícone para pausar, abrir as configurações, ver o
-log ou sair.
+Clique com o botão direito no ícone para pausar, ligar a inicialização junto
+com o Windows, abrir as configurações, ver o log ou sair.
 
 ## Configurações
 
@@ -83,6 +100,8 @@ Ditado.
   `large-v3-turbo` com `device: cuda` se tiver placa NVIDIA.
 - **Usar fone Bluetooth** como microfone pode baixar a qualidade do som do fone
   enquanto grava. Isso é normal do Bluetooth.
+- **Testar sem microfone:** `Ditado.exe --transcrever gravacao.wav` (ou
+  `python ditado.py --transcrever gravacao.wav`) mostra o texto de um áudio.
 - **Ver o que está acontecendo:** rode `python ditado.py --no-tray -v` em um
   terminal, ou abra o log em `~/.ditado/ditado.log`.
 

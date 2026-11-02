@@ -556,6 +556,12 @@ def run_tray(app: DictationApp) -> None:
     def quit_app(icon, _item):
         icon.stop()
 
+    def toggle_autostart(_icon, _item):
+        try:
+            set_autostart(not autostart_enabled())
+        except Exception:
+            log.exception("Não consegui alterar a inicialização automática")
+
     icon = pystray.Icon(
         "ditado",
         make_icon_image(app.status),
@@ -564,6 +570,12 @@ def run_tray(app: DictationApp) -> None:
             pystray.MenuItem(lambda _i: f"Status: {app.status}", None, enabled=False),
             pystray.MenuItem(
                 "Ativado", toggle, checked=lambda _i: app.enabled
+            ),
+            pystray.MenuItem(
+                "Iniciar com o Windows",
+                toggle_autostart,
+                checked=lambda _i: autostart_enabled(),
+                visible=sys.platform.startswith("win"),
             ),
             pystray.MenuItem("Abrir configurações", open_config),
             pystray.MenuItem("Abrir log", open_log),
@@ -583,6 +595,47 @@ def run_tray(app: DictationApp) -> None:
     icon.run()
 
 
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def _launch_command() -> str:
+    """Comando que abre o Ditado sem janela (exe gerado ou script Python)."""
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    exe = pythonw if pythonw.exists() else Path(sys.executable)
+    return f'"{exe}" "{Path(__file__).resolve()}"'
+
+
+def autostart_enabled() -> bool:
+    if not sys.platform.startswith("win"):
+        return False
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+            winreg.QueryValueEx(key, "Ditado")
+            return True
+    except OSError:
+        return False
+
+
+def set_autostart(enabled: bool) -> None:
+    import winreg
+
+    with winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE
+    ) as key:
+        if enabled:
+            winreg.SetValueEx(key, "Ditado", 0, winreg.REG_SZ, _launch_command())
+        else:
+            try:
+                winreg.DeleteValue(key, "Ditado")
+            except FileNotFoundError:
+                pass
+    log.info("Iniciar com o Windows: %s", "sim" if enabled else "não")
+
+
 def _open_path(path: Path) -> None:
     import subprocess
 
@@ -597,10 +650,20 @@ def _open_path(path: Path) -> None:
 # --------------------------------------------------------------------------- #
 def setup_logging(verbose: bool) -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
+    if sys.stderr is None or sys.stdout is None:
+        # Executável sem console (pythonw / .exe): bibliotecas que escrevem
+        # barras de progresso no terminal quebrariam sem isso.
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+        devnull = open(os.devnull, "w", encoding="utf-8")
+        sys.stdout = sys.stdout or devnull
+        sys.stderr = sys.stderr or devnull
+        console = False
+    else:
+        console = True
     handlers: list[logging.Handler] = [
         logging.FileHandler(LOG_PATH, encoding="utf-8")
     ]
-    if sys.stderr is not None:  # pythonw não tem console
+    if console:
         handlers.append(logging.StreamHandler())
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
@@ -609,12 +672,53 @@ def setup_logging(verbose: bool) -> None:
     )
 
 
+_instance_lock = None
+
+
+def transcribe_file(path: str, cfg: Config) -> str:
+    """Transcreve um .wav PCM 16-bit (qualquer taxa; mono ou estéreo)."""
+    import wave
+
+    import numpy as np
+
+    with wave.open(path, "rb") as w:
+        rate, channels = w.getframerate(), w.getnchannels()
+        data = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+    audio = data.reshape(-1, channels).mean(axis=1).astype("float32") / 32768
+    if rate != SAMPLE_RATE:
+        n = int(len(audio) * SAMPLE_RATE / rate)
+        audio = np.interp(
+            np.linspace(0, len(audio) - 1, n), np.arange(len(audio)), audio
+        ).astype("float32")
+    t = OpenAITranscriber(cfg) if cfg.engine == "openai" else LocalTranscriber(cfg)
+    return t.transcribe(audio)
+
+
+def acquire_single_instance():
+    """Impede duas cópias rodando (o texto seria colado duas vezes)."""
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if sys.platform.startswith("win"):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    try:
+        sock.bind(("127.0.0.1", 47_831))
+        sock.listen(1)
+    except OSError:
+        sock.close()
+        return None
+    return sock
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ditado por voz com Ctrl+Shift.")
     parser.add_argument("--no-tray", action="store_true", help="sem ícone na bandeja")
     parser.add_argument("--model", help="modelo Whisper (ex.: small, large-v3-turbo)")
     parser.add_argument("--engine", choices=["local", "openai"])
     parser.add_argument("--list-mics", action="store_true", help="lista os microfones")
+    parser.add_argument(
+        "--transcrever", metavar="ARQUIVO.wav", help="transcreve um arquivo e sai (teste)"
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -626,6 +730,19 @@ def main() -> None:
         for idx, dev in enumerate(sd.query_devices()):
             if dev["max_input_channels"] > 0:
                 print(f"[{idx}] {dev['name']}")
+        return
+
+    if args.transcrever:
+        cfg = Config.load()
+        if args.model:
+            cfg.model = args.model
+        print(transcribe_file(args.transcrever, cfg))
+        return
+
+    global _instance_lock
+    _instance_lock = acquire_single_instance()
+    if _instance_lock is None:
+        log.info("O Ditado já está rodando; esta cópia vai fechar.")
         return
 
     cfg = Config.load()
