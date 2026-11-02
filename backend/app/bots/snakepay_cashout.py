@@ -1,6 +1,7 @@
 """SnakePay Cash Out: withdraw an account's balance by Pix (docs shared by the platform owner, 2026-10).
 
-* ``POST /withdrawals`` ``{amount (reais, 10–100000, or "MAX" = the whole available balance), key, keyType, requestId}`` →
+* ``POST /withdrawals`` ``{amount (number in reais, 10–100000), key, keyType, requestId}``. The docs mention "MAX"
+  but the API refuses it (400), so "withdraw everything" sends the real available balance →
   202 ``{id, status: pending, total_debit, ...}``. ``requestId`` is a UUID saved BEFORE sending
   and reused on every retry of the same withdrawal (idempotency).
 * ``GET /withdrawals/{id}`` → ``{id, status: pending|paid|failed, ...}``; ask at most every 30 s.
@@ -119,7 +120,7 @@ def message(exc: CashoutError) -> str:
     """What to tell the user, in plain words."""
     detail = f" ({exc.detail})" if exc.detail else ""
     return {
-        400: f"A SnakePay recusou os dados do saque: confira a chave Pix{detail}.",
+        400: f"A SnakePay recusou os dados do saque (valor ou chave Pix){detail}. Confira a chave e o tipo de chave escolhido.",
         401: "A SnakePay não aceitou a chave ou o segredo de saque: confira em Gateways.",
         403: "O saque (Cash Out) não está liberado nesta conta da SnakePay.",
         404: "A SnakePay não encontrou este saque.",
