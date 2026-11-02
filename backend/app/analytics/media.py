@@ -9,7 +9,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select, true
 
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
@@ -34,6 +34,17 @@ def _utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _in_folder(column, workspace_id: uuid.UUID, folder_id: uuid.UUID | None):
+    """Rows of the accounts in one profile folder (``folder_id``), or every row."""
+    if folder_id is None:
+        return true()
+    return column.in_(
+        select(InstagramAccount.id).where(
+            InstagramAccount.workspace_id == workspace_id, InstagramAccount.profile_folder_id == folder_id
+        )
+    )
 
 
 def interactions_of(row: InstagramMediaInsight) -> int | None:
@@ -121,7 +132,8 @@ async def top_publications(
     start_date: date | None = None,
     end_date: date | None = None,
     account_id: uuid.UUID | None = None,
-    media: Literal["videos", "all"] = "videos",
+    folder_id: uuid.UUID | None = None,
+    media: Literal["videos", "all", "stories"] = "videos",
     sort: Literal["views", "engagement_rate", "interactions", "reach", "posted_at"] = "views",
     order: Literal["desc", "asc"] = "desc",
     limit: int = Query(default=50, ge=1, le=200),
@@ -138,8 +150,14 @@ async def top_publications(
     )
     if account_id is not None:
         query = query.where(InstagramMediaInsight.account_id == account_id)
+    query = query.where(_in_folder(InstagramMediaInsight.account_id, access.workspace.id, folder_id))
+    story = func.coalesce(InstagramMediaInsight.media_product_type, "") == "STORY"
     if media == "videos":
-        query = query.where(InstagramMediaInsight.media_type == "VIDEO")
+        query = query.where(InstagramMediaInsight.media_type == "VIDEO", ~story)
+    elif media == "stories":
+        query = query.where(story)
+    else:
+        query = query.where(~story)
     rows = (await db.execute(query)).all()
     items = [
         PublicationInsight(
@@ -177,6 +195,7 @@ async def top_publications(
     )
     if account_id is not None:
         never_synced_query = never_synced_query.where(InstagramAccount.id == account_id)
+    never_synced_query = never_synced_query.where(_in_folder(InstagramAccount.id, access.workspace.id, folder_id))
     return PublicationInsightsResponse(
         period=period,
         period_label=period_label(start, end),
@@ -201,19 +220,22 @@ async def engagement_ranking(
     start_date: date | None = None,
     end_date: date | None = None,
     order: Literal["desc", "asc"] = "desc",
+    folder_id: uuid.UUID | None = None,
 ) -> AccountEngagementResponse:
     start, end = period_bounds(period, start_date, end_date, utc_now())
     accounts = (
         await db.scalars(
             select(InstagramAccount)
-            .where(InstagramAccount.workspace_id == access.workspace.id)
+            .where(InstagramAccount.workspace_id == access.workspace.id,
+                   _in_folder(InstagramAccount.id, access.workspace.id, folder_id))
             .order_by(InstagramAccount.username)
         )
     ).all()
     media_rows = (
         await db.scalars(
             select(InstagramMediaInsight).where(
-                InstagramMediaInsight.workspace_id == access.workspace.id, *_window(start, end)
+                InstagramMediaInsight.workspace_id == access.workspace.id, *_window(start, end),
+                _in_folder(InstagramMediaInsight.account_id, access.workspace.id, folder_id),
             )
         )
     ).all()
@@ -447,6 +469,7 @@ async def views_daily(
     start_date: date | None = None,
     end_date: date | None = None,
     account_id: uuid.UUID | None = None,
+    folder_id: uuid.UUID | None = None,
 ) -> DailyViewsResponse:
     now = utc_now()
     start, end = period_bounds(period, start_date, end_date, now)
@@ -457,6 +480,7 @@ async def views_daily(
     )
     if account_id is not None:
         accounts_query = accounts_query.where(InstagramAccount.id == account_id)
+    accounts_query = accounts_query.where(_in_folder(InstagramAccount.id, access.workspace.id, folder_id))
     accounts = (await db.scalars(accounts_query)).all()
     if account_id is not None and not accounts:
         raise HTTPException(status_code=404, detail="Conta não encontrada ou desconectada.")

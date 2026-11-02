@@ -6,6 +6,7 @@ import {
   CircleCheck,
   Clock3,
   Eye,
+  Folder,
   RefreshCw,
   UsersRound,
 } from "lucide-react";
@@ -81,9 +82,43 @@ function insightHelper(error: string | undefined): string {
   return "Métrica indisponível para esta conta ou período";
 }
 
+type FolderOption = { id: string; name: string; color: string; account_count: number };
+
+/** "Todas as contas" or one profile folder: the views, videos and stories of its accounts only. */
+function FolderFilter({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const folders = useQuery({
+    queryKey: ["instagram", "folders", "names"],
+    queryFn: () => apiRequest<{ folders: FolderOption[] }>("/api/instagram/folders?include_accounts=false"),
+    staleTime: 120_000,
+  });
+  const items = folders.data?.folders ?? [];
+  if (!items.length) return null;
+  return (
+    <div aria-label="Pasta de contas" className="flex gap-2 overflow-x-auto pb-1" role="radiogroup">
+      {[{ id: "", name: "Todas as contas", color: "", account_count: -1 }, ...items].map((folder) => (
+        <button
+          aria-checked={value === folder.id}
+          className={`inline-flex min-h-9 shrink-0 items-center gap-2 rounded-full border px-3.5 text-xs font-medium transition ${
+            value === folder.id ? "border-accent bg-brand-soft text-fg" : "border-line-soft text-muted hover:text-fg"
+          }`}
+          key={folder.id || "all"}
+          onClick={() => onChange(folder.id)}
+          role="radio"
+          type="button"
+        >
+          {folder.id ? <span className="size-2.5 rounded-full" style={{ background: folder.color }} /> : <Folder size={13} />}
+          {folder.name}
+          {folder.account_count >= 0 && <span className="text-[10px] text-muted">{folder.account_count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function AnalyticsPage() {
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [tab, setTab] = useState<MetricsTab>("account");
+  const [folderId, setFolderId] = useState("");
   const sync = useWorkspaceSync();
   const [period, setPeriod] = useState<MetricsPeriod>(() => ({
     period: "7d",
@@ -253,11 +288,13 @@ export function AnalyticsPage() {
         <PeriodFilter onChange={setPeriod} value={period} />
       </header>
       <SyncStatusBar onRefresh={() => sync.start.mutate(true)} starting={sync.start.isPending} status={sync.status.data} />
-      {tab === "daily" && <DailyViewsPanel period={period} />}
+      {(tab === "daily" || tab === "videos" || tab === "ranking") && <FolderFilter onChange={setFolderId} value={folderId} />}
+      {tab === "daily" && <DailyViewsPanel folderId={folderId || undefined} period={period} />}
       {tab === "sales" && <SharkSalesPanel period={period} />}
-      {tab === "videos" && <TopVideosPanel period={period} />}
+      {tab === "videos" && <TopVideosPanel folderId={folderId || undefined} period={period} />}
       {tab === "ranking" && (
         <EngagementRankingPanel
+          folderId={folderId || undefined}
           onSelectAccount={(accountId) => {
             setSelectedAccountIds([accountId]);
             setTab("account");

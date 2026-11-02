@@ -29,13 +29,15 @@ type Row = {
 
 export function EngagementRankingPanel({
   period,
+  folderId,
   onSelectAccount,
 }: {
   period: MetricsPeriod;
+  folderId?: string;
   onSelectAccount: (accountId: string) => void;
 }) {
   const [order, setOrder] = useState<"desc" | "asc">("desc");
-  const params = new URLSearchParams({ ...periodParams(period), order });
+  const params = new URLSearchParams({ ...periodParams(period), order, ...(folderId ? { folder_id: folderId } : {}) });
   const ranking = useQuery({
     queryKey: ["analytics", "engagement-ranking", params.toString()],
     queryFn: () =>

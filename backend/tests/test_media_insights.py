@@ -46,8 +46,21 @@ class _FakeGraph:
                 ],
                 "paging": {"cursors": {"after": "c2"}, "next": "https://next2"},
             })
+        if url.endswith("/stories"):
+            return httpx.Response(200, request=request, json={"data": [
+                {"id": "s1", "media_type": "IMAGE", "media_product_type": "STORY",
+                 "timestamp": (NOW - timedelta(hours=3)).isoformat(), "media_url": "https://cdn/s1.jpg"},
+            ]})
         media_id = url.split("/")[-2]
         metric = params["metric"]
+        if media_id == "s1":
+            return httpx.Response(200, request=request, json={"data": [
+                {"name": "views", "values": [{"value": 300}]},
+                {"name": "reach", "values": [{"value": 250}]},
+                {"name": "replies", "values": [{"value": 4}]},
+                {"name": "shares", "values": [{"value": 6}]},
+                {"name": "total_interactions", "values": [{"value": 25}]},
+            ]})
         if media_id == "v1":
             return httpx.Response(200, request=request, json={"data": [
                 {"name": "views", "values": [{"value": 1000}]},
@@ -84,7 +97,7 @@ async def test_sync_persists_metrics_without_inventing_zeros(
 
     synced = await insights_sync.sync_account_media_insights(db_session, account, NOW)
 
-    assert synced == 3  # "old" is outside the lookback window
+    assert synced == 4  # 3 posts ("old" is outside the lookback window) + 1 live story
     rows = {
         row.ig_media_id: row
         for row in (await db_session.scalars(select(InstagramMediaInsight))).all()
@@ -94,6 +107,10 @@ async def test_sync_persists_metrics_without_inventing_zeros(
     assert rows["img1"].shares is None
     assert "shares" in (rows["img1"].metrics_error or "")
     assert account.insights_synced_at is not None and account.insights_sync_error is None
+    story = rows["s1"]
+    # replies as comments, the rest of Meta's total as likes: interactions add up to 25
+    assert story.media_product_type == "STORY" and story.views == 300 and story.comments == 4
+    assert story.likes + story.comments + story.shares + story.saves == 25
 
 
 async def _seed(db: AsyncSession, workspace, username: str, specs: list[dict]):
@@ -194,3 +211,35 @@ async def test_media_endpoints_are_owner_only(client: AsyncClient, owner, collab
         headers={"X-CSRF-Token": await _csrf(client)},
     )
     assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_folder_filter_and_story_ranking(client: AsyncClient, db_session: AsyncSession, owner) -> None:
+    from app.models import InstagramProfileFolder
+
+    _user, workspace = owner
+    alice = await _seed(db_session, workspace, "alice_1", [{"views": 900, **FULL}, {"views": 100, **FULL}])
+    jenny = await _seed(db_session, workspace, "jenny_1", [{"views": 5000, **FULL}])
+    folder = InstagramProfileFolder(workspace_id=workspace.id, name="Alice")
+    db_session.add(folder)
+    await db_session.flush()
+    alice.profile_folder_id = folder.id
+    db_session.add(InstagramMediaInsight(
+        workspace_id=workspace.id, account_id=alice.id, ig_media_id="alice-story", media_type="IMAGE",
+        media_product_type="STORY", posted_at=NOW - timedelta(hours=2), synced_at=NOW,
+        views=400, likes=15, comments=4, shares=6, saves=0,
+    ))
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+
+    everyone = (await client.get("/api/analytics/videos", params={"period": "30d"})).json()["items"]
+    assert [v["username"] for v in everyone][:1] == ["jenny_1"] and all(v["ig_media_id"] != "alice-story" for v in everyone)
+    in_folder = (await client.get("/api/analytics/videos", params={"period": "30d", "folder_id": str(folder.id)})).json()["items"]
+    assert {v["username"] for v in in_folder} == {"alice_1"} and [v["views"] for v in in_folder] == [900, 100]
+    stories = (await client.get("/api/analytics/videos", params={
+        "period": "30d", "folder_id": str(folder.id), "media": "stories", "sort": "interactions",
+    })).json()["items"]
+    assert [s["ig_media_id"] for s in stories] == ["alice-story"] and stories[0]["interactions"] == 25
+    ranking = (await client.get("/api/analytics/engagement-ranking", params={"period": "30d", "folder_id": str(folder.id)})).json()
+    assert {row["username"] for row in ranking["rows"]} == {"alice_1"}
+    assert jenny.profile_folder_id is None

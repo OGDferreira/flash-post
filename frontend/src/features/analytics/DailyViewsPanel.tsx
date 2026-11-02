@@ -38,8 +38,12 @@ type Response = {
 
 const dayLabel = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
-export function DailyViewsPanel({ period, accountId }: { period: MetricsPeriod; accountId?: string }) {
-  const params = new URLSearchParams({ ...periodParams(period), ...(accountId ? { account_id: accountId } : {}) });
+export function DailyViewsPanel({ period, accountId, folderId }: { period: MetricsPeriod; accountId?: string; folderId?: string }) {
+  const params = new URLSearchParams({
+    ...periodParams(period),
+    ...(accountId ? { account_id: accountId } : {}),
+    ...(folderId ? { folder_id: folderId } : {}),
+  });
   const query = useQuery({
     queryKey: ["analytics", "views-daily", params.toString()],
     queryFn: () => apiRequest<Response>(`/api/analytics/views-daily?${params}`),
