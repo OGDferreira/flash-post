@@ -479,3 +479,25 @@ async def test_workspace_owner_and_partner_withdraw_from_atenas_subaccounts(
     assert refreshed["withdrawn"] == 15.0
     assert refreshed["withdrawals"][0]["gateway"] == "atenaspay"
 
+
+
+@pytest.mark.anyio
+async def test_favorite_pix_keys_are_checked_saved_and_removed(client, db_session, owner) -> None:
+    headers = await _as(client, "owner@example.com", "correct horse battery staple")
+    assert (await client.get("/api/wallet/pix-keys")).json()["items"] == []
+    added = await client.post("/api/wallet/pix-keys", headers=headers,
+                              json={"pix_key_type": "cpf", "pix_key": "529.982.247-25", "label": "Meu CPF"})
+    assert added.status_code == 201
+    item = added.json()["items"][0]
+    assert item["pix_key"] == "52998224725" and item["label"] == "Meu CPF" and item["id"]
+    # the same key again is not duplicated; a bad key is refused like in a withdrawal
+    again = await client.post("/api/wallet/pix-keys", headers=headers, json={"pix_key_type": "cpf", "pix_key": "52998224725"})
+    assert len(again.json()["items"]) == 1
+    bad = await client.post("/api/wallet/pix-keys", headers=headers, json={"pix_key_type": "cpf", "pix_key": "111.111.111-11"})
+    assert bad.status_code == 422
+    await client.post("/api/wallet/pix-keys", headers=headers, json={"pix_key_type": "phone", "pix_key": "(11) 91234-5678"})
+    listed = (await client.get("/api/wallet/pix-keys")).json()["items"]
+    assert [i["pix_key"] for i in listed] == ["52998224725", "+5511912345678"]
+    removed = await client.delete(f"/api/wallet/pix-keys/{item['id']}", headers=headers)
+    assert [i["pix_key"] for i in removed.json()["items"]] == ["+5511912345678"]
+    assert (await client.post("/api/wallet/pix-keys", json={"pix_key_type": "cpf", "pix_key": "52998224725"})).status_code in (401, 403)
