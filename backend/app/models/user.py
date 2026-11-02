@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, LargeBinary, Numeric, String, func, text
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Index, LargeBinary, Numeric, String, func, text
 from sqlalchemy.orm import Mapped, deferred, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -74,6 +74,8 @@ class User(Base):
     widget_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     widget_theme: Mapped[str | None] = mapped_column(String(16))
     widget_update_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Favorite Pix keys for withdrawals: [{"id", "label", "pix_key_type", "pix_key"}]
+    pix_favorites: Mapped[list | None] = mapped_column(JSON)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_approved: Mapped[bool] = mapped_column(

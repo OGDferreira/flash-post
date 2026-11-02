@@ -623,6 +623,49 @@ async def withdrawals_blocked_for(db, user: User) -> bool:
     return bool(user.withdrawals_blocked) or await all_withdrawals_blocked(db)
 
 
+# ---------------------------------------------------------------- favorite Pix keys
+MAX_FAVORITES = 10
+
+
+class PixFavoriteIn(BaseModel):
+    pix_key_type: Literal["cpf", "cnpj", "email", "phone", "random"]
+    pix_key: str = Field(min_length=3, max_length=140)
+    label: str | None = Field(default=None, max_length=40)
+
+
+def _favorites(user: User) -> list[dict]:
+    return [item for item in (user.pix_favorites or []) if isinstance(item, dict) and item.get("pix_key")]
+
+
+@router.get("/pix-keys")
+async def list_pix_keys(user: AuthenticatedUser) -> dict:
+    """The user's favorite Pix keys: picked with one tap in the withdrawal forms."""
+    return {"items": _favorites(user)}
+
+
+@router.post("/pix-keys", status_code=201, dependencies=[Depends(require_csrf)])
+async def add_pix_key(payload: PixFavoriteIn, user: AuthenticatedUser, db: DbSession) -> dict:
+    key = normalize_pix_key(payload.pix_key_type, payload.pix_key.strip())  # same check as a withdrawal
+    items = _favorites(user)
+    if any(item["pix_key_type"] == payload.pix_key_type and item["pix_key"] == key for item in items):
+        return {"items": items}
+    if len(items) >= MAX_FAVORITES:
+        raise HTTPException(status_code=422, detail=f"Você já tem {MAX_FAVORITES} chaves favoritas. Remova uma antes.")
+    label = (payload.label or "").strip() or None
+    items.append({"id": uuid.uuid4().hex[:12], "label": label, "pix_key_type": payload.pix_key_type, "pix_key": key})
+    user.pix_favorites = items  # a new list, so the JSON column is saved
+    await db.commit()
+    return {"items": items}
+
+
+@router.delete("/pix-keys/{favorite_id}", dependencies=[Depends(require_csrf)])
+async def remove_pix_key(favorite_id: str, user: AuthenticatedUser, db: DbSession) -> dict:
+    items = [item for item in _favorites(user) if item.get("id") != favorite_id]
+    user.pix_favorites = items
+    await db.commit()
+    return {"items": items}
+
+
 @router.post("/withdrawals", status_code=201, dependencies=[Depends(require_csrf)])
 async def request_withdrawal(payload: WithdrawalRequest, user: AuthenticatedUser, db: DbSession) -> dict:
     # Partners withdraw their own subaccount too (owner's decision, 2026-10-19); the

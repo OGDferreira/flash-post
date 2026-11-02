@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { ArrowDownToLine, CheckCircle2, Clock, Trophy, Wallet as WalletIcon, XCircle } from "lucide-react";
+import { ArrowDownToLine, CheckCircle2, Clock, Star, Trophy, Wallet as WalletIcon, X, XCircle } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Modal } from "@/components/ui/Modal";
@@ -7,7 +7,7 @@ import { PeriodFilter, isPeriodReady, periodParams, todayInput, type MetricsPeri
 import { AwardsCarousel } from "@/features/wallet/AwardsCarousel";
 import { brl, compact, useWallet, useWalletMutations, type GatewayBalance, type Wallet, type Withdrawal } from "@/features/wallet/api";
 import { ApiError, apiRequest } from "@/services/api";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 type PeriodNumbers = {
   period_label: string;
@@ -46,6 +46,135 @@ const statusInfo = {
   PROCESSING: { label: "Processando", tone: "text-warning", Icon: Clock },
   FAILED: { label: "Falhou", tone: "text-danger", Icon: XCircle },
 } as const;
+
+type PixFavorite = { id: string; label: string | null; pix_key_type: string; pix_key: string };
+
+/** Pix key type + key, with the favorite keys one tap away and a star to save the typed one. */
+function PixKeyField({
+  keyType,
+  pixKey,
+  onType,
+  onKey,
+}: {
+  keyType: string;
+  pixKey: string;
+  onType: (value: string) => void;
+  onKey: (value: string) => void;
+}) {
+  const cache = useQueryClient();
+  const favorites = useQuery({
+    queryKey: ["wallet", "pix-keys"],
+    queryFn: () => apiRequest<{ items: PixFavorite[] }>("/api/wallet/pix-keys"),
+    staleTime: 60_000,
+  });
+  const [label, setLabel] = useState("");
+  const [naming, setNaming] = useState(false);
+  const save = useMutation({
+    mutationFn: () =>
+      apiRequest<{ items: PixFavorite[] }>("/api/wallet/pix-keys", {
+        method: "POST",
+        body: { pix_key_type: keyType, pix_key: pixKey.trim(), label: label.trim() || null },
+      }),
+    onSuccess: (data) => {
+      cache.setQueryData(["wallet", "pix-keys"], data);
+      setNaming(false);
+      setLabel("");
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => apiRequest<{ items: PixFavorite[] }>(`/api/wallet/pix-keys/${id}`, { method: "DELETE" }),
+    onSuccess: (data) => cache.setQueryData(["wallet", "pix-keys"], data),
+  });
+  const items = favorites.data?.items ?? [];
+  const typeLabel = (value: string) => keyTypes.find((item) => item.value === value)?.label ?? value;
+  const digits = (value: string) => value.replace(/\D/g, "");
+  const same = (item: PixFavorite) =>
+    item.pix_key_type === keyType &&
+    (item.pix_key === pixKey.trim() ||
+      (["cpf", "cnpj"].includes(keyType) && digits(item.pix_key) === digits(pixKey)) ||
+      (keyType === "email" && item.pix_key === pixKey.trim().toLowerCase()));
+  const saved = items.some(same);
+  return (
+    <div className="space-y-2">
+      {items.length > 0 && (
+        <div className="space-y-1.5">
+          <span className="text-[11px] text-muted">Favoritas · toque para usar</span>
+          <div className="flex flex-wrap gap-1.5">
+            {items.map((item) => (
+              <span
+                className={`inline-flex max-w-full items-center rounded-full border text-xs ${same(item) ? "border-accent bg-brand-soft text-fg" : "border-line-soft text-fg-2"}`}
+                key={item.id}
+              >
+                <button
+                  className="flex min-h-8 min-w-0 items-center gap-1.5 py-1 pl-3 pr-1 text-left"
+                  onClick={() => {
+                    onType(item.pix_key_type);
+                    onKey(item.pix_key);
+                  }}
+                  type="button"
+                >
+                  <Star className="shrink-0 text-warning" fill="currentColor" size={12} />
+                  <span className="truncate">
+                    {item.label ? `${item.label} · ` : ""}
+                    {typeLabel(item.pix_key_type)} {item.pix_key}
+                  </span>
+                </button>
+                <button
+                  aria-label={`Remover ${item.label ?? item.pix_key} dos favoritos`}
+                  className="grid size-7 shrink-0 place-items-center rounded-full text-muted hover:text-danger"
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate(item.id)}
+                  type="button"
+                >
+                  <X size={13} />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      <select className="field" onChange={(event) => onType(event.target.value)} value={keyType}>
+        {keyTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+      </select>
+      <input
+        className="field"
+        onChange={(event) => onKey(event.target.value)}
+        placeholder={keyTypes.find((item) => item.value === keyType)?.placeholder}
+        value={pixKey}
+      />
+      {pixKey.trim().length > 3 && !saved && (
+        naming ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="field !h-9 min-w-0 flex-1 text-xs"
+              maxLength={40}
+              onChange={(event) => setLabel(event.target.value)}
+              placeholder="Apelido (opcional), ex.: Minha conta Nubank"
+              value={label}
+            />
+            <button className="btn-secondary !min-h-9 text-xs" disabled={save.isPending} onClick={() => save.mutate()} type="button">
+              {save.isPending ? "Salvando…" : "Salvar"}
+            </button>
+          </div>
+        ) : (
+          <button
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-accent"
+            onClick={() => setNaming(true)}
+            type="button"
+          >
+            <Star size={13} /> Salvar esta chave nos favoritos
+          </button>
+        )
+      )}
+      {saved && pixKey.trim() && (
+        <p className="flex items-center gap-1.5 text-[11px] text-muted">
+          <Star className="text-warning" fill="currentColor" size={12} /> Chave favorita
+        </p>
+      )}
+      {Boolean(save.error) && <p className="text-xs text-danger">{errorText(save.error)}</p>}
+    </div>
+  );
+}
 
 type WithdrawBody = { amount?: string; gateway?: string; withdraw_all?: boolean; pix_key_type: string; pix_key: string };
 const GATEWAY_NAMES = { smokepay: "SmokePay", snakepay: "SnakePay", atenaspay: "Athenas Pay" } as const;
@@ -239,15 +368,7 @@ function SmokeWithdrawModal({ wallet, open, onClose, request, title }: {
         {(
           <div className="space-y-2">
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Chave Pix de destino</span>
-            <select className="field" onChange={(event) => setKeyType(event.target.value)} value={keyType}>
-              {keyTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-            <input
-              className="field"
-              onChange={(event) => setPixKey(event.target.value)}
-              placeholder={keyTypes.find((item) => item.value === keyType)?.placeholder}
-              value={pixKey}
-            />
+            <PixKeyField keyType={keyType} onKey={setPixKey} onType={setKeyType} pixKey={pixKey} />
           </div>
         )}
         <dl className="space-y-1 rounded-xl border border-line-soft bg-surface-inset p-3 text-xs">
@@ -352,15 +473,7 @@ function SnakeWithdrawModal({ gateway, open, onClose, request, title }: {
             </label>
             <div className="space-y-2">
               <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Chave Pix de destino</span>
-              <select className="field" onChange={(event) => setKeyType(event.target.value)} value={keyType}>
-                {keyTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
-              <input
-                className="field"
-                onChange={(event) => setPixKey(event.target.value)}
-                placeholder={keyTypes.find((item) => item.value === keyType)?.placeholder}
-                value={pixKey}
-              />
+              <PixKeyField keyType={keyType} onKey={setPixKey} onType={setKeyType} pixKey={pixKey} />
             </div>
           </>
         )}
@@ -456,15 +569,7 @@ function AthenasWithdrawModal({ gateway, open, onClose, request, title }: {
             </label>
             <div className="space-y-2">
               <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Chave Pix de destino</span>
-              <select className="field" onChange={(event) => setKeyType(event.target.value)} value={keyType}>
-                {keyTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
-              <input
-                className="field"
-                onChange={(event) => setPixKey(event.target.value)}
-                placeholder={keyTypes.find((item) => item.value === keyType)?.placeholder}
-                value={pixKey}
-              />
+              <PixKeyField keyType={keyType} onKey={setPixKey} onType={setKeyType} pixKey={pixKey} />
             </div>
           </>
         )}
