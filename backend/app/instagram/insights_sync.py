@@ -40,6 +40,56 @@ _METRICS = {
 }
 
 
+# Stories (``/{ig-user}/stories``, only while live: 24 h). Meta has no likes/saves for
+# them: replies are stored as comments and the rest of total_interactions as likes, so
+# the interactions add up to Meta's total.
+_STORY_METRICS = ("views", "reach", "replies", "shares", "total_interactions")
+
+
+async def _story_metrics(client: httpx.AsyncClient, story_id: str, token: str) -> dict[str, int | None]:
+    response = await client.get(
+        f"{INSTAGRAM_GRAPH_ENDPOINT}/{story_id}/insights",
+        params={"metric": ",".join(_STORY_METRICS), "access_token": token},
+    )
+    if response.status_code == 200:
+        return _metric_values(response.json())
+    values: dict[str, int | None] = {}
+    for metric in _STORY_METRICS:  # one metric Meta refuses must not hide the others
+        single = await client.get(
+            f"{INSTAGRAM_GRAPH_ENDPOINT}/{story_id}/insights", params={"metric": metric, "access_token": token}
+        )
+        if single.status_code == 200:
+            values.update(_metric_values(single.json()))
+    return values
+
+
+async def _live_stories(client: httpx.AsyncClient, instagram_user_id: str, token: str) -> list[tuple[dict, dict]]:
+    """The account's live stories with their metrics; [] when Meta refuses (the feed sync
+    must never fail because of stories)."""
+    try:
+        response = await client.get(
+            f"{INSTAGRAM_GRAPH_ENDPOINT}/{instagram_user_id}/stories",
+            params={"fields": "id,media_type,media_product_type,timestamp,permalink,thumbnail_url,media_url",
+                    "access_token": token},
+        )
+        if response.status_code != 200:
+            return []
+        data = response.json().get("data")
+        out = []
+        for item in data if isinstance(data, list) else []:
+            if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+                continue
+            try:
+                posted = datetime.fromisoformat(str(item.get("timestamp")).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            item["_posted_at"] = posted if posted.tzinfo else posted.replace(tzinfo=timezone.utc)
+            out.append((item, await _story_metrics(client, item["id"], token)))
+        return out
+    except (httpx.HTTPError, ValueError):
+        return []
+
+
 def _int(value) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
@@ -163,6 +213,7 @@ async def sync_account_media_insights(
                         return item, {}, instagram_api_error_detail(exc)
 
             results = await asyncio.gather(*(load(item) for item in items[:SYNC_MAX_MEDIA]))
+            stories = await _live_stories(client, account.instagram_user_id, token)
     except (httpx.HTTPError, ValueError) as exc:
         detail = instagram_api_error_detail(exc) if isinstance(exc, httpx.HTTPError) else str(exc)
         if INSTAGRAM_INSIGHTS_PERMISSION in detail:
@@ -207,6 +258,32 @@ async def sync_account_media_insights(
                 value = _int(item.get("comments_count"))
             setattr(row, column, value)
         row.metrics_error = error[:300] if error else None
+        row.synced_at = current
+        synced += 1
+    for item, metrics in stories:
+        row = await db.scalar(
+            select(InstagramMediaInsight).where(
+                InstagramMediaInsight.account_id == account.id,
+                InstagramMediaInsight.ig_media_id == item["id"],
+            )
+        )
+        if row is None:
+            row = InstagramMediaInsight(
+                workspace_id=account.workspace_id, account_id=account.id, ig_media_id=item["id"][:64],
+                posted_at=item["_posted_at"], synced_at=current,
+            )
+            db.add(row)
+        row.media_type = str(item.get("media_type") or "")[:32] or None
+        row.media_product_type = "STORY"
+        row.permalink = str(item.get("permalink") or "")[:500] or None
+        thumbnail = item.get("thumbnail_url") or item.get("media_url")
+        row.thumbnail_url = str(thumbnail)[:2048] if thumbnail else None
+        row.posted_at = item["_posted_at"]
+        replies, shares, total = metrics.get("replies"), metrics.get("shares"), metrics.get("total_interactions")
+        row.views, row.reach = metrics.get("views"), metrics.get("reach")
+        row.comments, row.shares, row.saves = replies, shares, 0 if total is not None else None
+        row.likes = max(0, total - (replies or 0) - (shares or 0)) if total is not None else None
+        row.metrics_error = None if metrics else "Métricas do story indisponíveis."
         row.synced_at = current
         synced += 1
     account.insights_synced_at = current

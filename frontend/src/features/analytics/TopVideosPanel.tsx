@@ -55,13 +55,16 @@ const sortOptions: { value: SortKey; label: string }[] = [
 export function TopVideosPanel({
   period,
   accountId,
+  folderId,
   compact = false,
 }: {
   period: MetricsPeriod;
   accountId?: string;
+  folderId?: string;
   compact?: boolean;
 }) {
   const [sort, setSort] = useState<SortKey>("views");
+  const [kind, setKind] = useState<"videos" | "stories">("videos");
   const [order, setOrder] = useState<"desc" | "asc">("desc");
   const params = new URLSearchParams({
     ...periodParams(period),
@@ -69,6 +72,8 @@ export function TopVideosPanel({
     order,
     limit: compact ? "12" : "50",
     ...(accountId ? { account_id: accountId } : {}),
+    ...(folderId ? { folder_id: folderId } : {}),
+    media: kind,
   });
   const videos = useQuery({
     queryKey: ["analytics", "videos", params.toString()],
@@ -85,13 +90,30 @@ export function TopVideosPanel({
         <div>
           <h3 id={`videos-${accountId ?? "all"}`} className="flex items-center gap-2 text-base font-semibold text-fg">
             <Flame size={17} className="text-warning" />
-            {compact ? "Publicações desta conta" : "Vídeos em alta"}
+            {compact ? "Publicações desta conta" : kind === "stories" ? "Stories com mais interação" : "Vídeos em alta"}
           </h3>
           <p className="mt-1 text-xs text-muted">
             {videos.data?.period_label ?? "…"} · {videos.data?.scope ?? "Publicações do período"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-full bg-well p-0.5 text-xs" role="tablist">
+            {(["videos", "stories"] as const).map((value) => (
+              <button
+                aria-selected={kind === value}
+                className={`min-h-8 rounded-full px-3 font-medium ${kind === value ? "bg-brand text-white" : "text-muted hover:text-fg"}`}
+                key={value}
+                onClick={() => {
+                  setKind(value);
+                  if (value === "stories" && sort === "views") setSort("interactions");
+                }}
+                role="tab"
+                type="button"
+              >
+                {value === "videos" ? "Vídeos" : "Stories"}
+              </button>
+            ))}
+          </div>
           <label className="sr-only" htmlFor={`sort-${accountId ?? "all"}`}>Ordenar por</label>
           <select
             className="field !min-h-9 !w-auto !py-0 !text-xs"
