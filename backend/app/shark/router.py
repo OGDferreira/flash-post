@@ -16,6 +16,7 @@ from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
 from app.core.time import APP_TIME_ZONE_NAME, utc_now
 from app.models import InstagramAccount, SharkAccount, SharkLead, SharkTransaction, Workspace
 from app.shark.metrics import CRITERIA, compute_shark_metrics, scope_conditions, window
+from app.shark.partner_notify import notify_chief_of_sale
 from app.shark.ingest import (
     event_batches,
     log_event,
@@ -161,6 +162,7 @@ async def receive_sharkbot_webhook(
 
     now = datetime.now(timezone.utc)
     accepted = duplicates = ignored = 0
+    paid_amounts: list = []
     newly_paid = []
     for raw_event in events:
         parsed = parse_event(raw_event)
@@ -180,6 +182,8 @@ async def receive_sharkbot_webhook(
         else:  # link_click: logged only
             changed = False
         await log_event(db, workspace.id, parsed, account_id)
+        if changed and parsed.paid and parsed.event_type != "lead_initiated":
+            paid_amounts.append(parsed.amount)
         if changed:
             accepted += 1
         else:
@@ -187,6 +191,13 @@ async def receive_sharkbot_webhook(
     if shark_account is not None:
         shark_account.last_event_at = now
     await db.commit()
+    if paid_amounts:
+        try:
+            if await notify_chief_of_sale(db, workspace, paid_amounts):
+                await db.commit()
+        except Exception:  # a notice must never fail the webhook
+            await db.rollback()
+            logger.exception("Sharkbot partner notification failed")
     if newly_paid:
         await _notify_shark_sales(db, workspace, newly_paid, now)
     # Unknown event types are acknowledged (200) so SharkBot does not retry

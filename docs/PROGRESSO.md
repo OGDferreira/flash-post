@@ -172,3 +172,7 @@ Branch: `main` (Render faz deploy a partir dela). Migração `20261015_32` é ad
 - **Gateways**: credenciais só no modal de cada gateway e só para funis próprios; funis compartilhados aparecem só para leitura. **Principal e backups** (`tg_gateway_settings`): ordem, ligar/desligar e funis associados; a escolha do funil vem antes da ordem. Sem nada salvo, a operação continua como antes.
 - **Failover seguro**: se um gateway recusar ou não responder, o próximo gera o Pix do mesmo pedido. O lead recebe um único Pix; o webhook da SnakePay acha o pedido pelo id da cobrança e o da SmokePay só aprova pedidos da SmokePay, então uma tentativa perdida nunca paga o pedido. Tentativas ficam em `tg_orders.gateway_attempts`.
 - Testes: `tests/test_falcon_shares.py`.
+
+## 0.14.2 — Venda do sócio avisa o chefe (SharkBot)
+- Quando uma venda da SharkBot é paga no workspace de um sócio (webhook dele), o chefe vinculado recebe "💰 Venda do sócio!" (push + aviso no app), uma vez por venda. Mostra o valor e a comissão ESTIMADA pelo percentual do vínculo.
+- Só avisa: não mexe em carteira nem saldo (o dinheiro e o split ficam na SharkBot). Nada da Smoke foi removido.
