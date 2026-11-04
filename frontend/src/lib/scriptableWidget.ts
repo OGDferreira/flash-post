@@ -46,14 +46,14 @@ const SITE = ${JSON.stringify(`${base}/bot`)};
 // rosa or flores); empty = the one chosen when the script was copied. "comm" colors the commission
 // line, "fee" the Flash fees line; "mark" is the big logo faded in the background.
 const THEMES = {
-  claro: { bg: ["#ffffff", "#f6f0ff", "#ece2ff"], text: "#17082e", soft: ["#574b71", 1], faint: ["#938ab4", 1],
+  claro: { bg: ["#ffffff", "#f6f0ff", "#ece2ff"], text: "#17082e", shark: "#0284c7", soft: ["#574b71", 1], faint: ["#938ab4", 1],
            pill: ["#8f1dff", 0.12], line: "#7412d1", fill: 0.14, profit: "#16a34a", rate: "#8f1dff", comm: "#8b3fd6",
            mark: "purple", markAlpha: 0.1 },
   escuro: { bg: ["#0e0f16", "#161322", "#211836"], text: "#ffffff", soft: ["#b7a6d4", 1], faint: ["#7a6b99", 1],
             pill: ["#8f1dff", 0.28], line: "#a64bff", fill: 0.2, profit: "#22c55e", rate: "#d19bff", comm: "#d6a0ff",
             mark: "white", markAlpha: 0.07 },
   pb: { bg: ["#000000", "#0b0b0b", "#1a1a1a"], text: "#ffffff", soft: ["#d4d4d4", 1], faint: ["#8a8a8a", 1],
-        pill: ["#ffffff", 0.16], line: "#ffffff", fill: 0.14, profit: "#ffffff", rate: "#ffffff", comm: "#bdbdbd",
+        pill: ["#ffffff", 0.16], line: "#ffffff", fill: 0.14, profit: "#ffffff", rate: "#ffffff", comm: "#bdbdbd", shark: "#8a8a8a",
         mark: "white", markAlpha: 0.08 },
   roxo: { bg: ["#8f1dff", "#7a00ff", "#5b00c4"], text: "#ffffff", soft: ["#ffffff", 0.82], faint: ["#ffffff", 0.62],
           pill: ["#ffffff", 0.2], line: "#ffffff", fill: 0.16, profit: "#b6ffcf", rate: "#ffffff", comm: "#f0d4ff",
@@ -65,7 +65,7 @@ const THEMES = {
           pill: ["#ffffff", 0.22], line: "#ffffff", fill: 0.18, profit: "#d9ffe8", rate: "#ffffff", comm: "#ffe0f1",
           mark: "white", markAlpha: 0.13 },
   // Delicate: pastel pink with little flowers drawn in the background.
-  flores: { bg: ["#fff7fa", "#ffe6f0", "#ffd3e4"], text: "#5a1236", soft: ["#8d3d62", 1], faint: ["#c27f9e", 1],
+  flores: { bg: ["#fff7fa", "#ffe6f0", "#ffd3e4"], text: "#5a1236", shark: "#0284c7", soft: ["#8d3d62", 1], faint: ["#c27f9e", 1],
             pill: ["#ff6fa8", 0.18], line: "#e8559a", fill: 0.18, profit: "#2f9e6e", rate: "#e0408a", comm: "#b04ad6",
             mark: "pink", markAlpha: 0.1, flowers: true },
 };
@@ -93,7 +93,7 @@ function useTheme(name) {
   C = {
     text: new Color(T.text), soft: new Color(...T.soft), faint: new Color(...T.faint),
     pill: new Color(...T.pill), green: new Color(T.profit), rate: new Color(T.rate), badge: new Color("#22c55e", 0.92),
-    comm: new Color(T.comm),
+    comm: new Color(T.comm), shark: new Color(T.shark || "#38bdf8"),
   };
 }
 function rememberTheme(name) {
@@ -365,21 +365,17 @@ function amountLine(stack, amount, text, color, size) {
   t.lineLimit = 1;
   t.minimumScaleFactor = 0.6;
 }
-function breakdown(stack, data, size, gap, sharkNote) {
-  amountLine(stack, salesValue(data), "em vendas", C.rate, size);
+// One line each: Flash sales, SharkBot sales (webhook), and for the Super Admin the
+// commission and the Flash fees. The day's total above adds them all up.
+function breakdown(stack, data, size, gap) {
+  amountLine(stack, data.revenue || 0, "em vendas Flash", C.rate, size);
+  stack.addSpacer(gap);
+  amountLine(stack, data.shark_revenue || 0, "em vendas Shark", C.shark, size);
   if (data.is_admin) {
     stack.addSpacer(gap);
     amountLine(stack, data.commissions || 0, "em comissão", C.comm, size);
     stack.addSpacer(gap);
     amountLine(stack, data.fees || 0, "em arrecadação", C.green, size);
-  }
-  if (sharkNote && data.shark_sales) {
-    stack.addSpacer(gap);
-    const t = stack.addText("inclui " + brl(data.shark_revenue || 0) + " da Shark (" + sales(data.shark_sales) + ")");
-    t.font = Font.mediumSystemFont(size * 0.78);
-    t.textColor = C.faint;
-    t.lineLimit = 1;
-    t.minimumScaleFactor = 0.7;
   }
 }
 
@@ -484,9 +480,9 @@ function medium(data, logo, mark, delta) {
   left.layoutVertically();
   label(left, data.is_admin ? "Total hoje" : "Faturamento hoje", 10);
   left.addSpacer(1);
-  value(left, total(data), 30);
-  left.addSpacer(4);
-  breakdown(left, data, 11, 2, !data.is_admin);
+  value(left, total(data), data.is_admin ? 27 : 30);
+  left.addSpacer(data.is_admin ? 2 : 4);
+  breakdown(left, data, data.is_admin ? 10 : 11, data.is_admin ? 1 : 2);
   left.addSpacer();
   body.addSpacer(8);
   const right = body.addStack();
@@ -556,7 +552,7 @@ function large(data, logo, mark, delta) {
     badge(w, delta, 11);
   }
   w.addSpacer(10);
-  breakdown(w, data, 15, 5, true);
+  breakdown(w, data, 15, 5);
   w.addSpacer(12);
   const pix = w.addStack();
   pix.backgroundColor = C.pill;
@@ -661,10 +657,11 @@ a.open{color:#fff;text-align:center;background:\${T.line === "#ffffff" ? "rgba(0
 </style></head><body>
 <div class="top"><img src="\${LOGO}">Flash<span class="pill">\${data.views != null ? "👁 " + viewsText(data.views) : ""}</span><span class="pill" style="margin-left:6px">\${sales(salesCount(data))}</span></div>
 <div><div class="lbl">\${data.is_admin ? "Total do dia" : "Faturamento do dia"}</div><div class="big" data-to="\${total(data)}">R$ 0,00</div></div>
-<div class="row"><div class="card"><div class="lbl">Vendas</div><b data-to="\${salesValue(data)}">R$ 0,00</b></div>
+<div class="row"><div class="card"><div class="lbl">Vendas Flash</div><b data-to="\${data.revenue || 0}">R$ 0,00</b></div><div class="card"><div class="lbl">Vendas Shark</div><b data-to="\${data.shark_revenue || 0}">R$ 0,00</b></div></div>
+<div class="row">
 \${data.is_admin ? '<div class="card"><div class="lbl">Comissão</div><b data-to="' + (data.commissions || 0) + '">R$ 0,00</b></div><div class="card"><div class="lbl">Arrecadação</div><b data-to="' + (data.fees || 0) + '">R$ 0,00</b></div>' : ""}</div>
 <div class="row"><div class="card"><div class="lbl">Conversão</div><b>\${conversion}%</b><span style="opacity:.8">\${data.pix_generated} pix → \${data.pix_paid} pagos</span></div>
-\${data.shark_sales ? '<div class="card"><div class="lbl">Shark</div><b data-to="' + (data.shark_revenue || 0) + '">R$ 0,00</b></div>' : ""}</div>
+</div>
 <svg viewBox="0 0 320 160"><path class="area" d="\${d} L320,160 L0,160 Z"/><path class="line" d="\${d}"/><circle class="dot" cx="\${pts[pts.length-1][0]}" cy="\${pts[pts.length-1][1]}" r="5"/></svg>
 <div class="lbl" style="text-align:right">atualizado \${data.updated_at}</div>
 <div class="lbl">Tema do widget · toque para trocar</div>
