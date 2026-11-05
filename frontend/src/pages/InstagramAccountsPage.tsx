@@ -39,6 +39,7 @@ type InstagramAccount = {
   connected_by_name?: string | null;
   error_at: string | null;
   status: "connected" | "disconnected" | "error";
+  has_highlights: boolean;
 };
 
 type InstagramAccountsResponse = {
@@ -81,6 +82,7 @@ export function InstagramAccountsPage() {
   >();
   const [showAllAccounts, setShowAllAccounts] = useState(false);
   const [accountFilter, setAccountFilter] = useState<"active" | "issues">("active");
+  const [highlightFilter, setHighlightFilter] = useState<"all" | "missing" | "done">("all");
   const [accountSearch, setAccountSearch] = useState("");
   const [accountSort, setAccountSort] = useState<
     "connection_asc" | "disconnection_desc" | "connection_desc"
@@ -112,6 +114,26 @@ export function InstagramAccountsPage() {
     next.delete("connect");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
+  // One tap: highlights made (or not) on this profile, shown at once (optimistic).
+  const toggleHighlights = useMutation({
+    mutationFn: ({ id, value }: { id: string; value: boolean }) =>
+      apiRequest(`/api/instagram/accounts/${id}/highlights`, { method: "PATCH", body: { has_highlights: value } }),
+    onMutate: async ({ id, value }) => {
+      await queryClient.cancelQueries({ queryKey: ["instagram", "accounts"] });
+      const previous = queryClient.getQueryData<InstagramAccountsResponse>(["instagram", "accounts"]);
+      if (previous) {
+        queryClient.setQueryData<InstagramAccountsResponse>(["instagram", "accounts"], {
+          ...previous,
+          accounts: previous.accounts.map((item) => (item.id === id ? { ...item, has_highlights: value } : item)),
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(["instagram", "accounts"], context.previous);
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["instagram", "accounts"] }),
+  });
   const disconnect = useMutation({
     mutationFn: (accountId: string) =>
       apiRequest<InstagramDisconnectResponse>(`/api/instagram/accounts/${accountId}`, {
@@ -255,9 +277,12 @@ export function InstagramAccountsPage() {
         (selectedFolderId === "unassigned"
           ? !account.profile_folder_id
           : account.profile_folder_id === selectedFolderId);
+      const matchesHighlights =
+        highlightFilter === "all" || (highlightFilter === "done" ? account.has_highlights : !account.has_highlights);
       return (
         matchesFilter &&
         matchesFolder &&
+        matchesHighlights &&
         account.username.toLowerCase().includes(accountSearch.toLowerCase())
       );
     })
@@ -467,6 +492,41 @@ export function InstagramAccountsPage() {
             ))}
           </div>
         </div>
+        {accountFilter === "active" && (() => {
+          const inScope = accounts.data.accounts.filter(
+            (account) =>
+              isInstagramAccountActive(account) &&
+              (selectedFolderId === "all" ||
+                (selectedFolderId === "unassigned" ? !account.profile_folder_id : account.profile_folder_id === selectedFolderId)),
+          );
+          const done = inScope.filter((account) => account.has_highlights).length;
+          return (
+            <div aria-label="Destaques" className="flex flex-wrap items-center gap-2" role="radiogroup">
+              {([
+                ["all", `Todas (${inScope.length})`],
+                ["missing", `⭐ Sem destaques (${inScope.length - done})`],
+                ["done", `Com destaques (${done})`],
+              ] as const).map(([value, text]) => (
+                <button
+                  aria-checked={highlightFilter === value}
+                  className={`min-h-9 rounded-full border px-3.5 text-xs font-medium transition ${
+                    highlightFilter === value
+                      ? value === "missing"
+                        ? "border-warning bg-warning-soft text-warning"
+                        : "border-accent bg-brand-soft text-fg"
+                      : "border-line-soft text-muted hover:text-fg"
+                  }`}
+                  key={value}
+                  onClick={() => setHighlightFilter(value)}
+                  role="radio"
+                  type="button"
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
           <h3>Contas Instagram ({visibleAccounts.length})</h3>
           <div className="flex items-center gap-3">
@@ -552,6 +612,22 @@ export function InstagramAccountsPage() {
                       Conectada em {formatAccountConnectedAt(account.connected_at)}
                       {account.connected_by_name ? ` · por ${account.connected_by_name}` : ""}
                     </p>
+                    {active && (
+                      <button
+                        aria-pressed={account.has_highlights}
+                        className={`mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition ${
+                          account.has_highlights
+                            ? "border-success/40 bg-success/15 text-success"
+                            : "border-warning/40 bg-warning-soft text-warning"
+                        }`}
+                        onClick={() => toggleHighlights.mutate({ id: account.id, value: !account.has_highlights })}
+                        title="Toque para marcar ou desmarcar"
+                        type="button"
+                      >
+                        {account.has_highlights ? <Check size={13} /> : <span aria-hidden>⭐</span>}
+                        {account.has_highlights ? "Destaques criados" : "Sem destaques · toque ao criar"}
+                      </button>
+                    )}
                     {account.status === "error" && (
                       <p className="mt-1 text-xs text-danger">
                         Permaneceu conectada por{" "}

@@ -567,6 +567,35 @@ async def test_owner_can_save_highlights_flag_on_account(
 
 
 @pytest.mark.anyio
+async def test_collaborator_marks_highlights_only_on_accounts_they_connected(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    collaborator,
+) -> None:
+    _user, workspace = owner
+    collab = collaborator[0] if isinstance(collaborator, tuple) else collaborator
+    theirs = InstagramAccount(
+        workspace_id=workspace.id, instagram_user_id="17840000000000891", username="collab_profile",
+        token_expires_at=datetime.now(timezone.utc) + timedelta(days=50), connected_by_user_id=collab.id,
+    )
+    others = InstagramAccount(
+        workspace_id=workspace.id, instagram_user_id="17840000000000892", username="owner_profile",
+        token_expires_at=datetime.now(timezone.utc) + timedelta(days=50),
+    )
+    db_session.add_all([theirs, others])
+    await db_session.commit()
+    await _login(client, "collaborator@example.com", "collaborator password")
+    token = await _csrf(client)
+    mine = await client.patch(f"/api/instagram/accounts/{theirs.id}/highlights",
+                              headers={"X-CSRF-Token": token}, json={"has_highlights": True})
+    assert mine.status_code == 200 and mine.json()["has_highlights"] is True
+    not_mine = await client.patch(f"/api/instagram/accounts/{others.id}/highlights",
+                                  headers={"X-CSRF-Token": token}, json={"has_highlights": True})
+    assert not_mine.status_code == 404
+
+
+@pytest.mark.anyio
 async def test_owner_can_create_color_folder_and_assign_accounts(
     client: AsyncClient,
     db_session: AsyncSession,
