@@ -204,16 +204,21 @@ async def list_accounts(
 async def update_account_highlights(
     account_id: uuid.UUID,
     payload: InstagramAccountHighlightsRequest,
-    access: OwnerAccess,
+    access: WorkspaceMemberAccess,
     db: DbSession,
 ) -> InstagramAccountResponse:
+    """One tap on the Contas page: highlights made (or not) on this profile. The owner marks
+    any account; a collaborator the accounts they connected."""
     account = await db.scalar(
         select(InstagramAccount).where(
             InstagramAccount.id == account_id,
             InstagramAccount.workspace_id == access.workspace.id,
         )
     )
-    if account is None:
+    if account is None or (
+        access.membership.role != WorkspaceRole.OWNER.value
+        and account.connected_by_user_id != access.membership.user_id
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instagram account not found.")
     account.has_highlights = payload.has_highlights
     await db.commit()
