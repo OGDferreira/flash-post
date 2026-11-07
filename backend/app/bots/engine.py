@@ -1460,8 +1460,12 @@ async def approve_order(
     upsell_next = bool(flow and flow.upsells) and (
         info.get("kind") == "upsell" or delivery is None or delivery.type == "upsell" or delivery.start_upsell
     )
+    approved = flow.payment.approved_enabled if flow else None
+    send_approved = bool(flow) and bool(flow.payment.approved_text) and (
+        approved is True or (approved is None and not upsell_next)
+    )
     try:
-        if flow and not upsell_next:
+        if send_approved:
             await tg.send_message(lead.chat_id, render(flow.payment.approved_text, lead, order.offer_name, order.amount, bot))
         if delivery and delivery.type != "upsell":
             await deliver(db, tg, bot, lead, order, plan, delivery)

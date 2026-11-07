@@ -722,7 +722,31 @@ export function PaymentSection({ draft, set }: SectionProps) {
       ) : (
         <RichTextEditor label="Mensagem do Pix" rows={3} value={payment.pix_text} variables={vars} onChange={(pix_text) => setPayment({ pix_text })} />
       )}
-      <RichTextEditor label="Pagamento aprovado" rows={2} value={payment.approved_text} variables={vars} onChange={(approved_text) => setPayment({ approved_text })} />
+      <div className="space-y-2 rounded-xl border border-line-soft p-3">
+        <Switch
+          checked={payment.approved_enabled !== false}
+          label="Enviar mensagem de pagamento aprovado (antes da entrega)"
+          onChange={(on) => setPayment({ approved_enabled: on })}
+        />
+        {payment.approved_enabled !== false ? (
+          <>
+            <RichTextEditor label="Mensagem de pagamento aprovado" rows={3} value={payment.approved_text} variables={vars} onChange={(approved_text) => setPayment({ approved_text })} />
+            <p className="text-[11px] text-muted">
+              Enviada assim que o Pix é pago; logo depois vem a entrega do plano (ou a entrega padrão).
+            </p>
+            {payment.approved_enabled == null && draft.upsells.length > 0 && (
+              <p className="flex flex-wrap items-center gap-2 text-[11px] text-warning">
+                Neste funil ela é pulada quando um upsell vem logo depois do pagamento.
+                <button className="font-semibold text-accent underline" onClick={() => setPayment({ approved_enabled: true })} type="button">
+                  Enviar sempre
+                </button>
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-[11px] text-muted">Desligado: assim que o Pix é pago, a entrega vai direto, sem mensagem.</p>
+        )}
+      </div>
       <RichTextEditor label="Pix expirado" rows={2} value={payment.expired_text} variables={vars} onChange={(expired_text) => setPayment({ expired_text })} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Botão copiar">

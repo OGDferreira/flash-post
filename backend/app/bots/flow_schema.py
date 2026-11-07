@@ -221,6 +221,10 @@ class Payment(_Model):
     check_button: Label = "✅ Já paguei"
     pending_text: Annotated[str, Field(max_length=200)] = "Ainda não identificamos seu pagamento. Aguarde alguns segundos."
     approved_text: Text = "Pagamento aprovado! 🎉 Obrigado, {nome}."
+    # The "payment approved" message, sent before the delivery. True: always; False: never
+    # (the delivery goes straight away); None (funnels saved before the switch): as before,
+    # skipped when an upsell follows right after the payment.
+    approved_enabled: bool | None = None
     expired_text: Text = "Seu Pix expirou. Toque abaixo para gerar um novo."
     # How the Pix is shown: "qr" = QR code + text + code in one message; "steps" = the
     # payment instructions, then the code in a copy box, then the buttons.
