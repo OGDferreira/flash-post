@@ -51,6 +51,15 @@ export const PARTNER_FEATURE_BY_ROUTE: Record<string, ["post" | "bot", string]> 
   "/bot": ["bot", "dashboard"],
   "/bot/vendas": ["bot", "leads"],
   "/carteira": ["bot", "wallet"],
+  // Released by the Super Admin: the sócio's own loops (with folders), funnels and bots.
+  "/feature/loops": ["post", "loops"],
+  "/feature/profile-folders": ["post", "loops"],
+  "/bot/funis": ["bot", "flows"],
+  "/bot/pastas": ["bot", "flows"],
+  "/bot/compartilhados-comigo": ["bot", "flows"],
+  "/bot/robos": ["bot", "bots"],
+  "/bot/remarketing": ["bot", "bots"],
+  "/bot/gateways": ["bot", "bots"],
 };
 // Essential account pages a sócio can always reach.
 const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/feature/links"]);

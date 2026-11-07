@@ -12,15 +12,18 @@ from fastapi import Depends, HTTPException, status
 
 from app.auth.dependencies import AuthenticatedUser, DbSession
 
-POST_FEATURES = ("dashboard", "ranking", "accounts", "meta_apps", "settings", "contacts")
-BOT_FEATURES = ("dashboard", "leads", "wallet")
+POST_FEATURES = ("dashboard", "ranking", "accounts", "meta_apps", "settings", "contacts", "loops")
+BOT_FEATURES = ("dashboard", "leads", "wallet", "flows", "bots")
+# Released one by one by the Super Admin: the sócio then creates their own loops (and
+# folders), funnels, and bots (with remarketing and gateways). Off until released.
+OFF_BY_DEFAULT = {("post", "loops"), ("bot", "flows"), ("bot", "bots")}
 
 
 def default_permissions() -> dict:
-    """The default set a sócio gets: all the restricted tabs, full panel off."""
+    """The default set a sócio gets: the restricted tabs, full panel off."""
     return {
-        "post": {feature: True for feature in POST_FEATURES},
-        "bot": {feature: True for feature in BOT_FEATURES},
+        "post": {feature: ("post", feature) not in OFF_BY_DEFAULT for feature in POST_FEATURES},
+        "bot": {feature: ("bot", feature) not in OFF_BY_DEFAULT for feature in BOT_FEATURES},
         "full_panel": False,
     }
 
