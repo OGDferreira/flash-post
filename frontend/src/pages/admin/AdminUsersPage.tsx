@@ -16,11 +16,14 @@ const POST_FEATURE_LABELS: [string, string][] = [
   ["meta_apps", "Apps Meta"],
   ["settings", "Configurações"],
   ["contacts", "Contato"],
+  ["loops", "Loops e pastas (criar os próprios loops de postagem)"],
 ];
 const BOT_FEATURE_LABELS: [string, string][] = [
   ["dashboard", "Painel"],
   ["leads", "Leads e vendas"],
   ["wallet", "Carteira"],
+  ["flows", "Fluxos (criar e editar os próprios funis)"],
+  ["bots", "Bots (criar os próprios bots, remarketing e gateways)"],
 ];
 
 /** The Super Admin turns each Flash Post / Flash Bot tab on or off for one sócio. */

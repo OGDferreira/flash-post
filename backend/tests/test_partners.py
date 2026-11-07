@@ -698,6 +698,22 @@ async def test_admin_restricts_a_partner_tab_and_the_backend_blocks_it(client, d
 
 
 @pytest.mark.anyio
+async def test_admin_releases_loops_flows_and_bots_to_a_partner(client, db_session, owner, super_admin) -> None:
+    partner, _partner_ws, _link = await _partner(db_session, owner)
+    admin = await _as(client, "superadmin@example.com", "super admin password")
+    # off until the Super Admin releases them (a sócio's panel stays the same meanwhile)
+    perms = (await client.get(f"/api/admin/users/{partner.id}/partner-permissions", headers=admin)).json()["permissions"]
+    assert perms["post"]["loops"] is False and perms["bot"]["flows"] is False and perms["bot"]["bots"] is False
+    assert perms["post"]["accounts"] is True  # the usual tabs keep their default
+    perms["post"]["loops"] = perms["bot"]["flows"] = perms["bot"]["bots"] = True
+    saved = await client.put(f"/api/admin/users/{partner.id}/partner-permissions", headers=admin, json={"permissions": perms})
+    assert saved.status_code == 200
+    await _as(client, "socio@example.com", PASSWORD)
+    mine = (await client.get("/api/partners/me")).json()["permissions"]
+    assert mine["post"]["loops"] and mine["bot"]["flows"] and mine["bot"]["bots"]
+
+
+@pytest.mark.anyio
 async def test_super_admin_sets_the_default_fee_for_everyone(client, db_session, owner, super_admin, monkeypatch) -> None:
     from app.core.config import get_settings
 
