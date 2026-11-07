@@ -11,6 +11,7 @@ import {
   CreditCard,
   Eye,
   Hand,
+  PlayCircle,
   Save,
   Settings2,
   ShoppingCart,
@@ -24,6 +25,7 @@ import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 import type { Delivery, DownsellStep, Flow, FlowDefinition, OrderBump } from "./types";
 import { BotsSection, WelcomeSection, type SectionProps } from "./editor/sectionsTop";
+import { FlowSimulator } from "./simulator/FlowSimulator";
 import {
   BumpSection,
   DownsellSection,
@@ -117,6 +119,7 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   const [savedJson, setSavedJson] = useState("");
   const [current, setCurrent] = useState(0);
   const [picker, setPicker] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [bottomPicker, setBottomPicker] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const top = useRef<HTMLDivElement>(null);
@@ -183,7 +186,7 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   const SectionIcon = section.icon;
 
   return (
-    <div className="space-y-4 pb-40 lg:pb-8" ref={top}>
+    <div className={`space-y-4 pb-40 lg:pb-8 ${testing ? "lg:pr-[420px]" : ""}`} ref={top}>
       <div className="flex items-center gap-2">
         <button aria-label="Voltar para os fluxos" className="btn-secondary !min-h-11 !px-3" onClick={() => void back()} type="button">
           <ArrowLeft size={18} />
@@ -201,6 +204,15 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
         <span className={`hidden items-center gap-1.5 text-xs sm:flex ${dirty ? "text-warning" : "text-muted"}`}>
           <span className={`size-2 rounded-full ${dirty ? "bg-warning" : "bg-success"}`} /> {dirty ? "Alterações não salvas" : "Tudo salvo"}
         </span>
+        <button
+          aria-pressed={testing}
+          className={`btn-secondary !min-h-11 ${testing ? "!border-accent !text-accent" : ""}`}
+          onClick={() => setTesting(!testing)}
+          title="Prévia e teste do funil, sem cobrar nada"
+          type="button"
+        >
+          <PlayCircle size={16} /> <span className="hidden sm:inline">Testar funil</span>
+        </button>
         <button className="btn-primary !min-h-11" disabled={save.isPending || !name.trim()} onClick={() => save.mutate()} type="button">
           <Save size={16} /> {save.isPending ? "Salvando…" : "Salvar alterações"}
         </button>
@@ -290,6 +302,13 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
       </div>
       </div>
 
+      {testing &&
+        createPortal(
+          <div className="fixed inset-0 z-[90] bg-[var(--nm-bg)] p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] pt-[calc(env(safe-area-inset-top)+8px)] lg:inset-auto lg:bottom-4 lg:right-4 lg:top-24 lg:w-[400px] lg:bg-transparent lg:p-0">
+            <FlowSimulator flow={draft} onClose={() => setTesting(false)} />
+          </div>,
+          document.body,
+        )}
       {createPortal(
       <nav
         aria-label="Navegar entre seções"
