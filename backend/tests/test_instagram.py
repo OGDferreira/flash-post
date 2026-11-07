@@ -1753,3 +1753,36 @@ async def test_platform_connect_survives_a_repeated_callback_and_another_browser
     tampered = state[:-2] + ("00" if not state.endswith("00") else "11")
     refused = await client.get("/api/instagram/callback", params={"code": "zzz", "state": tampered})
     assert "instagram=error" in refused.headers["location"]
+
+
+@pytest.mark.anyio
+async def test_folder_stats_views_and_best_account(client: AsyncClient, db_session: AsyncSession, owner) -> None:
+    from app.core.time import local_date, utc_now
+    from app.models import InstagramAccountDailyViews, InstagramProfileFolder
+
+    _user, workspace = owner
+    folder = InstagramProfileFolder(workspace_id=workspace.id, name="Alice")
+    db_session.add(folder)
+    await db_session.flush()
+    accounts = []
+    for index, name in enumerate(("alice_a", "alice_b")):
+        account = InstagramAccount(
+            workspace_id=workspace.id, instagram_user_id=f"1784000000000095{index}", username=name,
+            token_expires_at=datetime.now(timezone.utc) + timedelta(days=50), profile_folder_id=folder.id,
+        )
+        db_session.add(account)
+        accounts.append(account)
+    await db_session.flush()
+    today = local_date(utc_now())
+    now = utc_now()
+    db_session.add_all([
+        InstagramAccountDailyViews(workspace_id=workspace.id, account_id=accounts[0].id, day=today, views=100, fetched_at=now),
+        InstagramAccountDailyViews(workspace_id=workspace.id, account_id=accounts[1].id, day=today, views=50, fetched_at=now),
+        InstagramAccountDailyViews(workspace_id=workspace.id, account_id=accounts[1].id, day=today - timedelta(days=3), views=400, fetched_at=now),
+        InstagramAccountDailyViews(workspace_id=workspace.id, account_id=accounts[0].id, day=today - timedelta(days=20), views=9999, fetched_at=now),
+    ])
+    await db_session.commit()
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    stats = (await client.get("/api/instagram/folders/stats")).json()["folders"][str(folder.id)]
+    assert stats["views_today"] == 150 and stats["views_7d"] == 550  # the 20-day-old day is out
+    assert stats["top_account"]["username"] == "alice_b" and stats["top_account"]["views_7d"] == 450

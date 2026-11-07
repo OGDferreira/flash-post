@@ -167,6 +167,50 @@ async def list_profile_folders(
     )
 
 
+@router.get("/stats")
+async def profile_folder_stats(access: OwnerAccess, db: DbSession) -> dict:
+    """Per folder: views today and in the last 7 days (Meta's daily views of its connected
+    accounts) and its best account over those 7 days."""
+    from datetime import timedelta
+
+    from app.core.time import local_date, utc_now
+    from app.models import InstagramAccountDailyViews
+
+    today = local_date(utc_now())
+    first = today - timedelta(days=6)
+    rows = (await db.execute(
+        select(
+            InstagramAccount.profile_folder_id, InstagramAccount.id, InstagramAccount.username,
+            InstagramAccount.profile_picture_url, InstagramAccountDailyViews.day, InstagramAccountDailyViews.views,
+        )
+        .join(InstagramAccountDailyViews, InstagramAccountDailyViews.account_id == InstagramAccount.id)
+        .where(
+            InstagramAccount.workspace_id == access.workspace.id,
+            InstagramAccount.profile_folder_id.is_not(None),
+            InstagramAccount.status == "connected",
+            InstagramAccountDailyViews.day >= first,
+            InstagramAccountDailyViews.day <= today,
+        )
+    )).all()
+    folders: dict[str, dict] = {}
+    per_account: dict[uuid.UUID, dict] = {}
+    for folder_id, account_id, username, picture, day, views in rows:
+        entry = folders.setdefault(str(folder_id), {"views_today": 0, "views_7d": 0, "top_account": None})
+        views = int(views or 0)
+        entry["views_7d"] += views
+        if day == today:
+            entry["views_today"] += views
+        account = per_account.setdefault(account_id, {"folder": str(folder_id), "username": username,
+                                                      "profile_picture_url": picture, "views_7d": 0})
+        account["views_7d"] += views
+    for account in per_account.values():
+        entry = folders[account["folder"]]
+        best = entry["top_account"]
+        if account["views_7d"] > 0 and (best is None or account["views_7d"] > best["views_7d"]):
+            entry["top_account"] = {key: account[key] for key in ("username", "profile_picture_url", "views_7d")}
+    return {"days": 7, "folders": folders}
+
+
 @router.get("/accounts", response_model=InstagramProfileFolderAccountsPage)
 async def list_profile_folder_accounts(
     access: OwnerAccess,
