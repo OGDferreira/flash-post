@@ -13,6 +13,50 @@ import {
 import { ApiError, apiRequest } from "@/services/api";
 import { confirmAction } from "@/lib/confirm";
 
+type FolderStats = {
+  views_today: number;
+  views_7d: number;
+  top_account: { username: string; profile_picture_url: string | null; views_7d: number } | null;
+};
+type FolderStatsResponse = { days: number; folders: Record<string, FolderStats> };
+
+const compactViews = (value: number) => value.toLocaleString("pt-BR", { notation: value >= 10_000 ? "compact" : "standard", maximumFractionDigits: 1 });
+
+/** Folder card numbers: accounts, views (today and 7 days) and the folder's best account. */
+function FolderStatsStrip({ stats, accountCount }: { stats?: FolderStats; accountCount: number }) {
+  const cell = "min-w-0 rounded-lg border border-line-soft bg-surface px-3 py-2";
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className={cell}>
+        <p className="text-[10px] uppercase tracking-wide text-muted">Contas</p>
+        <p className="text-lg font-bold text-fg">{accountCount}</p>
+      </div>
+      <div className={cell}>
+        <p className="text-[10px] uppercase tracking-wide text-muted">Views hoje</p>
+        <p className="text-lg font-bold text-fg">{compactViews(stats?.views_today ?? 0)}</p>
+      </div>
+      <div className={cell}>
+        <p className="text-[10px] uppercase tracking-wide text-muted">Views 7 dias</p>
+        <p className="text-lg font-bold text-fg">{compactViews(stats?.views_7d ?? 0)}</p>
+      </div>
+      <div className={cell} title="A conta da pasta com mais visualizações nos últimos 7 dias">
+        <p className="text-[10px] uppercase tracking-wide text-muted">🏆 Melhor conta</p>
+        {stats?.top_account ? (
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            <InstagramAvatar className="size-6 shrink-0 rounded-full object-cover" src={stats.top_account.profile_picture_url} username={stats.top_account.username} />
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold text-fg">@{stats.top_account.username}</p>
+              <p className="text-[10px] text-muted">{compactViews(stats.top_account.views_7d)} views</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-muted">sem dados ainda</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type ProfileFolderAccount = {
   id: string;
   profile_folder_id?: string | null;
@@ -192,6 +236,12 @@ export function ProfileFoldersPage() {
   const [loadedUnassignedAccounts, setLoadedUnassignedAccounts] = useState<ProfileFolderAccount[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<string[]>([]);
   const [assigningAccount, setAssigningAccount] = useState<ProfileFolderAccount | null>(null);
+  const folderStats = useQuery({
+    queryKey: ["instagram", "folders", "stats"],
+    queryFn: () => apiRequest<FolderStatsResponse>("/api/instagram/folders/stats"),
+    staleTime: 120_000,
+    retry: false,
+  });
   const folders = useQuery({
     queryKey: ["instagram", "folders"],
     queryFn: () => apiRequest<ProfileFoldersResponse>("/api/instagram/folders?include_accounts=false"),
@@ -585,6 +635,7 @@ export function ProfileFoldersPage() {
                 </div>
               </div>
               )}
+              <FolderStatsStrip accountCount={folder.account_count} stats={folderStats.data?.folders[folder.id]} />
               <button
                 className="min-h-8 rounded-lg border border-line px-3 text-xs font-medium text-fg-2 hover:text-white"
                 onClick={() =>
