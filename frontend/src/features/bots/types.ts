@@ -120,6 +120,9 @@ export type FlowDefinition = {
     check_button: string;
     pending_text: string;
     approved_text: string;
+    /** true: always send before the delivery; false: never; null/undefined: old rule
+     *  (skipped when an upsell follows). */
+    approved_enabled?: boolean | null;
     expired_text: string;
     /** "qr": QR + text + code in one message; "steps": instructions, copy box, buttons. */
     layout?: "qr" | "steps";

@@ -59,3 +59,11 @@ test("approved text shows when no upsell follows, and the check button answers",
   assert.ok(msgs.some((t) => t.includes("Ainda não caiu")));
   assert.ok(msgs.includes("Aprovado!") && msgs.includes("Acesso VIP"));
 });
+
+test("approved message switch: on always sends it before the delivery, off never", () => {
+  const run = ["start", "age", "plans", "plan:vip", "bump:n", "pay"];
+  const on = simulate({ ...flow, payment: { ...flow.payment, approved_enabled: true } }, run).messages.map((m) => m.text ?? "");
+  assert.ok(on.indexOf("Aprovado!") >= 0 && on.indexOf("Aprovado!") < on.indexOf("Acesso VIP"));
+  const off = simulate({ ...flow, upsells: [], payment: { ...flow.payment, approved_enabled: false } }, run).messages.map((m) => m.text ?? "");
+  assert.ok(!off.includes("Aprovado!") && off.includes("Acesso VIP"));
+});

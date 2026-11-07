@@ -497,3 +497,27 @@ async def test_order_bump_can_use_the_funnel_default_delivery(client, db_session
     broken.pop("default_delivery", None)
     with pytest.raises(ValueError, match="entrega padrão"):
         FlowDefinition.model_validate(broken)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("enabled, upsell, expected", [
+    (True, False, True), (False, False, False), (None, False, True),
+    (True, True, True), (None, True, False),  # old funnels: skipped when an upsell follows
+])
+async def test_approved_message_switch(client, db_session, owner, apis, enabled, upsell, expected) -> None:
+    headers = await _login(client)
+    flow = _flow(welcome=[])
+    flow["plans"][0]["delivery"] = {"type": "default", "text": "Sua entrega"}
+    flow["payment"] = {"approved_text": "Recebemos seu Pix, {nome}!", **({"approved_enabled": enabled} if enabled is not None else {})}
+    if upsell:
+        flow["upsells"] = [{"name": "Extra", "price": "9.90", "text": "Leva mais?", "delivery": PACK}]
+    bot, _ = await _setup(client, headers, flow)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    await _pay(client, db_session, order)
+    texts = [m["text"] for m in apis.methods("sendMessage")]
+    assert any(t.startswith("Recebemos seu Pix") for t in texts) is expected
+    assert "Sua entrega" in texts
+    if expected:  # the message comes before the delivery
+        assert texts.index(next(t for t in texts if t.startswith("Recebemos seu Pix"))) < texts.index("Sua entrega")
