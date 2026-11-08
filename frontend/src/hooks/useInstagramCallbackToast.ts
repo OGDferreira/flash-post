@@ -30,6 +30,8 @@ export function useInstagramCallbackToast() {
     }
     const next = new URLSearchParams(searchParams);
     next.delete("instagram");
+    next.delete("account");
+    next.delete("connected_account");
     setSearchParams(next, { replace: true });
   }, [outcome, queryClient, searchParams, setSearchParams]);
 }

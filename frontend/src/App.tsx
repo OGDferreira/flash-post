@@ -1,4 +1,5 @@
 import { HomePanelPreference } from "@/components/HomePanelPreference";
+import { ConnectedAccountPopup } from "@/components/ConnectedAccountPopup";
 import { ReleaseNotices } from "@/components/ReleaseNotices";
 import { homePath } from "@/features/auth/homePanel";
 import { ContactsPage } from "@/pages/ContactsPage";
@@ -244,7 +245,7 @@ function RequireAuth() {
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
-  return <><HomePanelPreference prompt /><ReleaseNotices /><Outlet /></>;
+  return <><HomePanelPreference prompt /><ReleaseNotices /><ConnectedAccountPopup /><Outlet /></>;
 }
 
 function RequireSuperAdmin() {

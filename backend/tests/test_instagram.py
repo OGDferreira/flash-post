@@ -987,15 +987,22 @@ async def test_oauth_callback_persists_encrypted_token_and_redirects(
     )
 
     assert callback.status_code == 303
-    assert callback.headers["location"] == (
-        "http://testserver/feature/accounts?instagram=connected&account=flashpost_demo"
-    )
     account = await db_session.scalar(
         select(InstagramAccount).where(
             InstagramAccount.instagram_user_id == "17840000000000000"
         )
     )
     assert account is not None
+    assert callback.headers["location"] == (
+        "http://testserver/feature/accounts?instagram=connected&account=flashpost_demo"
+        f"&connected_account={account.id}"
+    )
+    # the success pop-up: photo, @, when and who connected it
+    receipt = await client.get(f"/api/instagram/accounts/{account.id}/connection")
+    assert receipt.status_code == 200, receipt.text
+    body = receipt.json()
+    assert body["username"] == "flashpost_demo" and body["profile_picture_url"].endswith("profile.jpg")
+    assert body["connected_at"] and body["connected_by"]
     assert account.app_credential_id is not None
     assert account.connected_by_user_id == _user.id
     assert account.first_connected_at is not None
