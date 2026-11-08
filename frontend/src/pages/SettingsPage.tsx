@@ -26,6 +26,7 @@ import { copyGeneratedText, copyText } from "@/lib/clipboard";
 import { scriptableWidgetScript, type WidgetTheme } from "@/lib/scriptableWidget";
 import { applyTheme, getTheme, type Theme } from "@/lib/theme";
 import { ApiError, apiRequest } from "@/services/api";
+import { PeriodFilter, isPeriodReady, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 
 type Item = { to: string; title: string; text: string; icon: ReactNode; owner?: boolean; superAdmin?: boolean };
 
@@ -81,6 +82,51 @@ const sections: { id: string; title: string; icon: ReactNode; items: Item[] }[] 
     ],
   },
 ];
+
+/** "Receber notificações de vendas passadas": the sales of a chosen period arrive again as
+ *  notifications on the devices with notifications on (oldest first, at most 100). */
+function PastSalesCard() {
+  const [period, setPeriod] = useState<MetricsPeriod>({ period: "today", start: todayInput(), end: todayInput() });
+  const replay = useMutation({
+    mutationFn: () =>
+      apiRequest<{ count: number; limit: number; period_label: string }>("/api/notifications/past-sales", {
+        method: "POST",
+        body: periodParams(period),
+      }),
+  });
+  return (
+    <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
+      <h3 className="text-base font-semibold text-fg">Receber notificações de vendas passadas</h3>
+      <p className="mt-1 text-sm text-muted">
+        Escolha o período: as vendas (Flash, Shark e comissões) chegam de novo como notificações, com o horário de cada uma.
+      </p>
+      <div className="mt-3">
+        <PeriodFilter onChange={setPeriod} value={period} />
+      </div>
+      <button
+        className="btn-primary mt-3"
+        disabled={replay.isPending || !isPeriodReady(period)}
+        onClick={() => replay.mutate()}
+        type="button"
+      >
+        {replay.isPending ? "Preparando…" : "Receber notificações"}
+      </button>
+      <p className="mt-2 text-xs" role="status">
+        {replay.isError ? (
+          <span className="text-danger">{replay.error instanceof ApiError ? replay.error.message : "Não foi possível enviar agora."}</span>
+        ) : replay.data ? (
+          <span className={replay.data.count ? "text-success" : "text-muted"}>
+            {replay.data.count
+              ? `${replay.data.count} ${replay.data.count === 1 ? "notificação a caminho" : "notificações a caminho"} (${replay.data.period_label}).${replay.data.count >= replay.data.limit ? ` Só as ${replay.data.limit} mais recentes.` : ""}`
+              : `Nenhuma venda em ${replay.data.period_label}.`}
+          </span>
+        ) : (
+          <span className="text-muted">Precisa das notificações ativadas neste aparelho.</span>
+        )}
+      </p>
+    </section>
+  );
+}
 
 type AppIcon = "dark" | "blue" | "purple";
 const APP_ICONS: { id: AppIcon; label: string; src: string }[] = [
@@ -392,6 +438,7 @@ export function SettingsPage() {
         <AppearanceCard />
         <AppIconPicker />
         <PushSwitch />
+        {owner && <PastSalesCard />}
       </div>
 
       {owner && <IphoneWidgetCard />}

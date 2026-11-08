@@ -1,3 +1,9 @@
+from datetime import date
+from pydantic import BaseModel
+from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
+from app.auth.dependencies import AuthenticatedUser
+from app.core.time import BRAZIL_TIME_ZONE, utc_now
+from app.models import PushSubscription
 import asyncio
 import time
 import uuid
@@ -467,3 +473,35 @@ async def my_engagement(access: WorkspaceMemberAccess, db: DbSession) -> dict:
         "best_previous_date": stats.best_previous_date.isoformat() if stats.best_previous_date else None,
         "is_record_today": stats.is_record_today,
     }
+
+
+# ------------------------------------------------------------------ past sales
+_REPLAYS: set = set()  # running re-sends (kept referenced until done)
+
+
+class PastSalesRequest(BaseModel):
+    period: AnalyticsPeriod = "today"
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+@router.post("/past-sales", dependencies=[Depends(require_csrf)])
+async def replay_past_sales(payload: PastSalesRequest, user: AuthenticatedUser, db: DbSession) -> dict:
+    """"Receber notificações de vendas passadas": the sales of a chosen period arrive again as
+    push notifications on the user's devices (oldest first, at most 100)."""
+    from app.notifications import replay
+    from app.partners.service import owner_workspace
+
+    if not await db.scalar(select(func.count(PushSubscription.id)).where(PushSubscription.user_id == user.id)):
+        raise HTTPException(status_code=409, detail="Ative as notificações neste aparelho antes (Configurações → Notificações).")
+    workspace = await owner_workspace(db, user.id)
+    zone = await user_time_zone(db, workspace.id, user.id) if workspace else BRAZIL_TIME_ZONE
+    start, end = period_bounds(payload.period, payload.start_date, payload.end_date, utc_now(), zone)
+    start = start or datetime(2000, 1, 1, tzinfo=timezone.utc)
+    end = min(end, utc_now()) if end else utc_now()
+    notices = await replay.collect(db, user, workspace, start, end, zone)
+    if notices:
+        task = asyncio.create_task(replay.send(user.id, notices))
+        _REPLAYS.add(task)
+        task.add_done_callback(_REPLAYS.discard)
+    return {"count": len(notices), "limit": replay.MAX_NOTICES, "period_label": period_label(start, end, zone)}
