@@ -1,4 +1,4 @@
-const CACHE_NAME = "flashpost-shell-v35";
+const CACHE_NAME = "flashpost-shell-v36";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -73,6 +73,20 @@ self.addEventListener("fetch", (event) => {
 // ---------- Web Push ----------
 // Shows notifications even when no FlashPost window is open. The payload is
 // produced by the backend (title, body, url, tag); everything is optional.
+// The app icon picked in Configurações, written by the page into this cache (a service
+// worker cannot read localStorage). null = no choice.
+const PREFS_CACHE = "flash-prefs";
+async function chosenIcon() {
+  try {
+    const cache = await caches.open(PREFS_CACHE);
+    const response = await cache.match("/__prefs/app-icon");
+    const value = response ? (await response.text()).trim() : "";
+    return value === "dark" || value === "purple" || value === "blue" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {
@@ -82,24 +96,31 @@ self.addEventListener("push", (event) => {
   }
   const title = typeof data.title === "string" && data.title ? data.title : "Flash";
   const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/dashboard";
-  // Sales and commissions come from Flash Bot (purple); everything else is Flash Post (blue).
-  const icon = typeof data.brand === "string" && data.brand.startsWith("flashbot") ? "/brand/flash-icon-bot-192.png" : "/brand/flash-icon-192.png";
   // Tell any open FlashPost window right away, so its numbers refresh without waiting.
   const tellWindows = self.clients
     .matchAll({ type: "window", includeUncontrolled: true })
     .then((windows) => windows.forEach((client) => client.postMessage({ type: "flashpost-push", tag: data.tag || null })));
-  event.waitUntil(
-    Promise.all([tellWindows.catch(() => undefined), self.registration.showNotification(title, {
+  const show = (async () => {
+    // The icon chosen in Configurações (Android and computers show it; the iPhone shows the
+    // home-screen icon). Without a choice: Flash Bot purple for sales, Flash Post blue otherwise.
+    const chosen = await chosenIcon();
+    const icon = chosen === "blue"
+      ? "/brand/flash-icon-192.png"
+      : chosen
+      ? `/brand/flash-icon-${chosen}-192.png`
+      : typeof data.brand === "string" && data.brand.startsWith("flashbot") ? "/brand/flash-icon-bot-192.png" : "/brand/flash-icon-192.png";
+    await self.registration.showNotification(title, {
       body: typeof data.body === "string" ? data.body : "",
       icon,
-      // Android paints the badge (status bar) as a one-color silhouette: the falcon silhouette.
+      // Android paints the badge (status bar) as a one-color silhouette.
       badge: "/brand/badge-96.png",
       tag: typeof data.tag === "string" ? data.tag : undefined,
       renotify: false,
       lang: "pt-BR",
       data: { url },
-    })]),
-  );
+    });
+  })();
+  event.waitUntil(Promise.all([tellWindows.catch(() => undefined), show]));
 });
 
 self.addEventListener("notificationclick", (event) => {
