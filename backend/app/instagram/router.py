@@ -125,21 +125,25 @@ def _redirect_uri() -> str:
     return f"{get_settings().public_base_url.rstrip('/')}/api/instagram/callback"
 
 
-def _result_params(outcome: str, account: str | None) -> str:
+def _result_params(outcome: str, account: str | None, account_id: uuid.UUID | None = None) -> str:
     params = {"instagram": outcome}
     if account:  # the @ of the account just connected, to show it in the success message
         params["account"] = account
+    if account_id:  # opens the "connected" pop-up (photo, @, date and who connected it)
+        params["connected_account"] = str(account_id)
     return urlencode(params)
 
 
-def _accounts_page(outcome: str, account: str | None = None) -> str:
-    return f"{get_settings().public_base_url.rstrip('/')}/feature/accounts?{_result_params(outcome, account)}"
+def _accounts_page(outcome: str, account: str | None = None, account_id: uuid.UUID | None = None) -> str:
+    return f"{get_settings().public_base_url.rstrip('/')}/feature/accounts?{_result_params(outcome, account, account_id)}"
 
 
-def _connection_result_page(return_to: str, outcome: str, account: str | None = None) -> str:
+def _connection_result_page(
+    return_to: str, outcome: str, account: str | None = None, account_id: uuid.UUID | None = None,
+) -> str:
     if return_to == "/dashboard":
-        return f"{get_settings().public_base_url.rstrip('/')}/dashboard?{_result_params(outcome, account)}"
-    return _accounts_page(outcome, account)
+        return f"{get_settings().public_base_url.rstrip('/')}/dashboard?{_result_params(outcome, account, account_id)}"
+    return _accounts_page(outcome, account, account_id)
 
 
 def _utc_datetime(value: datetime) -> datetime:
@@ -936,8 +940,34 @@ async def _instagram_callback(
         account.connected_at = datetime.now(timezone.utc)
         account.status_reason = None
         account.error_at = None
+    await db.flush()
+    connected_id = account.id
     await db.commit()
-    return RedirectResponse(_connection_result_page(return_to, "connected", username), status_code=303)
+    return RedirectResponse(
+        _connection_result_page(return_to, "connected", username, connected_id), status_code=303
+    )
+
+
+@router.get("/accounts/{account_id}/connection")
+async def connection_receipt(account_id: uuid.UUID, access: WorkspaceMemberAccess, db: DbSession) -> dict:
+    """The success pop-up after connecting: photo, @, when it was connected and by whom (the
+    person who just went through the authorization, i.e. the one asking)."""
+    account = await db.scalar(
+        select(InstagramAccount).where(
+            InstagramAccount.id == account_id, InstagramAccount.workspace_id == access.workspace.id,
+        )
+    )
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instagram account not found.")
+    me = await db.get(User, access.membership.user_id)
+    return {
+        "id": str(account.id),
+        "username": account.username,
+        "profile_picture_url": account.profile_picture_url,
+        "follower_count": account.follower_count,
+        "connected_at": _utc_datetime(account.connected_at).isoformat(),
+        "connected_by": (me.nickname or me.full_name) if me else None,
+    }
 
 
 @router.delete(
