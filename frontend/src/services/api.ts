@@ -172,6 +172,7 @@ export type User = {
   impersonator_name?: string | null;
   platform_app_blocked?: boolean;
   hide_from_rankings?: boolean;
+  seen_notices?: string[];
 };
 
 export type Workspace = {

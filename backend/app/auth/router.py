@@ -89,6 +89,7 @@ def _user_response(user: User, membership: WorkspaceMember | None) -> UserRespon
         last_login_at=user.last_login_at,
         platform_app_blocked=bool(user.platform_app_blocked),
         hide_from_rankings=bool(user.hide_from_rankings),
+        seen_notices=[str(item) for item in (user.seen_notices or [])][:50],
     )
 
 
@@ -397,6 +398,10 @@ async def update_preferences(payload: PreferencesUpdateRequest, user: Authentica
         user.home_panel = payload.home_panel
     if payload.hide_from_rankings is not None:
         user.hide_from_rankings = payload.hide_from_rankings
+    if payload.seen_notice:
+        seen = [str(item) for item in (user.seen_notices or [])]
+        if payload.seen_notice not in seen:
+            user.seen_notices = [*seen, payload.seen_notice][-50:]  # a new list, so the JSON is saved
     await db.commit()
     await db.refresh(user)
     return _user_response(user, membership)

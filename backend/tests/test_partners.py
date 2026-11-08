@@ -520,6 +520,23 @@ async def test_partners_ranking_shows_positions_and_each_ones_revenue(client, db
     assert members[2]["nickname"] == "outro" and members[2]["has_sales"] is False
     assert [m["revenue"] for m in members] == [39.8, 19.9, 0.0]
 
+    # SharkBot sales count only for the Super Admin: the partner's don't, the chief's do once
+    # the chief is the Super Admin
+    from app.core.time import utc_now
+    from app.models.sharkbot import SharkTransaction
+
+    now = utc_now()
+    for ws, key in ((partner_ws, "p1"), (chief_ws, "c1")):
+        db_session.add(SharkTransaction(workspace_id=ws.id, transaction_key=key, status="paid", amount=Decimal("100.00"),
+                                        created_at_source=now, paid_at=now))
+    await db_session.commit()
+    members = (await client.get("/api/bots/partners-ranking?period=today")).json()["members"]
+    assert [m["revenue"] for m in members] == [39.8, 19.9, 0.0]
+    chief.platform_role = "SUPER_ADMIN"
+    await db_session.commit()
+    members = (await client.get("/api/bots/partners-ranking?period=today")).json()["members"]
+    assert [(m["nickname"], m["revenue"]) for m in members][:2] == [(chief.nickname, 119.9), ("socio", 39.8)]
+
     # someone outside the partnership only sees themselves
     await _make_owner(db_session, "solo")
     await _as(client, "solo@example.com")

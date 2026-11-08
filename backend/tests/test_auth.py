@@ -885,3 +885,18 @@ async def test_super_admin_blocks_unblocks_and_changes_role(
         json={"platform_role": "USER"},
     )
     assert self_demote.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_one_time_notices_are_saved_on_the_account(client, owner) -> None:
+    from tests.test_loops import _csrf, _login
+
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    csrf = await _csrf(client)
+    assert (await client.get("/api/auth/me")).json()["seen_notices"] == []
+    for _ in range(2):  # saved once, never duplicated
+        saved = await client.patch("/api/profile/preferences", headers={"X-CSRF-Token": csrf}, json={"seen_notice": "novidades-2026-11"})
+        assert saved.status_code == 200, saved.text
+    assert (await client.get("/api/auth/me")).json()["seen_notices"] == ["novidades-2026-11"]
+    bad = await client.patch("/api/profile/preferences", headers={"X-CSRF-Token": csrf}, json={"seen_notice": "<script>"})
+    assert bad.status_code == 422

@@ -206,6 +206,22 @@ async def partners_ranking_of(db: AsyncSession, user_id: uuid.UUID, start: datet
         )
         for ws_id, amount in rows.all():
             revenue[workspace_owner[ws_id]] += Decimal(amount or 0)
+        # The Super Admin's SharkBot sales (webhook) count too; only theirs (owner's decision).
+        admin_workspaces = [ws for ws, owner in workspace_owner.items()
+                            if users.get(owner) is not None and users[owner].platform_role == "SUPER_ADMIN"]
+        if admin_workspaces:
+            from app.models.sharkbot import SharkTransaction
+
+            shark_rows = await db.execute(
+                select(SharkTransaction.workspace_id, func.coalesce(func.sum(SharkTransaction.amount), 0))
+                .where(
+                    SharkTransaction.workspace_id.in_(admin_workspaces), SharkTransaction.status == "paid",
+                    SharkTransaction.paid_at >= start, SharkTransaction.paid_at < end,
+                )
+                .group_by(SharkTransaction.workspace_id)
+            )
+            for ws_id, amount in shark_rows.all():
+                revenue[workspace_owner[ws_id]] += Decimal(amount or 0)
 
     ordered = sorted(
         (uid for uid in member_ids if uid in users),
