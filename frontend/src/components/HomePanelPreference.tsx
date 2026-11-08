@@ -6,6 +6,20 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { canChooseHome, homePath } from "@/features/auth/homePanel";
 import { apiRequest, type User } from "@/services/api";
 
+/** Each panel in its own color: Flash Post blue, Flash Bot purple. */
+const PANEL = {
+  flashpost: {
+    label: "Flash Post",
+    on: "border-transparent bg-gradient-to-r from-[#1d9bf0] to-[#22d3ee] text-white shadow-[0_8px_24px_-8px_rgba(29,155,240,.7)]",
+    off: "border-[#1d9bf0]/50 bg-[#1d9bf0]/10 text-[#4cb3ff] hover:bg-[#1d9bf0]/20",
+  },
+  flashbot: {
+    label: "Flash Bot",
+    on: "border-transparent bg-gradient-to-r from-[#7c3aed] to-[#c026d3] text-white shadow-[0_8px_24px_-8px_rgba(147,51,234,.7)]",
+    off: "border-[#9333ea]/50 bg-[#9333ea]/10 text-[#b57bff] hover:bg-[#9333ea]/20",
+  },
+} as const;
+
 export function HomePanelPreference({ prompt = false }: { prompt?: boolean }) {
   const { user } = useAuth();
   const cache = useQueryClient();
@@ -25,11 +39,14 @@ export function HomePanelPreference({ prompt = false }: { prompt?: boolean }) {
   const content = <>
     <p className="text-sm text-muted">Escolha qual painel abrir nos próximos acessos. Você pode alterar em Configurações.</p>
     <div className="mt-4 grid grid-cols-2 gap-3" role="group" aria-label="Tela inicial">
-      {(["flashpost", "flashbot"] as const).map((panel) => <button
-        key={panel} type="button" disabled={save.isPending} aria-pressed={user?.home_panel === panel}
-        className={user?.home_panel === panel ? "btn-primary" : "btn-secondary"}
-        onClick={() => save.mutate(panel)}
-      >{panel === "flashpost" ? "Flash" : "Flash"}</button>)}
+      {(["flashpost", "flashbot"] as const).map((panel) => {
+        const on = user?.home_panel === panel;
+        return <button
+          key={panel} type="button" disabled={save.isPending} aria-pressed={on}
+          className={`inline-flex min-h-12 items-center justify-center rounded-full border px-4 text-base font-semibold transition disabled:opacity-60 ${PANEL[panel][on ? "on" : "off"]}`}
+          onClick={() => save.mutate(panel)}
+        >{PANEL[panel].label}</button>;
+      })}
     </div>
     <p className="mt-3 text-xs text-success" role="status">{save.isPending ? "Salvando…" : save.isSuccess ? "Tela inicial salva." : ""}</p>
     {save.error && <p role="alert" className="mt-2 text-xs text-danger">{save.error.message}</p>}
