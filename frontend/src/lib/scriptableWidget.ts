@@ -428,7 +428,8 @@ function chart(series, width, height, opts) {
   ctx.respectScreenScale = true;
   const points = series.length > 1 ? series : [0, series[0] || 0];
   const max = Math.max(...points, 1);
-  const step = width / Math.max(points.length - 1, 1);
+  // the last point stops 7 pt before the edge so its dot is never cut
+  const step = (width - 7) / Math.max(points.length - 1, 1);
   const y = (v) => height - 4 - (v / max) * (height - 12);
   const pts = points.map((v, i) => new Point(i * step, y(v)));
   if (opts.dotted) {
@@ -478,6 +479,10 @@ function medium(data, logo, mark, delta) {
   const body = w.addStack();
   const left = body.addStack();
   left.layoutVertically();
+  // Fixed left column, so the charts fill the rest exactly up to the widget's edge.
+  const LEFT = 172;
+  const CHART = 338 - 30 - LEFT - 8;
+  left.size = new Size(LEFT, 0);
   label(left, data.is_admin ? "Total hoje" : "Faturamento hoje", 10);
   left.addSpacer(1);
   value(left, total(data), data.is_admin ? 27 : 30);
@@ -489,14 +494,14 @@ function medium(data, logo, mark, delta) {
   right.layoutVertically();
   if (data.is_admin) {
     // Sales line and, below it, the dotted commission line.
-    const g1 = right.addImage(chart(data.series || [0], 112, 36));
-    g1.imageSize = new Size(112, 36);
+    const g1 = right.addImage(chart(data.series || [0], CHART, 36));
+    g1.imageSize = new Size(CHART, 36);
     right.addSpacer(2);
-    const g2 = right.addImage(chart(data.commission_series || [0], 112, 16, { dotted: true, color: T.comm }));
-    g2.imageSize = new Size(112, 16);
+    const g2 = right.addImage(chart(data.commission_series || [0], CHART, 16, { dotted: true, color: T.comm }));
+    g2.imageSize = new Size(CHART, 16);
   } else {
-    const graph = right.addImage(chart(data.series || [0], 112, 48));
-    graph.imageSize = new Size(112, 48);
+    const graph = right.addImage(chart(data.series || [0], CHART, 48));
+    graph.imageSize = new Size(CHART, 48);
   }
   right.addSpacer(4);
   if (delta) {
