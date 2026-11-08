@@ -13,6 +13,21 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon.png" />
+    <script>
+      // The app icon chosen in Configurações (also the iPhone notifications' icon, taken when
+      // the app is added to the home screen).
+      try {
+        // ?icon=dark|blue|purple: the link copied in Configurações, opened in Safari to
+        // add the app again (Safari and the installed app do not share storage).
+        var fromLink = new URLSearchParams(location.search).get("icon");
+        if (fromLink === "dark" || fromLink === "blue" || fromLink === "purple") localStorage.setItem("flash-app-icon", fromLink);
+        var flashIcon = localStorage.getItem("flash-app-icon");
+        if (flashIcon === "dark" || flashIcon === "purple") {
+          document.querySelector('link[rel="apple-touch-icon"]').href = "/brand/flash-icon-" + flashIcon + "-180.png";
+          document.querySelector('link[rel="manifest"]').href = "/manifest-" + flashIcon + ".webmanifest";
+        }
+      } catch (e) {}
+    </script>
     <link rel="icon" href="/favicon.png?v=5" type="image/png" />
     <link rel="icon" href="/favicon.ico?v=5" sizes="any" />
     <meta

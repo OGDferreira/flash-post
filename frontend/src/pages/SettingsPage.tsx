@@ -82,6 +82,109 @@ const sections: { id: string; title: string; icon: ReactNode; items: Item[] }[] 
   },
 ];
 
+type AppIcon = "dark" | "blue" | "purple";
+const APP_ICONS: { id: AppIcon; label: string; src: string }[] = [
+  { id: "dark", label: "Escuro", src: "/brand/flash-icon-dark-180.png" },
+  { id: "blue", label: "Azul", src: "/brand/apple-touch-icon.png" },
+  { id: "purple", label: "Roxo", src: "/brand/flash-icon-purple-180.png" },
+];
+
+function readAppIcon(): AppIcon | null {
+  try {
+    const value = localStorage.getItem("flash-app-icon");
+    return value === "dark" || value === "blue" || value === "purple" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Saves the choice: this device's install icon (iPhone: also the notifications' icon, taken
+ *  when the app is added to the home screen) and the notifications' icon on Android/computers
+ *  (read by the service worker from its prefs cache). */
+async function applyAppIcon(icon: AppIcon) {
+  try {
+    localStorage.setItem("flash-app-icon", icon);
+  } catch {
+    /* private mode: only this visit */
+  }
+  const apple = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+  if (apple) apple.href = icon === "blue" ? "/brand/apple-touch-icon.png" : `/brand/flash-icon-${icon}-180.png`;
+  const manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+  if (manifest) manifest.href = icon === "blue" ? "/manifest.webmanifest" : `/manifest-${icon}.webmanifest`;
+  try {
+    const cache = await caches.open("flash-prefs");
+    await cache.put("/__prefs/app-icon", new Response(icon, { headers: { "Content-Type": "text/plain" } }));
+  } catch {
+    /* no Cache API here: the service worker keeps its default */
+  }
+}
+
+/** "Ícone do app e das notificações": dark, blue or purple. */
+function AppIconPicker() {
+  const [icon, setIcon] = useState<AppIcon | null>(readAppIcon);
+  const [saved, setSaved] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const isIphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  return (
+    <section className="rounded-xl border border-line-soft bg-surface p-4 sm:p-5">
+      <h3 className="text-base font-semibold text-fg">Ícone do app e das notificações</h3>
+      <p className="mt-1 text-sm text-muted">Escolha o ícone que aparece na tela de início e nas notificações.</p>
+      <div aria-label="Ícone do app" className="mt-3 flex flex-wrap gap-3" role="radiogroup">
+        {APP_ICONS.map((item) => (
+          <button
+            aria-checked={icon === item.id}
+            className={`flex w-24 flex-col items-center gap-1.5 rounded-xl border-2 p-2 text-xs font-semibold transition ${
+              icon === item.id ? "border-accent bg-brand-soft text-fg" : "border-line-soft text-muted hover:text-fg"
+            }`}
+            key={item.id}
+            onClick={() => {
+              setIcon(item.id);
+              setSaved(true);
+              void applyAppIcon(item.id);
+            }}
+            role="radio"
+            type="button"
+          >
+            <img alt="" className="size-14 rounded-[22%]" src={item.src} />
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {saved && (
+        <p className="mt-2 text-xs text-success" role="status">
+          Ícone salvo. {isIphone ? "Siga os passos abaixo para ele aparecer no iPhone." : "As próximas notificações já saem com ele."}
+        </p>
+      )}
+      <div className="mt-3 rounded-xl border border-line-soft bg-surface-inset p-3 text-xs leading-5 text-fg-2">
+        <p className="font-semibold text-fg">No iPhone</p>
+        <p className="mt-1 text-muted">
+          O iPhone usa nas notificações o ícone que o app tinha quando foi adicionado à tela de início. Para trocar:
+        </p>
+        <ol className="mt-1 list-decimal space-y-0.5 pl-5">
+          <li>Escolha o ícone acima e toque em <b>Copiar link de instalação</b>.</li>
+          <li>Segure o ícone do Flash na tela de início → <b>Remover app</b>.</li>
+          <li>Cole o link no <b>Safari</b> → <b>Compartilhar</b> → <b>Adicionar à Tela de Início</b>.</li>
+          <li>Abra o Flash pela tela de início, entre na conta e ative as notificações de novo aqui em Configurações.</li>
+        </ol>
+        <button
+          className="btn-secondary mt-2 !min-h-9 text-xs"
+          disabled={!icon}
+          onClick={() => {
+            const link = `${window.location.origin}/?icon=${icon ?? "dark"}`;
+            void copyText(link).then(
+              () => setCopiedLink(true),
+              () => window.prompt("Copie o link:", link),
+            );
+          }}
+          type="button"
+        >
+          {copiedLink ? "Link copiado ✓" : "Copiar link de instalação"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function ThemeSwitch() {
   const [theme, setTheme] = useState<Theme>(getTheme);
   useEffect(() => {
@@ -287,6 +390,7 @@ export function SettingsPage() {
         </h2>
         <ThemeSwitch />
         <AppearanceCard />
+        <AppIconPicker />
         <PushSwitch />
       </div>
 
