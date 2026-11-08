@@ -49,6 +49,8 @@ async def test_widget_token_reads_today_and_is_replaced_by_a_new_one(client, db_
     stamp = datetime.now(timezone.utc)
     db_session.add(SharkTransaction(workspace_id=ws_id, transaction_key="w1", status="paid", amount=D("30.00"),
                                     created_at_source=stamp, paid_at=stamp))
+    db_session.add(SharkTransaction(workspace_id=ws_id, transaction_key="w2", status="pending", amount=D("30.00"),
+                                    created_at_source=stamp))  # a SharkBot Pix not paid (yet)
     account = _active_account(ws_id, "widget_ig")
     db_session.add(account)
     await db_session.flush()
@@ -57,7 +59,10 @@ async def test_widget_token_reads_today_and_is_replaced_by_a_new_one(client, db_
     await db_session.commit()
     data = (await client.get("/api/widget/today", headers={"Authorization": f"Bearer {token}"})).json()
     assert data["sales"] == 49.9 and data["sales_count"] == 2 and data["shark_sales"] == 1 and data["total"] == 49.9
-    assert data["views"] == 4321 and data["pix_paid"] == 1  # conversion stays Pix paid / generated
+    assert data["views"] == 4321
+    # conversion counts SharkBot's Pix too: 1 Flash + 2 Shark generated, 1 + 1 paid
+    assert data["pix_generated"] == 3 and data["pix_paid"] == 2
+    assert data["shark_pix_generated"] == 2 and data["shark_pix_paid"] == 1 and data["flash_pix_generated"] == 1
 
     # the Super Admin also sees the Flash fees collected today on the whole platform
     from decimal import Decimal

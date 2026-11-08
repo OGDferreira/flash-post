@@ -138,6 +138,14 @@ async def today(
             SharkTransaction.paid_at >= midnight, SharkTransaction.paid_at < tomorrow,
         )
     )).all()
+    # SharkBot Pix generated today (pending or already paid): its webhook sends both, so the
+    # conversion counts SharkBot's Pix too.
+    shark_generated = await db.scalar(
+        select(func.count(SharkTransaction.id)).where(
+            SharkTransaction.workspace_id == workspace.id,
+            SharkTransaction.created_at_source >= midnight, SharkTransaction.created_at_source < tomorrow,
+        )
+    ) or 0
     # Flash Post: Meta's views of the operation's Instagram accounts today.
     views = int(await db.scalar(
         select(func.coalesce(func.sum(InstagramAccountDailyViews.views), 0)).where(
@@ -189,8 +197,13 @@ async def today(
         "shark_revenue": float(shark.quantize(CENT)),
         "shark_sales": len(shark_rows),
         "views": views,
-        "pix_generated": generated,
-        "pix_paid": len(paid_rows),
+        # conversion: Pix paid / generated today, Flash + SharkBot
+        "pix_generated": generated + shark_generated,
+        "pix_paid": len(paid_rows) + len(shark_rows),
+        "flash_pix_generated": generated,
+        "flash_pix_paid": len(paid_rows),
+        "shark_pix_generated": shark_generated,
+        "shark_pix_paid": len(shark_rows),
         "revenue": float(revenue.quantize(CENT)),
         "profit": float(profit.quantize(CENT)),
         "commissions": float(commissions.quantize(CENT)),
