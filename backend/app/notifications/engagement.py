@@ -5,6 +5,8 @@
 - Personal record: today's connections beat every previous day (prev best >= 3).
 - Ranking: "X passed you" (max 1/hour) and "you are #1 today" (1/day).
 - Nightly summary at 22h: connections, views and money of the day.
+- Revenue nudges for owners during the day (once each): 12h "already billed", 16h the
+  day's projection at this pace, 19h revenue with the active accounts ("connect more").
 
 All pushes reuse ``MilestoneNotification`` rows for de-duplication.
 """
@@ -37,6 +39,8 @@ from app.notifications.goals import format_views
 logger = logging.getLogger(__name__)
 STREAK_WARN_HOUR = 20
 SUMMARY_HOUR = 22
+# hour slot -> last hour it may still go out (a late first tick never sends them all at once)
+REVENUE_NUDGES = {12: 15, 16: 18, 19: 21}
 RECORD_MIN_PREVIOUS_BEST = 3
 HISTORY_DAYS = 365
 
@@ -254,6 +258,67 @@ def summary_message(
     return title, f"Hoje: {', '.join(parts)}. {closer}"
 
 
+def _brl(value: Decimal) -> str:
+    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+async def revenue_today(db: AsyncSession, workspace_id, user_id, start: datetime, end: datetime) -> Decimal:
+    """The owner's day so far: their operation's Flash sales, its SharkBot sales and the
+    commissions they received."""
+    from app.bots.hidden import not_hidden_bot
+    from app.models import TgOrder
+
+    flash = await db.scalar(
+        select(func.coalesce(func.sum(TgOrder.amount), 0)).where(
+            TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.seller_hidden.is_(False),
+            TgOrder.paid_at >= start, TgOrder.paid_at < end, not_hidden_bot(TgOrder.bot_id),
+        )
+    )
+    shark = await db.scalar(
+        select(func.coalesce(func.sum(SharkTransaction.amount), 0)).where(
+            SharkTransaction.workspace_id == workspace_id, SharkTransaction.status == "paid",
+            SharkTransaction.paid_at >= start, SharkTransaction.paid_at < end,
+        )
+    )
+    commissions = await db.scalar(
+        select(func.coalesce(func.sum(TgOrder.split_amount), 0)).where(
+            TgOrder.split_chief_user_id == user_id, TgOrder.status == "paid", TgOrder.workspace_id != workspace_id,
+            TgOrder.paid_at >= start, TgOrder.paid_at < end, not_hidden_bot(TgOrder.bot_id, seller=False),
+        )
+    )
+    return sum((Decimal(str(v or 0)) for v in (flash, shark, commissions)), Decimal("0")).quantize(Decimal("0.01"))
+
+
+def revenue_nudge_message(slot: int, now: datetime, revenue: Decimal, active_accounts: int) -> tuple[str, str] | None:
+    """The day's revenue pushes; None when there is nothing worth saying."""
+    local = now.astimezone(BRAZIL_TIME_ZONE)
+    if slot == 12:
+        if revenue <= 0:
+            return None
+        return _choice([
+            ("☀️ Ainda é meio-dia!", f"Ainda são {local.hour}h e você já faturou {_brl(revenue)} 🤑"),
+            ("⚡ Dia começando forte", f"{_brl(revenue)} faturados e ainda são {local.hour}h. Bora pra cima! 🚀"),
+        ])
+    if slot == 16:
+        if revenue <= 0:
+            return None
+        elapsed = local.hour + local.minute / 60
+        projected = (revenue * Decimal(24) / Decimal(str(max(elapsed, 1)))).quantize(Decimal("0.01"))
+        return _choice([
+            ("📈 Ritmo do dia", f"{_brl(revenue)} faturados até agora. Nesse ritmo, você fecha o dia com {_brl(projected)} 🔥"),
+            ("💸 Projeção de hoje", f"Já são {_brl(revenue)}. Mantendo o ritmo, devem ser {_brl(projected)} até a meia-noite 🚀"),
+        ])
+    if slot == 19:
+        if active_accounts <= 0:
+            return None
+        contas = f"{active_accounts} conta{'s' if active_accounts != 1 else ''} ativa{'s' if active_accounts != 1 else ''}"
+        return _choice([
+            ("🚀 Escale como a elite", f"{_brl(revenue)} com {contas}. Conecte mais e fature como a elite 👑"),
+            ("👑 Mais contas, mais vendas", f"Hoje: {_brl(revenue)} com {contas}. Cada conta nova é mais alcance — conecte mais!"),
+        ])
+    return None
+
+
 async def _claim(db: AsyncSession, workspace_id, user_id, day: date, kind: str, threshold: int, value: int) -> MilestoneNotification | None:
     exists = await db.scalar(
         select(MilestoneNotification.id).where(
@@ -372,6 +437,28 @@ async def run_engagement_tick(
             if marker is not None:
                 title, body = streak_message(stats)
                 total += await send(workspace_id, user_id, title, body, "/dashboard", marker, "streak")
+        if role == WorkspaceRole.OWNER.value:
+            for slot, last in REVENUE_NUDGES.items():
+                if not slot <= hour <= last:
+                    continue
+                try:
+                    revenue = await revenue_today(db, workspace_id, user_id, start, end)
+                    active = await db.scalar(
+                        select(func.count(InstagramAccount.id)).where(
+                            InstagramAccount.workspace_id == workspace_id, InstagramAccount.status == "connected",
+                            InstagramAccount.token_expires_at > now,
+                        )
+                    ) or 0
+                except Exception as exc:  # noqa: BLE001
+                    await db.rollback()
+                    logger.warning("Revenue nudge failed (%s).", type(exc).__name__)
+                    continue
+                message = revenue_nudge_message(slot, now, revenue, int(active))
+                if message is None:
+                    continue
+                marker = await _claim(db, workspace_id, user_id, today, "revenue_nudge", slot, int(revenue))
+                if marker is not None:
+                    total += await send(workspace_id, user_id, message[0], message[1], "/bot", marker, f"revenue{slot}")
         if hour >= SUMMARY_HOUR:
             marker = await _claim(db, workspace_id, user_id, today, "summary", 0, stats.today)
             if marker is None:
