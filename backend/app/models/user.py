@@ -76,6 +76,9 @@ class User(Base):
     widget_update_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Favorite Pix keys for withdrawals: [{"id", "label", "pix_key_type", "pix_key"}]
     pix_favorites: Mapped[list | None] = mapped_column(JSON)
+    # One-time pop-ups already shown to this user (ids), so a new device or a reinstall
+    # never shows them again.
+    seen_notices: Mapped[list | None] = mapped_column(JSON)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_approved: Mapped[bool] = mapped_column(

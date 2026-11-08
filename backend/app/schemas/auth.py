@@ -83,6 +83,8 @@ class ProfileUpdateRequest(BaseModel):
 class PreferencesUpdateRequest(BaseModel):
     home_panel: Literal["flashpost", "flashbot"] | None = None
     hide_from_rankings: bool | None = None
+    # A one-time pop-up the user closed (e.g. "novidades-2026-11")
+    seen_notice: str | None = Field(default=None, max_length=60, pattern=r"^[a-z0-9-]+$")
 
 
 class UserResponse(BaseModel):
@@ -108,6 +110,7 @@ class UserResponse(BaseModel):
     # Removed from the platform Instagram app: back to the workspace's own Meta apps.
     platform_app_blocked: bool = False
     hide_from_rankings: bool = False
+    seen_notices: list[str] = []
 
 
 class AuthResponse(BaseModel):
