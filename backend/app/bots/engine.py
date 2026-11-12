@@ -1632,6 +1632,13 @@ async def end_subscription(db: AsyncSession, tg: TelegramClient, bot: TgBot, sub
 
 
 RECONCILE_CONCURRENCY = 8
+# After an outage (database or server down), Pix generated before it may have been paid while
+# the webhook could not land and before the normal reconciliation (which only asks about Pix
+# still within their time) could run. Those orders stay "pending" past their time: ask about
+# them too, every few minutes, for up to two days.
+STALE_RECHECK = timedelta(minutes=10)
+STALE_WINDOW = timedelta(hours=48)
+_stale_checked_at: datetime | None = None
 
 
 async def reconcile_pending_orders(db: AsyncSession, limit: int = 60) -> int:
@@ -1642,6 +1649,7 @@ async def reconcile_pending_orders(db: AsyncSession, limit: int = 60) -> int:
     bot tick and the newest ones waited until the old ones expired."""
     import asyncio
 
+    global _stale_checked_at
     now = utcnow()
     orders = list(
         await db.scalars(
@@ -1651,6 +1659,17 @@ async def reconcile_pending_orders(db: AsyncSession, limit: int = 60) -> int:
             .limit(limit)
         )
     )
+    if _stale_checked_at is None or now - _stale_checked_at >= STALE_RECHECK:
+        _stale_checked_at = now
+        orders += list(
+            await db.scalars(
+                select(TgOrder)
+                .where(TgOrder.status == "pending", TgOrder.expires_at <= now - timedelta(minutes=10),
+                       TgOrder.created_at >= now - STALE_WINDOW, TgOrder.gateway_transaction_id.is_not(None))
+                .order_by(TgOrder.created_at.desc())
+                .limit(limit)
+            )
+        )
     await db.commit()  # release the connection while the gateways answer
     gate = asyncio.Semaphore(RECONCILE_CONCURRENCY)
 
