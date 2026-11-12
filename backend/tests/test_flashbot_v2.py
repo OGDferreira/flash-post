@@ -458,6 +458,32 @@ async def test_reconciliation_asks_newest_first_in_parallel_and_approves_paid(cl
 
 
 @pytest.mark.anyio
+async def test_reconciliation_catches_up_pix_left_pending_by_an_outage(client, db_session, owner, apis, monkeypatch) -> None:
+    """A Pix generated before the database went down, paid while it was down: its time is
+    over but it is still pending, so the catch-up asks the gateway and delivers it."""
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(welcome=[]))
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    order.created_at = datetime.now(timezone.utc) - timedelta(hours=7)
+    order.expires_at = datetime.now(timezone.utc) - timedelta(hours=6)
+    order.gateway_transaction_id = order.gateway_transaction_id or "tx-outage"
+    await db_session.commit()
+
+    async def fake_paid(target: TgOrder):
+        return (target.amount, "Fulano", None, None)
+
+    monkeypatch.setattr(engine, "_paid_charge", fake_paid)
+    monkeypatch.setattr(engine, "_stale_checked_at", None)
+    assert await engine.reconcile_pending_orders(db_session) == 1
+    await db_session.refresh(order)
+    assert order.status == "paid"
+    # the catch-up runs every few minutes, not on every tick
+    assert await engine.reconcile_pending_orders(db_session) == 0
+
+
+@pytest.mark.anyio
 async def test_pix_steps_layout_sends_instructions_copy_box_and_buttons(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     flow = _flow(welcome=[])
