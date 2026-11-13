@@ -60,12 +60,14 @@ def configured() -> bool:
 
 
 async def create_checkout_session(
-    *, amount: Decimal, external_id: str, description: str, success_url: str, cancel_url: str
+    *, amount: Decimal, external_id: str, description: str, success_url: str, cancel_url: str,
+    currency: str = "brl",
 ) -> CheckoutSession:
-    """Create a hosted Checkout session for ``amount`` (BRL) and return its id and URL.
+    """Create a hosted Checkout session for ``amount`` in ``currency`` (BRL/USD) and return
+    its id and URL.
 
     ``external_id`` (the order ref) rides on the session and the payment intent metadata so
-    the webhook can match the order. Amount is sent in cents, as Stripe expects.
+    the webhook can match the order. Amount is sent in minor units (cents), as Stripe expects.
     """
     key = _secret_key()
     if key is None:
@@ -81,7 +83,7 @@ async def create_checkout_session(
         "metadata[external_id]": external_id,
         "payment_intent_data[metadata][external_id]": external_id,
         "line_items[0][quantity]": "1",
-        "line_items[0][price_data][currency]": "brl",
+        "line_items[0][price_data][currency]": currency.lower(),
         "line_items[0][price_data][unit_amount]": str(cents),
         "line_items[0][price_data][product_data][name]": (description or "Pedido")[:250],
         "payment_method_types[0]": "card",

@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     stripe_secret_key: SecretStr | None = None
     stripe_webhook_secret: SecretStr | None = None
     stripe_base_url: str = "https://api.stripe.com"
+    # LibreTranslate (self-hosted on the VPS) for the funnels' auto-translation. Empty = off
+    # (the copy goes out untranslated). On the VPS: http://libretranslate:5000.
+    libretranslate_url: str = ""
     vapid_subject: str | None = None
     daily_views_goal_check_minutes: Annotated[int, Field(ge=5, le=240)] = 15
     session_max_age_seconds: Annotated[int, Field(ge=900, le=2592000)] = 2592000
