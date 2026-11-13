@@ -43,7 +43,23 @@ export type Plan = {
   delivery?: Delivery | null;
   bump_mode: "default" | "custom" | "off";
   order_bump?: OrderBump | null;
+  /** Fixed card price in USD (international "fixed" pricing); empty = convert by the rate. */
+  price_usd?: string | null;
 };
+
+/** Per-funnel card/international settings (Stripe). ``enabled`` only takes effect when the
+ *  "Vendas Internacionais" gateway is live. */
+export type International = {
+  enabled: boolean;
+  currencies: "USD"[];
+  pricing: "variable" | "fixed";
+  usd_rate: string;
+  translate: boolean;
+};
+
+export function emptyInternational(): International {
+  return { enabled: false, currencies: [], pricing: "variable", usd_rate: "5.00", translate: false };
+}
 
 export type Offer = {
   text: string;
@@ -110,6 +126,7 @@ export function emptyPreviews(): Previews {
 export type FlowDefinition = {
   version: 1;
   age_gate: { enabled: boolean; text: string; button: string };
+  international?: International;
   welcome: Block[];
   offer: Offer;
   plans: Plan[];

@@ -10,6 +10,7 @@ import {
   ChevronUp,
   CreditCard,
   Eye,
+  Globe,
   Hand,
   PlayCircle,
   Save,
@@ -24,7 +25,7 @@ import { ErrorState, LoadingState } from "@/components/PageState";
 import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 import type { Delivery, DownsellStep, Flow, FlowDefinition, OrderBump } from "./types";
-import { BotsSection, WelcomeSection, type SectionProps } from "./editor/sectionsTop";
+import { BotsSection, InternationalSection, WelcomeSection, type SectionProps } from "./editor/sectionsTop";
 import { FlowSimulator } from "./simulator/FlowSimulator";
 import {
   BumpSection,
@@ -41,6 +42,7 @@ type Section = { id: string; label: string; group: string; icon: ComponentType<{
 // Same order and groups as the SharkBot editor's side navigation.
 const sections: Section[] = [
   { id: "bots", label: "Bots", group: "Estrutura", icon: BotIcon, component: BotsSection },
+  { id: "international", label: "Vendas Internacionais", group: "Estrutura", icon: Globe, component: InternationalSection },
   { id: "welcome", label: "Boas-vindas", group: "Estrutura", icon: Hand, component: WelcomeSection },
   { id: "plans", label: "Planos", group: "Estrutura", icon: Tags, component: PlansSection },
   { id: "upsell", label: "Upsell", group: "Conversão", icon: TrendingUp, component: UpsellSection },
@@ -119,7 +121,9 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   const [savedJson, setSavedJson] = useState("");
   const [current, setCurrent] = useState(0);
   const [picker, setPicker] = useState(false);
-  const [testing, setTesting] = useState(false);
+  // The live preview is docked on the right while editing on desktop; on phones it opens
+  // full-screen, so it stays closed there until the user taps "Testar funil".
+  const [testing, setTesting] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches);
   const [bottomPicker, setBottomPicker] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const top = useRef<HTMLDivElement>(null);
