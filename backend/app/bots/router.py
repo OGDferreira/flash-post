@@ -328,6 +328,11 @@ async def connect_bot(payload: BotCreate, access: OwnerAccess, db: DbSession) ->
         await tg.set_webhook(_telegram_webhook_url(bot), bot.webhook_secret)
     except TelegramError as exc:
         bot.status, bot.last_error = "error", str(exc)[:500]
+    from app.partners import service as partner_service
+
+    await partner_service.notify_admins_partner_activity(
+        db, access.membership.user_id, f"cadastrou o bot @{bot.username}", "/bot/robos"
+    )
     await db.commit()
     return _bot_out(bot)
 
@@ -709,6 +714,12 @@ async def create_flow(payload: FlowCreate, access: OwnerAccess, db: DbSession) -
     definition = _validate_definition(payload.definition) if payload.definition else default_flow()
     flow = TgFlow(workspace_id=access.workspace.id, name=payload.name.strip(), definition=definition.model_dump(mode="json"))
     db.add(flow)
+    await db.flush()
+    from app.partners import service as partner_service
+
+    await partner_service.notify_admins_partner_activity(
+        db, access.membership.user_id, f'criou o funil "{flow.name}"', "/bot/funis"
+    )
     await db.commit()
     return _flow_out(flow)
 
