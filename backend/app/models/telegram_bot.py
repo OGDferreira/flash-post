@@ -182,6 +182,8 @@ class TgLead(Base):
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(255))
     username: Mapped[str | None] = mapped_column(String(64))
+    # Telegram UI language of the lead (e.g. "en", "es"); drives per-funnel auto-translation.
+    language_code: Mapped[str | None] = mapped_column(String(16))
     # Payload of /start (tracking code per Instagram account or campaign).
     source: Mapped[str | None] = mapped_column(String(64))
     age_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bots import atenaspay, smokepay, stripe_gateway
 from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, UpsellStep
 from app.bots.richtext import sanitize
-from app.bots.telegram import InputFile, TelegramClient, TelegramError
+from app.bots.telegram import InputFile, TelegramClient, TelegramError, translate_target
 from app.partners.service import billing_route
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value
@@ -106,6 +106,15 @@ def button(text: str, style: str = "default", **action: object) -> dict:
 
 def telegram(bot: TgBot) -> TelegramClient:
     return TelegramClient(decrypt_value(bot.encrypted_token))
+
+
+def _set_translate_target(flow: "FlowDefinition | None", lead: TgLead) -> None:
+    """Point outgoing copy at the lead's language for the rest of this update, when the funnel's
+    auto-translation is on. No-op (copy stays as written) otherwise."""
+    from app.bots import translate
+
+    target = translate.lang_of(lead.language_code) if flow and flow.international.translate else None
+    translate_target.set(target)
 
 
 async def load_flow(db: AsyncSession, bot: TgBot, lead: TgLead | None = None) -> FlowDefinition | None:
@@ -753,6 +762,7 @@ async def upsert_lead(db: AsyncSession, bot: TgBot, user: dict, chat_id: int) ->
         lead.seller_hidden = await owner_takes_all(db, flow, bot.workspace_id) is not None
     lead.first_name = (user.get("first_name") or "")[:255] or None
     lead.username = (user.get("username") or "")[:64] or None
+    lead.language_code = (user.get("language_code") or "")[:16] or None
     lead.chat_id = chat_id
     lead.blocked_bot = False
     lead.last_seen_at = utcnow()
@@ -786,6 +796,7 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
         flow = await load_flow(db, bot, lead)  # folder bots: the funnel drawn for this lead
         if flow is None:
             return None
+        _set_translate_target(flow, lead)
         if flow.age_gate.enabled and lead.age_confirmed_at is None:
             await telegram(bot).send_message(
                 lead.chat_id,
@@ -814,6 +825,7 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UU
     if flow is None:
         await tg.answer_callback(query["id"])
         return None
+    _set_translate_target(flow, lead)
     if data == "age:ok":
         await tg.answer_callback(query["id"])
         if lead.age_confirmed_at is None:

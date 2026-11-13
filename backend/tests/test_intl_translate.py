@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 
 import httpx
@@ -6,6 +7,7 @@ from pydantic import SecretStr, ValidationError
 
 from app.bots import http, translate
 from app.bots.flow_schema import FlowDefinition, International
+from app.bots.telegram import TelegramClient, translate_target
 from app.core.config import get_settings
 
 
@@ -68,3 +70,48 @@ async def test_translate_falls_back_on_error(monkeypatch) -> None:
         assert await translate.translate("Oi", "en") == "Oi"
     finally:
         http.set_transport(None)
+
+
+@pytest.mark.anyio
+async def test_send_message_translates_copy_but_never_codes(monkeypatch) -> None:
+    monkeypatch.setattr(get_settings(), "libretranslate_url", "http://libretranslate:5000")
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/translate":
+            return httpx.Response(200, json={"translatedText": "Hello"})
+        sent.append(json.loads(request.content))  # a Telegram sendMessage call
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    http.set_transport(httpx.MockTransport(handler))
+    token = translate_target.set("en")
+    try:
+        tg = TelegramClient("TESTTOKEN")
+        await tg.send_message(123, "Oi, tudo bem?")
+        await tg.send_message(123, 'Pague: <code>PIX-COPIA-COLA-123</code>')
+        await tg.send_message(123, "Abra: https://checkout.stripe.com/pay/cs_123")
+    finally:
+        translate_target.reset(token)
+        http.set_transport(None)
+
+    assert sent[0]["text"] == "Hello"  # plain copy is translated
+    assert sent[1]["text"] == "Pague: <code>PIX-COPIA-COLA-123</code>"  # a Pix code is never translated
+    assert sent[2]["text"] == "Abra: https://checkout.stripe.com/pay/cs_123"  # a payment link is never translated
+
+
+@pytest.mark.anyio
+async def test_no_target_leaves_copy_untouched(monkeypatch) -> None:
+    monkeypatch.setattr(get_settings(), "libretranslate_url", "http://libretranslate:5000")
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path != "/translate", "must not call the translator with no target set"
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    http.set_transport(httpx.MockTransport(handler))
+    try:
+        await TelegramClient("TESTTOKEN").send_message(123, "Oi, tudo bem?")
+    finally:
+        http.set_transport(None)
+    assert sent[0]["text"] == "Oi, tudo bem?"

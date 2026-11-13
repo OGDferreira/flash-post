@@ -8,6 +8,7 @@ transient failure (429/5xx, retried here with Telegram's ``retry_after``).
 import asyncio
 import json
 import logging
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,6 +20,23 @@ logger = logging.getLogger(__name__)
 API_BASE = "https://api.telegram.org"
 MAX_ATTEMPTS = 3
 _background: set[asyncio.Task] = set()  # keeps fire-and-forget calls alive until they finish
+
+# Target language for outgoing copy while handling one lead's update (set per task by the
+# engine when the funnel's auto-translation is on). None = send the owner's copy as written.
+translate_target: ContextVar[str | None] = ContextVar("translate_target", default=None)
+
+
+async def _translate_out(text: str | None) -> str | None:
+    """Translate outgoing copy to the lead's language, if one is set for this task. A message that
+    carries a Pix code or a payment link is never touched — translating it could corrupt the code."""
+    target = translate_target.get()
+    if not text or not target:
+        return text
+    if "<code" in text or "<pre" in text or "http://" in text or "https://" in text:
+        return text
+    from app.bots import translate
+
+    return await translate.translate(text, target)
 
 
 @dataclass
@@ -102,6 +120,7 @@ class TelegramClient:
 
     # --- messages ---
     async def send_message(self, chat_id: int, text: str, reply_markup: dict | None = None, protect: bool = False) -> dict:
+        text = await _translate_out(text) or text
         return await self.call(
             "sendMessage",
             {
@@ -126,6 +145,7 @@ class TelegramClient:
         protect: bool = False,
         silent: bool = False,
     ) -> dict:
+        caption = await _translate_out(caption)
         params: dict[str, Any] = {
             "chat_id": chat_id,
             "disable_notification": silent or None,
