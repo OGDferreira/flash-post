@@ -117,6 +117,30 @@ def _set_translate_target(flow: "FlowDefinition | None", lead: TgLead) -> None:
     translate_target.set(target)
 
 
+# A tiny in-process cache of funnel definitions, keyed by flow id. The hot /start path would
+# otherwise re-read the same TgFlow row on every update, and the database can be a continent
+# away (one round-trip ~100ms). We cache the raw definition dict (not the parsed model) and
+# re-validate per call, so no mutable model is ever shared between leads. ``save_flow`` evicts
+# on edit; the short TTL is a backstop for any other write path and for multi-process deploys.
+_FLOW_DEF_CACHE: dict[uuid.UUID, tuple[float, dict]] = {}
+_FLOW_DEF_TTL = 20.0
+
+
+def invalidate_flow(flow_id: uuid.UUID) -> None:
+    _FLOW_DEF_CACHE.pop(flow_id, None)
+
+
+async def _flow_definition(db: AsyncSession, flow_id: uuid.UUID) -> dict | None:
+    hit = _FLOW_DEF_CACHE.get(flow_id)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+    flow = await db.get(TgFlow, flow_id)
+    if flow is None:
+        return None
+    _FLOW_DEF_CACHE[flow_id] = (time.monotonic() + _FLOW_DEF_TTL, flow.definition)
+    return flow.definition
+
+
 async def load_flow(db: AsyncSession, bot: TgBot, lead: TgLead | None = None) -> FlowDefinition | None:
     """The funnel this interaction runs. For a folder bot it is the lead's own drawn funnel; for a
     single-funnel bot it is the bot's funnel (``lead`` ignored)."""
@@ -125,8 +149,8 @@ async def load_flow(db: AsyncSession, bot: TgBot, lead: TgLead | None = None) ->
     flow_id = flow_id_for(bot, lead) if bot.folder_id is not None else bot.flow_id
     if flow_id is None:
         return None
-    flow = await db.get(TgFlow, flow_id)
-    return FlowDefinition.model_validate(flow.definition) if flow else None
+    definition = await _flow_definition(db, flow_id)
+    return FlowDefinition.model_validate(definition) if definition is not None else None
 
 
 # ---------------------------------------------------------------- media

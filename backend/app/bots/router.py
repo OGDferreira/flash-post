@@ -764,6 +764,7 @@ async def save_flow(flow_id: uuid.UUID, payload: FlowUpdate, access: OwnerAccess
         for bot in await db.scalars(select(TgBot).where(TgBot.flow_id == flow.id, TgBot.cache_chat_id.is_not(None))):
             await _schedule_cache_warm(db, bot)
     await db.commit()
+    engine.invalidate_flow(flow.id)  # the hot path caches definitions in-process; show edits at once
     await db.refresh(flow)  # updated_at is set by the database (onupdate)
     return _flow_out(flow)
 
