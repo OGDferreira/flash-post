@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     atenaspay_api_key: SecretStr | None = None
     atenaspay_webhook_secret: SecretStr | None = None
     atenaspay_base_url: str = "https://atenaspay.com.br"
+    # Stripe (card / international checkout): the platform's secret key and the webhook signing
+    # secret. The buyer pays on a hosted Stripe Checkout link; money lands in the platform account
+    # and each seller's share is tracked in the order like any other gateway.
+    stripe_secret_key: SecretStr | None = None
+    stripe_webhook_secret: SecretStr | None = None
+    stripe_base_url: str = "https://api.stripe.com"
     vapid_subject: str | None = None
     daily_views_goal_check_minutes: Annotated[int, Field(ge=5, le=240)] = 15
     session_max_age_seconds: Annotated[int, Field(ge=900, le=2592000)] = 2592000
@@ -76,6 +82,8 @@ class Settings(BaseSettings):
         "snakepay_cashout_secret",
         "atenaspay_api_key",
         "atenaspay_webhook_secret",
+        "stripe_secret_key",
+        "stripe_webhook_secret",
         mode="before",
     )
     @classmethod

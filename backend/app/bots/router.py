@@ -19,7 +19,7 @@ from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
-from app.bots import atenaspay, engine, portable, smokepay
+from app.bots import atenaspay, engine, portable, smokepay, stripe_gateway
 from app.bots.flow_schema import FlowDefinition, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
@@ -1198,4 +1198,41 @@ async def smokepay_webhook(request: Request, db: DbSession) -> dict:
     except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(status_code=500, detail="Retry.") from None  # 5xx: SmokePay retries
+    return {"ok": True}
+
+
+@router.post("/pay/stripe", include_in_schema=False)
+async def stripe_webhook(request: Request, db: DbSession) -> dict:
+    raw = await request.body()
+    if not stripe_gateway.verify_signature(raw, request.headers.get("stripe-signature")):
+        raise HTTPException(status_code=401, detail="Invalid signature.")  # 4xx stops retries
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return {"ok": True}
+    if not isinstance(event, dict):
+        return {"ok": True}
+    if event.get("type") not in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+        return {"ok": True}
+    stripe_session = (event.get("data") or {}).get("object") or {}
+    if stripe_session.get("payment_status") not in ("paid", "no_payment_required"):
+        return {"ok": True}  # e.g. an unpaid expired session
+    metadata = stripe_session.get("metadata") or {}
+    external_id = str(metadata.get("external_id") or stripe_session.get("client_reference_id") or "")
+    if not external_id.startswith(engine.ORDER_PREFIX):
+        return {"ok": True}
+    try:
+        order_id = uuid.UUID(external_id[len(engine.ORDER_PREFIX):])
+    except ValueError:
+        return {"ok": True}
+    order = await db.scalar(select(TgOrder).where(TgOrder.id == order_id, TgOrder.gateway == "stripe"))
+    if order is None:
+        return {"ok": True}  # charged by another gateway (failover) or unknown: only Stripe pays it
+    amount_total = stripe_session.get("amount_total")
+    amount = Decimal(str(amount_total)) / Decimal(100) if amount_total is not None else order.amount
+    try:
+        await engine.approve_order(db, order.id, amount)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Retry.") from None  # 5xx: Stripe retries
     return {"ok": True}

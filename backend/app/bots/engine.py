@@ -1067,6 +1067,8 @@ async def create_order(
     else:
         qr = None
     lead.stage = "pix"
+    if order.gateway == "stripe":
+        return await _send_stripe_checkout(db, tg, bot, lead, flow, order)
     caption = render(flow.payment.pix_text, lead, order.offer_name, order.amount, bot)
     code = order.pix_copy_paste or ""
     keyboard = {
@@ -1116,6 +1118,22 @@ async def create_order(
         logger.info("pix steps: %s", " ".join(f"{k}={v * 1000:.0f}ms" for k, v in timings.items()))
 
 
+async def _send_stripe_checkout(
+    db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, order: TgOrder
+) -> TgOrder:
+    """Card sale: send the Stripe Checkout link as a button (no Pix code/QR)."""
+    url = order.pix_copy_paste or ""
+    caption = render(flow.payment.pix_text, lead, order.offer_name, order.amount, bot)
+    rows = [
+        [button("💳 Pagar com cartão", url=url)],
+        [{"text": flow.payment.check_button, "callback_data": f"chk:{order.id}"}],
+    ]
+    if flow.support_username:
+        rows.append([button("💬 Suporte", url=f"https://t.me/{flow.support_username}")])
+    await tg.send_message(lead.chat_id, caption or "Pague com cartão no botão abaixo 👇", {"inline_keyboard": rows})
+    return order
+
+
 async def _charge(
     db: AsyncSession, bot: TgBot, order: TgOrder, route, amount: Decimal, description: str, expiration_minutes: int,
 ) -> str | None:
@@ -1141,6 +1159,10 @@ async def _charge(
             continue
         if name == "atenaspay":
             if await _charge_with_atenaspay(db, bot, order, route, amount, description, expiration_minutes):
+                return None
+            continue
+        if name == "stripe":
+            if await _charge_with_stripe(db, bot, order, amount, description, flow):
                 return None
             continue
         try:
@@ -1208,6 +1230,49 @@ async def _charge_with_atenaspay(
         elif order.platform_fee is not None and charge.net_amount is not None:
             order.partner_net = charge.net_amount - order.platform_fee
     order.pix_copy_paste = charge.copy_paste
+    return True
+
+
+def stripe_webhook_url() -> str:
+    return f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/stripe"
+
+
+def _stripe_return_url(bot: TgBot) -> str:
+    """Where Stripe sends the buyer after paying/cancelling: back into the bot chat."""
+    if bot.username:
+        return f"https://t.me/{bot.username}"
+    return get_settings().public_base_url.rstrip("/") + "/"
+
+
+async def _charge_with_stripe(
+    db: AsyncSession, bot: TgBot, order: TgOrder, amount: Decimal, description: str, flow: TgFlow | None
+) -> bool:
+    from app.bots import gateways, stripe_gateway
+
+    if not await gateways.stripe_available(db):
+        return False
+    return_url = _stripe_return_url(bot)
+    try:
+        session = await stripe_gateway.create_checkout_session(
+            amount=amount,
+            external_id=f"{ORDER_PREFIX}{order.id}",
+            description=description,
+            success_url=return_url,
+            cancel_url=return_url,
+        )
+    except stripe_gateway.StripeError as exc:
+        logger.warning("Stripe charge failed (%s) for order %s; trying the next gateway, if any.", exc, order.id)
+        bot.last_error = f"Stripe: {exc}"[:500]
+        order.gateway_attempts = [*(order.gateway_attempts or []), "stripe"]
+        return False
+    order.gateway = "stripe"
+    order.gateway_transaction_id = session.session_id[:64]
+    # No Stripe Connect split here: the platform account collects and each seller's share is
+    # settled in-app. The Stripe fee is unknown until the balance transaction, so the sale is
+    # recorded at face value and the commission runs on it (approve_order).
+    order.net_amount = amount
+    # Reuse pix_copy_paste to carry the Checkout URL to the bot (Stripe has no Pix code).
+    order.pix_copy_paste = session.url
     return True
 
 
