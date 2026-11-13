@@ -12,7 +12,7 @@ from app.bots import stripe_gateway
 from app.core.config import get_settings
 from app.models import TgOrder
 from tests.test_partners import _as
-from tests.test_telegram_bots import _send, _setup, _start, _tap, apis
+from tests.test_telegram_bots import _flow, _send, _setup, _start, _tap, apis
 
 
 def _stripe_headers(raw: bytes, secret: str = "stripe_webhook_test") -> dict:
@@ -62,25 +62,31 @@ async def test_stripe_charge_link_webhook_and_admin_release(
     assert released.status_code == 200, released.text
 
     headers = await _as(client, "owner@example.com", "correct horse battery staple")
-    bot, _ = await _setup(client, headers)
-    # The seller puts Stripe (card) as the principal gateway for the operation.
-    priority = await client.put(
-        "/api/payment-gateways/priority", headers=headers,
-        json={"items": [
-            {"gateway": "stripe", "enabled": True, "flow_ids": None},
-            {"gateway": "smokepay", "enabled": True, "flow_ids": None},
-        ]},
+    # The funnel sells abroad on the card: USD by converting the BRL price (R$19.90 / 5 = US$3.98).
+    bot, _ = await _setup(
+        client, headers,
+        _flow(international={"enabled": True, "currencies": ["USD"], "pricing": "variable", "usd_rate": "5.00"}),
     )
-    assert priority.status_code == 200, priority.text
 
     await _send(client, db_session, bot["id"], _start())
+    # Tapping the plan on an international funnel offers Pix vs Cartão — no charge yet.
     await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    assert apis.methods("stripe.checkout") == []
+    choice = [b for m, b in apis.calls if m == "sendMessage"][-1]
+    assert any(
+        btn.get("callback_data") == "pm:card:plan:vip"
+        for row in choice.get("reply_markup", {}).get("inline_keyboard", []) for btn in row
+    )
 
+    # The lead picks Cartão: now the Stripe Checkout is created in USD.
+    await _send(client, db_session, bot["id"], _tap("pm:card:plan:vip"))
     checkout = apis.methods("stripe.checkout")[-1]
-    assert checkout["line_items[0][price_data][unit_amount]"] == "1990"
-    order = await db_session.scalar(select(TgOrder))
+    assert checkout["line_items[0][price_data][unit_amount]"] == "398"
+    assert checkout["line_items[0][price_data][currency]"] == "usd"
+    order = await db_session.scalar(select(TgOrder).where(TgOrder.gateway == "stripe"))
     assert order is not None
     assert order.gateway == "stripe"
+    assert order.amount == Decimal("19.90")  # the books stay in BRL
     assert order.gateway_transaction_id == f"cs_tgo_{order.id}"
     assert order.pix_copy_paste == f"https://checkout.stripe.com/pay/cs_tgo_{order.id}"
     # The bot sent the card link (no Pix code).

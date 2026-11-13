@@ -16,12 +16,12 @@ import secrets
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bots import atenaspay, smokepay
+from app.bots import atenaspay, smokepay, stripe_gateway
 from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, UpsellStep
 from app.bots.richtext import sanitize
 from app.bots.telegram import InputFile, TelegramClient, TelegramError
@@ -859,15 +859,38 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UU
         await tg.answer_callback(query["id"])
         await schedule_upsell(db, bot, lead, flow, index + 1, parts[2])
         return lead.id
+    if data.startswith("pm:"):
+        # Second step of an international offer: the lead picked Pix or Cartão.
+        parts = data.split(":", 2)
+        resolved = resolve_offer(flow, parts[2]) if len(parts) == 3 else "Esta oferta não está mais disponível."
+        if isinstance(resolved, str):
+            await tg.answer_callback(query["id"], resolved)
+            return None
+        plan, options = resolved
+        method = "card" if parts[1] == "card" else "pix"
+        await tg.answer_callback(query["id"], "Gerando o pagamento no cartão…" if method == "card" else "Gerando seu Pix…")
+        await create_order(db, tg, bot, lead, flow, plan, method=method, **options)
+        return lead.id
     if data.startswith(("plan:", "bump:", "dplan:", "nplan:", "up:")):
         resolved = resolve_offer(flow, data)
         if isinstance(resolved, str):
             await tg.answer_callback(query["id"], resolved)
             return None
+        plan, options = resolved
+        # International funnel: offer Pix vs Cartão on the main plan/bump offer before charging.
+        if flow.international.enabled and data.startswith(("plan:", "bump:")):
+            from app.bots import gateways
+
+            bump = options.get("bump")
+            amount_brl = plan.price + (bump.price if bump else Decimal("0"))
+            usd = international_usd(flow, plan, bump, amount_brl)
+            if usd is not None and await gateways.stripe_available(db):
+                await tg.answer_callback(query["id"])
+                await _send_method_choice(tg, lead, amount_brl, usd, data)
+                return lead.id
         # Telegram already got its 200 (updates run in the background), so the charge
         # is created right here: no queue round trip before the PIX goes out.
         await tg.answer_callback(query["id"], "Gerando seu Pix…")
-        plan, options = resolved
         started = time.perf_counter()
         await create_order(db, tg, bot, lead, flow, plan, **options)
         logger.info("pix sent in %d ms", (time.perf_counter() - started) * 1000)
@@ -989,10 +1012,29 @@ def order_parts(order: TgOrder) -> tuple[Plan, OrderBump | None, dict]:
     return Plan.model_validate(snapshot), None, {"kind": order.kind}
 
 
+def international_usd(flow: FlowDefinition, plan: Plan, bump: OrderBump | None, amount_brl: Decimal) -> Decimal | None:
+    """USD amount to bill on the card for this offer, or None when the funnel can't sell it abroad.
+
+    ``fixed``: the plan's own USD price (a bump is converted by the rate). ``variable``: the whole
+    BRL amount converted by the rate. The order's BRL amount stays the accounting figure either way.
+    """
+    intl = flow.international
+    if not intl.enabled or "USD" not in intl.currencies:
+        return None
+    if intl.pricing == "fixed":
+        if plan.price_usd is None:
+            return None
+        usd = plan.price_usd + (bump.price / intl.usd_rate if bump else Decimal("0"))
+    else:
+        usd = amount_brl / intl.usd_rate
+    usd = usd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return usd if usd > 0 else None
+
+
 async def create_order(
     db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, plan: Plan,
     *, bump: OrderBump | None = None, kind: str = "plan", offer_id: str | None = None,
-    step: int | None = None, chain: str | None = None, retry: str | None = None,
+    step: int | None = None, chain: str | None = None, retry: str | None = None, method: str = "pix",
 ) -> TgOrder | None:
     from app.bots.folders import flow_id_for
 
@@ -1007,6 +1049,8 @@ async def create_order(
             TgOrder.status == "pending", TgOrder.expires_at > now,
         ).order_by(TgOrder.created_at.desc())
     )
+    if order is not None and (method == "card") != (order.gateway == "stripe"):
+        order = None  # the lead switched between Pix and Cartão: generate the chosen method fresh
     first_pix = order is None and not await db.scalar(select(TgOrder.id).where(TgOrder.lead_id == lead.id).limit(1))
     timings: dict[str, float] = {}
     mark = time.perf_counter()
@@ -1042,13 +1086,25 @@ async def create_order(
         order.seller_hidden = route.owner_all
         timings["prepare"] = time.perf_counter() - mark
         mark = time.perf_counter()
+        # Card sale (lead chose "Cartão"): bill the card in USD; the BRL amount stays the books.
+        card_usd = international_usd(flow, plan, bump, amount) if method == "card" else None
+        if method == "card" and card_usd is None:
+            method = "pix"  # funnel can't price this offer abroad: fall back to Pix
         try:
-            qr = await _charge(db, bot, order, route, amount, f"{bot.name} · {name}", flow.payment.expiration_minutes)
-        except (smokepay.SmokepayError, atenaspay.AtenaspayError) as exc:
+            qr = await _charge(
+                db, bot, order, route, amount, f"{bot.name} · {name}", flow.payment.expiration_minutes,
+                method=method, card_usd=card_usd,
+            )
+        except (smokepay.SmokepayError, atenaspay.AtenaspayError, stripe_gateway.StripeError) as exc:
             order.status = "failed"
             bot.last_error = f"Gateway: {exc}"[:500]
             await db.commit()
-            await tg.send_message(lead.chat_id, "Não consegui gerar o Pix agora. Tente de novo em alguns instantes.")
+            fail_text = (
+                "Não consegui gerar o pagamento no cartão agora. Tente de novo em alguns instantes."
+                if method == "card"
+                else "Não consegui gerar o Pix agora. Tente de novo em alguns instantes."
+            )
+            await tg.send_message(lead.chat_id, fail_text)
             if not route.owner_all:  # the seller never hears about the owner's 100% funnel
                 await notify_owners(db, bot, "⚠️ Falha ao gerar Pix", f"@{bot.username}: {str(exc)[:120]}", "bot-gateway")
             return None
@@ -1134,11 +1190,28 @@ async def _send_stripe_checkout(
     return order
 
 
+async def _send_method_choice(
+    tg: TelegramClient, lead: TgLead, amount_brl: Decimal, usd: Decimal, data: str
+) -> None:
+    """Ask the lead to pay in BRL via Pix or on the card in USD. ``data`` is the original offer
+    callback, carried through so the chosen method re-resolves the same plan and bump."""
+    rows = [
+        [button(f"🇧🇷 Pix · {brl(amount_brl)}", "primary", callback_data=f"pm:pix:{data}")],
+        [button(f"💳 Cartão · US$ {usd:.2f}", "success", callback_data=f"pm:card:{data}")],
+    ]
+    await tg.send_message(lead.chat_id, "Como você prefere pagar?", {"inline_keyboard": rows})
+
+
 async def _charge(
     db: AsyncSession, bot: TgBot, order: TgOrder, route, amount: Decimal, description: str, expiration_minutes: int,
+    *, method: str = "pix", card_usd: Decimal | None = None,
 ) -> str | None:
     """Create the Pix with the operation's gateways in order (principal, then backups; see
     ``gateways.gateway_order``). Returns SmokePay's QR image, if any.
+
+    When ``method == "card"`` the lead chose the international card option: the charge goes to
+    Stripe in ``card_usd`` (USD) and there is no Pix fallback — card is a deliberate choice, so a
+    Stripe failure raises instead of silently sending a Pix. The Pix path skips Stripe entirely.
 
     Failover is safe: a gateway that refused or failed shows nothing to the lead, so only the
     Pix of the gateway that answered can be paid; webhooks of any other attempt match no
@@ -1150,6 +1223,10 @@ async def _charge(
 
     workspace = await db.get(Workspace, bot.workspace_id)
     flow = await db.get(TgFlow, order.flow_id) if order.flow_id else None
+    if method == "card":
+        if await _charge_with_stripe(db, bot, order, amount, description, flow, charge_amount=card_usd, currency="usd"):
+            return None
+        raise stripe_gateway.StripeError("Não foi possível gerar o pagamento no cartão.")
     order_gateways = await gateways.gateway_order(db, workspace, flow) if workspace else ["smokepay"]
     error: RuntimeError | None = None
     for name in order_gateways:
@@ -1162,9 +1239,7 @@ async def _charge(
                 return None
             continue
         if name == "stripe":
-            if await _charge_with_stripe(db, bot, order, amount, description, flow):
-                return None
-            continue
+            continue  # Stripe is the card option (chosen explicitly), never a silent Pix fallback
         try:
             net_estimate = await gateways.estimated_net(db, "smokepay", amount)
             return await _charge_with_smokepay(order, route, amount, description, expiration_minutes, net_estimate)
@@ -1245,8 +1320,11 @@ def _stripe_return_url(bot: TgBot) -> str:
 
 
 async def _charge_with_stripe(
-    db: AsyncSession, bot: TgBot, order: TgOrder, amount: Decimal, description: str, flow: TgFlow | None
+    db: AsyncSession, bot: TgBot, order: TgOrder, amount: Decimal, description: str, flow: TgFlow | None,
+    *, charge_amount: Decimal | None = None, currency: str = "brl",
 ) -> bool:
+    """Card checkout. ``amount`` is always the BRL figure kept on the order (the books run on it);
+    ``charge_amount``/``currency`` is what the card is actually billed (USD for international sales)."""
     from app.bots import gateways, stripe_gateway
 
     if not await gateways.stripe_available(db):
@@ -1254,7 +1332,8 @@ async def _charge_with_stripe(
     return_url = _stripe_return_url(bot)
     try:
         session = await stripe_gateway.create_checkout_session(
-            amount=amount,
+            amount=charge_amount if charge_amount is not None else amount,
+            currency=currency,
             external_id=f"{ORDER_PREFIX}{order.id}",
             description=description,
             success_url=return_url,
