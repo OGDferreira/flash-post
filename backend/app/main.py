@@ -291,9 +291,20 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
         resolved_frontend_dir = frontend_dir.resolve()
 
         @application.get("/{asset_path:path}", include_in_schema=False)
-        async def frontend_fallback(asset_path: str, request: Request) -> FileResponse:
+        async def frontend_fallback(asset_path: str, request: Request) -> Response:
             if asset_path == "api" or asset_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="Not found.")
+            # App icon via ?icon=dark|purple: the shell must carry the apple-touch-icon in the
+            # static markup — iOS reads it at parse time for "Adicionar à Tela de Início" and
+            # ignores the one JavaScript swaps in. Inject it server-side so the chosen icon sticks.
+            icon = request.query_params.get("icon")
+            if icon in {"dark", "purple"} and asset_path in {"", "index.html"}:
+                html = (
+                    index_file.read_text(encoding="utf-8")
+                    .replace('href="/brand/apple-touch-icon.png"', f'href="/brand/flash-icon-{icon}-180.png"')
+                    .replace('href="/manifest.webmanifest"', f'href="/manifest-{icon}.webmanifest"')
+                )
+                return Response(content=html, media_type="text/html", headers={"Cache-Control": "no-cache"})
             candidate = (frontend_dir / asset_path).resolve()
             if not candidate.is_relative_to(resolved_frontend_dir):
                 raise HTTPException(status_code=404, detail="Not found.")
