@@ -35,6 +35,7 @@ from app.models.app_notification import AppNotification
 from app.models.shark_account import SharkAccount
 from app.models.extension import Extension
 from app.models.support import SupportTicket
+from app.models.global_chat import GlobalChatMessage
 from app.models.daily_views import InstagramAccountDailyViews
 from app.models.sharkbot import SharkLead, SharkTransaction
 from app.models.media_insight import InstagramMediaInsight
@@ -101,6 +102,7 @@ __all__ = [
     "EmailAccount",
     "FinancialExpense",
     "FinancialWithdrawal",
+    "GlobalChatMessage",
     "InstagramAccount",
     "InstagramAppCredential",
     "InstagramLoop",

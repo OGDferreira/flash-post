@@ -34,6 +34,7 @@ from app.collaborators.invites import router as collaborator_invites_router
 from app.collaborators.router import router as collaborators_router
 from app.emails.router import router as emails_router
 from app.finance.router import router as finance_router
+from app.global_chat.router import router as global_chat_router
 from app.legal import router as legal_router
 from app.models import DiagnosticsEvent
 from app.instagram.router import router as instagram_router
@@ -190,6 +191,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(partner_wallets_router)
     application.include_router(extensions_router)
     application.include_router(support_router)
+    application.include_router(global_chat_router)
     application.include_router(ranking_router)
     application.include_router(flash_funnel_router)
     application.include_router(links_router)

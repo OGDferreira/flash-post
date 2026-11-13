@@ -17,6 +17,8 @@ _GOALS_ADVISORY_LOCK_KEY = 731904282
 _INSIGHTS_ADVISORY_LOCK_KEY = 731904283
 _BOTS_ADVISORY_LOCK_KEY = 731904284
 _SHARED_LOOPS_ADVISORY_LOCK_KEY = 731904285
+_CHAT_CLEANUP_ADVISORY_LOCK_KEY = 731904286
+CHAT_CLEANUP_MINUTES = 30
 SHARED_LOOPS_SYNC_MINUTES = 10
 _BOT_JOBS_INTERVAL_SECONDS = 5
 _BOT_RECONCILE_EVERY_TICKS = 2  # about every 10 seconds
@@ -226,6 +228,36 @@ async def _run_tick_with_database_lock() -> None:
         )
 
 
+async def _run_chat_cleanup_with_database_lock() -> None:
+    from app.global_chat.router import purge_expired_messages
+
+    engine = get_engine()
+    try:
+        if engine.dialect.name != "postgresql":
+            async with get_session_factory()() as db:
+                await purge_expired_messages(db)
+            return
+        async with engine.connect() as connection:
+            acquired = await connection.scalar(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                {"lock_key": _CHAT_CLEANUP_ADVISORY_LOCK_KEY},
+            )
+            if not acquired:
+                return
+            try:
+                async with get_session_factory()() as db:
+                    removed = await purge_expired_messages(db)
+                if removed:
+                    logger.info("Global chat cleanup removed %s expired messages.", removed)
+            finally:
+                await connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": _CHAT_CLEANUP_ADVISORY_LOCK_KEY},
+                )
+    except Exception as exc:
+        logger.error("Global chat cleanup failed (%s); it will retry.", type(exc).__name__)
+
+
 def create_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(
@@ -273,6 +305,16 @@ def create_scheduler() -> AsyncIOScheduler:
         trigger="interval",
         minutes=SHARED_LOOPS_SYNC_MINUTES,
         id="flashpost-shared-loops",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=300,
+    )
+    scheduler.add_job(
+        _run_chat_cleanup_with_database_lock,
+        trigger="interval",
+        minutes=CHAT_CLEANUP_MINUTES,
+        id="flashpost-global-chat-cleanup",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
