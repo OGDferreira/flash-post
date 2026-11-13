@@ -63,7 +63,7 @@ export const PARTNER_FEATURE_BY_ROUTE: Record<string, ["post" | "bot", string]> 
   "/bot/gateways": ["bot", "bots"],
 };
 // Essential account pages a sócio can always reach.
-const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/feature/links", "/feature/chat"]);
+const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/novidades", "/feature/links", "/feature/chat"]);
 
 function matchBase(path: string): string | null {
   const keys = [...Object.keys(PARTNER_FEATURE_BY_ROUTE), ...PARTNER_ALWAYS_ALLOWED];
@@ -186,6 +186,7 @@ const partnerPostRoutes = new Set([
   "/feature/links",
   "/configuracoes",
   "/avisos",
+  "/novidades",
   "/feature/support",
   "/feature/contacts",
   "/feature/chat",
@@ -204,6 +205,7 @@ const collaboratorRoutes = new Set([
   "/feature/links",
   "/configuracoes",
   "/avisos",
+  "/novidades",
 ]);
 
 // ------------------------------------------------------------------ Flash

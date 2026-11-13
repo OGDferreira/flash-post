@@ -40,6 +40,7 @@ const IntegrationsPage = lazyPage(() => import("@/pages/IntegrationsPage"), "Int
 const ProfilePage = lazyPage(() => import("@/pages/ProfilePage"), "ProfilePage");
 const SettingsPage = lazyPage(() => import("@/pages/SettingsPage"), "SettingsPage");
 const NoticesPage = lazyPage(() => import("@/pages/NoticesPage"), "NoticesPage");
+const NovidadesPage = lazyPage(() => import("@/pages/NovidadesPage"), "NovidadesPage");
 const ProfileFoldersPage = lazyPage(() => import("@/pages/ProfileFoldersPage"), "ProfileFoldersPage");
 const MetaAppsPage = lazyPage(() => import("@/pages/MetaAppsPage"), "MetaAppsPage");
 const CollaboratorsPage = lazyPage(() => import("@/pages/CollaboratorsPage"), "CollaboratorsPage");
@@ -88,6 +89,7 @@ export default function App() {
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/configuracoes" element={<SettingsPage />} />
                   <Route path="/avisos" element={<NoticesPage />} />
+                  <Route path="/novidades" element={<NovidadesPage />} />
                   <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
                   <Route path="/feature/loops" element={<LoopsPage />} />
                   <Route element={<RequireSuperAdmin />}>
@@ -232,6 +234,7 @@ function RequireCollaboratorAccess() {
     "/feature/extensions",
     "/feature/support",
     "/feature/chat",
+    "/novidades",
   ];
   if (
     workspaceRole === "COLLABORATOR" &&

@@ -198,6 +198,7 @@ export function AppShell() {
       title: item.title,
       message: item.body,
       at: item.created_at,
+      url: item.url,
     })),
     ...(analyticsNotifications.data?.disconnected_today_accounts ?? []).slice(0, 10).map((item) => ({
       at: item.at,
