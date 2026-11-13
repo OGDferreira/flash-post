@@ -144,9 +144,9 @@ async def _state(db, user, workspace) -> dict:
                 "description": "Pix com subcontas e divisão automática das vendas.",
             },
             {
-                "id": "stripe", "name": "Stripe", "available": stripe_gateway.configured() and stripe_enabled,
-                "fee": "Taxas Stripe conforme o cartão",
-                "description": "Cartão de crédito (nacional e internacional) por link de pagamento.",
+                "id": "stripe", "name": "Vendas Internacionais", "available": stripe_gateway.configured() and stripe_enabled,
+                "fee": "Cartão via Stripe · taxas conforme o cartão",
+                "description": "Cartão de crédito (nacional e internacional) por link de pagamento, via Stripe.",
             },
         ],
     }

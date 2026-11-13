@@ -208,7 +208,7 @@ export function GatewaysPanel() {
     <div className="glass-panel p-4 sm:p-5">
       <div className="flex items-center gap-2">
         <ShieldCheck className="text-accent" size={18} />
-        <h2 className="text-base font-semibold text-fg">Integração Stripe (administrador)</h2>
+        <h2 className="text-base font-semibold text-fg">Vendas Internacionais · Stripe (administrador)</h2>
       </div>
       <div
         className={`mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 ${
@@ -217,7 +217,7 @@ export function GatewaysPanel() {
       >
         <span className="min-w-0">
           <span className="flex items-center gap-2 text-sm font-semibold text-fg">
-            Stripe (cartão) para os usuários:
+            Vendas Internacionais (cartão) para os usuários:
             <span className={`rounded-full px-2 py-0.5 text-[11px] ${data.admin.stripe_enabled ? "bg-success/20 text-success" : "bg-warning/20 text-warning"}`}>
               {data.admin.stripe_enabled ? "LIGADA" : "DESLIGADA"}
             </span>
@@ -234,7 +234,7 @@ export function GatewaysPanel() {
           onClick={() => releaseStripe.mutate(!data.admin?.stripe_enabled)}
           type="button"
         >
-          {releaseStripe.isPending ? "Salvando…" : data.admin.stripe_enabled ? "Desligar" : "Liberar Stripe"}
+          {releaseStripe.isPending ? "Salvando…" : data.admin.stripe_enabled ? "Desligar" : "Liberar Vendas Internacionais"}
         </button>
       </div>
       <ul className="mt-3 space-y-1.5 text-xs">
