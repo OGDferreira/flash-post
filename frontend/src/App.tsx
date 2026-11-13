@@ -46,6 +46,7 @@ const CollaboratorsPage = lazyPage(() => import("@/pages/CollaboratorsPage"), "C
 const AffiliatesPage = lazyPage(() => import("@/pages/AffiliatesPage"), "AffiliatesPage");
 const ExtensionsPage = lazyPage(() => import("@/pages/ExtensionsPage"), "ExtensionsPage");
 const SupportPage = lazyPage(() => import("@/pages/SupportPage"), "SupportPage");
+const GlobalChatPage = lazyPage(() => import("@/pages/GlobalChatPage"), "GlobalChatPage");
 const FeedPage = lazyPage(() => import("@/pages/FeedPage"), "FeedPage");
 const BotsPage = lazyPage(() => import("@/pages/BotsPage"), "BotsPage");
 const LegacyBotsRedirect = lazyPage(() => import("@/pages/BotsPage"), "LegacyBotsRedirect");
@@ -95,6 +96,7 @@ export default function App() {
                   <Route path="/feature/emails" element={<EmailsPage />} />
                   <Route path="/feature/extensions" element={<ExtensionsPage />} />
                   <Route path="/feature/support" element={<SupportPage />} />
+                  <Route path="/feature/chat" element={<GlobalChatPage />} />
                   <Route path="/feature/contacts" element={<ContactsPage />} />
                   <Route element={<RequireWorkspaceOwner />}>
                     <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
@@ -229,6 +231,7 @@ function RequireCollaboratorAccess() {
     "/feature/emails",
     "/feature/extensions",
     "/feature/support",
+    "/feature/chat",
   ];
   if (
     workspaceRole === "COLLABORATOR" &&

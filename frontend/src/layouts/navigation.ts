@@ -18,6 +18,7 @@ import {
   Link2,
   Megaphone,
   MessageCircle,
+  MessagesSquare,
   Puzzle,
   Receipt,
   Send,
@@ -62,7 +63,7 @@ export const PARTNER_FEATURE_BY_ROUTE: Record<string, ["post" | "bot", string]> 
   "/bot/gateways": ["bot", "bots"],
 };
 // Essential account pages a sócio can always reach.
-const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/feature/links"]);
+const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/feature/links", "/feature/chat"]);
 
 function matchBase(path: string): string | null {
   const keys = [...Object.keys(PARTNER_FEATURE_BY_ROUTE), ...PARTNER_ALWAYS_ALLOWED];
@@ -167,6 +168,7 @@ const postGroups: NavGroup[] = [
     title: "Suporte",
     icon: LifeBuoy,
     items: [
+      { label: "Chat global", to: "/feature/chat", icon: MessagesSquare },
       { label: "Dúvidas e erros", to: "/feature/support", icon: LifeBuoy },
       { label: "Contatos", to: "/feature/contacts", icon: MessageCircle },
     ],
@@ -186,6 +188,7 @@ const partnerPostRoutes = new Set([
   "/avisos",
   "/feature/support",
   "/feature/contacts",
+  "/feature/chat",
 ]);
 
 // Only hides what a collaborator cannot open; route guards and the API still
@@ -197,6 +200,7 @@ const collaboratorRoutes = new Set([
   "/feature/extensions",
   "/feature/support",
   "/feature/contacts",
+  "/feature/chat",
   "/feature/links",
   "/configuracoes",
   "/avisos",
