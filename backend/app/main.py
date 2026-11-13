@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import mimetypes
 import traceback
@@ -105,6 +106,18 @@ async def lifespan(_app: FastAPI):
     scheduler.start()
     _app.state.background_scheduler = scheduler
     logger.info("FlashPost background scheduler started.")
+
+    async def _resync_bot_webhooks() -> None:
+        # Re-point every active bot's Telegram webhook at this host (self-heals after a host move).
+        try:
+            from app.bots.engine import resync_webhooks
+
+            async with get_session_factory()() as db:
+                await resync_webhooks(db)
+        except Exception:  # noqa: BLE001 - startup must never fail on this
+            logger.exception("Telegram webhook resync on startup failed.")
+
+    _app.state.webhook_resync_task = asyncio.create_task(_resync_bot_webhooks())
     try:
         yield
     finally:

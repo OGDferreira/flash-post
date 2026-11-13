@@ -1015,6 +1015,26 @@ def payment_webhook_url() -> str:
     return f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/smokepay"
 
 
+async def resync_webhooks(db: AsyncSession) -> int:
+    """Re-point every active bot's Telegram webhook at the current PUBLIC_BASE_URL.
+
+    Webhooks are only set when a bot is connected/activated, so after a host move (e.g. Render ->
+    VPS) they still point at the old, now-dead URL and the bots go silent. Running this on startup
+    makes the move self-healing. Idempotent and fault-tolerant: one failing bot never blocks the rest.
+    """
+    base = get_settings().public_base_url.rstrip("/")
+    bots = list(await db.scalars(select(TgBot).where(TgBot.is_active.is_(True))))
+    ok = 0
+    for bot in bots:
+        try:
+            await telegram(bot).set_webhook(f"{base}/api/bots/telegram/{bot.id}", bot.webhook_secret)
+            ok += 1
+        except (TelegramError, Exception) as exc:  # noqa: BLE001 - never let one bot stop the sync
+            logger.warning("Webhook resync failed for bot %s (@%s): %s", bot.id, bot.username, exc)
+    logger.info("Telegram webhooks resynced: %d/%d active bots -> %s", ok, len(bots), base)
+    return ok
+
+
 def order_parts(order: TgOrder) -> tuple[Plan, OrderBump | None, dict]:
     """Phase 1 stored the bare plan; newer orders wrap it with the bump and series data."""
     snapshot = order.offer_snapshot or {}
