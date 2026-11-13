@@ -241,7 +241,7 @@ function RequireCollaboratorAccess() {
 function RequireAuth() {
   const { user, isLoading } = useAuth();
   const location = useLocation();
-  if (isLoading) return <LoadingState fullscreen label="Verificando sessão" />;
+  if (isLoading) return <LoadingState fullscreen label="Bem-vindo à FlashPost" />;
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
@@ -259,7 +259,7 @@ function RequireSuperAdmin() {
 
 function HomeRedirect() {
   const { user, isLoading } = useAuth();
-  if (isLoading) return <LoadingState fullscreen label="Verificando sessão" />;
+  if (isLoading) return <LoadingState fullscreen label="Bem-vindo à FlashPost" />;
   if (!user) return <Navigate to="/login" replace />;
   return (
     <Navigate
