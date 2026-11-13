@@ -657,6 +657,17 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
             </p>
             <CopyField hint="Cadastre esta URL no painel Atenas Pay em Integrações → Webhooks." label="URL do webhook" value={data.atenaspay_webhook_url} />
           </div>
+        ) : gateway === "stripe" ? (
+          <div className="space-y-3">
+            <p className="rounded-xl border border-line-soft px-3 py-2 text-xs leading-5 text-muted">
+              A Stripe é gerenciada pelo administrador: a chave fica no servidor e vale para todas as operações, sem cadastro próprio.
+              Quando ligada, o comprador paga no cartão (nacional e internacional) por um link de pagamento, as vendas caem na conta Stripe
+              da plataforma e a sua parte fica registrada para repasse.
+            </p>
+            {data.admin?.stripe_webhook_url && (
+              <CopyField hint="Cadastre no painel da Stripe em Developers → Webhooks (evento checkout.session.completed)." label="URL do webhook" value={data.admin.stripe_webhook_url} />
+            )}
+          </div>
         ) : (
           <>
             {data.is_admin ? (
