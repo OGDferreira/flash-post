@@ -17,6 +17,7 @@ import {
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { ConfirmHost } from "@/lib/confirm";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
+import { welcomeLabel } from "@/features/auth/welcomeName";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
 import { usePartnerMe } from "@/features/partners/api";
@@ -241,7 +242,7 @@ function RequireCollaboratorAccess() {
 function RequireAuth() {
   const { user, isLoading } = useAuth();
   const location = useLocation();
-  if (isLoading) return <LoadingState fullscreen label="Bem-vindo à FlashPost" />;
+  if (isLoading) return <LoadingState fullscreen label={welcomeLabel()} />;
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
@@ -259,7 +260,7 @@ function RequireSuperAdmin() {
 
 function HomeRedirect() {
   const { user, isLoading } = useAuth();
-  if (isLoading) return <LoadingState fullscreen label="Bem-vindo à FlashPost" />;
+  if (isLoading) return <LoadingState fullscreen label={welcomeLabel()} />;
   if (!user) return <Navigate to="/login" replace />;
   return (
     <Navigate
