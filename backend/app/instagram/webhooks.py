@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.auth.dependencies import DbSession
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value
+from app.instagram.automation import process_webhook
 from app.models import InstagramAppCredential
 
 router = APIRouter(prefix="/api/instagram", tags=["Instagram webhooks"])
@@ -163,4 +164,10 @@ async def receive_instagram_webhook(
         len(payload["entry"]),
         event_count,
     )
+    # Run the ManyChat-style automations (keyword comment -> reply + DM). Best-effort:
+    # process_webhook never raises, so Meta always gets its 200.
+    try:
+        await process_webhook(db, payload)
+    except Exception:  # noqa: BLE001 - a 200 must still go back to Meta
+        logger.exception("Instagram automation dispatch failed.")
     return InstagramWebhookReceipt(received=True, entry_count=len(payload["entry"]))

@@ -43,6 +43,7 @@ from app.instagram.router import router as instagram_router
 from app.instagram.folders_router import router as instagram_folders_router
 from app.instagram.media_router import router as media_router
 from app.instagram.webhooks import router as instagram_webhooks_router
+from app.instagram.automation_router import router as instagram_automation_router
 from app.loops.router import router as loops_router
 from app.notifications.router import router as notifications_router
 from app.shark.router import router as shark_router
@@ -188,6 +189,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(subscription_router)
     application.include_router(subscription_admin_router)
     application.include_router(instagram_router)
+    application.include_router(instagram_automation_router)
     application.include_router(instagram_webhooks_router)
     application.include_router(instagram_folders_router)
     application.include_router(media_router)

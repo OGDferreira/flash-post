@@ -18,6 +18,10 @@ from app.models.financial_expense import FinancialExpense
 from app.models.financial_withdrawal import FinancialWithdrawal
 from app.models.instagram_account import InstagramAccount
 from app.models.instagram_app_credential import InstagramAppCredential
+from app.models.instagram_automation import (
+    InstagramAutomationEvent,
+    InstagramCommentAutomation,
+)
 from app.models.instagram_profile_folder import InstagramProfileFolder
 from app.models.instagram_loop import (
     InstagramLoop,
@@ -117,6 +121,8 @@ __all__ = [
     "GlobalChatMessage",
     "InstagramAccount",
     "InstagramAppCredential",
+    "InstagramAutomationEvent",
+    "InstagramCommentAutomation",
     "InstagramLoop",
     "InstagramLoopAccount",
     "InstagramLoopAccountState",

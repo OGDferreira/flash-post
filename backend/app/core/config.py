@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_service_role_key: SecretStr | None = None
     instagram_publishing_enabled: bool = False
+    # Instagram automations (comment keyword -> reply + DM). Until Meta App Review
+    # approves the messaging/comment scopes, this stays off: rules are still saved and
+    # webhooks still match them, but the engine only logs what it *would* send
+    # ("simulated") instead of calling the Graph API. Flip to true once reviewed.
+    instagram_automation_enabled: bool = False
     # Platform-wide Instagram Business Login app (env IG_APP_ID / IG_APP_SECRET), shared by
     # every user unless the Super Admin blocks someone. Never stored in the database or sent to
     # the browser. When unset, connecting falls back to each workspace's own Meta app.
