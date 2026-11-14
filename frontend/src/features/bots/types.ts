@@ -18,6 +18,9 @@ export type Delivery = {
   link?: { label: string; url: string } | null;
   join_button_label: string;
   start_upsell: boolean;
+  /** Messages (text/audio) dripped to the buyer after this delivery, for any purchase that
+   *  uses it (plan, order bump, upsell or downsell). Each has its own delay_seconds. */
+  after_purchase?: Block[];
 };
 
 export type ButtonStyle = "default" | "primary" | "success" | "danger";

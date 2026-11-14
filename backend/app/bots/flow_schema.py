@@ -70,6 +70,11 @@ class Delivery(_Model):
     link: LinkButton | None = None
     join_button_label: Label = "🔓 Entrar no VIP"
     start_upsell: bool = True  # after delivering, send the flow's upsell sequence
+    # Messages sent to the buyer right after this delivery, for ANY purchase that uses it
+    # (plan, order bump, upsell or downsell). Each message is a text or an audio (voice);
+    # ``delay_seconds`` on a message is how long to wait before it (0 = instant / right
+    # after the previous one).
+    after_purchase: Annotated[list[Block], Field(max_length=10)] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check(self) -> "Delivery":
@@ -79,6 +84,9 @@ class Delivery(_Model):
             raise ValueError("O pack precisa de pelo menos uma mídia.")
         if self.type == "default" and not (self.text or self.media_ids or self.link):
             raise ValueError("A entrega padrão precisa de mensagem, mídia ou link.")
+        for message in self.after_purchase:
+            if message.type not in ("text", "voice"):
+                raise ValueError("A sequência pós-compra aceita só texto ou áudio.")
         return self
 
 
@@ -346,6 +354,8 @@ class FlowDefinition(_Model):
         for delivery in deliveries:
             if delivery:
                 found.update(delivery.media_ids)
+                for message in delivery.after_purchase:
+                    found.update(message.media_ids)
         return found
 
     def all_downsells(self) -> list[DownsellStep]:

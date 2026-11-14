@@ -629,6 +629,20 @@ async def schedule_upsell(db: AsyncSession, bot: TgBot, lead: TgLead, flow: Flow
         await schedule(db, bot, "send_upsell", utcnow(), f"upsell:{chain}:{index}", lead, {"index": index, "chain": chain})
 
 
+async def schedule_after_purchase(db: AsyncSession, bot: TgBot, lead: TgLead, delivery: Delivery, order: TgOrder, slot: int) -> None:
+    """Queue the delivery's post-purchase message drip (text/audio) for any purchase that
+    used it. Each message waits its own ``delay_seconds`` (0 = right after the previous
+    one). The whole block is carried in the job so it needs no flow lookup at run time;
+    ``slot`` keeps the keys distinct when one order delivers twice (plan + order bump)."""
+    run = utcnow()
+    for position, message in enumerate(delivery.after_purchase):
+        run += timedelta(seconds=message.delay_seconds, microseconds=position)
+        await schedule(
+            db, bot, "send_order_msg", run, f"postbuy:{order.id}:{slot}:{position}", lead,
+            {"block": message.model_dump(mode="json")},
+        )
+
+
 async def send_upsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, chain: str) -> None:
     if not 0 <= index < len(flow.upsells):
         return
@@ -658,7 +672,10 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
     if lead is not None and lead.blocked_bot:
         return
     tg = telegram(bot)
-    if job.kind in ("send_block", "send_offer", "send_downsell", "send_downsell_np", "send_upsell"):
+    if job.kind == "send_order_msg":
+        if lead is not None:
+            await send_block(db, tg, bot, lead, Block.model_validate(job.payload["block"]))
+    elif job.kind in ("send_block", "send_offer", "send_downsell", "send_downsell_np", "send_upsell"):
         flow = await load_flow(db, bot, lead)
         if flow is None or lead is None:
             return
@@ -1669,6 +1686,8 @@ async def approve_order(
             await tg.send_message(lead.chat_id, render(flow.payment.approved_text, lead, order.offer_name, order.amount, bot))
         if delivery and delivery.type != "upsell":
             await deliver(db, tg, bot, lead, order, plan, delivery)
+            # Any purchase (plan, upsell or downsell) fires this delivery's post-purchase drip.
+            await schedule_after_purchase(db, bot, lead, delivery, order, 0)
         if bump:
             # The bump's own delivery, or the funnel's default one (not sent twice when the
             # plan already delivered that same default).
@@ -1677,6 +1696,7 @@ async def approve_order(
                 bump.delivery is None and bump_delivery is delivery
             ):
                 await deliver(db, tg, bot, lead, order, plan.model_copy(update={"name": bump.name}), bump_delivery)
+                await schedule_after_purchase(db, bot, lead, bump_delivery, order, 1)
         order.delivered_at = utcnow()
     except TelegramError as exc:
         bot.last_error = str(exc)[:500]

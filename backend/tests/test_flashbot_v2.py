@@ -216,6 +216,35 @@ async def test_upsell_after_payment_accept_and_decline_move_through_the_sequence
 
 
 @pytest.mark.anyio
+async def test_after_purchase_messages_drip_on_a_sale(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(
+        welcome=[],
+        plans=[{"id": "vip", "name": "VIP", "price": "19.90", "delivery": {
+            "type": "default", "text": "VIP ok", "after_purchase": [
+                {"type": "text", "text": "Obrigado pela compra!", "delay_seconds": 0},
+                {"type": "text", "text": "Bônus chegando…", "delay_seconds": 120},
+            ],
+        }}],
+    ))
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    await _pay(client, db_session, order)
+    texts = [m["text"] for m in apis.methods("sendMessage")]
+    # the delivery and the instant (delay 0) message go out with the payment
+    assert "VIP ok" in texts and "Obrigado pela compra!" in texts
+    # the delayed one is queued, not sent yet
+    assert "Bônus chegando…" not in texts
+    pending = list(await db_session.scalars(
+        select(TgJob).where(TgJob.kind == "send_order_msg", TgJob.status == "pending")
+    ))
+    assert len(pending) == 1
+    await _run_jobs_now(db_session)
+    assert "Bônus chegando…" in [m["text"] for m in apis.methods("sendMessage")]
+
+
+@pytest.mark.anyio
 async def test_flow_summary_and_validation_of_new_sections(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, flow = await _setup(client, headers)

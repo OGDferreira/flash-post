@@ -1,10 +1,115 @@
 import { useQuery } from "@tanstack/react-query";
+import { Mic, Send, Trash2, Type } from "lucide-react";
 
+import { Button } from "@/components/ui/Button";
 import { apiRequest } from "@/services/api";
-import { emptyDelivery, type BotGroup, type Delivery, type OrderBump } from "../types";
+import { emptyDelivery, type Block, type BotGroup, type Delivery, type OrderBump } from "../types";
 import { MediaGrid } from "./MediaGrid";
 import { BASE_VARIABLES, RichTextEditor } from "./RichTextEditor";
 import { Field, MoneyInput, Switch } from "./ui";
+
+const AFTER_UNITS = [
+  { value: 1, label: "segundos" },
+  { value: 60, label: "minutos" },
+  { value: 3600, label: "horas" },
+];
+
+/** Seconds stored (0 = instant), shown as seconds/minutes/hours, capped at 24 h. */
+function SecondsDelay({ value, onChange }: { value: number; onChange: (seconds: number) => void }) {
+  const unit = value > 0 && value % 3600 === 0 ? 3600 : value > 0 && value % 60 === 0 ? 60 : 1;
+  const immediate = value === 0;
+  const clamp = (seconds: number) => Math.min(86400, Math.max(1, seconds));
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        aria-label="Quando enviar"
+        className="field !w-auto"
+        value={immediate ? "now" : "later"}
+        onChange={(event) => onChange(event.target.value === "now" ? 0 : 30)}
+      >
+        <option value="now">Imediato</option>
+        <option value="later">Depois de…</option>
+      </select>
+      {!immediate && (
+        <>
+          <input
+            aria-label="Tempo de espera"
+            className="field !w-24"
+            min={1}
+            type="number"
+            value={Math.max(1, Math.round(value / unit))}
+            onChange={(event) => onChange(clamp((Number(event.target.value) || 1) * unit))}
+          />
+          <select
+            aria-label="Unidade"
+            className="field !w-auto"
+            value={unit}
+            onChange={(event) => onChange(clamp(Math.max(1, Math.round(value / unit)) * Number(event.target.value)))}
+          >
+            {AFTER_UNITS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
+    </div>
+  );
+}
+
+const newAfterText = (): Block => ({ type: "text", text: "", media_ids: [], spoiler: false, delay_seconds: 0 });
+const newAfterAudio = (): Block => ({ type: "voice", text: null, media_ids: [], spoiler: false, delay_seconds: 0 });
+
+/** Messages (text/audio) dripped to the buyer right after a delivery, for any purchase that
+ *  uses it (plan, order bump, upsell or downsell). */
+function AfterPurchase({ messages, onChange }: { messages: Block[]; onChange: (next: Block[]) => void }) {
+  const setMsg = (index: number, patch: Partial<Block>) => onChange(messages.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  return (
+    <div className="space-y-2 border-t border-line-soft pt-4">
+      <p className="flex items-center gap-2 text-sm font-medium text-fg">
+        <Send size={15} className="text-accent" /> Mensagens após a compra <span className="text-xs text-muted">({messages.length}/10)</span>
+      </p>
+      <p className="text-xs leading-5 text-muted">
+        Enviadas ao comprador logo depois desta entrega. Cada uma pode ser texto ou áudio, imediata ou com atraso.
+      </p>
+      {messages.map((message, index) => (
+        <div className="grid gap-3 rounded-xl border border-line-soft p-3" key={index}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-sm font-medium text-fg-2">
+              {message.type === "voice" ? <Mic size={14} /> : <Type size={14} />}
+              {message.type === "voice" ? "Áudio" : "Texto"} {index + 1}
+            </span>
+            <button aria-label="Remover mensagem" className="btn-ghost !min-h-9 !px-2 text-danger" onClick={() => onChange(messages.filter((_, i) => i !== index))} type="button">
+              <Trash2 size={15} />
+            </button>
+          </div>
+          {message.type === "voice" ? (
+            <>
+              <MediaGrid kinds={["audio"]} max={1} title="Áudio" value={message.media_ids} onChange={(media_ids) => setMsg(index, { media_ids })} />
+              {message.media_ids.length === 0 && <p className="text-xs text-warning">Adicione o arquivo de áudio para esta mensagem.</p>}
+            </>
+          ) : (
+            <RichTextEditor label="Mensagem" required rows={3} value={message.text ?? ""} variables={BASE_VARIABLES} onChange={(text) => setMsg(index, { text })} />
+          )}
+          <Field label={index === 0 ? "Enviar após a compra" : "Enviar depois da mensagem anterior"}>
+            <SecondsDelay value={message.delay_seconds} onChange={(delay_seconds) => setMsg(index, { delay_seconds })} />
+          </Field>
+        </div>
+      ))}
+      {messages.length < 10 && (
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => onChange([...messages, newAfterText()])} size="sm" variant="secondary">
+            <Type size={14} /> Texto
+          </Button>
+          <Button onClick={() => onChange([...messages, newAfterAudio()])} size="sm" variant="secondary">
+            <Mic size={14} /> Áudio
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function useBotGroups() {
   return useQuery({
@@ -114,6 +219,7 @@ export function DeliveryEditor({
           </Field>
         </div>
       )}
+      <AfterPurchase messages={value.after_purchase ?? []} onChange={(after_purchase) => set({ after_purchase })} />
     </div>
   );
 }
