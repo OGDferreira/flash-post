@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label
+from app.shark.metrics import window
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
 from app.bots import gateways
 from app.core.time import utc_now
@@ -73,7 +74,7 @@ def _pct(value: Decimal) -> str:
 
 async def _sales(db, workspace_id: uuid.UUID, start, end, *, chief_user_id: uuid.UUID | None = None) -> dict:
     """Paid Flash sales of a workspace with fee, commission and partner net."""
-    where = [TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end,
+    where = [TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", *window(TgOrder.paid_at, start, end),
              not_hidden_bot(TgOrder.bot_id, seller=chief_user_id is None)]
     if chief_user_id is not None:
         where.append(TgOrder.split_chief_user_id == chief_user_id)
@@ -102,7 +103,7 @@ def _order_out(order: TgOrder) -> dict:
 async def _recent_orders(db, workspace_id: uuid.UUID, start, end, limit: int = 50) -> list[dict]:
     rows = await db.scalars(
         select(TgOrder)
-        .where(TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end,
+        .where(TgOrder.workspace_id == workspace_id, TgOrder.status == "paid", *window(TgOrder.paid_at, start, end),
                not_hidden_bot(TgOrder.bot_id))
         .order_by(TgOrder.paid_at.desc())
         .limit(limit)
@@ -825,7 +826,7 @@ async def operations_of(db, workspace_id: uuid.UUID, start, end) -> dict:
                 select(InstagramPublicationJob.loop_id, func.count(InstagramPublicationJob.id))
                 .where(
                     InstagramPublicationJob.loop_id.in_(loop_ids), InstagramPublicationJob.status == "published",
-                    published_at >= start, published_at < end,
+                    *window(published_at, start, end),
                 )
                 .group_by(InstagramPublicationJob.loop_id)
             )
@@ -839,7 +840,7 @@ async def operations_of(db, workspace_id: uuid.UUID, start, end) -> dict:
         (
             await db.execute(
                 select(TgLead.bot_id, func.count(TgLead.id))
-                .where(TgLead.bot_id.in_(bot_ids), TgLead.created_at >= start, TgLead.created_at < end)
+                .where(TgLead.bot_id.in_(bot_ids), *window(TgLead.created_at, start, end))
                 .group_by(TgLead.bot_id)
             )
         ).all()
@@ -849,7 +850,7 @@ async def operations_of(db, workspace_id: uuid.UUID, start, end) -> dict:
         for bot_id, count, total in (
             await db.execute(
                 select(TgOrder.bot_id, func.count(TgOrder.id), func.coalesce(func.sum(TgOrder.amount), 0))
-                .where(TgOrder.bot_id.in_(bot_ids), TgOrder.status == "paid", TgOrder.paid_at >= start, TgOrder.paid_at < end)
+                .where(TgOrder.bot_id.in_(bot_ids), TgOrder.status == "paid", *window(TgOrder.paid_at, start, end))
                 .group_by(TgOrder.bot_id)
             )
         ).all()
