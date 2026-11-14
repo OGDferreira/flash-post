@@ -119,6 +119,10 @@ def log_message(
         workspace_id=bot.workspace_id, bot_id=bot.id, lead_id=lead.id,
         direction=direction, kind=kind, text=(text or None) and text[:4096],
         tg_file_id=tg_file_id, media_id=media_id, sent_by_user_id=sent_by_user_id,
+        # Postgres now() is the transaction start time, identical for every row written
+        # in one update; stamp each message with the wall clock so the inbox keeps the
+        # real order (e.g. /start before the offer it triggered).
+        created_at=utcnow(),
     ))
     if direction == "in" and unread:
         lead.unread_count = (lead.unread_count or 0) + 1

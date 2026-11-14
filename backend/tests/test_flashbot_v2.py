@@ -176,9 +176,14 @@ async def test_conversation_logs_start_taps_and_payment(client, db_session, owne
 
     convo = (await client.get(f"/api/bots/conversations/{lead.id}", headers=headers)).json()
     texts = [m["text"] or "" for m in convo["messages"]]
-    assert any(t.startswith("/start") for t in texts)  # the conversation starts at /start
+    assert texts[0].startswith("/start")  # the conversation is ordered: /start comes first
+    assert any(m["direction"] == "in" for m in convo["messages"][:1])  # ...and it is inbound
     assert any(t.startswith("👆") for t in texts)  # the lead's button tap is shown
     assert any("PIX:" in t for t in texts)  # the payment message the lead received
+    # The /start must sort before the offer it triggered (same-transaction rows).
+    start_i = next(i for i, t in enumerate(texts) if t.startswith("/start"))
+    tap_i = next(i for i, t in enumerate(texts) if t.startswith("👆"))
+    assert start_i < tap_i
 
     # /start and taps are funnel events: they must not raise the unread badge.
     await db_session.commit()
