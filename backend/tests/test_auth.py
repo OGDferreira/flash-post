@@ -755,7 +755,7 @@ async def test_super_admin_can_view_real_admin_metrics_and_paginated_lists(
 
 
 @pytest.mark.anyio
-async def test_super_admin_deletes_users_but_cannot_delete_self_or_workspace_owner(
+async def test_super_admin_force_deletes_any_user_including_workspace_owner(
     client: AsyncClient,
     db_session: AsyncSession,
     super_admin,
@@ -764,19 +764,29 @@ async def test_super_admin_deletes_users_but_cannot_delete_self_or_workspace_own
 ) -> None:
     await login(client, "superadmin@example.com", "super admin password")
 
+    # The one line the super admin cannot cross: deleting itself.
     self_delete = await client.delete(
         f"/api/admin/users/{super_admin.id}",
         headers={"X-CSRF-Token": await csrf(client)},
     )
     assert self_delete.status_code == 409
 
+    owner_user, workspace = owner
+
+    # Absolute power: the owner is deleted even with an ACTIVE workspace. The
+    # owned workspace goes with them (its contents cascade at the DB level),
+    # and so does the owner's own membership.
     owner_delete = await client.delete(
-        f"/api/admin/users/{owner[0].id}",
+        f"/api/admin/users/{owner_user.id}",
         headers={"X-CSRF-Token": await csrf(client)},
     )
-    assert owner_delete.status_code == 409
-    assert await db_session.get(User, owner[0].id) is not None
-
+    assert owner_delete.status_code == 204, owner_delete.text
+    assert await db_session.get(User, owner_user.id) is None
+    assert await db_session.get(Workspace, workspace.id) is None
+    assert await db_session.scalar(
+        select(WorkspaceMember).where(WorkspaceMember.user_id == owner_user.id)
+    ) is None
+    # A plain collaborator (no owned workspace) is still deletable too.
     deleted = await client.delete(
         f"/api/admin/users/{collaborator.id}",
         headers={"X-CSRF-Token": await csrf(client)},

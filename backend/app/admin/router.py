@@ -466,22 +466,12 @@ async def delete_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="Não é possível excluir um usuário administrador da plataforma.",
         )
-    owned_workspace_id = await db.scalar(
-        select(Workspace.id).where(Workspace.owner_id == user.id).limit(1)
-    )
-    owner_membership_id = await db.scalar(
-        select(WorkspaceMember.id)
-        .where(
-            WorkspaceMember.user_id == user.id,
-            WorkspaceMember.role == "OWNER",
-        )
-        .limit(1)
-    )
-    if owned_workspace_id is not None or owner_membership_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Transfira ou remova os workspaces deste usuário antes de excluí-lo.",
-        )
+    # Super admin has absolute power: deleting a user also wipes every workspace
+    # they own and everything inside it (bots, funnels, sales, leads, media,
+    # members). The workspaces.id ON DELETE CASCADE chain does the heavy lifting;
+    # only Workspace.owner_id is RESTRICT, so the owned workspaces have to go
+    # first — before the member-scoped cleanups below and before the user row.
+    await db.execute(delete(Workspace).where(Workspace.owner_id == user.id))
 
     member_ids = select(WorkspaceMember.id).where(WorkspaceMember.user_id == user.id)
     await db.execute(
