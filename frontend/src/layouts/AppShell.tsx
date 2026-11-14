@@ -626,7 +626,7 @@ export function AppShell() {
         // Phones: the other tool is one tap away in the bottom-right corner (refresh sits on the left).
         <Link
           aria-label={`Ir para o ${APPS[other].name}`}
-          className="fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] right-4 z-30 shrink-0 rounded-full shadow-lg transition-transform active:scale-95 lg:hidden [body[data-bottom-tabs]_&]:hidden [body[data-flow-editor]_&]:hidden"
+          className="fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] right-4 z-30 shrink-0 rounded-full shadow-lg transition-transform active:scale-95 lg:hidden [body[data-bottom-tabs]_&]:hidden [body[data-flow-editor]_&]:hidden [body[data-chat-open]_&]:hidden"
           title={`Ir para o ${APPS[other].name}`}
           to={lastPath(other)}
         >

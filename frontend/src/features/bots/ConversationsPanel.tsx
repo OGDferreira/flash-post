@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ImagePlus, Mic, Search, Send } from "lucide-react";
+import { ArrowLeft, Check, Copy, ImagePlus, Mic, Search, Send } from "lucide-react";
 
 import { ApiError, apiRequest } from "@/services/api";
-import type { BotMedia, ChatMessage, Conversation, ConversationDetail } from "./types";
+import { brl, type BotMedia, type ChatMessage, type Conversation, type ConversationDetail, type ConversationOrder } from "./types";
 
 const timeLabel = (iso: string | null) => {
   if (!iso) return "";
@@ -114,6 +114,15 @@ function Conversation({ leadId, onBack }: { leadId: string; onBack: () => void }
       .catch(() => undefined);
   }, [leadId, cache]);
 
+  // On phones the chat composer sits where the floating Flash buttons live; hide
+  // them while a conversation is open so the send button is never covered.
+  useEffect(() => {
+    document.body.dataset.chatOpen = "1";
+    return () => {
+      delete document.body.dataset.chatOpen;
+    };
+  }, []);
+
   const messages = convo.data?.messages ?? [];
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
@@ -162,6 +171,9 @@ function Conversation({ leadId, onBack }: { leadId: string; onBack: () => void }
           </span>
         </span>
       </header>
+
+      <PixStrip orders={convo.data?.orders ?? []} />
+
 
       <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-well/40 p-3">
         {messages.length === 0 && !convo.isLoading && (
@@ -235,6 +247,72 @@ function Conversation({ leadId, onBack }: { leadId: string; onBack: () => void }
           </div>
           {sendMedia.isPending && <p className="mt-1.5 text-xs text-muted">Enviando arquivo…</p>}
         </div>
+      )}
+    </div>
+  );
+}
+
+const ORDER_STATUS: Record<ConversationOrder["status"], { label: string; cls: string }> = {
+  paid: { label: "pago", cls: "bg-success/15 text-success" },
+  pending: { label: "PIX gerado", cls: "bg-amber-400/15 text-amber-500" },
+  review: { label: "em revisão", cls: "bg-amber-400/15 text-amber-500" },
+  expired: { label: "expirado", cls: "bg-surface-inset text-muted" },
+  failed: { label: "falhou", cls: "bg-danger/15 text-danger" },
+};
+
+/** Shows, above the chat, whether the lead generated a PIX and whether it was paid,
+ *  with the PIX code to copy for any charge still open. */
+function PixStrip({ orders }: { orders: ConversationOrder[] }) {
+  if (orders.length === 0) return null;
+  const paid = orders.filter((o) => o.status === "paid").length;
+  const generated = orders.filter((o) => o.status !== "failed").length;
+  return (
+    <div className="border-b border-line-soft bg-surface-inset/40 px-3 py-2">
+      <div className="mb-1.5 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted">
+        <span>💠 {generated} PIX gerado{generated === 1 ? "" : "s"}</span>
+        {paid > 0 && <span className="text-success">· {paid} pago{paid === 1 ? "" : "s"}</span>}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {orders.slice(0, 6).map((order) => (
+          <PixRow key={order.id} order={order} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PixRow({ order }: { order: ConversationOrder }) {
+  const [copied, setCopied] = useState(false);
+  const badge = ORDER_STATUS[order.status] ?? ORDER_STATUS.pending;
+  const when = order.paid_at ?? order.created_at;
+  const copy = async () => {
+    if (!order.pix) return;
+    try {
+      await navigator.clipboard.writeText(order.pix);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked — ignore */
+    }
+  };
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${badge.cls}`}>{badge.label}</span>
+      <span className="min-w-0 flex-1 truncate text-fg">
+        <span className="font-medium">{brl(order.amount)}</span>
+        <span className="text-muted"> · {order.name}</span>
+      </span>
+      <span className="shrink-0 text-[10px] text-muted">{timeLabel(when)}</span>
+      {order.pix && (
+        <button
+          type="button"
+          onClick={copy}
+          className="btn-ghost shrink-0 !min-h-7 !gap-1 !px-2 !text-[11px]"
+          aria-label="Copiar código PIX"
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? "Copiado" : "PIX"}
+        </button>
       )}
     </div>
   );

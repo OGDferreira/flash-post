@@ -271,8 +271,22 @@ export type ChatMessage = {
   created_at: string | null;
 };
 
+export type ConversationOrder = {
+  id: string;
+  kind: string;
+  name: string;
+  amount: string;
+  status: "pending" | "paid" | "expired" | "review" | "failed";
+  pix: string | null;
+  created_at: string | null;
+  paid_at: string | null;
+};
+
 export type ConversationDetail = {
   lead: { id: string; name: string; username: string | null; bot: string | null; blocked: boolean; stage: string };
+  orders: ConversationOrder[];
+  pix_generated: number;
+  pix_paid: number;
   messages: ChatMessage[];
 };
 

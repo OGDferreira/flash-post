@@ -266,6 +266,8 @@ async def test_lead_chat_captures_inbound_and_operator_can_reply(client, db_sess
 
     convo = (await client.get(f"/api/bots/conversations/{lead.id}", headers=headers)).json()
     assert any(m["direction"] == "in" and m["text"] == "oi, tem desconto?" for m in convo["messages"])
+    # The chat exposes the lead's PIX/order history (none generated yet here).
+    assert convo["orders"] == [] and convo["pix_generated"] == 0 and convo["pix_paid"] == 0
 
     before = len(apis.methods("sendMessage"))
     sent = await client.post(

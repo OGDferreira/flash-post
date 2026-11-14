@@ -1015,6 +1015,11 @@ async def get_conversation(
         select(TgMessage).where(TgMessage.lead_id == lead.id).order_by(TgMessage.created_at.desc(), TgMessage.id.desc()).limit(limit)
     ))
     rows.reverse()  # oldest first for display
+    orders = list(await db.scalars(
+        select(TgOrder).where(TgOrder.lead_id == lead.id).order_by(TgOrder.created_at.desc()).limit(20)
+    ))
+    pix_count = sum(1 for o in orders if o.pix_copy_paste or o.status != "pending" or o.gateway_transaction_id)
+    paid_count = sum(1 for o in orders if o.status == "paid")
     return {
         "lead": {
             "id": str(lead.id),
@@ -1024,6 +1029,22 @@ async def get_conversation(
             "blocked": lead.blocked_bot,
             "stage": lead.stage,
         },
+        "orders": [
+            {
+                "id": str(o.id),
+                "kind": o.kind,
+                "name": o.offer_name,
+                "amount": str(o.amount),
+                "status": o.status,
+                # The PIX copy-and-paste is only useful while it can still be paid.
+                "pix": o.pix_copy_paste if o.status == "pending" else None,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
+                "paid_at": o.paid_at.isoformat() if o.paid_at else None,
+            }
+            for o in orders
+        ],
+        "pix_generated": pix_count,
+        "pix_paid": paid_count,
         "messages": [_message_out(m) for m in rows],
     }
 
