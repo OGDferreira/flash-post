@@ -201,6 +201,20 @@ class TelegramClient:
         except TelegramError:
             pass
 
+    # --- files (inbound media preview for the live chat) ---
+    async def get_file(self, file_id: str) -> dict:
+        return await self.call("getFile", {"file_id": file_id})
+
+    async def download_file(self, file_path: str) -> bytes:
+        """Fetch the bytes of a file already resolved by ``get_file``. The URL carries the
+        bot token, so it is built here and never logged."""
+        url = f"{API_BASE}/file/bot{self._token}/{file_path}"
+        async with http.client(60.0) as session:
+            response = await session.get(url)
+        if response.status_code != 200:
+            raise TelegramError("download_file", response.status_code, "download failed")
+        return response.content
+
     # --- groups ---
     async def get_chat(self, chat_id: int | str) -> dict:
         return await self.call("getChat", {"chat_id": chat_id})

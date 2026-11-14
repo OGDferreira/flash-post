@@ -199,6 +199,42 @@ class TgLead(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Unread inbound messages the operator has not opened yet (live chat).
+    unread_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+class TgMessage(Base):
+    """One message in a lead's conversation with the bot: what the lead sent ("in"),
+    what the funnel sent automatically, or an operator's manual reply ("out"). Powers
+    the live-chat inbox; it is a log, never read by the funnel engine."""
+
+    __tablename__ = "tg_messages"
+    __table_args__ = (Index("ix_tg_messages_lead_created", "lead_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = _workspace_fk()
+    bot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_bots.id", ondelete="CASCADE"), nullable=False
+    )
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_leads.id", ondelete="CASCADE"), nullable=False
+    )
+    direction: Mapped[str] = mapped_column(String(3), nullable=False)  # in | out
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # text|photo|video|audio|voice|video_note|document|sticker|other
+    text: Mapped[str | None] = mapped_column(Text)
+    # Inbound media: the Telegram file_id (fetched on demand for preview).
+    tg_file_id: Mapped[str | None] = mapped_column(String(256))
+    # Outbound manual media: the panel file it was sent from.
+    media_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_media.id", ondelete="SET NULL")
+    )
+    # Set when a human sent it from the panel (null = the lead or the automated funnel).
+    sent_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class TgOrder(Base):

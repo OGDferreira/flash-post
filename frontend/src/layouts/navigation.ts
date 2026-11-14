@@ -59,6 +59,7 @@ export const PARTNER_FEATURE_BY_ROUTE: Record<string, ["post" | "bot", string]> 
   "/bot/pastas": ["bot", "flows"],
   "/bot/compartilhados-comigo": ["bot", "flows"],
   "/bot/robos": ["bot", "bots"],
+  "/bot/conversas": ["bot", "bots"],
   "/bot/remarketing": ["bot", "bots"],
   "/bot/gateways": ["bot", "bots"],
 };
@@ -247,6 +248,7 @@ const botGroups: NavGroup[] = [
     icon: Bot,
     items: [
       { label: "Meus bots", to: "/bot/robos", icon: Bot },
+      { label: "Conversas", to: "/bot/conversas", icon: MessageCircle },
       { label: "Remarketing", to: "/bot/remarketing", icon: Megaphone },
     ],
   },

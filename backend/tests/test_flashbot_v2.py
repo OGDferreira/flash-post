@@ -245,6 +245,47 @@ async def test_after_purchase_messages_drip_on_a_sale(client, db_session, owner,
 
 
 @pytest.mark.anyio
+async def test_lead_chat_captures_inbound_and_operator_can_reply(client, db_session, owner, apis) -> None:
+    from app.models import TgMessage
+
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(welcome=[]))
+    await _send(client, db_session, bot["id"], _start())  # creates the lead + sends the offer
+    # the lead sends a free-text message (not a command): captured, funnel does nothing
+    inbound = {"message": {
+        "message_id": 7, "from": {"id": 555, "is_bot": False, "first_name": "Lucas", "username": "lucas"},
+        "chat": {"id": 555, "type": "private"}, "text": "oi, tem desconto?",
+    }}
+    await _send(client, db_session, bot["id"], inbound)
+    await db_session.commit()  # drop the session's old read snapshot
+    lead = await db_session.scalar(select(TgLead))
+    assert lead.unread_count >= 1
+
+    convos = (await client.get("/api/bots/conversations", headers=headers)).json()["conversations"]
+    assert convos and convos[0]["lead_id"] == str(lead.id) and convos[0]["unread"] >= 1
+
+    convo = (await client.get(f"/api/bots/conversations/{lead.id}", headers=headers)).json()
+    assert any(m["direction"] == "in" and m["text"] == "oi, tem desconto?" for m in convo["messages"])
+
+    before = len(apis.methods("sendMessage"))
+    sent = await client.post(
+        f"/api/bots/conversations/{lead.id}/reply", headers=headers, json={"text": "Temos sim! 10% hoje."}
+    )
+    assert sent.status_code == 200, sent.text
+    assert len(apis.methods("sendMessage")) == before + 1
+    assert apis.methods("sendMessage")[-1]["text"] == "Temos sim! 10% hoje."
+    out = await db_session.scalar(
+        select(TgMessage).where(TgMessage.direction == "out", TgMessage.sent_by_user_id.is_not(None))
+    )
+    assert out is not None and out.text == "Temos sim! 10% hoje."
+
+    await client.post(f"/api/bots/conversations/{lead.id}/read", headers=headers)
+    await db_session.commit()
+    await db_session.refresh(lead)
+    assert lead.unread_count == 0
+
+
+@pytest.mark.anyio
 async def test_flow_summary_and_validation_of_new_sections(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, flow = await _setup(client, headers)

@@ -36,6 +36,7 @@ from app.models import (
     TgJob,
     TgLead,
     TgMedia,
+    TgMessage,
     TgOrder,
     TgSubscription,
 )
@@ -104,8 +105,49 @@ def button(text: str, style: str = "default", **action: object) -> dict:
     return data
 
 
+def log_message(
+    db: AsyncSession, bot: TgBot, lead: TgLead, direction: str, kind: str, *,
+    text: str | None = None, tg_file_id: str | None = None,
+    media_id: uuid.UUID | None = None, sent_by_user_id: uuid.UUID | None = None,
+) -> None:
+    """Record one line of the lead's conversation (live-chat inbox). Best effort: a
+    logging row must never break the funnel, and incoming text is bounded."""
+    db.add(TgMessage(
+        workspace_id=bot.workspace_id, bot_id=bot.id, lead_id=lead.id,
+        direction=direction, kind=kind, text=(text or None) and text[:4096],
+        tg_file_id=tg_file_id, media_id=media_id, sent_by_user_id=sent_by_user_id,
+    ))
+    if direction == "in":
+        lead.unread_count = (lead.unread_count or 0) + 1
+
+
 def telegram(bot: TgBot) -> TelegramClient:
     return TelegramClient(decrypt_value(bot.encrypted_token))
+
+
+async def send_manual_message(
+    db: AsyncSession, bot: TgBot, lead: TgLead, *,
+    text: str | None = None, media: TgMedia | None = None, user_id: uuid.UUID | None = None,
+) -> None:
+    """An operator's manual reply from the live-chat inbox: send it through the bot and
+    log it as an outbound message. Text is sanitized to the same safe HTML the funnel uses."""
+    tg = telegram(bot)
+    caption = sanitize(text) if text else None
+    if media is not None:
+        kind = "voice" if media.kind == "audio" else media.kind  # photo | video | voice
+        await send_media_message(db, tg, bot, lead.chat_id, kind, media, caption)
+        log_message(db, bot, lead, "out", kind, text=text, media_id=media.id, sent_by_user_id=user_id)
+    elif caption:
+        await tg.send_message(lead.chat_id, caption)
+        log_message(db, bot, lead, "out", "text", text=text, sent_by_user_id=user_id)
+
+
+async def inbound_media_bytes(bot: TgBot, file_id: str) -> tuple[bytes, str]:
+    """Download a lead's incoming media so the panel can preview it. Returns (bytes,
+    telegram file_path) — the caller maps the extension to a content type."""
+    tg = telegram(bot)
+    info = await tg.get_file(file_id)
+    return await tg.download_file(info.get("file_path") or ""), (info.get("file_path") or "")
 
 
 def _set_translate_target(flow: "FlowDefinition | None", lead: TgLead) -> None:
@@ -361,11 +403,13 @@ async def send_block(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgL
     if block.type == "text":
         await tg.send_chat_action(lead.chat_id, "typing")
         await tg.send_message(lead.chat_id, caption)
+        log_message(db, bot, lead, "out", "text", text=caption)
         return
     medias = await _media_rows(db, bot, block.media_ids)
     if not medias:
         if caption:
             await tg.send_message(lead.chat_id, caption)
+            log_message(db, bot, lead, "out", "text", text=caption)
         return
     if block.type == "album":
         await send_album(db, tg, bot, lead.chat_id, medias, caption, spoiler=block.spoiler)
@@ -373,6 +417,7 @@ async def send_block(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgL
         if block.type == "voice":
             await tg.send_chat_action(lead.chat_id, "record_voice")
         await send_media_message(db, tg, bot, lead.chat_id, block.type, medias[0], caption or None, spoiler=block.spoiler)
+    log_message(db, bot, lead, "out", "photo" if block.type == "album" else block.type, text=caption)
 
 
 # ---------------------------------------------------------------- jobs
@@ -473,6 +518,7 @@ async def send_offer(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgL
         if not text and keyboard:
             text = render(offer.plans_text, lead, bot=bot)
         await send_media_then_text(db, tg, bot, lead.chat_id, offer.media_ids, offer.spoiler, text, keyboard)
+    log_message(db, bot, lead, "out", "text", text=text or render(offer.plans_text, lead, bot=bot))
     lead.stage = "offered"
 
 
@@ -555,6 +601,7 @@ async def send_bump_question(
         [button(bump.decline_label, callback_data=no)],
     ]}
     await send_media_then_text(db, tg, bot, lead.chat_id, bump.media_ids, False, text, keyboard)
+    log_message(db, bot, lead, "out", "text", text=text)
 
 
 def discounted(price: Decimal, step: DownsellStep) -> Decimal:
@@ -614,6 +661,7 @@ async def send_downsell(
     off = f"{step.discount_value.normalize():f}%" if step.discount_type == "percent" else brl(step.discount_value)
     text = render(step.text, lead, bot=bot, extra={"{desconto}": off})
     await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, {"inline_keyboard": rows})
+    log_message(db, bot, lead, "out", "text", text=text)
     lead.stage = "downsell"
 
 
@@ -654,6 +702,7 @@ async def send_upsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: Tg
     if not step.hide_decline:
         rows.append([button(step.decline_label, callback_data=f"upn:{index}:{chain}")])
     await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, {"inline_keyboard": rows})
+    log_message(db, bot, lead, "out", "text", text=text)
 
 
 async def _claim(db: AsyncSession, job: TgJob) -> bool:
@@ -811,6 +860,21 @@ async def upsert_lead(db: AsyncSession, bot: TgBot, user: dict, chat_id: int) ->
     return lead
 
 
+def _inbound_content(message: dict) -> tuple[str, str | None, str | None]:
+    """(kind, telegram file_id, text) of a lead's incoming message, for the chat log."""
+    caption = (message.get("caption") or "").strip() or None
+    if message.get("text"):
+        return "text", None, message["text"].strip() or None
+    if message.get("photo"):  # list of sizes, largest last
+        sizes = message["photo"]
+        return "photo", (sizes[-1].get("file_id") if sizes else None), caption
+    for kind in ("voice", "audio", "video", "video_note", "document", "sticker", "animation"):
+        node = message.get(kind)
+        if isinstance(node, dict) and node.get("file_id"):
+            return (kind if kind != "animation" else "video"), node["file_id"], caption
+    return "other", None, caption
+
+
 async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid.UUID | None:
     """Apply one Telegram update. Returns the lead whose jobs should run right away."""
     if "my_chat_member" in update_data:
@@ -828,7 +892,14 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
         chat = message.get("chat") or {}
         sender = message.get("from") or {}
         text = (message.get("text") or "").strip()
-        if chat.get("type") != "private" or not sender or not text.startswith("/start"):
+        if chat.get("type") != "private" or not sender:
+            return None
+        if not text.startswith("/start"):
+            # Not a funnel command: capture it for the live-chat inbox and stop. The
+            # funnel itself only reacts to /start and button taps.
+            lead = await upsert_lead(db, bot, sender, chat["id"])
+            kind, file_id, body = _inbound_content(message)
+            log_message(db, bot, lead, "in", kind, text=body, tg_file_id=file_id)
             return None
         lead = await upsert_lead(db, bot, sender, chat["id"])
         parts = text.split(maxsplit=1)
@@ -1761,6 +1832,9 @@ async def deliver(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead
     medias = await _media_rows(db, bot, delivery.media_ids)
     if text:
         await tg.send_message(lead.chat_id, text, protect=protect)
+        log_message(db, bot, lead, "out", "text", text=text)
+    if medias:
+        log_message(db, bot, lead, "out", "voice" if medias[0].kind == "audio" else medias[0].kind, text=None)
     for start in range(0, len(medias), 10):
         chunk = medias[start:start + 10]
         if len(chunk) == 1:
@@ -1806,11 +1880,13 @@ async def _deliver_group(db, tg, bot, lead, order, plan: Plan, delivery: Deliver
             f"end:{subscription.id}:{int(subscription.ends_at.timestamp())}", lead,
             {"subscription_id": str(subscription.id)},
         )
+    join_text = text or "Seu acesso está liberado. Toque abaixo para entrar 👇"
     await tg.send_message(
         lead.chat_id,
-        text or "Seu acesso está liberado. Toque abaixo para entrar 👇",
+        join_text,
         {"inline_keyboard": [[{"text": delivery.join_button_label, "url": link}]]},
     )
+    log_message(db, bot, lead, "out", "text", text=join_text)
 
 
 async def expire_order(db: AsyncSession, tg: TelegramClient, bot: TgBot, order_id: uuid.UUID) -> None:

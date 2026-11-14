@@ -247,6 +247,35 @@ export type BotsConfig = {
   payment_webhook_url: string;
 };
 
+// ---------------------------------------------------------------- live chat
+
+export type Conversation = {
+  lead_id: string;
+  name: string;
+  username: string | null;
+  bot: string;
+  unread: number;
+  blocked: boolean;
+  last_at: string | null;
+  last_preview: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  direction: "in" | "out";
+  kind: "text" | "photo" | "video" | "audio" | "voice" | "video_note" | "document" | "sticker" | "other";
+  text: string | null;
+  from_operator: boolean;
+  has_media: boolean;
+  media_id: string | null;
+  created_at: string | null;
+};
+
+export type ConversationDetail = {
+  lead: { id: string; name: string; username: string | null; bot: string | null; blocked: boolean; stage: string };
+  messages: ChatMessage[];
+};
+
 export function brl(value: string | number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value));
 }
