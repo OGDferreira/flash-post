@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, CircleDollarSign, Crown, Lock, QrCode, Trophy, UserPlus, Activity } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleDollarSign, Crown, Lock, MessageCircle, QrCode, Trophy, UserPlus, Activity } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+
+import { ConversationModal } from "./ConversationModal";
 
 import { Avatar } from "@/components/Avatar";
 import { isPeriodReady, periodParams, todayInput, type MetricsPeriod } from "@/features/analytics/period";
@@ -18,7 +20,7 @@ type RankingMember = {
   revenue?: number;
 };
 
-type ActivityItem = { kind: "lead" | "pix" | "sale"; lead: string; bot: string; amount: number | null; at: string };
+type ActivityItem = { kind: "lead" | "pix" | "sale"; lead: string; lead_id: string; bot: string; amount: number | null; at: string };
 
 function PanelHeader({ icon, title, subtitle, children }: { icon: ReactNode; title: string; subtitle: string; children?: ReactNode }) {
   return (
@@ -63,6 +65,7 @@ export function ActivityLog() {
     staleTime: 10_000,
   });
   const [now, setNow] = useState(() => Date.now());
+  const [chatLead, setChatLead] = useState<string | null>(null);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
@@ -98,11 +101,21 @@ export function ActivityLog() {
                   <span className="block text-[11px] font-semibold text-fg">{ago(item.at, now)}</span>
                   <span className="block text-[10px] text-muted">{stamp(item.at)}</span>
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setChatLead(item.lead_id)}
+                  aria-label="Abrir conversa do lead"
+                  title="Abrir conversa"
+                  className="grid size-8 shrink-0 place-items-center rounded-lg text-accent transition hover:bg-surface"
+                >
+                  <MessageCircle size={16} />
+                </button>
               </div>
             );
           })
         )}
       </div>
+      <ConversationModal leadId={chatLead} onClose={() => setChatLead(null)} />
     </section>
   );
 }

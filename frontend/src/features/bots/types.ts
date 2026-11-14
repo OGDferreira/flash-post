@@ -227,9 +227,24 @@ export type BotOrder = {
   bot: string;
   lead: string | null;
   lead_username: string | null;
+  lead_id: string;
   source: string | null;
   created_at: string | null;
   paid_at: string | null;
+};
+
+export type LeadAudience = "all" | "paid" | "pix_unpaid" | "no_pix";
+
+export type BotLead = {
+  id: string;
+  name: string;
+  username: string | null;
+  bot: string;
+  has_pix: boolean;
+  paid: boolean;
+  blocked: boolean;
+  stage: string;
+  created_at: string | null;
 };
 
 export type BotsSummary = {

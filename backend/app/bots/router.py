@@ -1198,10 +1198,70 @@ async def list_orders(access: OwnerAccess, db: DbSession, limit: int = Query(50,
                 "id": str(o.id), "status": o.status, "plan": o.offer_name, "amount": f"{o.amount:.2f}",
                 "net_amount": f"{o.net_amount:.2f}" if o.net_amount is not None else None,
                 "bot": username, "lead": lead.first_name, "lead_username": lead.username,
+                "lead_id": str(lead.id),
                 "source": lead.source, "created_at": o.created_at.isoformat() if o.created_at else None,
                 "paid_at": o.paid_at.isoformat() if o.paid_at else None,
             }
             for o, lead, username in rows.all()
+        ]
+    }
+
+
+@router.get("/leads")
+async def list_leads(
+    access: OwnerAccess, db: DbSession,
+    audience: str = Query("all"),
+    q: str = Query("", max_length=64),
+    limit: int = Query(100, ge=1, le=300),
+) -> dict:
+    """Leads with their PIX status, filterable by audience, each openable in the chat.
+
+    audience: all | paid (pagantes) | pix_unpaid (gerou e não pagou) | no_pix (não gerou)."""
+    ws = access.workspace.id
+    seller = () if admin_view() else (TgLead.seller_hidden.is_(False),)
+    agg = (
+        select(
+            TgOrder.lead_id.label("lead_id"),
+            func.count().label("orders"),
+            func.coalesce(func.sum(case((TgOrder.status == "paid", 1), else_=0)), 0).label("paid"),
+            func.max(TgOrder.created_at).label("last_order"),
+        )
+        .where(TgOrder.workspace_id == ws, TgOrder.status != "failed")
+        .group_by(TgOrder.lead_id)
+        .subquery()
+    )
+    query = (
+        select(TgLead, TgBot.username, agg.c.orders, agg.c.paid)
+        .join(TgBot, TgBot.id == TgLead.bot_id)
+        .outerjoin(agg, agg.c.lead_id == TgLead.id)
+        .where(TgLead.workspace_id == ws, *seller)
+    )
+    if not admin_view():
+        query = query.where(TgBot.hidden_by_admin.is_(False))
+    if audience == "paid":
+        query = query.where(agg.c.paid > 0)
+    elif audience == "pix_unpaid":
+        query = query.where(agg.c.orders > 0, func.coalesce(agg.c.paid, 0) == 0)
+    elif audience == "no_pix":
+        query = query.where(agg.c.orders.is_(None))
+    if q.strip():
+        like = f"%{q.strip()}%"
+        query = query.where(or_(TgLead.first_name.ilike(like), TgLead.username.ilike(like)))
+    rows = (await db.execute(query.order_by(TgLead.created_at.desc()).limit(limit))).all()
+    return {
+        "leads": [
+            {
+                "id": str(lead.id),
+                "name": lead.first_name or "Lead",
+                "username": lead.username,
+                "bot": username,
+                "has_pix": bool(orders),
+                "paid": bool(paid),
+                "blocked": lead.blocked_bot,
+                "stage": lead.stage,
+                "created_at": lead.created_at.isoformat() if lead.created_at else None,
+            }
+            for lead, username, orders, paid in rows
         ]
     }
 

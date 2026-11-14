@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Copy, ImagePlus, Mic, Search, Send } from "lucide-react";
+import { ArrowLeft, Check, Copy, ImagePlus, Mic, Search, Send, X } from "lucide-react";
 
 import { ApiError, apiRequest } from "@/services/api";
 import { brl, type BotMedia, type ChatMessage, type Conversation, type ConversationDetail, type ConversationOrder } from "./types";
@@ -94,7 +94,7 @@ export function ConversationsPanel() {
   );
 }
 
-function Conversation({ leadId, onBack }: { leadId: string; onBack: () => void }) {
+export function Conversation({ leadId, onBack, inModal }: { leadId: string; onBack: () => void; inModal?: boolean }) {
   const cache = useQueryClient();
   const scroller = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -156,10 +156,15 @@ function Conversation({ leadId, onBack }: { leadId: string; onBack: () => void }
   const busy = sendText.isPending || sendMedia.isPending;
 
   return (
-    <div className="glass-panel flex h-[72vh] flex-col overflow-hidden p-0">
+    <div className={`glass-panel flex flex-col overflow-hidden p-0 ${inModal ? "h-full" : "h-[72vh]"}`}>
       <header className="flex items-center gap-3 border-b border-line-soft p-3">
-        <button type="button" onClick={onBack} className="btn-ghost !min-h-9 !px-2 lg:hidden" aria-label="Voltar">
-          <ArrowLeft size={18} />
+        <button
+          type="button"
+          onClick={onBack}
+          className={`btn-ghost !min-h-9 !px-2 ${inModal ? "" : "lg:hidden"}`}
+          aria-label={inModal ? "Fechar" : "Voltar"}
+        >
+          {inModal ? <X size={18} /> : <ArrowLeft size={18} />}
         </button>
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-soft text-sm font-semibold text-accent">
           {(lead?.name || "L").slice(0, 1).toUpperCase()}

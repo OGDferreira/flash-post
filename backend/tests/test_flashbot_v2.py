@@ -130,6 +130,43 @@ async def test_order_bump_adds_to_a_single_pix_and_delivers_both(client, db_sess
 
 
 @pytest.mark.anyio
+async def test_leads_audience_filter_and_open_conversation(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(welcome=[]))
+    await _send(client, db_session, bot["id"], _start())  # a lead with no PIX
+    lead = await db_session.scalar(select(TgLead))
+
+    async def leads(audience: str) -> list[dict]:
+        res = await client.get(f"/api/bots/leads?audience={audience}", headers=headers)
+        assert res.status_code == 200, res.text
+        return res.json()["leads"]
+
+    # No PIX yet: shows under "all" and "no_pix", not under "paid"/"pix_unpaid".
+    assert [x["id"] for x in await leads("no_pix")] == [str(lead.id)]
+    assert [x["id"] for x in await leads("all")] == [str(lead.id)]
+    assert await leads("paid") == [] and await leads("pix_unpaid") == []
+
+    # Generate a PIX but don't pay -> "gerou e não pagou".
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    assert [x["id"] for x in await leads("pix_unpaid")] == [str(lead.id)]
+    assert await leads("no_pix") == []
+    assert (await leads("all"))[0]["has_pix"] is True and (await leads("all"))[0]["paid"] is False
+
+    # Pay it -> "pagantes".
+    apis.pix_amount = float(order.amount)
+    await _pay(client, db_session, order)
+    paid = await leads("paid")
+    assert [x["id"] for x in paid] == [str(lead.id)] and paid[0]["paid"] is True
+
+    # The order list and the activity log carry the lead id so the chat can open.
+    orders = (await client.get("/api/bots/orders/list", headers=headers)).json()["orders"]
+    assert orders and orders[0]["lead_id"] == str(lead.id)
+    activity = (await client.get("/api/bots/activity", headers=headers)).json()["items"]
+    assert activity and all("lead_id" in item for item in activity)
+
+
+@pytest.mark.anyio
 async def test_declining_the_bump_charges_only_the_plan(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, _ = await _setup(client, headers, _flow(welcome=[], order_bump={"name": "Extra", "price": "5.00", "delivery": PACK}))
