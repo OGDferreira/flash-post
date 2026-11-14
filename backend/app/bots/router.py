@@ -1093,18 +1093,33 @@ async def conversation_media(
 ) -> Response:
     lead = await _owned_lead(db, lead_id, access)
     msg = await db.get(TgMessage, message_id)
-    if msg is None or msg.lead_id != lead.id or not msg.tg_file_id:
+    if msg is None or msg.lead_id != lead.id:
         raise HTTPException(status_code=404, detail="Mídia não encontrada.")
-    bot = await db.get(TgBot, lead.bot_id)
-    if bot is None:
-        raise HTTPException(status_code=404, detail="Bot não encontrado.")
-    try:
-        data, path = await engine.inbound_media_bytes(bot, msg.tg_file_id)
-    except TelegramError:
-        raise HTTPException(status_code=502, detail="Mídia indisponível.") from None
-    ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
-    return Response(data, media_type=_INBOUND_TYPES.get(ext, "application/octet-stream"),
-                    headers={"Cache-Control": "private, max-age=3600"})
+    cache = {"Cache-Control": "private, max-age=3600"}
+    # Inbound (what the lead sent): fetched from Telegram by file id.
+    if msg.tg_file_id:
+        bot = await db.get(TgBot, lead.bot_id)
+        if bot is None:
+            raise HTTPException(status_code=404, detail="Bot não encontrado.")
+        try:
+            data, path = await engine.inbound_media_bytes(bot, msg.tg_file_id)
+        except TelegramError:
+            raise HTTPException(status_code=502, detail="Mídia indisponível.") from None
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        return Response(data, media_type=_INBOUND_TYPES.get(ext, "application/octet-stream"), headers=cache)
+    # Outbound funnel media (what the bot showed the lead): stored in our own storage.
+    if msg.media_id:
+        media = await db.get(TgMedia, msg.media_id)
+        if media is None:
+            raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+        if getattr(media, "locked", False) and not admin_view():
+            raise HTTPException(status_code=403, detail="Mídia protegida do seu sócio.")
+        try:
+            data = await engine.load_media_bytes(media)
+        except Exception:
+            raise HTTPException(status_code=502, detail="Mídia indisponível.") from None
+        return Response(data, media_type=media.content_type or "application/octet-stream", headers=cache)
+    raise HTTPException(status_code=404, detail="Mídia não encontrada.")
 
 
 # ---------------------------------------------------------------- hidden by the Super Admin

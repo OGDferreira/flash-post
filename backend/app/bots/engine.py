@@ -109,15 +109,18 @@ def log_message(
     db: AsyncSession, bot: TgBot, lead: TgLead, direction: str, kind: str, *,
     text: str | None = None, tg_file_id: str | None = None,
     media_id: uuid.UUID | None = None, sent_by_user_id: uuid.UUID | None = None,
+    unread: bool = True,
 ) -> None:
     """Record one line of the lead's conversation (live-chat inbox). Best effort: a
-    logging row must never break the funnel, and incoming text is bounded."""
+    logging row must never break the funnel, and incoming text is bounded.
+    ``unread=False``: a funnel event (``/start``, a button tap) that should not raise
+    the operator's unread badge."""
     db.add(TgMessage(
         workspace_id=bot.workspace_id, bot_id=bot.id, lead_id=lead.id,
         direction=direction, kind=kind, text=(text or None) and text[:4096],
         tg_file_id=tg_file_id, media_id=media_id, sent_by_user_id=sent_by_user_id,
     ))
-    if direction == "in":
+    if direction == "in" and unread:
         lead.unread_count = (lead.unread_count or 0) + 1
 
 
@@ -231,6 +234,18 @@ async def _media_rows(db: AsyncSession, bot: TgBot, ids: list[uuid.UUID]) -> lis
         )
     }
     return [rows[i] for i in ids if i in rows]
+
+
+async def _first_media(db: AsyncSession, bot: TgBot, media_ids: list[uuid.UUID]) -> TgMedia | None:
+    """The first still-existing media of a list, so the live-chat inbox can show the
+    image the lead was shown alongside the copy."""
+    rows = await _media_rows(db, bot, list(media_ids)[:1])
+    return rows[0] if rows else None
+
+
+def _log_kind(media: TgMedia | None) -> str:
+    """Live-chat message kind for an attached funnel media (audio -> voice bubble)."""
+    return {"photo": "photo", "video": "video", "audio": "voice"}.get(media.kind, "photo") if media else "text"
 
 
 def _cache_kind(media: TgMedia) -> str:
@@ -417,7 +432,8 @@ async def send_block(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgL
         if block.type == "voice":
             await tg.send_chat_action(lead.chat_id, "record_voice")
         await send_media_message(db, tg, bot, lead.chat_id, block.type, medias[0], caption or None, spoiler=block.spoiler)
-    log_message(db, bot, lead, "out", "photo" if block.type == "album" else block.type, text=caption)
+    # Keep the media id so the live-chat inbox can show the exact image/audio the lead got.
+    log_message(db, bot, lead, "out", "photo" if block.type == "album" else block.type, text=caption, media_id=medias[0].id)
 
 
 # ---------------------------------------------------------------- jobs
@@ -518,7 +534,9 @@ async def send_offer(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgL
         if not text and keyboard:
             text = render(offer.plans_text, lead, bot=bot)
         await send_media_then_text(db, tg, bot, lead.chat_id, offer.media_ids, offer.spoiler, text, keyboard)
-    log_message(db, bot, lead, "out", "text", text=text or render(offer.plans_text, lead, bot=bot))
+    offer_media = await _first_media(db, bot, offer.media_ids)
+    log_message(db, bot, lead, "out", _log_kind(offer_media), text=text or render(offer.plans_text, lead, bot=bot),
+                media_id=offer_media.id if offer_media else None)
     lead.stage = "offered"
 
 
@@ -601,7 +619,8 @@ async def send_bump_question(
         [button(bump.decline_label, callback_data=no)],
     ]}
     await send_media_then_text(db, tg, bot, lead.chat_id, bump.media_ids, False, text, keyboard)
-    log_message(db, bot, lead, "out", "text", text=text)
+    bump_media = await _first_media(db, bot, bump.media_ids)
+    log_message(db, bot, lead, "out", _log_kind(bump_media), text=text, media_id=bump_media.id if bump_media else None)
 
 
 def discounted(price: Decimal, step: DownsellStep) -> Decimal:
@@ -661,7 +680,8 @@ async def send_downsell(
     off = f"{step.discount_value.normalize():f}%" if step.discount_type == "percent" else brl(step.discount_value)
     text = render(step.text, lead, bot=bot, extra={"{desconto}": off})
     await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, {"inline_keyboard": rows})
-    log_message(db, bot, lead, "out", "text", text=text)
+    ds_media = await _first_media(db, bot, step.media_ids)
+    log_message(db, bot, lead, "out", _log_kind(ds_media), text=text, media_id=ds_media.id if ds_media else None)
     lead.stage = "downsell"
 
 
@@ -702,7 +722,8 @@ async def send_upsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: Tg
     if not step.hide_decline:
         rows.append([button(step.decline_label, callback_data=f"upn:{index}:{chain}")])
     await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, {"inline_keyboard": rows})
-    log_message(db, bot, lead, "out", "text", text=text)
+    up_media = await _first_media(db, bot, step.media_ids)
+    log_message(db, bot, lead, "out", _log_kind(up_media), text=text, media_id=up_media.id if up_media else None)
 
 
 async def _claim(db: AsyncSession, job: TgJob) -> bool:
@@ -902,6 +923,7 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
             log_message(db, bot, lead, "in", kind, text=body, tg_file_id=file_id)
             return None
         lead = await upsert_lead(db, bot, sender, chat["id"])
+        log_message(db, bot, lead, "in", "text", text=text, unread=False)  # the conversation begins at /start
         parts = text.split(maxsplit=1)
         if len(parts) == 2 and not lead.source:
             lead.source = parts[1][:64]
@@ -924,6 +946,28 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
     return None
 
 
+def _tap_label(query: dict, data: str) -> str:
+    """The visible text of the button the lead tapped, read from the message's own
+    keyboard; falls back to a generic label by callback prefix."""
+    markup = (query.get("message") or {}).get("reply_markup") or {}
+    for row in markup.get("inline_keyboard") or []:
+        for btn in row or []:
+            if isinstance(btn, dict) and btn.get("callback_data") == data and btn.get("text"):
+                return str(btn["text"])[:200]
+    prefixes = {
+        "plan": "Escolheu um plano", "plans": "Ver planos", "prev": "Ver prévias",
+        "bump:y": "Aceitou o order bump", "bump:n": "Recusou o order bump",
+        "chk": "Verificar pagamento", "age:ok": "Confirmou maioridade",
+        "up": "Aceitou o upsell", "upn": "Recusou o upsell",
+        "pm:pix": "Escolheu pagar no Pix", "pm:card": "Escolheu pagar no cartão",
+        "dplan": "Aceitou o downsell", "nplan": "Aceitou a oferta",
+    }
+    for prefix, label in prefixes.items():
+        if data == prefix or data.startswith(prefix + ":"):
+            return label
+    return "Clicou em um botão"
+
+
 async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UUID | None:
     tg = telegram(bot)
     data = query.get("data") or ""
@@ -933,6 +977,7 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UU
         await tg.answer_callback(query["id"])
         return None
     lead = await upsert_lead(db, bot, sender, chat_id)
+    log_message(db, bot, lead, "in", "text", text=f"👆 {_tap_label(query, data)}", unread=False)  # what the lead tapped
     flow = await load_flow(db, bot, lead)  # folder bots: this lead's drawn funnel
     if flow is None:
         await tg.answer_callback(query["id"])
@@ -1271,6 +1316,9 @@ async def create_order(
         return await _send_stripe_checkout(db, tg, bot, lead, flow, order)
     caption = render(flow.payment.pix_text, lead, order.offer_name, order.amount, bot)
     code = order.pix_copy_paste or ""
+    # Record the payment message (text + the PIX code) in the live-chat inbox.
+    log_message(db, bot, lead, "out", "text",
+                text=((caption + "\n\n") if caption else "") + (f"PIX: {code}" if code else ""))
     keyboard = {
         "inline_keyboard": [
             [{"text": flow.payment.copy_button, "copy_text": {"text": code[:256]}}],
@@ -1331,6 +1379,7 @@ async def _send_stripe_checkout(
     if flow.support_username:
         rows.append([button("💬 Suporte", url=f"https://t.me/{flow.support_username}")])
     await tg.send_message(lead.chat_id, caption or "Pague com cartão no botão abaixo 👇", {"inline_keyboard": rows})
+    log_message(db, bot, lead, "out", "text", text=(caption or "Pagar com cartão") + (f"\n{url}" if url else ""))
     return order
 
 
@@ -1834,7 +1883,8 @@ async def deliver(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead
         await tg.send_message(lead.chat_id, text, protect=protect)
         log_message(db, bot, lead, "out", "text", text=text)
     if medias:
-        log_message(db, bot, lead, "out", "voice" if medias[0].kind == "audio" else medias[0].kind, text=None)
+        log_message(db, bot, lead, "out", "voice" if medias[0].kind == "audio" else medias[0].kind,
+                    text=None, media_id=medias[0].id)
     for start in range(0, len(medias), 10):
         chunk = medias[start:start + 10]
         if len(chunk) == 1:

@@ -333,12 +333,9 @@ function Bubble({ leadId, message }: { leadId: string; message: ChatMessage }) {
   return (
     <div className={`flex max-w-[82%] flex-col gap-1 ${align}`}>
       <div className={`rounded-2xl px-3 py-2 text-sm ${tint}`}>
-        {message.direction === "in" && message.has_media && <InboundMedia kind={message.kind} url={mediaUrl} />}
-        {outbound && message.has_media && message.kind !== "text" && (
-          <p className="text-xs opacity-80">{KIND_LABEL[message.kind] || "📎 Mídia"} enviada</p>
-        )}
+        {message.has_media && message.kind !== "text" && <InboundMedia kind={message.kind} url={mediaUrl} />}
         {message.text && <p className="whitespace-pre-wrap break-words">{stripTags(message.text)}</p>}
-        {!message.text && message.kind === "text" && <p className="opacity-60">—</p>}
+        {!message.text && !message.has_media && message.kind === "text" && <p className="opacity-60">—</p>}
       </div>
       <span className="px-1 text-[10px] text-muted">
         {outbound ? (message.from_operator ? "Você" : "Bot") : ""} {timeLabel(message.created_at)}

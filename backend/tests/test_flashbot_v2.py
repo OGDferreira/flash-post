@@ -167,6 +167,26 @@ async def test_leads_audience_filter_and_open_conversation(client, db_session, o
 
 
 @pytest.mark.anyio
+async def test_conversation_logs_start_taps_and_payment(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(welcome=[]))
+    await _send(client, db_session, bot["id"], _start())  # /start -> offer
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))  # tap a plan -> PIX
+    lead = await db_session.scalar(select(TgLead))
+
+    convo = (await client.get(f"/api/bots/conversations/{lead.id}", headers=headers)).json()
+    texts = [m["text"] or "" for m in convo["messages"]]
+    assert any(t.startswith("/start") for t in texts)  # the conversation starts at /start
+    assert any(t.startswith("👆") for t in texts)  # the lead's button tap is shown
+    assert any("PIX:" in t for t in texts)  # the payment message the lead received
+
+    # /start and taps are funnel events: they must not raise the unread badge.
+    await db_session.commit()
+    await db_session.refresh(lead)
+    assert lead.unread_count == 0
+
+
+@pytest.mark.anyio
 async def test_declining_the_bump_charges_only_the_plan(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, _ = await _setup(client, headers, _flow(welcome=[], order_bump={"name": "Extra", "price": "5.00", "delivery": PACK}))
