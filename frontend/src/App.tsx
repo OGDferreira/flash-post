@@ -2,6 +2,7 @@ import { HomePanelPreference } from "@/components/HomePanelPreference";
 import { ConnectedAccountPopup } from "@/components/ConnectedAccountPopup";
 import { ReleaseNotices } from "@/components/ReleaseNotices";
 import { CompleteProfileGate } from "@/features/auth/CompleteProfileGate";
+import { SubscriptionGate } from "@/features/subscription/SubscriptionGate";
 import { homePath } from "@/features/auth/homePanel";
 import { ContactsPage } from "@/pages/ContactsPage";
 import { CollaboratorInvitePage } from "@/features/auth/CollaboratorInvitePage";
@@ -61,6 +62,7 @@ const AdminOperationsPage = lazyPage(() => import("@/pages/admin/AdminOperations
 const AdminFlowsPage = lazyPage(() => import("@/pages/admin/AdminFlowsPage"), "AdminFlowsPage");
 const AdminAwardsPage = lazyPage(() => import("@/pages/admin/AdminAwardsPage"), "AdminAwardsPage");
 const AdminFeesPage = lazyPage(() => import("@/pages/admin/AdminFeesPage"), "AdminFeesPage");
+const AdminSubscriptionsPage = lazyPage(() => import("@/pages/admin/AdminSubscriptionsPage"), "AdminSubscriptionsPage");
 const LinksPage = lazyPage(() => import("@/pages/LinksPage"), "LinksPage");
 const AdminUsersPage = lazyPage(() => import("@/pages/admin/AdminUsersPage"), "AdminUsersPage");
 const AdminWorkspacesPage = lazyPage(() => import("@/pages/admin/AdminWorkspacesPage"), "AdminWorkspacesPage");
@@ -142,6 +144,7 @@ export default function App() {
                 <Route path="/admin" element={<AdminOverviewPage />} />
                 <Route path="/admin/users" element={<AdminUsersPage />} />
                 <Route path="/admin/fees" element={<AdminFeesPage />} />
+                <Route path="/admin/subscriptions" element={<AdminSubscriptionsPage />} />
                 <Route path="/admin/workspaces" element={<AdminWorkspacesPage />} />
                 <Route path="/admin/system" element={<AdminSystemPage />} />
                 <Route path="/admin/operations" element={<AdminOperationsPage />} />
@@ -253,7 +256,7 @@ function RequireAuth() {
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
-  return <><CompleteProfileGate /><HomePanelPreference prompt /><ReleaseNotices /><ConnectedAccountPopup /><Outlet /></>;
+  return <><CompleteProfileGate /><SubscriptionGate /><HomePanelPreference prompt /><ReleaseNotices /><ConnectedAccountPopup /><Outlet /></>;
 }
 
 function RequireSuperAdmin() {

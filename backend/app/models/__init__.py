@@ -48,6 +48,12 @@ from app.models.push import (
 )
 from app.models.workspace import Workspace, WorkspaceMember
 from app.models.fee_change_log import FeeChangeLog
+from app.models.platform_subscription import (
+    PlatformLiberationCode,
+    PlatformPlan,
+    PlatformSubscription,
+    PlatformSubscriptionCharge,
+)
 from app.models.telegram_bot import (
     AuditEvent,
     TgBot,
@@ -90,6 +96,10 @@ __all__ = [
     "Base",
     "Extension",
     "FeeChangeLog",
+    "PlatformPlan",
+    "PlatformSubscription",
+    "PlatformSubscriptionCharge",
+    "PlatformLiberationCode",
     "InstagramAccountDailyViews",
     "SharkAccount",
     "SupportTicket",

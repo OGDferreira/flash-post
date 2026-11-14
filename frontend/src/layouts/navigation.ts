@@ -88,6 +88,7 @@ export const adminLinks: NavItem[] = [
   { label: "Visão geral", short: "Início", to: "/admin", icon: Home },
   { label: "Usuários", to: "/admin/users", icon: Users },
   { label: "Gerenciamento de Taxas", short: "Taxas", to: "/admin/fees", icon: Receipt },
+  { label: "Assinaturas", to: "/admin/subscriptions", icon: CreditCard },
   { label: "Saques dos sócios", short: "Saques", to: "/admin/partner-wallets", icon: Wallet },
   { label: "Gateways de pagamento", short: "Gateways", to: "/bot/gateways", icon: CircleDollarSign },
   { label: "Operações", to: "/admin/operations", icon: BarChart3 },

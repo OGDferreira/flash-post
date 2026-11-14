@@ -14,6 +14,7 @@ def test_create_scheduler_registers_one_minute_worker() -> None:
         "flashpost-telegram-bots",
         "flashpost-shared-loops",
         "flashpost-global-chat-cleanup",
+        "flashpost-subscription-sweep",
     }
     shared = jobs["flashpost-shared-loops"]
     assert shared.trigger.interval.total_seconds() == 10 * 60 and shared.max_instances == 1
