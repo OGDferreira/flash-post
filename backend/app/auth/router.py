@@ -19,6 +19,7 @@ from app.auth.dependencies import (
     require_csrf,
 )
 from app.core.config import get_settings
+from app.core.cpf import format_cpf
 from app.core.nickname import nickname_key, normalize_nickname
 from app.core.rate_limit import LoginRateLimiter
 from app.notifications.signups import notify_new_signup
@@ -34,6 +35,7 @@ from app.schemas.auth import (
     MessageResponse,
     NicknameAvailabilityResponse,
     PasswordChangeRequest,
+    ProfileCompleteRequest,
     ProfileUpdateRequest,
     RegisterRequest,
     UserResponse,
@@ -65,6 +67,12 @@ def _user_role(user: User, membership: WorkspaceMember | None) -> str:
     return membership.role if membership is not None else "USER"
 
 
+def _profile_complete(user: User) -> bool:
+    """A profile is complete once every required field is present. Today the only
+    field added after the fact is the CPF; the rest are enforced at sign-up."""
+    return bool(user.cpf)
+
+
 def _user_response(user: User, membership: WorkspaceMember | None) -> UserResponse:
     return UserResponse(
         id=user.id,
@@ -72,6 +80,8 @@ def _user_response(user: User, membership: WorkspaceMember | None) -> UserRespon
         username=user.username,
         nickname=user.nickname,
         full_name=user.full_name,
+        cpf=format_cpf(user.cpf) if user.cpf else None,
+        profile_complete=_profile_complete(user),
         avatar_url=(
             f"/api/profile/avatar?{urlencode({'v': int(user.updated_at.timestamp())})}"
             if user.avatar_url
@@ -182,6 +192,8 @@ async def register(
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
     if await _nickname_in_use(db, payload.nickname):
         raise HTTPException(status_code=409, detail="This nickname is already in use.")
+    if await db.scalar(select(User.id).where(User.cpf == payload.cpf)):
+        raise HTTPException(status_code=409, detail="Já existe uma conta com este CPF.")
     # A code that was typed must be valid: never silently sign up without the link.
     chief = await find_chief(db, payload.invite_code) if payload.invite_code else None
 
@@ -190,6 +202,7 @@ async def register(
         nickname=payload.nickname,
         nickname_normalized=nickname_key(payload.nickname),
         full_name=payload.full_name,
+        cpf=payload.cpf,
         password_hash=hash_password(payload.password),
         platform_role=PlatformRole.USER.value,
         is_active=True,
@@ -367,6 +380,30 @@ async def change_password(
     if workspace_id:
         request.session["workspace_id"] = workspace_id
     return MessageResponse(message="Senha alterada.", csrf_token=csrf_token_for(request))
+
+
+@router.post("/profile/complete", response_model=UserResponse, dependencies=[Depends(require_csrf)])
+async def complete_profile(
+    payload: ProfileCompleteRequest, user: AuthenticatedUser, db: DbSession
+) -> UserResponse:
+    """Fill the fields a profile was missing (today: CPF) so an older account can keep
+    using the app. The front-end forces this whenever ``profile_complete`` is false.
+    A CPF already set here can't be changed — it's identity, not a preference."""
+    membership = await _primary_membership(user, db)
+    if user.cpf and user.cpf != payload.cpf:
+        raise HTTPException(status_code=409, detail="O CPF já foi cadastrado e não pode ser alterado.")
+    if await db.scalar(select(User.id).where(User.cpf == payload.cpf, User.id != user.id)):
+        raise HTTPException(status_code=409, detail="Já existe uma conta com este CPF.")
+    user.cpf = payload.cpf
+    if payload.full_name:
+        user.full_name = payload.full_name
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Já existe uma conta com este CPF.") from None
+    await db.refresh(user)
+    return _user_response(user, membership)
 
 
 @router.get("/auth/me", response_model=UserResponse)

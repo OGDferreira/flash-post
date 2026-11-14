@@ -284,7 +284,7 @@ async def test_partner_invite_waits_for_approval_without_partnership(client, db_
     await db_session.commit()
     await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
     created = await client.post("/api/auth/register", headers={"X-CSRF-Token": await _csrf(client)}, json={
-        "full_name": "Indicado", "email": "novo@example.com", "nickname": "novo",
+        "full_name": "Indicado", "email": "novo@example.com", "nickname": "novo", "cpf": "996.030.824-30",
         "password": PASSWORD, "confirm_password": PASSWORD, "invite_code": code,
     })
     assert created.status_code == 201, created.text

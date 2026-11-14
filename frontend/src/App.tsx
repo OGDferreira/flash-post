@@ -1,6 +1,7 @@
 import { HomePanelPreference } from "@/components/HomePanelPreference";
 import { ConnectedAccountPopup } from "@/components/ConnectedAccountPopup";
 import { ReleaseNotices } from "@/components/ReleaseNotices";
+import { CompleteProfileGate } from "@/features/auth/CompleteProfileGate";
 import { homePath } from "@/features/auth/homePanel";
 import { ContactsPage } from "@/pages/ContactsPage";
 import { CollaboratorInvitePage } from "@/features/auth/CollaboratorInvitePage";
@@ -252,7 +253,7 @@ function RequireAuth() {
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
-  return <><HomePanelPreference prompt /><ReleaseNotices /><ConnectedAccountPopup /><Outlet /></>;
+  return <><CompleteProfileGate /><HomePanelPreference prompt /><ReleaseNotices /><ConnectedAccountPopup /><Outlet /></>;
 }
 
 function RequireSuperAdmin() {
