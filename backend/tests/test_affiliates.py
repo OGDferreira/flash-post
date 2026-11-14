@@ -151,7 +151,7 @@ async def test_register_with_invite_code_links_and_invalid_code_blocks_signup(
 
     def payload(email: str, nick: str, invite: str) -> dict:
         return {
-            "full_name": "Novo Usuario", "email": email, "nickname": nick,
+            "full_name": "Novo Usuario", "email": email, "nickname": nick, "cpf": "526.018.159-06",
             "password": PASSWORD, "confirm_password": PASSWORD, "invite_code": invite,
         }
 
@@ -190,19 +190,19 @@ async def test_invite_link_with_percent_is_accepted_at_signup_and_cannot_be_forg
     forged = terms[:-3] + ("aaa" if not terms.endswith("aaa") else "bbb")
     assert (await client.get("/api/affiliates/invite/preview", params={"code": code, "terms": forged})).json()["percent"] is None
 
-    def payload(email: str, nick: str, token: str) -> dict:
+    def payload(email: str, nick: str, token: str, cpf: str) -> dict:
         return {
-            "full_name": "Com Link", "email": email, "nickname": nick, "password": PASSWORD,
+            "full_name": "Com Link", "email": email, "nickname": nick, "password": PASSWORD, "cpf": cpf,
             "confirm_password": PASSWORD, "invite_code": code, "invite_terms": token,
         }
 
-    good = await client.post("/api/auth/register", headers={"X-CSRF-Token": await _csrf(client)}, json=payload("link@example.com", "comlink", terms))
+    good = await client.post("/api/auth/register", headers={"X-CSRF-Token": await _csrf(client)}, json=payload("link@example.com", "comlink", terms, "083.016.613-05"))
     assert good.status_code == 201, good.text
     link = await db_session.scalar(select(Affiliation).where(Affiliation.affiliate_user_id == uuid.UUID(good.json()["user"]["id"])))
     assert link.participation_percent == Decimal("30.00") and link.accepted_percent == Decimal("30.00") and link.accepted_at is not None
 
     # a tampered token links the person without any accepted commission
-    bad = await client.post("/api/auth/register", headers={"X-CSRF-Token": await _csrf(client)}, json=payload("forged@example.com", "forged1", forged))
+    bad = await client.post("/api/auth/register", headers={"X-CSRF-Token": await _csrf(client)}, json=payload("forged@example.com", "forged1", forged, "186.091.390-34"))
     assert bad.status_code == 201
     link = await db_session.scalar(select(Affiliation).where(Affiliation.affiliate_user_id == uuid.UUID(bad.json()["user"]["id"])))
     assert link.participation_percent == 0 and link.accepted_percent is None

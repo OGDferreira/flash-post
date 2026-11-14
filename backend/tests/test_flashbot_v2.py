@@ -130,6 +130,68 @@ async def test_order_bump_adds_to_a_single_pix_and_delivers_both(client, db_sess
 
 
 @pytest.mark.anyio
+async def test_leads_audience_filter_and_open_conversation(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(welcome=[]))
+    await _send(client, db_session, bot["id"], _start())  # a lead with no PIX
+    lead = await db_session.scalar(select(TgLead))
+
+    async def leads(audience: str) -> list[dict]:
+        res = await client.get(f"/api/bots/leads?audience={audience}", headers=headers)
+        assert res.status_code == 200, res.text
+        return res.json()["leads"]
+
+    # No PIX yet: shows under "all" and "no_pix", not under "paid"/"pix_unpaid".
+    assert [x["id"] for x in await leads("no_pix")] == [str(lead.id)]
+    assert [x["id"] for x in await leads("all")] == [str(lead.id)]
+    assert await leads("paid") == [] and await leads("pix_unpaid") == []
+
+    # Generate a PIX but don't pay -> "gerou e não pagou".
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    assert [x["id"] for x in await leads("pix_unpaid")] == [str(lead.id)]
+    assert await leads("no_pix") == []
+    assert (await leads("all"))[0]["has_pix"] is True and (await leads("all"))[0]["paid"] is False
+
+    # Pay it -> "pagantes".
+    apis.pix_amount = float(order.amount)
+    await _pay(client, db_session, order)
+    paid = await leads("paid")
+    assert [x["id"] for x in paid] == [str(lead.id)] and paid[0]["paid"] is True
+
+    # The order list and the activity log carry the lead id so the chat can open.
+    orders = (await client.get("/api/bots/orders/list", headers=headers)).json()["orders"]
+    assert orders and orders[0]["lead_id"] == str(lead.id)
+    activity = (await client.get("/api/bots/activity", headers=headers)).json()["items"]
+    assert activity and all("lead_id" in item for item in activity)
+
+
+@pytest.mark.anyio
+async def test_conversation_logs_start_taps_and_payment(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(welcome=[]))
+    await _send(client, db_session, bot["id"], _start())  # /start -> offer
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))  # tap a plan -> PIX
+    lead = await db_session.scalar(select(TgLead))
+
+    convo = (await client.get(f"/api/bots/conversations/{lead.id}", headers=headers)).json()
+    texts = [m["text"] or "" for m in convo["messages"]]
+    assert texts[0].startswith("/start")  # the conversation is ordered: /start comes first
+    assert any(m["direction"] == "in" for m in convo["messages"][:1])  # ...and it is inbound
+    assert any(t.startswith("👆") for t in texts)  # the lead's button tap is shown
+    assert any("PIX:" in t for t in texts)  # the payment message the lead received
+    # The /start must sort before the offer it triggered (same-transaction rows).
+    start_i = next(i for i, t in enumerate(texts) if t.startswith("/start"))
+    tap_i = next(i for i, t in enumerate(texts) if t.startswith("👆"))
+    assert start_i < tap_i
+
+    # /start and taps are funnel events: they must not raise the unread badge.
+    await db_session.commit()
+    await db_session.refresh(lead)
+    assert lead.unread_count == 0
+
+
+@pytest.mark.anyio
 async def test_declining_the_bump_charges_only_the_plan(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, _ = await _setup(client, headers, _flow(welcome=[], order_bump={"name": "Extra", "price": "5.00", "delivery": PACK}))
@@ -213,6 +275,78 @@ async def test_upsell_after_payment_accept_and_decline_move_through_the_sequence
     await _send(client, db_session, bot["id"], _tap(f"upn:1:{chain}"))
     await db_session.commit()
     assert not list(await db_session.scalars(select(TgJob).where(TgJob.kind == "send_upsell", TgJob.status == "pending")))
+
+
+@pytest.mark.anyio
+async def test_after_purchase_messages_drip_on_a_sale(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(
+        welcome=[],
+        plans=[{"id": "vip", "name": "VIP", "price": "19.90", "delivery": {
+            "type": "default", "text": "VIP ok", "after_purchase": [
+                {"type": "text", "text": "Obrigado pela compra!", "delay_seconds": 0},
+                {"type": "text", "text": "Bônus chegando…", "delay_seconds": 120},
+            ],
+        }}],
+    ))
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    await _pay(client, db_session, order)
+    texts = [m["text"] for m in apis.methods("sendMessage")]
+    # the delivery and the instant (delay 0) message go out with the payment
+    assert "VIP ok" in texts and "Obrigado pela compra!" in texts
+    # the delayed one is queued, not sent yet
+    assert "Bônus chegando…" not in texts
+    pending = list(await db_session.scalars(
+        select(TgJob).where(TgJob.kind == "send_order_msg", TgJob.status == "pending")
+    ))
+    assert len(pending) == 1
+    await _run_jobs_now(db_session)
+    assert "Bônus chegando…" in [m["text"] for m in apis.methods("sendMessage")]
+
+
+@pytest.mark.anyio
+async def test_lead_chat_captures_inbound_and_operator_can_reply(client, db_session, owner, apis) -> None:
+    from app.models import TgMessage
+
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(welcome=[]))
+    await _send(client, db_session, bot["id"], _start())  # creates the lead + sends the offer
+    # the lead sends a free-text message (not a command): captured, funnel does nothing
+    inbound = {"message": {
+        "message_id": 7, "from": {"id": 555, "is_bot": False, "first_name": "Lucas", "username": "lucas"},
+        "chat": {"id": 555, "type": "private"}, "text": "oi, tem desconto?",
+    }}
+    await _send(client, db_session, bot["id"], inbound)
+    await db_session.commit()  # drop the session's old read snapshot
+    lead = await db_session.scalar(select(TgLead))
+    assert lead.unread_count >= 1
+
+    convos = (await client.get("/api/bots/conversations", headers=headers)).json()["conversations"]
+    assert convos and convos[0]["lead_id"] == str(lead.id) and convos[0]["unread"] >= 1
+
+    convo = (await client.get(f"/api/bots/conversations/{lead.id}", headers=headers)).json()
+    assert any(m["direction"] == "in" and m["text"] == "oi, tem desconto?" for m in convo["messages"])
+    # The chat exposes the lead's PIX/order history (none generated yet here).
+    assert convo["orders"] == [] and convo["pix_generated"] == 0 and convo["pix_paid"] == 0
+
+    before = len(apis.methods("sendMessage"))
+    sent = await client.post(
+        f"/api/bots/conversations/{lead.id}/reply", headers=headers, json={"text": "Temos sim! 10% hoje."}
+    )
+    assert sent.status_code == 200, sent.text
+    assert len(apis.methods("sendMessage")) == before + 1
+    assert apis.methods("sendMessage")[-1]["text"] == "Temos sim! 10% hoje."
+    out = await db_session.scalar(
+        select(TgMessage).where(TgMessage.direction == "out", TgMessage.sent_by_user_id.is_not(None))
+    )
+    assert out is not None and out.text == "Temos sim! 10% hoje."
+
+    await client.post(f"/api/bots/conversations/{lead.id}/read", headers=headers)
+    await db_session.commit()
+    await db_session.refresh(lead)
+    assert lead.unread_count == 0
 
 
 @pytest.mark.anyio

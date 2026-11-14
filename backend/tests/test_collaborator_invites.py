@@ -23,11 +23,12 @@ async def _login(client: AsyncClient, email: str, password: str):
     )
 
 
-def _signup(nickname: str, email: str) -> dict:
+def _signup(nickname: str, email: str, cpf: str = "768.426.846-50") -> dict:
     return {
         "full_name": "Novo Colaborador",
         "email": email,
         "nickname": nickname,
+        "cpf": cpf,
         "password": "safe-collaborator-password",
         "confirm_password": "safe-collaborator-password",
     }

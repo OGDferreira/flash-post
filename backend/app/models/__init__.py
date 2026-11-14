@@ -18,6 +18,10 @@ from app.models.financial_expense import FinancialExpense
 from app.models.financial_withdrawal import FinancialWithdrawal
 from app.models.instagram_account import InstagramAccount
 from app.models.instagram_app_credential import InstagramAppCredential
+from app.models.instagram_automation import (
+    InstagramAutomationEvent,
+    InstagramCommentAutomation,
+)
 from app.models.instagram_profile_folder import InstagramProfileFolder
 from app.models.instagram_loop import (
     InstagramLoop,
@@ -35,6 +39,7 @@ from app.models.app_notification import AppNotification
 from app.models.shark_account import SharkAccount
 from app.models.extension import Extension
 from app.models.support import SupportTicket
+from app.models.global_chat import GlobalChatMessage
 from app.models.daily_views import InstagramAccountDailyViews
 from app.models.sharkbot import SharkLead, SharkTransaction
 from app.models.media_insight import InstagramMediaInsight
@@ -47,6 +52,12 @@ from app.models.push import (
 )
 from app.models.workspace import Workspace, WorkspaceMember
 from app.models.fee_change_log import FeeChangeLog
+from app.models.platform_subscription import (
+    PlatformLiberationCode,
+    PlatformPlan,
+    PlatformSubscription,
+    PlatformSubscriptionCharge,
+)
 from app.models.telegram_bot import (
     AuditEvent,
     TgBot,
@@ -61,6 +72,7 @@ from app.models.telegram_bot import (
     TgJob,
     TgLead,
     TgMedia,
+    TgMessage,
     TgOrder,
     TgSubscription,
     TgUpdateSeen,
@@ -82,6 +94,7 @@ __all__ = [
     "TgJob",
     "TgLead",
     "TgMedia",
+    "TgMessage",
     "TgOrder",
     "TgSubscription",
     "TgUpdateSeen",
@@ -89,6 +102,10 @@ __all__ = [
     "Base",
     "Extension",
     "FeeChangeLog",
+    "PlatformPlan",
+    "PlatformSubscription",
+    "PlatformSubscriptionCharge",
+    "PlatformLiberationCode",
     "InstagramAccountDailyViews",
     "SharkAccount",
     "SupportTicket",
@@ -101,8 +118,11 @@ __all__ = [
     "EmailAccount",
     "FinancialExpense",
     "FinancialWithdrawal",
+    "GlobalChatMessage",
     "InstagramAccount",
     "InstagramAppCredential",
+    "InstagramAutomationEvent",
+    "InstagramCommentAutomation",
     "InstagramLoop",
     "InstagramLoopAccount",
     "InstagramLoopAccountState",

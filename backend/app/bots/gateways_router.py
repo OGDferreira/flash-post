@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select, update
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, SuperAdminUser, require_csrf
-from app.bots import atenaspay, engine, gateways, snakepay
+from app.bots import atenaspay, engine, gateways, snakepay, stripe_gateway
 from app.core.config import get_settings
 from app.core.crypto import encrypt_value
 from app.models import SystemSetting, TgBot, TgFlow, TgGatewaySetting, TgOrder, User, Workspace
@@ -18,14 +18,14 @@ router = APIRouter(prefix="/api/payment-gateways", tags=["Payment gateways"])
 
 
 class GatewayChoice(BaseModel):
-    gateway: str = Field(pattern="^(smokepay|snakepay|atenaspay)$")
+    gateway: str = Field(pattern="^(smokepay|snakepay|atenaspay|stripe)$")
     snakepay_recipient_id: str | None = Field(default=None, max_length=64)
     # True: every funnel follows this gateway (clears the per-funnel choices).
     apply_to_all: bool = False
 
 
 class FlowGateway(BaseModel):
-    gateway: str | None = Field(default=None, pattern="^(smokepay|snakepay|atenaspay)$")  # None = operation default
+    gateway: str | None = Field(default=None, pattern="^(smokepay|snakepay|atenaspay|stripe)$")  # None = operation default
 
 
 class SnakepaySwitch(BaseModel):
@@ -33,6 +33,10 @@ class SnakepaySwitch(BaseModel):
 
 
 class AtenaspaySwitch(BaseModel):
+    enabled: bool
+
+
+class StripeSwitch(BaseModel):
     enabled: bool
 
 
@@ -45,7 +49,7 @@ class SnakepayCredentials(BaseModel):
 
 
 class PriorityItem(BaseModel):
-    gateway: str = Field(pattern="^(smokepay|snakepay|atenaspay)$")
+    gateway: str = Field(pattern="^(smokepay|snakepay|atenaspay|stripe)$")
     enabled: bool
     # None = every funnel of the operation; else only these own funnels.
     flow_ids: list[uuid.UUID] | None = Field(default=None, max_length=500)
@@ -100,6 +104,7 @@ async def _state(db, user, workspace) -> dict:
     enabled = await gateways.snakepay_enabled(db)
     snake_configured = await gateways.snakepay_configured(db)
     atenas_enabled = await gateways.atenaspay_enabled(db)
+    stripe_enabled = await gateways.stripe_enabled(db)
     state = {
         "current": workspace.payment_gateway if workspace.payment_gateway in gateways.GATEWAYS else "smokepay",
         "snakepay_recipient_id": workspace.snakepay_recipient_id,
@@ -138,6 +143,11 @@ async def _state(db, user, workspace) -> dict:
                 "fee": "Taxas conforme seu contrato Atenas Pay",
                 "description": "Pix com subcontas e divisão automática das vendas.",
             },
+            {
+                "id": "stripe", "name": "Vendas Internacionais", "available": stripe_gateway.configured() and stripe_enabled,
+                "fee": "Cartão via Stripe · taxas conforme o cartão",
+                "description": "Cartão de crédito (nacional e internacional) por link de pagamento, via Stripe.",
+            },
         ],
     }
     state["priority"] = await _priority(db, workspace, state["gateways"], admin)
@@ -165,6 +175,12 @@ async def _state(db, user, workspace) -> dict:
             ),
             "atenaspay_enabled": atenas_enabled,
             "atenaspay_webhook_url": engine.atenaspay_webhook_url(),
+            "stripe_key_set": stripe_gateway.api_configured(),
+            "stripe_secret_set": bool(
+                get_settings().stripe_webhook_secret and get_settings().stripe_webhook_secret.get_secret_value().strip()
+            ),
+            "stripe_enabled": stripe_enabled,
+            "stripe_webhook_url": engine.stripe_webhook_url(),
         }
     return state
 
@@ -243,6 +259,8 @@ async def save_priority(payload: PriorityRequest, access: OwnerAccess, user: Aut
                 raise HTTPException(status_code=422, detail="Configure a SnakePay (ShopID ou credenciais) antes de ligá-la.")
         if item.enabled and item.gateway == "atenaspay" and not await gateways.atenaspay_available(db):
             raise HTTPException(status_code=409, detail="A Athenas Pay ainda não foi liberada pelo administrador.")
+        if item.enabled and item.gateway == "stripe" and not await gateways.stripe_available(db):
+            raise HTTPException(status_code=409, detail="A Stripe ainda não foi liberada pelo administrador.")
         if item.enabled and item.gateway == "smokepay" and not _smokepay_configured():
             raise HTTPException(status_code=409, detail="A SmokePay não está configurada no servidor.")
     before = await _priority(db, workspace, (await _state_catalog(db)), admin)
@@ -276,6 +294,7 @@ async def _state_catalog(db) -> list[dict]:
         {"id": "smokepay", "available": _smokepay_configured()},
         {"id": "snakepay", "available": enabled and await gateways.snakepay_configured(db)},
         {"id": "atenaspay", "available": atenaspay.configured() and await gateways.atenaspay_enabled(db)},
+        {"id": "stripe", "available": stripe_gateway.configured() and await gateways.stripe_enabled(db)},
     ]
 
 
@@ -369,6 +388,8 @@ async def choose_gateway(payload: GatewayChoice, access: OwnerAccess, user: Auth
             raise HTTPException(status_code=422, detail="Cole o seu ShopID da SnakePay para receber suas vendas.")
     if payload.gateway == "atenaspay" and not await gateways.atenaspay_available(db):
         raise HTTPException(status_code=409, detail="A Athenas Pay ainda não foi liberada pelo administrador.")
+    if payload.gateway == "stripe" and not await gateways.stripe_available(db):
+        raise HTTPException(status_code=409, detail="A Stripe ainda não foi liberada pelo administrador.")
     workspace.payment_gateway = payload.gateway
     workspace.snakepay_recipient_id = recipient
     rows = await gateways.gateway_settings(db, workspace.id)
@@ -442,6 +463,8 @@ async def flow_gateway(
             raise HTTPException(status_code=422, detail="Cadastre o seu ShopID da SnakePay antes de usar a SnakePay num fluxo.")
     if payload.gateway == "atenaspay" and not await gateways.atenaspay_available(db):
         raise HTTPException(status_code=409, detail="A Athenas Pay ainda não foi liberada pelo administrador.")
+    if payload.gateway == "stripe" and not await gateways.stripe_available(db):
+        raise HTTPException(status_code=409, detail="A Stripe ainda não foi liberada pelo administrador.")
     flow.payment_gateway = payload.gateway
     await db.commit()
     engine.resume_snakepay()  # a new ShopID/choice gets a fresh try right away
@@ -478,6 +501,29 @@ async def switch_atenaspay(payload: AtenaspaySwitch, user: SuperAdminUser, db: D
         db.add(
             SystemSetting(
                 key=gateways.ATENASPAY_ENABLED_KEY,
+                value={"enabled": payload.enabled},
+                updated_by_user_id=user.id,
+            )
+        )
+    else:
+        row.value = {"enabled": payload.enabled}
+        row.updated_by_user_id = user.id
+    await db.commit()
+    return {"enabled": payload.enabled}
+
+
+@router.put("/stripe/enabled", dependencies=[Depends(require_csrf)])
+async def switch_stripe(payload: StripeSwitch, user: SuperAdminUser, db: DbSession) -> dict:
+    if payload.enabled and not stripe_gateway.configured():
+        raise HTTPException(
+            status_code=409,
+            detail="Configure STRIPE_SECRET_KEY e STRIPE_WEBHOOK_SECRET no servidor antes de liberar a Stripe.",
+        )
+    row = await db.get(SystemSetting, gateways.STRIPE_ENABLED_KEY)
+    if row is None:
+        db.add(
+            SystemSetting(
+                key=gateways.STRIPE_ENABLED_KEY,
                 value={"enabled": payload.enabled},
                 updated_by_user_id=user.id,
             )

@@ -11,6 +11,7 @@ import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
 import { AnalyticsPanel } from "@/features/bots/AnalyticsPanel";
 import { FlashFunnelPanel } from "@/features/bots/FlashFunnelPanel";
 import { BotsListPanel } from "@/features/bots/BotsListPanel";
+import { ConversationsPanel } from "@/features/bots/ConversationsPanel";
 import { FoldersPanel } from "@/features/bots/FoldersPanel";
 import { FlowsPanel } from "@/features/bots/FlowsPanel";
 import { GatewaysPanel } from "@/features/bots/GatewaysPanel";
@@ -24,6 +25,7 @@ import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "
 export const BOT_SECTIONS = {
   home: { slug: "", title: "Painel", eyebrow: "Visão geral", hint: "Leads, starts, vendas e conversão dos seus bots no período." },
   bots: { slug: "robos", title: "Meus bots", eyebrow: "Bots e leads", hint: "Conecte bots do Telegram e escolha o funil (ou a pasta de funis) de cada um." },
+  conversations: { slug: "conversas", title: "Conversas", eyebrow: "Bots e leads", hint: "Veja a conversa de cada lead com o bot e responda com texto, áudio ou imagem." },
   flows: { slug: "funis", title: "Meus funis", eyebrow: "Funis", hint: "Funis criados por você: conteúdo, planos, entregas e o gateway de cada um." },
   folders: { slug: "pastas", title: "Pastas de funis", eyebrow: "Funis", hint: "Junte vários funis numa pasta: o bot sorteia um por lead no /start." },
   analises: { slug: "analises", title: "Análises", eyebrow: "Visão geral", hint: "O que vende e o que não: bots, fluxos, planos, ofertas e clientes, com filtros." },
@@ -91,6 +93,7 @@ export function BotsPage() {
         </>
       )}
       {tab === "bots" && <BotsListPanel period={period} />}
+      {tab === "conversations" && <ConversationsPanel />}
       {tab === "flows" && (
         <FlowsPanel
           onEditingChange={setEditing}

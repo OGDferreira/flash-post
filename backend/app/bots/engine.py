@@ -16,15 +16,15 @@ import secrets
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bots import atenaspay, smokepay
+from app.bots import atenaspay, smokepay, stripe_gateway
 from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, UpsellStep
 from app.bots.richtext import sanitize
-from app.bots.telegram import InputFile, TelegramClient, TelegramError
+from app.bots.telegram import InputFile, TelegramClient, TelegramError, translate_target
 from app.partners.service import billing_route
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value
@@ -36,6 +36,7 @@ from app.models import (
     TgJob,
     TgLead,
     TgMedia,
+    TgMessage,
     TgOrder,
     TgSubscription,
 )
@@ -104,8 +105,89 @@ def button(text: str, style: str = "default", **action: object) -> dict:
     return data
 
 
+def log_message(
+    db: AsyncSession, bot: TgBot, lead: TgLead, direction: str, kind: str, *,
+    text: str | None = None, tg_file_id: str | None = None,
+    media_id: uuid.UUID | None = None, sent_by_user_id: uuid.UUID | None = None,
+    unread: bool = True,
+) -> None:
+    """Record one line of the lead's conversation (live-chat inbox). Best effort: a
+    logging row must never break the funnel, and incoming text is bounded.
+    ``unread=False``: a funnel event (``/start``, a button tap) that should not raise
+    the operator's unread badge."""
+    db.add(TgMessage(
+        workspace_id=bot.workspace_id, bot_id=bot.id, lead_id=lead.id,
+        direction=direction, kind=kind, text=(text or None) and text[:4096],
+        tg_file_id=tg_file_id, media_id=media_id, sent_by_user_id=sent_by_user_id,
+        # Postgres now() is the transaction start time, identical for every row written
+        # in one update; stamp each message with the wall clock so the inbox keeps the
+        # real order (e.g. /start before the offer it triggered).
+        created_at=utcnow(),
+    ))
+    if direction == "in" and unread:
+        lead.unread_count = (lead.unread_count or 0) + 1
+
+
 def telegram(bot: TgBot) -> TelegramClient:
     return TelegramClient(decrypt_value(bot.encrypted_token))
+
+
+async def send_manual_message(
+    db: AsyncSession, bot: TgBot, lead: TgLead, *,
+    text: str | None = None, media: TgMedia | None = None, user_id: uuid.UUID | None = None,
+) -> None:
+    """An operator's manual reply from the live-chat inbox: send it through the bot and
+    log it as an outbound message. Text is sanitized to the same safe HTML the funnel uses."""
+    tg = telegram(bot)
+    caption = sanitize(text) if text else None
+    if media is not None:
+        kind = "voice" if media.kind == "audio" else media.kind  # photo | video | voice
+        await send_media_message(db, tg, bot, lead.chat_id, kind, media, caption)
+        log_message(db, bot, lead, "out", kind, text=text, media_id=media.id, sent_by_user_id=user_id)
+    elif caption:
+        await tg.send_message(lead.chat_id, caption)
+        log_message(db, bot, lead, "out", "text", text=text, sent_by_user_id=user_id)
+
+
+async def inbound_media_bytes(bot: TgBot, file_id: str) -> tuple[bytes, str]:
+    """Download a lead's incoming media so the panel can preview it. Returns (bytes,
+    telegram file_path) — the caller maps the extension to a content type."""
+    tg = telegram(bot)
+    info = await tg.get_file(file_id)
+    return await tg.download_file(info.get("file_path") or ""), (info.get("file_path") or "")
+
+
+def _set_translate_target(flow: "FlowDefinition | None", lead: TgLead) -> None:
+    """Point outgoing copy at the lead's language for the rest of this update, when the funnel's
+    auto-translation is on. No-op (copy stays as written) otherwise."""
+    from app.bots import translate
+
+    target = translate.lang_of(lead.language_code) if flow and flow.international.translate else None
+    translate_target.set(target)
+
+
+# A tiny in-process cache of funnel definitions, keyed by flow id. The hot /start path would
+# otherwise re-read the same TgFlow row on every update, and the database can be a continent
+# away (one round-trip ~100ms). We cache the raw definition dict (not the parsed model) and
+# re-validate per call, so no mutable model is ever shared between leads. ``save_flow`` evicts
+# on edit; the short TTL is a backstop for any other write path and for multi-process deploys.
+_FLOW_DEF_CACHE: dict[uuid.UUID, tuple[float, dict]] = {}
+_FLOW_DEF_TTL = 20.0
+
+
+def invalidate_flow(flow_id: uuid.UUID) -> None:
+    _FLOW_DEF_CACHE.pop(flow_id, None)
+
+
+async def _flow_definition(db: AsyncSession, flow_id: uuid.UUID) -> dict | None:
+    hit = _FLOW_DEF_CACHE.get(flow_id)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+    flow = await db.get(TgFlow, flow_id)
+    if flow is None:
+        return None
+    _FLOW_DEF_CACHE[flow_id] = (time.monotonic() + _FLOW_DEF_TTL, flow.definition)
+    return flow.definition
 
 
 async def load_flow(db: AsyncSession, bot: TgBot, lead: TgLead | None = None) -> FlowDefinition | None:
@@ -116,8 +198,8 @@ async def load_flow(db: AsyncSession, bot: TgBot, lead: TgLead | None = None) ->
     flow_id = flow_id_for(bot, lead) if bot.folder_id is not None else bot.flow_id
     if flow_id is None:
         return None
-    flow = await db.get(TgFlow, flow_id)
-    return FlowDefinition.model_validate(flow.definition) if flow else None
+    definition = await _flow_definition(db, flow_id)
+    return FlowDefinition.model_validate(definition) if definition is not None else None
 
 
 # ---------------------------------------------------------------- media
@@ -156,6 +238,18 @@ async def _media_rows(db: AsyncSession, bot: TgBot, ids: list[uuid.UUID]) -> lis
         )
     }
     return [rows[i] for i in ids if i in rows]
+
+
+async def _first_media(db: AsyncSession, bot: TgBot, media_ids: list[uuid.UUID]) -> TgMedia | None:
+    """The first still-existing media of a list, so the live-chat inbox can show the
+    image the lead was shown alongside the copy."""
+    rows = await _media_rows(db, bot, list(media_ids)[:1])
+    return rows[0] if rows else None
+
+
+def _log_kind(media: TgMedia | None) -> str:
+    """Live-chat message kind for an attached funnel media (audio -> voice bubble)."""
+    return {"photo": "photo", "video": "video", "audio": "voice"}.get(media.kind, "photo") if media else "text"
 
 
 def _cache_kind(media: TgMedia) -> str:
@@ -328,11 +422,13 @@ async def send_block(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgL
     if block.type == "text":
         await tg.send_chat_action(lead.chat_id, "typing")
         await tg.send_message(lead.chat_id, caption)
+        log_message(db, bot, lead, "out", "text", text=caption)
         return
     medias = await _media_rows(db, bot, block.media_ids)
     if not medias:
         if caption:
             await tg.send_message(lead.chat_id, caption)
+            log_message(db, bot, lead, "out", "text", text=caption)
         return
     if block.type == "album":
         await send_album(db, tg, bot, lead.chat_id, medias, caption, spoiler=block.spoiler)
@@ -340,6 +436,8 @@ async def send_block(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgL
         if block.type == "voice":
             await tg.send_chat_action(lead.chat_id, "record_voice")
         await send_media_message(db, tg, bot, lead.chat_id, block.type, medias[0], caption or None, spoiler=block.spoiler)
+    # Keep the media id so the live-chat inbox can show the exact image/audio the lead got.
+    log_message(db, bot, lead, "out", "photo" if block.type == "album" else block.type, text=caption, media_id=medias[0].id)
 
 
 # ---------------------------------------------------------------- jobs
@@ -440,6 +538,9 @@ async def send_offer(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgL
         if not text and keyboard:
             text = render(offer.plans_text, lead, bot=bot)
         await send_media_then_text(db, tg, bot, lead.chat_id, offer.media_ids, offer.spoiler, text, keyboard)
+    offer_media = await _first_media(db, bot, offer.media_ids)
+    log_message(db, bot, lead, "out", _log_kind(offer_media), text=text or render(offer.plans_text, lead, bot=bot),
+                media_id=offer_media.id if offer_media else None)
     lead.stage = "offered"
 
 
@@ -522,6 +623,8 @@ async def send_bump_question(
         [button(bump.decline_label, callback_data=no)],
     ]}
     await send_media_then_text(db, tg, bot, lead.chat_id, bump.media_ids, False, text, keyboard)
+    bump_media = await _first_media(db, bot, bump.media_ids)
+    log_message(db, bot, lead, "out", _log_kind(bump_media), text=text, media_id=bump_media.id if bump_media else None)
 
 
 def discounted(price: Decimal, step: DownsellStep) -> Decimal:
@@ -581,6 +684,8 @@ async def send_downsell(
     off = f"{step.discount_value.normalize():f}%" if step.discount_type == "percent" else brl(step.discount_value)
     text = render(step.text, lead, bot=bot, extra={"{desconto}": off})
     await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, {"inline_keyboard": rows})
+    ds_media = await _first_media(db, bot, step.media_ids)
+    log_message(db, bot, lead, "out", _log_kind(ds_media), text=text, media_id=ds_media.id if ds_media else None)
     lead.stage = "downsell"
 
 
@@ -596,6 +701,20 @@ async def schedule_upsell(db: AsyncSession, bot: TgBot, lead: TgLead, flow: Flow
         await schedule(db, bot, "send_upsell", utcnow(), f"upsell:{chain}:{index}", lead, {"index": index, "chain": chain})
 
 
+async def schedule_after_purchase(db: AsyncSession, bot: TgBot, lead: TgLead, delivery: Delivery, order: TgOrder, slot: int) -> None:
+    """Queue the delivery's post-purchase message drip (text/audio) for any purchase that
+    used it. Each message waits its own ``delay_seconds`` (0 = right after the previous
+    one). The whole block is carried in the job so it needs no flow lookup at run time;
+    ``slot`` keeps the keys distinct when one order delivers twice (plan + order bump)."""
+    run = utcnow()
+    for position, message in enumerate(delivery.after_purchase):
+        run += timedelta(seconds=message.delay_seconds, microseconds=position)
+        await schedule(
+            db, bot, "send_order_msg", run, f"postbuy:{order.id}:{slot}:{position}", lead,
+            {"block": message.model_dump(mode="json")},
+        )
+
+
 async def send_upsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, chain: str) -> None:
     if not 0 <= index < len(flow.upsells):
         return
@@ -607,6 +726,8 @@ async def send_upsell(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: Tg
     if not step.hide_decline:
         rows.append([button(step.decline_label, callback_data=f"upn:{index}:{chain}")])
     await send_media_then_text(db, tg, bot, lead.chat_id, step.media_ids, step.spoiler, text, {"inline_keyboard": rows})
+    up_media = await _first_media(db, bot, step.media_ids)
+    log_message(db, bot, lead, "out", _log_kind(up_media), text=text, media_id=up_media.id if up_media else None)
 
 
 async def _claim(db: AsyncSession, job: TgJob) -> bool:
@@ -625,7 +746,10 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
     if lead is not None and lead.blocked_bot:
         return
     tg = telegram(bot)
-    if job.kind in ("send_block", "send_offer", "send_downsell", "send_downsell_np", "send_upsell"):
+    if job.kind == "send_order_msg":
+        if lead is not None:
+            await send_block(db, tg, bot, lead, Block.model_validate(job.payload["block"]))
+    elif job.kind in ("send_block", "send_offer", "send_downsell", "send_downsell_np", "send_upsell"):
         flow = await load_flow(db, bot, lead)
         if flow is None or lead is None:
             return
@@ -753,11 +877,27 @@ async def upsert_lead(db: AsyncSession, bot: TgBot, user: dict, chat_id: int) ->
         lead.seller_hidden = await owner_takes_all(db, flow, bot.workspace_id) is not None
     lead.first_name = (user.get("first_name") or "")[:255] or None
     lead.username = (user.get("username") or "")[:64] or None
+    lead.language_code = (user.get("language_code") or "")[:16] or None
     lead.chat_id = chat_id
     lead.blocked_bot = False
     lead.last_seen_at = utcnow()
     await db.flush()
     return lead
+
+
+def _inbound_content(message: dict) -> tuple[str, str | None, str | None]:
+    """(kind, telegram file_id, text) of a lead's incoming message, for the chat log."""
+    caption = (message.get("caption") or "").strip() or None
+    if message.get("text"):
+        return "text", None, message["text"].strip() or None
+    if message.get("photo"):  # list of sizes, largest last
+        sizes = message["photo"]
+        return "photo", (sizes[-1].get("file_id") if sizes else None), caption
+    for kind in ("voice", "audio", "video", "video_note", "document", "sticker", "animation"):
+        node = message.get(kind)
+        if isinstance(node, dict) and node.get("file_id"):
+            return (kind if kind != "animation" else "video"), node["file_id"], caption
+    return "other", None, caption
 
 
 async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid.UUID | None:
@@ -777,15 +917,24 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
         chat = message.get("chat") or {}
         sender = message.get("from") or {}
         text = (message.get("text") or "").strip()
-        if chat.get("type") != "private" or not sender or not text.startswith("/start"):
+        if chat.get("type") != "private" or not sender:
+            return None
+        if not text.startswith("/start"):
+            # Not a funnel command: capture it for the live-chat inbox and stop. The
+            # funnel itself only reacts to /start and button taps.
+            lead = await upsert_lead(db, bot, sender, chat["id"])
+            kind, file_id, body = _inbound_content(message)
+            log_message(db, bot, lead, "in", kind, text=body, tg_file_id=file_id)
             return None
         lead = await upsert_lead(db, bot, sender, chat["id"])
+        log_message(db, bot, lead, "in", "text", text=text, unread=False)  # the conversation begins at /start
         parts = text.split(maxsplit=1)
         if len(parts) == 2 and not lead.source:
             lead.source = parts[1][:64]
         flow = await load_flow(db, bot, lead)  # folder bots: the funnel drawn for this lead
         if flow is None:
             return None
+        _set_translate_target(flow, lead)
         if flow.age_gate.enabled and lead.age_confirmed_at is None:
             await telegram(bot).send_message(
                 lead.chat_id,
@@ -801,6 +950,28 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
     return None
 
 
+def _tap_label(query: dict, data: str) -> str:
+    """The visible text of the button the lead tapped, read from the message's own
+    keyboard; falls back to a generic label by callback prefix."""
+    markup = (query.get("message") or {}).get("reply_markup") or {}
+    for row in markup.get("inline_keyboard") or []:
+        for btn in row or []:
+            if isinstance(btn, dict) and btn.get("callback_data") == data and btn.get("text"):
+                return str(btn["text"])[:200]
+    prefixes = {
+        "plan": "Escolheu um plano", "plans": "Ver planos", "prev": "Ver prévias",
+        "bump:y": "Aceitou o order bump", "bump:n": "Recusou o order bump",
+        "chk": "Verificar pagamento", "age:ok": "Confirmou maioridade",
+        "up": "Aceitou o upsell", "upn": "Recusou o upsell",
+        "pm:pix": "Escolheu pagar no Pix", "pm:card": "Escolheu pagar no cartão",
+        "dplan": "Aceitou o downsell", "nplan": "Aceitou a oferta",
+    }
+    for prefix, label in prefixes.items():
+        if data == prefix or data.startswith(prefix + ":"):
+            return label
+    return "Clicou em um botão"
+
+
 async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UUID | None:
     tg = telegram(bot)
     data = query.get("data") or ""
@@ -810,10 +981,12 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UU
         await tg.answer_callback(query["id"])
         return None
     lead = await upsert_lead(db, bot, sender, chat_id)
+    log_message(db, bot, lead, "in", "text", text=f"👆 {_tap_label(query, data)}", unread=False)  # what the lead tapped
     flow = await load_flow(db, bot, lead)  # folder bots: this lead's drawn funnel
     if flow is None:
         await tg.answer_callback(query["id"])
         return None
+    _set_translate_target(flow, lead)
     if data == "age:ok":
         await tg.answer_callback(query["id"])
         if lead.age_confirmed_at is None:
@@ -859,15 +1032,38 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UU
         await tg.answer_callback(query["id"])
         await schedule_upsell(db, bot, lead, flow, index + 1, parts[2])
         return lead.id
+    if data.startswith("pm:"):
+        # Second step of an international offer: the lead picked Pix or Cartão.
+        parts = data.split(":", 2)
+        resolved = resolve_offer(flow, parts[2]) if len(parts) == 3 else "Esta oferta não está mais disponível."
+        if isinstance(resolved, str):
+            await tg.answer_callback(query["id"], resolved)
+            return None
+        plan, options = resolved
+        method = "card" if parts[1] == "card" else "pix"
+        await tg.answer_callback(query["id"], "Gerando o pagamento no cartão…" if method == "card" else "Gerando seu Pix…")
+        await create_order(db, tg, bot, lead, flow, plan, method=method, **options)
+        return lead.id
     if data.startswith(("plan:", "bump:", "dplan:", "nplan:", "up:")):
         resolved = resolve_offer(flow, data)
         if isinstance(resolved, str):
             await tg.answer_callback(query["id"], resolved)
             return None
+        plan, options = resolved
+        # International funnel: offer Pix vs Cartão on the main plan/bump offer before charging.
+        if flow.international.enabled and data.startswith(("plan:", "bump:")):
+            from app.bots import gateways
+
+            bump = options.get("bump")
+            amount_brl = plan.price + (bump.price if bump else Decimal("0"))
+            usd = international_usd(flow, plan, bump, amount_brl)
+            if usd is not None and await gateways.stripe_available(db):
+                await tg.answer_callback(query["id"])
+                await _send_method_choice(tg, lead, amount_brl, usd, data)
+                return lead.id
         # Telegram already got its 200 (updates run in the background), so the charge
         # is created right here: no queue round trip before the PIX goes out.
         await tg.answer_callback(query["id"], "Gerando seu Pix…")
-        plan, options = resolved
         started = time.perf_counter()
         await create_order(db, tg, bot, lead, flow, plan, **options)
         logger.info("pix sent in %d ms", (time.perf_counter() - started) * 1000)
@@ -980,6 +1176,26 @@ def payment_webhook_url() -> str:
     return f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/smokepay"
 
 
+async def resync_webhooks(db: AsyncSession) -> int:
+    """Re-point every active bot's Telegram webhook at the current PUBLIC_BASE_URL.
+
+    Webhooks are only set when a bot is connected/activated, so after a host move (e.g. Render ->
+    VPS) they still point at the old, now-dead URL and the bots go silent. Running this on startup
+    makes the move self-healing. Idempotent and fault-tolerant: one failing bot never blocks the rest.
+    """
+    base = get_settings().public_base_url.rstrip("/")
+    bots = list(await db.scalars(select(TgBot).where(TgBot.is_active.is_(True))))
+    ok = 0
+    for bot in bots:
+        try:
+            await telegram(bot).set_webhook(f"{base}/api/bots/telegram/{bot.id}", bot.webhook_secret)
+            ok += 1
+        except (TelegramError, Exception) as exc:  # noqa: BLE001 - never let one bot stop the sync
+            logger.warning("Webhook resync failed for bot %s (@%s): %s", bot.id, bot.username, exc)
+    logger.info("Telegram webhooks resynced: %d/%d active bots -> %s", ok, len(bots), base)
+    return ok
+
+
 def order_parts(order: TgOrder) -> tuple[Plan, OrderBump | None, dict]:
     """Phase 1 stored the bare plan; newer orders wrap it with the bump and series data."""
     snapshot = order.offer_snapshot or {}
@@ -989,10 +1205,29 @@ def order_parts(order: TgOrder) -> tuple[Plan, OrderBump | None, dict]:
     return Plan.model_validate(snapshot), None, {"kind": order.kind}
 
 
+def international_usd(flow: FlowDefinition, plan: Plan, bump: OrderBump | None, amount_brl: Decimal) -> Decimal | None:
+    """USD amount to bill on the card for this offer, or None when the funnel can't sell it abroad.
+
+    ``fixed``: the plan's own USD price (a bump is converted by the rate). ``variable``: the whole
+    BRL amount converted by the rate. The order's BRL amount stays the accounting figure either way.
+    """
+    intl = flow.international
+    if not intl.enabled or "USD" not in intl.currencies:
+        return None
+    if intl.pricing == "fixed":
+        if plan.price_usd is None:
+            return None
+        usd = plan.price_usd + (bump.price / intl.usd_rate if bump else Decimal("0"))
+    else:
+        usd = amount_brl / intl.usd_rate
+    usd = usd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return usd if usd > 0 else None
+
+
 async def create_order(
     db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, plan: Plan,
     *, bump: OrderBump | None = None, kind: str = "plan", offer_id: str | None = None,
-    step: int | None = None, chain: str | None = None, retry: str | None = None,
+    step: int | None = None, chain: str | None = None, retry: str | None = None, method: str = "pix",
 ) -> TgOrder | None:
     from app.bots.folders import flow_id_for
 
@@ -1007,6 +1242,8 @@ async def create_order(
             TgOrder.status == "pending", TgOrder.expires_at > now,
         ).order_by(TgOrder.created_at.desc())
     )
+    if order is not None and (method == "card") != (order.gateway == "stripe"):
+        order = None  # the lead switched between Pix and Cartão: generate the chosen method fresh
     first_pix = order is None and not await db.scalar(select(TgOrder.id).where(TgOrder.lead_id == lead.id).limit(1))
     timings: dict[str, float] = {}
     mark = time.perf_counter()
@@ -1042,13 +1279,25 @@ async def create_order(
         order.seller_hidden = route.owner_all
         timings["prepare"] = time.perf_counter() - mark
         mark = time.perf_counter()
+        # Card sale (lead chose "Cartão"): bill the card in USD; the BRL amount stays the books.
+        card_usd = international_usd(flow, plan, bump, amount) if method == "card" else None
+        if method == "card" and card_usd is None:
+            method = "pix"  # funnel can't price this offer abroad: fall back to Pix
         try:
-            qr = await _charge(db, bot, order, route, amount, f"{bot.name} · {name}", flow.payment.expiration_minutes)
-        except (smokepay.SmokepayError, atenaspay.AtenaspayError) as exc:
+            qr = await _charge(
+                db, bot, order, route, amount, f"{bot.name} · {name}", flow.payment.expiration_minutes,
+                method=method, card_usd=card_usd,
+            )
+        except (smokepay.SmokepayError, atenaspay.AtenaspayError, stripe_gateway.StripeError) as exc:
             order.status = "failed"
             bot.last_error = f"Gateway: {exc}"[:500]
             await db.commit()
-            await tg.send_message(lead.chat_id, "Não consegui gerar o Pix agora. Tente de novo em alguns instantes.")
+            fail_text = (
+                "Não consegui gerar o pagamento no cartão agora. Tente de novo em alguns instantes."
+                if method == "card"
+                else "Não consegui gerar o Pix agora. Tente de novo em alguns instantes."
+            )
+            await tg.send_message(lead.chat_id, fail_text)
             if not route.owner_all:  # the seller never hears about the owner's 100% funnel
                 await notify_owners(db, bot, "⚠️ Falha ao gerar Pix", f"@{bot.username}: {str(exc)[:120]}", "bot-gateway")
             return None
@@ -1067,8 +1316,13 @@ async def create_order(
     else:
         qr = None
     lead.stage = "pix"
+    if order.gateway == "stripe":
+        return await _send_stripe_checkout(db, tg, bot, lead, flow, order)
     caption = render(flow.payment.pix_text, lead, order.offer_name, order.amount, bot)
     code = order.pix_copy_paste or ""
+    # Record the payment message (text + the PIX code) in the live-chat inbox.
+    log_message(db, bot, lead, "out", "text",
+                text=((caption + "\n\n") if caption else "") + (f"PIX: {code}" if code else ""))
     keyboard = {
         "inline_keyboard": [
             [{"text": flow.payment.copy_button, "copy_text": {"text": code[:256]}}],
@@ -1116,11 +1370,45 @@ async def create_order(
         logger.info("pix steps: %s", " ".join(f"{k}={v * 1000:.0f}ms" for k, v in timings.items()))
 
 
+async def _send_stripe_checkout(
+    db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, order: TgOrder
+) -> TgOrder:
+    """Card sale: send the Stripe Checkout link as a button (no Pix code/QR)."""
+    url = order.pix_copy_paste or ""
+    caption = render(flow.payment.pix_text, lead, order.offer_name, order.amount, bot)
+    rows = [
+        [button("💳 Pagar com cartão", url=url)],
+        [{"text": flow.payment.check_button, "callback_data": f"chk:{order.id}"}],
+    ]
+    if flow.support_username:
+        rows.append([button("💬 Suporte", url=f"https://t.me/{flow.support_username}")])
+    await tg.send_message(lead.chat_id, caption or "Pague com cartão no botão abaixo 👇", {"inline_keyboard": rows})
+    log_message(db, bot, lead, "out", "text", text=(caption or "Pagar com cartão") + (f"\n{url}" if url else ""))
+    return order
+
+
+async def _send_method_choice(
+    tg: TelegramClient, lead: TgLead, amount_brl: Decimal, usd: Decimal, data: str
+) -> None:
+    """Ask the lead to pay in BRL via Pix or on the card in USD. ``data`` is the original offer
+    callback, carried through so the chosen method re-resolves the same plan and bump."""
+    rows = [
+        [button(f"🇧🇷 Pix · {brl(amount_brl)}", "primary", callback_data=f"pm:pix:{data}")],
+        [button(f"💳 Cartão · US$ {usd:.2f}", "success", callback_data=f"pm:card:{data}")],
+    ]
+    await tg.send_message(lead.chat_id, "Como você prefere pagar?", {"inline_keyboard": rows})
+
+
 async def _charge(
     db: AsyncSession, bot: TgBot, order: TgOrder, route, amount: Decimal, description: str, expiration_minutes: int,
+    *, method: str = "pix", card_usd: Decimal | None = None,
 ) -> str | None:
     """Create the Pix with the operation's gateways in order (principal, then backups; see
     ``gateways.gateway_order``). Returns SmokePay's QR image, if any.
+
+    When ``method == "card"`` the lead chose the international card option: the charge goes to
+    Stripe in ``card_usd`` (USD) and there is no Pix fallback — card is a deliberate choice, so a
+    Stripe failure raises instead of silently sending a Pix. The Pix path skips Stripe entirely.
 
     Failover is safe: a gateway that refused or failed shows nothing to the lead, so only the
     Pix of the gateway that answered can be paid; webhooks of any other attempt match no
@@ -1132,6 +1420,10 @@ async def _charge(
 
     workspace = await db.get(Workspace, bot.workspace_id)
     flow = await db.get(TgFlow, order.flow_id) if order.flow_id else None
+    if method == "card":
+        if await _charge_with_stripe(db, bot, order, amount, description, flow, charge_amount=card_usd, currency="usd"):
+            return None
+        raise stripe_gateway.StripeError("Não foi possível gerar o pagamento no cartão.")
     order_gateways = await gateways.gateway_order(db, workspace, flow) if workspace else ["smokepay"]
     error: RuntimeError | None = None
     for name in order_gateways:
@@ -1143,6 +1435,8 @@ async def _charge(
             if await _charge_with_atenaspay(db, bot, order, route, amount, description, expiration_minutes):
                 return None
             continue
+        if name == "stripe":
+            continue  # Stripe is the card option (chosen explicitly), never a silent Pix fallback
         try:
             net_estimate = await gateways.estimated_net(db, "smokepay", amount)
             return await _charge_with_smokepay(order, route, amount, description, expiration_minutes, net_estimate)
@@ -1208,6 +1502,53 @@ async def _charge_with_atenaspay(
         elif order.platform_fee is not None and charge.net_amount is not None:
             order.partner_net = charge.net_amount - order.platform_fee
     order.pix_copy_paste = charge.copy_paste
+    return True
+
+
+def stripe_webhook_url() -> str:
+    return f"{get_settings().public_base_url.rstrip('/')}/api/bots/pay/stripe"
+
+
+def _stripe_return_url(bot: TgBot) -> str:
+    """Where Stripe sends the buyer after paying/cancelling: back into the bot chat."""
+    if bot.username:
+        return f"https://t.me/{bot.username}"
+    return get_settings().public_base_url.rstrip("/") + "/"
+
+
+async def _charge_with_stripe(
+    db: AsyncSession, bot: TgBot, order: TgOrder, amount: Decimal, description: str, flow: TgFlow | None,
+    *, charge_amount: Decimal | None = None, currency: str = "brl",
+) -> bool:
+    """Card checkout. ``amount`` is always the BRL figure kept on the order (the books run on it);
+    ``charge_amount``/``currency`` is what the card is actually billed (USD for international sales)."""
+    from app.bots import gateways, stripe_gateway
+
+    if not await gateways.stripe_available(db):
+        return False
+    return_url = _stripe_return_url(bot)
+    try:
+        session = await stripe_gateway.create_checkout_session(
+            amount=charge_amount if charge_amount is not None else amount,
+            currency=currency,
+            external_id=f"{ORDER_PREFIX}{order.id}",
+            description=description,
+            success_url=return_url,
+            cancel_url=return_url,
+        )
+    except stripe_gateway.StripeError as exc:
+        logger.warning("Stripe charge failed (%s) for order %s; trying the next gateway, if any.", exc, order.id)
+        bot.last_error = f"Stripe: {exc}"[:500]
+        order.gateway_attempts = [*(order.gateway_attempts or []), "stripe"]
+        return False
+    order.gateway = "stripe"
+    order.gateway_transaction_id = session.session_id[:64]
+    # No Stripe Connect split here: the platform account collects and each seller's share is
+    # settled in-app. The Stripe fee is unknown until the balance transaction, so the sale is
+    # recorded at face value and the commission runs on it (approve_order).
+    order.net_amount = amount
+    # Reuse pix_copy_paste to carry the Checkout URL to the bot (Stripe has no Pix code).
+    order.pix_copy_paste = session.url
     return True
 
 
@@ -1469,6 +1810,8 @@ async def approve_order(
             await tg.send_message(lead.chat_id, render(flow.payment.approved_text, lead, order.offer_name, order.amount, bot))
         if delivery and delivery.type != "upsell":
             await deliver(db, tg, bot, lead, order, plan, delivery)
+            # Any purchase (plan, upsell or downsell) fires this delivery's post-purchase drip.
+            await schedule_after_purchase(db, bot, lead, delivery, order, 0)
         if bump:
             # The bump's own delivery, or the funnel's default one (not sent twice when the
             # plan already delivered that same default).
@@ -1477,6 +1820,7 @@ async def approve_order(
                 bump.delivery is None and bump_delivery is delivery
             ):
                 await deliver(db, tg, bot, lead, order, plan.model_copy(update={"name": bump.name}), bump_delivery)
+                await schedule_after_purchase(db, bot, lead, bump_delivery, order, 1)
         order.delivered_at = utcnow()
     except TelegramError as exc:
         bot.last_error = str(exc)[:500]
@@ -1541,6 +1885,10 @@ async def deliver(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead
     medias = await _media_rows(db, bot, delivery.media_ids)
     if text:
         await tg.send_message(lead.chat_id, text, protect=protect)
+        log_message(db, bot, lead, "out", "text", text=text)
+    if medias:
+        log_message(db, bot, lead, "out", "voice" if medias[0].kind == "audio" else medias[0].kind,
+                    text=None, media_id=medias[0].id)
     for start in range(0, len(medias), 10):
         chunk = medias[start:start + 10]
         if len(chunk) == 1:
@@ -1586,11 +1934,13 @@ async def _deliver_group(db, tg, bot, lead, order, plan: Plan, delivery: Deliver
             f"end:{subscription.id}:{int(subscription.ends_at.timestamp())}", lead,
             {"subscription_id": str(subscription.id)},
         )
+    join_text = text or "Seu acesso está liberado. Toque abaixo para entrar 👇"
     await tg.send_message(
         lead.chat_id,
-        text or "Seu acesso está liberado. Toque abaixo para entrar 👇",
+        join_text,
         {"inline_keyboard": [[{"text": delivery.join_button_label, "url": link}]]},
     )
+    log_message(db, bot, lead, "out", "text", text=join_text)
 
 
 async def expire_order(db: AsyncSession, tg: TelegramClient, bot: TgBot, order_id: uuid.UUID) -> None:

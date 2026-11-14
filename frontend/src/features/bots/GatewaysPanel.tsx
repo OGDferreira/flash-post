@@ -9,7 +9,7 @@ import { CopyField } from "@/components/ui/CopyField";
 import { Modal } from "@/components/ui/Modal";
 import { ApiError, apiRequest } from "@/services/api";
 
-type GatewayId = "smokepay" | "snakepay" | "atenaspay";
+type GatewayId = "smokepay" | "snakepay" | "atenaspay" | "stripe";
 type Gateway = { id: GatewayId; name: string; available: boolean; fee: string; description: string };
 type PriorityStatus = "ativo" | "desligado" | "pausado" | "configurar" | "indisponivel";
 type PriorityRow = { gateway: GatewayId; enabled: boolean; priority: number; flow_ids: string[] | null; status: PriorityStatus };
@@ -46,6 +46,10 @@ type GatewayState = {
     atenaspay_secret_set: boolean;
     atenaspay_enabled: boolean;
     atenaspay_webhook_url: string;
+    stripe_key_set: boolean;
+    stripe_secret_set: boolean;
+    stripe_enabled: boolean;
+    stripe_webhook_url: string;
   };
 };
 
@@ -86,6 +90,10 @@ export function GatewaysPanel() {
   });
   const releaseAthenas = useMutation({
     mutationFn: (enabled: boolean) => apiRequest("/api/payment-gateways/atenaspay/enabled", { method: "PUT", body: { enabled } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }),
+  });
+  const releaseStripe = useMutation({
+    mutationFn: (enabled: boolean) => apiRequest("/api/payment-gateways/stripe/enabled", { method: "PUT", body: { enabled } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }),
   });
 
@@ -196,10 +204,62 @@ export function GatewaysPanel() {
     </div>
   );
 
+  const stripeAdminCard = data.admin && (
+    <div className="glass-panel p-4 sm:p-5">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="text-accent" size={18} />
+        <h2 className="text-base font-semibold text-fg">Vendas Internacionais · Stripe (administrador)</h2>
+      </div>
+      <div
+        className={`mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 ${
+          data.admin.stripe_enabled ? "border-success/40 bg-success/10" : "border-accent/50 bg-brand/10"
+        }`}
+      >
+        <span className="min-w-0">
+          <span className="flex items-center gap-2 text-sm font-semibold text-fg">
+            Vendas Internacionais (cartão) para os usuários:
+            <span className={`rounded-full px-2 py-0.5 text-[11px] ${data.admin.stripe_enabled ? "bg-success/20 text-success" : "bg-warning/20 text-warning"}`}>
+              {data.admin.stripe_enabled ? "LIGADA" : "DESLIGADA"}
+            </span>
+          </span>
+          <span className="mt-0.5 block text-xs text-muted">
+            {data.admin.stripe_enabled
+              ? "Disponível na prioridade dos funis. As vendas caem na conta Stripe da plataforma; a parte de cada vendedor fica registrada para repasse."
+              : "Configure a chave do servidor e libere para o usuário vender no cartão com a sua conta Stripe, sem cadastro próprio."}
+          </span>
+        </span>
+        <button
+          className={data.admin.stripe_enabled ? "btn-secondary" : "btn-primary"}
+          disabled={releaseStripe.isPending || (!data.admin.stripe_enabled && !(data.admin.stripe_key_set && data.admin.stripe_secret_set))}
+          onClick={() => releaseStripe.mutate(!data.admin?.stripe_enabled)}
+          type="button"
+        >
+          {releaseStripe.isPending ? "Salvando…" : data.admin.stripe_enabled ? "Desligar" : "Liberar Vendas Internacionais"}
+        </button>
+      </div>
+      <ul className="mt-3 space-y-1.5 text-xs">
+        {[
+          ["Chave secreta (STRIPE_SECRET_KEY no servidor)", data.admin.stripe_key_set],
+          ["Segredo do webhook (STRIPE_WEBHOOK_SECRET no servidor)", data.admin.stripe_secret_set],
+        ].map(([label, ok]) => (
+          <li className="flex items-center gap-2" key={String(label)}>
+            {ok ? <Check className="text-success" size={14} /> : <CircleAlert className="text-warning" size={14} />}
+            <span className={ok ? "text-fg-2" : "text-warning"}>{label}: {ok ? "configurado" : "falta configurar"}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3">
+        <CopyField hint="Cadastre no painel da Stripe em Developers → Webhooks (evento checkout.session.completed)." label="URL do webhook" value={data.admin.stripe_webhook_url} />
+      </div>
+      {releaseStripe.error && <p className="mt-3 text-xs text-danger">{errorText(releaseStripe.error)}</p>}
+    </div>
+  );
+
   return (
     <section className="space-y-4">
       {data.admin && !data.admin.snakepay_enabled && adminCard}
       {data.admin && !data.admin.atenaspay_enabled && atenasAdminCard}
+      {data.admin && !data.admin.stripe_enabled && stripeAdminCard}
 
       {data.shared_flows.length > 0 && (
         <div className="glass-panel p-4 sm:p-5">
@@ -288,6 +348,7 @@ export function GatewaysPanel() {
 
       {data.admin?.snakepay_enabled && adminCard}
       {data.admin?.atenaspay_enabled && atenasAdminCard}
+      {data.admin?.stripe_enabled && stripeAdminCard}
       <GatewayModal data={data} gateway={configuring} onClose={() => setConfiguring(null)} />
     </section>
   );
@@ -595,6 +656,17 @@ function GatewayModal({ data, gateway, onClose }: { data: GatewayState; gateway:
               com repasses de comissão e taxas processados automaticamente.
             </p>
             <CopyField hint="Cadastre esta URL no painel Atenas Pay em Integrações → Webhooks." label="URL do webhook" value={data.atenaspay_webhook_url} />
+          </div>
+        ) : gateway === "stripe" ? (
+          <div className="space-y-3">
+            <p className="rounded-xl border border-line-soft px-3 py-2 text-xs leading-5 text-muted">
+              A Stripe é gerenciada pelo administrador: a chave fica no servidor e vale para todas as operações, sem cadastro próprio.
+              Quando ligada, o comprador paga no cartão (nacional e internacional) por um link de pagamento, as vendas caem na conta Stripe
+              da plataforma e a sua parte fica registrada para repasse.
+            </p>
+            {data.admin?.stripe_webhook_url && (
+              <CopyField hint="Cadastre no painel da Stripe em Developers → Webhooks (evento checkout.session.completed)." label="URL do webhook" value={data.admin.stripe_webhook_url} />
+            )}
           </div>
         ) : (
           <>

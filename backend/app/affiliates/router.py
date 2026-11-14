@@ -28,7 +28,7 @@ from app.bots.hidden import not_hidden_bot
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
 from app.core.config import get_settings
-from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, utc_now
+from app.core.time import APP_TIME_ZONE, APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, utc_now
 from app.models import (
     Affiliation,
     InstagramAccount,
@@ -479,19 +479,19 @@ async def _bot_numbers(db: AsyncSession, workspace_id, chief_user_id, start, end
                 ),
             ).where(
                 TgOrder.workspace_id == workspace_id, TgOrder.status == "paid",
-                TgOrder.paid_at >= start, TgOrder.paid_at < end, not_hidden_bot(TgOrder.bot_id),
+                *window(TgOrder.paid_at, start, end), not_hidden_bot(TgOrder.bot_id),
             )
         )
     ).one()
     leads = await db.scalar(
         select(func.count(TgLead.id)).where(
-            TgLead.workspace_id == workspace_id, TgLead.created_at >= start, TgLead.created_at < end,
+            TgLead.workspace_id == workspace_id, *window(TgLead.created_at, start, end),
             not_hidden_bot(TgLead.bot_id),
         )
     )
     pix = await db.scalar(
         select(func.count(TgOrder.id)).where(
-            TgOrder.workspace_id == workspace_id, TgOrder.created_at >= start, TgOrder.created_at < end,
+            TgOrder.workspace_id == workspace_id, *window(TgOrder.created_at, start, end),
             not_hidden_bot(TgOrder.bot_id),
         )
     )
@@ -525,9 +525,15 @@ async def list_affiliates(
         )
     ).all()
     rows = [await _row_for(db, link, affiliate, start, end) for link, affiliate in links]
+    label = period_label(start, end, zone)
+    if period == "all" and links:
+        # "Total" has no start bound, so show when the history actually begins: the
+        # oldest partnership. Without this the user only sees "Todo o histórico".
+        first = min(link.created_at for link, _ in links)
+        label = f"Desde {first.astimezone(zone or APP_TIME_ZONE).strftime('%d/%m/%Y')}"
     return AffiliatesResponse(
         period=period,
-        period_label=period_label(start, end, zone),
+        period_label=label,
         time_zone=zone.key if zone else APP_TIME_ZONE_NAME,
         basis=PARTICIPATION_BASIS,
         totals_revenue=sum((row.total_revenue for row in rows), Decimal("0.00")),

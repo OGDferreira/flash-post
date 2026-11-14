@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_service_role_key: SecretStr | None = None
     instagram_publishing_enabled: bool = False
+    # Instagram automations (comment keyword -> reply + DM). Until Meta App Review
+    # approves the messaging/comment scopes, this stays off: rules are still saved and
+    # webhooks still match them, but the engine only logs what it *would* send
+    # ("simulated") instead of calling the Graph API. Flip to true once reviewed.
+    instagram_automation_enabled: bool = False
     # Platform-wide Instagram Business Login app (env IG_APP_ID / IG_APP_SECRET), shared by
     # every user unless the Super Admin blocks someone. Never stored in the database or sent to
     # the browser. When unset, connecting falls back to each workspace's own Meta app.
@@ -48,6 +53,15 @@ class Settings(BaseSettings):
     atenaspay_api_key: SecretStr | None = None
     atenaspay_webhook_secret: SecretStr | None = None
     atenaspay_base_url: str = "https://atenaspay.com.br"
+    # Stripe (card / international checkout): the platform's secret key and the webhook signing
+    # secret. The buyer pays on a hosted Stripe Checkout link; money lands in the platform account
+    # and each seller's share is tracked in the order like any other gateway.
+    stripe_secret_key: SecretStr | None = None
+    stripe_webhook_secret: SecretStr | None = None
+    stripe_base_url: str = "https://api.stripe.com"
+    # LibreTranslate (self-hosted on the VPS) for the funnels' auto-translation. Empty = off
+    # (the copy goes out untranslated). On the VPS: http://libretranslate:5000.
+    libretranslate_url: str = ""
     vapid_subject: str | None = None
     daily_views_goal_check_minutes: Annotated[int, Field(ge=5, le=240)] = 15
     session_max_age_seconds: Annotated[int, Field(ge=900, le=2592000)] = 2592000
@@ -76,6 +90,8 @@ class Settings(BaseSettings):
         "snakepay_cashout_secret",
         "atenaspay_api_key",
         "atenaspay_webhook_secret",
+        "stripe_secret_key",
+        "stripe_webhook_secret",
         mode="before",
     )
     @classmethod

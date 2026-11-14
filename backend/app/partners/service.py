@@ -508,6 +508,29 @@ async def notify_user(
         logger.exception("Partner push notification failed")
 
 
+async def notify_admins_partner_activity(
+    db: AsyncSession, actor_user_id: uuid.UUID, what: str, url: str | None = None
+) -> None:
+    """Tell the Super Admin(s) when a sócio (partner) sets up a bot or a flow.
+
+    Only a partner's actions are announced; the chief/admin's own are not. The
+    caller commits.
+    """
+    link = await partner_link(db, actor_user_id)
+    if link is None:
+        return
+    actor = await db.scalar(select(User).where(User.id == actor_user_id))
+    if actor is None:
+        return
+    admin_ids = list(await db.scalars(select(User.id).where(User.platform_role == "SUPER_ADMIN")))
+    for admin_id in admin_ids:
+        if admin_id == actor_user_id:
+            continue
+        await notify_user(
+            db, admin_id, "partner_activity", "Atividade de sócio", f"{actor.nickname} {what}.", url
+        )
+
+
 # ------------------------------------------------------------------ templates
 
 

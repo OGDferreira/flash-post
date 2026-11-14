@@ -70,6 +70,11 @@ class Delivery(_Model):
     link: LinkButton | None = None
     join_button_label: Label = "🔓 Entrar no VIP"
     start_upsell: bool = True  # after delivering, send the flow's upsell sequence
+    # Messages sent to the buyer right after this delivery, for ANY purchase that uses it
+    # (plan, order bump, upsell or downsell). Each message is a text or an audio (voice);
+    # ``delay_seconds`` on a message is how long to wait before it (0 = instant / right
+    # after the previous one).
+    after_purchase: Annotated[list[Block], Field(max_length=10)] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check(self) -> "Delivery":
@@ -79,6 +84,9 @@ class Delivery(_Model):
             raise ValueError("O pack precisa de pelo menos uma mídia.")
         if self.type == "default" and not (self.text or self.media_ids or self.link):
             raise ValueError("A entrega padrão precisa de mensagem, mídia ou link.")
+        for message in self.after_purchase:
+            if message.type not in ("text", "voice"):
+                raise ValueError("A sequência pós-compra aceita só texto ou áudio.")
         return self
 
 
@@ -98,6 +106,8 @@ class Plan(_Model):
     id: Annotated[str, Field(min_length=1, max_length=32, pattern=r"^[a-zA-Z0-9_-]+$")]
     name: Annotated[str, Field(min_length=1, max_length=60)]
     price: Money
+    # Fixed USD price for this plan (international "fixed" pricing); None = convert by the rate.
+    price_usd: Annotated[Decimal, Field(ge=Decimal("0.50"), le=Decimal("100000"), decimal_places=2)] | None = None
     # None = lifetime access.
     duration_days: Annotated[int, Field(ge=1, le=3650)] | None = 30
     button_text: Label | None = None
@@ -240,9 +250,34 @@ class Payment(_Model):
     after_code_text: Annotated[str, Field(max_length=500)] = "Após efetuar o pagamento, clique no botão abaixo ⤵️"
 
 
+class International(_Model):
+    """Cartão (Stripe) para vender também em moeda estrangeira, configurado por funil.
+
+    Quando ligado e a Stripe estiver liberada, o lead pode pagar no cartão na moeda
+    escolhida, além do Pix em BRL. ``translate`` liga a tradução automática da copy.
+    """
+
+    enabled: bool = False
+    # Moedas de cartão além do BRL (hoje só USD).
+    currencies: list[Literal["USD"]] = Field(default_factory=list, max_length=1)
+    # "variable": converte o preço em BRL pela taxa; "fixed": usa o preço próprio do plano.
+    pricing: Literal["variable", "fixed"] = "variable"
+    # BRL por 1 USD (modo variável). Ex.: 5.00 → R$5 = US$1.
+    usd_rate: Annotated[Decimal, Field(ge=Decimal("1"), le=Decimal("100"), decimal_places=2)] = Decimal("5.00")
+    # Traduz a copy automaticamente para o idioma do lead (LibreTranslate).
+    translate: bool = False
+
+    @model_validator(mode="after")
+    def _check(self) -> "International":
+        if self.enabled and not self.currencies and not self.translate:
+            raise ValueError("Ligue ao menos uma moeda estrangeira ou a tradução automática.")
+        return self
+
+
 class FlowDefinition(_Model):
     version: Literal[1] = 1
     age_gate: AgeGate = Field(default_factory=AgeGate)
+    international: International = Field(default_factory=International)
     welcome: list[Block] = Field(default_factory=list, max_length=30)  # optional pre-offer sequence
     offer: Offer = Field(default_factory=Offer)
     plans: list[Plan] = Field(default_factory=list, max_length=10)
@@ -284,6 +319,10 @@ class FlowDefinition(_Model):
                     raise ValueError(f"O downsell {index} ({label}) usa um plano que não existe mais.")
         if self.support_username:
             self.support_username = self.support_username.lstrip("@") or None
+        if self.international.enabled and self.international.pricing == "fixed" and "USD" in self.international.currencies:
+            missing = [plan.name for plan in self.plans if plan.price_usd is None]
+            if missing:
+                raise ValueError(f"No preço fixo em USD, defina o preço de cada plano: {', '.join(missing)}.")
         needs_default = [step.delivery is None for step in self.upsells] + [
             bool(step.custom_offer and step.custom_offer.delivery is None) for step in self.all_downsells()
         ]
@@ -315,6 +354,8 @@ class FlowDefinition(_Model):
         for delivery in deliveries:
             if delivery:
                 found.update(delivery.media_ids)
+                for message in delivery.after_purchase:
+                    found.update(message.media_ids)
         return found
 
     def all_downsells(self) -> list[DownsellStep]:

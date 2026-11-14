@@ -1,6 +1,8 @@
 import { HomePanelPreference } from "@/components/HomePanelPreference";
 import { ConnectedAccountPopup } from "@/components/ConnectedAccountPopup";
 import { ReleaseNotices } from "@/components/ReleaseNotices";
+import { CompleteProfileGate } from "@/features/auth/CompleteProfileGate";
+import { SubscriptionGate } from "@/features/subscription/SubscriptionGate";
 import { homePath } from "@/features/auth/homePanel";
 import { ContactsPage } from "@/pages/ContactsPage";
 import { CollaboratorInvitePage } from "@/features/auth/CollaboratorInvitePage";
@@ -17,6 +19,7 @@ import {
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { ConfirmHost } from "@/lib/confirm";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
+import { welcomeLabel } from "@/features/auth/welcomeName";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
 import { usePartnerMe } from "@/features/partners/api";
@@ -39,12 +42,14 @@ const IntegrationsPage = lazyPage(() => import("@/pages/IntegrationsPage"), "Int
 const ProfilePage = lazyPage(() => import("@/pages/ProfilePage"), "ProfilePage");
 const SettingsPage = lazyPage(() => import("@/pages/SettingsPage"), "SettingsPage");
 const NoticesPage = lazyPage(() => import("@/pages/NoticesPage"), "NoticesPage");
+const NovidadesPage = lazyPage(() => import("@/pages/NovidadesPage"), "NovidadesPage");
 const ProfileFoldersPage = lazyPage(() => import("@/pages/ProfileFoldersPage"), "ProfileFoldersPage");
 const MetaAppsPage = lazyPage(() => import("@/pages/MetaAppsPage"), "MetaAppsPage");
 const CollaboratorsPage = lazyPage(() => import("@/pages/CollaboratorsPage"), "CollaboratorsPage");
 const AffiliatesPage = lazyPage(() => import("@/pages/AffiliatesPage"), "AffiliatesPage");
 const ExtensionsPage = lazyPage(() => import("@/pages/ExtensionsPage"), "ExtensionsPage");
 const SupportPage = lazyPage(() => import("@/pages/SupportPage"), "SupportPage");
+const GlobalChatPage = lazyPage(() => import("@/pages/GlobalChatPage"), "GlobalChatPage");
 const FeedPage = lazyPage(() => import("@/pages/FeedPage"), "FeedPage");
 const BotsPage = lazyPage(() => import("@/pages/BotsPage"), "BotsPage");
 const LegacyBotsRedirect = lazyPage(() => import("@/pages/BotsPage"), "LegacyBotsRedirect");
@@ -57,6 +62,7 @@ const AdminOperationsPage = lazyPage(() => import("@/pages/admin/AdminOperations
 const AdminFlowsPage = lazyPage(() => import("@/pages/admin/AdminFlowsPage"), "AdminFlowsPage");
 const AdminAwardsPage = lazyPage(() => import("@/pages/admin/AdminAwardsPage"), "AdminAwardsPage");
 const AdminFeesPage = lazyPage(() => import("@/pages/admin/AdminFeesPage"), "AdminFeesPage");
+const AdminSubscriptionsPage = lazyPage(() => import("@/pages/admin/AdminSubscriptionsPage"), "AdminSubscriptionsPage");
 const LinksPage = lazyPage(() => import("@/pages/LinksPage"), "LinksPage");
 const AdminUsersPage = lazyPage(() => import("@/pages/admin/AdminUsersPage"), "AdminUsersPage");
 const AdminWorkspacesPage = lazyPage(() => import("@/pages/admin/AdminWorkspacesPage"), "AdminWorkspacesPage");
@@ -86,6 +92,7 @@ export default function App() {
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/configuracoes" element={<SettingsPage />} />
                   <Route path="/avisos" element={<NoticesPage />} />
+                  <Route path="/novidades" element={<NovidadesPage />} />
                   <Route path="/feature/accounts" element={<InstagramAccountsPage />} />
                   <Route path="/feature/loops" element={<LoopsPage />} />
                   <Route element={<RequireSuperAdmin />}>
@@ -94,6 +101,7 @@ export default function App() {
                   <Route path="/feature/emails" element={<EmailsPage />} />
                   <Route path="/feature/extensions" element={<ExtensionsPage />} />
                   <Route path="/feature/support" element={<SupportPage />} />
+                  <Route path="/feature/chat" element={<GlobalChatPage />} />
                   <Route path="/feature/contacts" element={<ContactsPage />} />
                   <Route element={<RequireWorkspaceOwner />}>
                     <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
@@ -136,6 +144,7 @@ export default function App() {
                 <Route path="/admin" element={<AdminOverviewPage />} />
                 <Route path="/admin/users" element={<AdminUsersPage />} />
                 <Route path="/admin/fees" element={<AdminFeesPage />} />
+                <Route path="/admin/subscriptions" element={<AdminSubscriptionsPage />} />
                 <Route path="/admin/workspaces" element={<AdminWorkspacesPage />} />
                 <Route path="/admin/system" element={<AdminSystemPage />} />
                 <Route path="/admin/operations" element={<AdminOperationsPage />} />
@@ -228,6 +237,8 @@ function RequireCollaboratorAccess() {
     "/feature/emails",
     "/feature/extensions",
     "/feature/support",
+    "/feature/chat",
+    "/novidades",
   ];
   if (
     workspaceRole === "COLLABORATOR" &&
@@ -241,11 +252,11 @@ function RequireCollaboratorAccess() {
 function RequireAuth() {
   const { user, isLoading } = useAuth();
   const location = useLocation();
-  if (isLoading) return <LoadingState fullscreen label="Verificando sessão" />;
+  if (isLoading) return <LoadingState fullscreen label={welcomeLabel()} />;
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
-  return <><HomePanelPreference prompt /><ReleaseNotices /><ConnectedAccountPopup /><Outlet /></>;
+  return <><CompleteProfileGate /><SubscriptionGate /><HomePanelPreference prompt /><ReleaseNotices /><ConnectedAccountPopup /><Outlet /></>;
 }
 
 function RequireSuperAdmin() {
@@ -259,7 +270,7 @@ function RequireSuperAdmin() {
 
 function HomeRedirect() {
   const { user, isLoading } = useAuth();
-  if (isLoading) return <LoadingState fullscreen label="Verificando sessão" />;
+  if (isLoading) return <LoadingState fullscreen label={welcomeLabel()} />;
   if (!user) return <Navigate to="/login" replace />;
   return (
     <Navigate

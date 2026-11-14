@@ -9,6 +9,7 @@ import { useIsRestoring, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ApiError, apiRequest, type User } from "@/services/api";
 import { ImpersonationBanner } from "@/features/auth/ImpersonationBanner";
 import { claimCache } from "@/lib/queryCache";
+import { forgetWelcomeName, rememberWelcomeName } from "@/features/auth/welcomeName";
 
 type AuthState = {
   user: User | null;
@@ -41,6 +42,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const restoring = useIsRestoring();
   const isUnauthorized = auth.error instanceof ApiError && auth.error.status === 401;
   const user = isUnauthorized ? null : (auth.data ?? null);
+
+  // Keep the first name for the loading screen's "Bem-vindo de volta" greeting,
+  // which shows before the session query resolves on the next reload.
+  useEffect(() => {
+    if (user) rememberWelcomeName(user.nickname);
+    else if (isUnauthorized) forgetWelcomeName();
+  }, [user, isUnauthorized]);
 
   return (
     <AuthContext.Provider

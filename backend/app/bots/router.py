@@ -15,17 +15,17 @@ from typing import Annotated, Any
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
-from app.bots import atenaspay, engine, portable, smokepay
+from app.bots import atenaspay, engine, portable, smokepay, stripe_gateway
 from app.bots.flow_schema import FlowDefinition, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
-from app.models import TgBot, TgCampaign, TgFlow, TgFlowFolder, TgFlowFolderItem, TgGroup, TgJob, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
+from app.models import TgBot, TgCampaign, TgFlow, TgFlowFolder, TgFlowFolderItem, TgGroup, TgJob, TgLead, TgMedia, TgMessage, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, billing_route, flow_offered_to, notify_user, owner_workspace, partner_link, shared_funnel_access
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
@@ -328,6 +328,11 @@ async def connect_bot(payload: BotCreate, access: OwnerAccess, db: DbSession) ->
         await tg.set_webhook(_telegram_webhook_url(bot), bot.webhook_secret)
     except TelegramError as exc:
         bot.status, bot.last_error = "error", str(exc)[:500]
+    from app.partners import service as partner_service
+
+    await partner_service.notify_admins_partner_activity(
+        db, access.membership.user_id, f"cadastrou o bot @{bot.username}", "/bot/robos"
+    )
     await db.commit()
     return _bot_out(bot)
 
@@ -709,6 +714,12 @@ async def create_flow(payload: FlowCreate, access: OwnerAccess, db: DbSession) -
     definition = _validate_definition(payload.definition) if payload.definition else default_flow()
     flow = TgFlow(workspace_id=access.workspace.id, name=payload.name.strip(), definition=definition.model_dump(mode="json"))
     db.add(flow)
+    await db.flush()
+    from app.partners import service as partner_service
+
+    await partner_service.notify_admins_partner_activity(
+        db, access.membership.user_id, f'criou o funil "{flow.name}"', "/bot/funis"
+    )
     await db.commit()
     return _flow_out(flow)
 
@@ -753,6 +764,7 @@ async def save_flow(flow_id: uuid.UUID, payload: FlowUpdate, access: OwnerAccess
         for bot in await db.scalars(select(TgBot).where(TgBot.flow_id == flow.id, TgBot.cache_chat_id.is_not(None))):
             await _schedule_cache_warm(db, bot)
     await db.commit()
+    engine.invalidate_flow(flow.id)  # the hot path caches definitions in-process; show edits at once
     await db.refresh(flow)  # updated_at is set by the database (onupdate)
     return _flow_out(flow)
 
@@ -898,6 +910,218 @@ async def delete_media(media_id: uuid.UUID, access: OwnerAccess, db: DbSession) 
     await db.commit()
 
 
+# ---------------------------------------------------------------- live chat (conversations)
+
+# Telegram file_path extension -> content type for previewing a lead's incoming media.
+_INBOUND_TYPES = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp", "gif": "image/gif",
+    "mp4": "video/mp4", "mov": "video/mp4", "webm": "video/webm",
+    "oga": "audio/ogg", "ogg": "audio/ogg", "opus": "audio/ogg", "mp3": "audio/mpeg", "m4a": "audio/mp4",
+}
+_KIND_LABEL = {
+    "photo": "🖼 Imagem", "video": "🎞 Vídeo", "voice": "🎤 Áudio", "audio": "🎵 Áudio",
+    "video_note": "🎥 Vídeo", "document": "📎 Arquivo", "sticker": "🌟 Figurinha", "other": "📎 Mídia",
+}
+
+
+class ReplyPayload(BaseModel):
+    text: Annotated[str | None, Field(default=None, max_length=4000)] = None
+    media_id: uuid.UUID | None = None
+
+
+async def _owned_lead(db, lead_id: uuid.UUID, access) -> TgLead:
+    lead = await db.get(TgLead, lead_id)
+    if lead is None or lead.workspace_id != access.workspace.id:
+        raise HTTPException(status_code=404, detail="Lead não encontrado.")
+    if lead.seller_hidden and not admin_view():
+        raise HTTPException(status_code=404, detail="Lead não encontrado.")
+    return lead
+
+
+def _msg_preview(msg: TgMessage | None) -> str:
+    if msg is None:
+        return ""
+    if msg.kind == "text":
+        return (msg.text or "")[:120]
+    tag = _KIND_LABEL.get(msg.kind, "📎 Mídia")
+    return f"{tag} · {msg.text[:80]}" if msg.text else tag
+
+
+def _message_out(msg: TgMessage) -> dict:
+    return {
+        "id": str(msg.id),
+        "direction": msg.direction,
+        "kind": msg.kind,
+        "text": msg.text,
+        "from_operator": msg.sent_by_user_id is not None,
+        "has_media": bool(msg.tg_file_id or msg.media_id),
+        "media_id": str(msg.media_id) if msg.media_id else None,  # outbound panel media (preview via /media/{id}/preview)
+        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+    }
+
+
+@router.get("/conversations")
+async def list_conversations(
+    access: OwnerAccess, db: DbSession,
+    q: str = Query("", max_length=64),
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """Leads with a conversation, most recently active first."""
+    seller = () if admin_view() else (TgLead.seller_hidden.is_(False),)
+    latest = (
+        select(TgMessage.lead_id, func.max(TgMessage.created_at).label("ts"))
+        .where(TgMessage.workspace_id == access.workspace.id)
+        .group_by(TgMessage.lead_id)
+        .subquery()
+    )
+    query = (
+        select(TgLead, TgBot.username, latest.c.ts)
+        .join(latest, latest.c.lead_id == TgLead.id)
+        .join(TgBot, TgBot.id == TgLead.bot_id)
+        .where(TgLead.workspace_id == access.workspace.id, *seller)
+    )
+    if not admin_view():
+        query = query.where(TgBot.hidden_by_admin.is_(False))
+    if q.strip():
+        like = f"%{q.strip()}%"
+        query = query.where(or_(TgLead.first_name.ilike(like), TgLead.username.ilike(like)))
+    rows = (await db.execute(query.order_by(latest.c.ts.desc()).limit(limit).offset(offset))).all()
+    conversations = []
+    for lead, username, ts in rows:
+        last = await db.scalar(
+            select(TgMessage).where(TgMessage.lead_id == lead.id).order_by(TgMessage.created_at.desc()).limit(1)
+        )
+        conversations.append({
+            "lead_id": str(lead.id),
+            "name": lead.first_name or "Lead",
+            "username": lead.username,
+            "bot": username,
+            "unread": lead.unread_count or 0,
+            "blocked": lead.blocked_bot,
+            "last_at": ts.isoformat() if ts else None,
+            "last_preview": _msg_preview(last),
+        })
+    return {"conversations": conversations}
+
+
+@router.get("/conversations/{lead_id}")
+async def get_conversation(
+    lead_id: uuid.UUID, access: OwnerAccess, db: DbSession, limit: int = Query(200, ge=1, le=500),
+) -> dict:
+    lead = await _owned_lead(db, lead_id, access)
+    bot = await db.get(TgBot, lead.bot_id)
+    rows = list(await db.scalars(
+        select(TgMessage).where(TgMessage.lead_id == lead.id).order_by(TgMessage.created_at.desc(), TgMessage.id.desc()).limit(limit)
+    ))
+    rows.reverse()  # oldest first for display
+    orders = list(await db.scalars(
+        select(TgOrder).where(TgOrder.lead_id == lead.id).order_by(TgOrder.created_at.desc()).limit(20)
+    ))
+    pix_count = sum(1 for o in orders if o.pix_copy_paste or o.status != "pending" or o.gateway_transaction_id)
+    paid_count = sum(1 for o in orders if o.status == "paid")
+    return {
+        "lead": {
+            "id": str(lead.id),
+            "name": lead.first_name or "Lead",
+            "username": lead.username,
+            "bot": bot.username if bot else None,
+            "blocked": lead.blocked_bot,
+            "stage": lead.stage,
+        },
+        "orders": [
+            {
+                "id": str(o.id),
+                "kind": o.kind,
+                "name": o.offer_name,
+                "amount": str(o.amount),
+                "status": o.status,
+                # The PIX copy-and-paste is only useful while it can still be paid.
+                "pix": o.pix_copy_paste if o.status == "pending" else None,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
+                "paid_at": o.paid_at.isoformat() if o.paid_at else None,
+            }
+            for o in orders
+        ],
+        "pix_generated": pix_count,
+        "pix_paid": paid_count,
+        "messages": [_message_out(m) for m in rows],
+    }
+
+
+@router.post("/conversations/{lead_id}/read", dependencies=csrf)
+async def mark_conversation_read(lead_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
+    lead = await _owned_lead(db, lead_id, access)
+    lead.unread_count = 0
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/conversations/{lead_id}/reply", dependencies=csrf)
+async def reply_conversation(
+    lead_id: uuid.UUID, payload: ReplyPayload, access: OwnerAccess, user: AuthenticatedUser, db: DbSession,
+) -> dict:
+    lead = await _owned_lead(db, lead_id, access)
+    if lead.blocked_bot:
+        raise HTTPException(status_code=409, detail="Este lead bloqueou o bot.")
+    text = (payload.text or "").strip() or None
+    media = None
+    if payload.media_id is not None:
+        media = await _owned(db, TgMedia, payload.media_id, access)
+        if media.locked:
+            raise HTTPException(status_code=403, detail="Mídia protegida do seu sócio.")
+    if text is None and media is None:
+        raise HTTPException(status_code=422, detail="Escreva uma mensagem ou anexe uma mídia.")
+    bot = await db.get(TgBot, lead.bot_id)
+    if bot is None or not bot.is_active:
+        raise HTTPException(status_code=409, detail="Bot inativo.")
+    try:
+        await engine.send_manual_message(db, bot, lead, text=text, media=media, user_id=user.id)
+    except TelegramError as exc:
+        if exc.blocked:
+            lead.blocked_bot = True
+            await db.commit()
+            raise HTTPException(status_code=409, detail="Este lead bloqueou o bot.") from None
+        raise HTTPException(status_code=502, detail="Telegram indisponível, tente de novo.") from None
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/conversations/{lead_id}/messages/{message_id}/media")
+async def conversation_media(
+    lead_id: uuid.UUID, message_id: uuid.UUID, access: OwnerAccess, db: DbSession,
+) -> Response:
+    lead = await _owned_lead(db, lead_id, access)
+    msg = await db.get(TgMessage, message_id)
+    if msg is None or msg.lead_id != lead.id:
+        raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+    cache = {"Cache-Control": "private, max-age=3600"}
+    # Inbound (what the lead sent): fetched from Telegram by file id.
+    if msg.tg_file_id:
+        bot = await db.get(TgBot, lead.bot_id)
+        if bot is None:
+            raise HTTPException(status_code=404, detail="Bot não encontrado.")
+        try:
+            data, path = await engine.inbound_media_bytes(bot, msg.tg_file_id)
+        except TelegramError:
+            raise HTTPException(status_code=502, detail="Mídia indisponível.") from None
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        return Response(data, media_type=_INBOUND_TYPES.get(ext, "application/octet-stream"), headers=cache)
+    # Outbound funnel media (what the bot showed the lead): stored in our own storage.
+    if msg.media_id:
+        media = await db.get(TgMedia, msg.media_id)
+        if media is None:
+            raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+        if getattr(media, "locked", False) and not admin_view():
+            raise HTTPException(status_code=403, detail="Mídia protegida do seu sócio.")
+        try:
+            data = await engine.load_media_bytes(media)
+        except Exception:
+            raise HTTPException(status_code=502, detail="Mídia indisponível.") from None
+        return Response(data, media_type=media.content_type or "application/octet-stream", headers=cache)
+    raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+
+
 # ---------------------------------------------------------------- hidden by the Super Admin
 
 
@@ -911,7 +1135,7 @@ def _require_admin_view() -> None:
 
 
 # Rows that follow a bot when it changes operation (its orders stay where they were charged).
-BOT_ROWS = (TgLead, TgGroup, TgSubscription, TgJob)
+BOT_ROWS = (TgLead, TgGroup, TgSubscription, TgJob, TgMessage)
 
 
 async def _move_bot(db, bot: TgBot, workspace_id: uuid.UUID) -> None:
@@ -989,10 +1213,70 @@ async def list_orders(access: OwnerAccess, db: DbSession, limit: int = Query(50,
                 "id": str(o.id), "status": o.status, "plan": o.offer_name, "amount": f"{o.amount:.2f}",
                 "net_amount": f"{o.net_amount:.2f}" if o.net_amount is not None else None,
                 "bot": username, "lead": lead.first_name, "lead_username": lead.username,
+                "lead_id": str(lead.id),
                 "source": lead.source, "created_at": o.created_at.isoformat() if o.created_at else None,
                 "paid_at": o.paid_at.isoformat() if o.paid_at else None,
             }
             for o, lead, username in rows.all()
+        ]
+    }
+
+
+@router.get("/leads")
+async def list_leads(
+    access: OwnerAccess, db: DbSession,
+    audience: str = Query("all"),
+    q: str = Query("", max_length=64),
+    limit: int = Query(100, ge=1, le=300),
+) -> dict:
+    """Leads with their PIX status, filterable by audience, each openable in the chat.
+
+    audience: all | paid (pagantes) | pix_unpaid (gerou e não pagou) | no_pix (não gerou)."""
+    ws = access.workspace.id
+    seller = () if admin_view() else (TgLead.seller_hidden.is_(False),)
+    agg = (
+        select(
+            TgOrder.lead_id.label("lead_id"),
+            func.count().label("orders"),
+            func.coalesce(func.sum(case((TgOrder.status == "paid", 1), else_=0)), 0).label("paid"),
+            func.max(TgOrder.created_at).label("last_order"),
+        )
+        .where(TgOrder.workspace_id == ws, TgOrder.status != "failed")
+        .group_by(TgOrder.lead_id)
+        .subquery()
+    )
+    query = (
+        select(TgLead, TgBot.username, agg.c.orders, agg.c.paid)
+        .join(TgBot, TgBot.id == TgLead.bot_id)
+        .outerjoin(agg, agg.c.lead_id == TgLead.id)
+        .where(TgLead.workspace_id == ws, *seller)
+    )
+    if not admin_view():
+        query = query.where(TgBot.hidden_by_admin.is_(False))
+    if audience == "paid":
+        query = query.where(agg.c.paid > 0)
+    elif audience == "pix_unpaid":
+        query = query.where(agg.c.orders > 0, func.coalesce(agg.c.paid, 0) == 0)
+    elif audience == "no_pix":
+        query = query.where(agg.c.orders.is_(None))
+    if q.strip():
+        like = f"%{q.strip()}%"
+        query = query.where(or_(TgLead.first_name.ilike(like), TgLead.username.ilike(like)))
+    rows = (await db.execute(query.order_by(TgLead.created_at.desc()).limit(limit))).all()
+    return {
+        "leads": [
+            {
+                "id": str(lead.id),
+                "name": lead.first_name or "Lead",
+                "username": lead.username,
+                "bot": username,
+                "has_pix": bool(orders),
+                "paid": bool(paid),
+                "blocked": lead.blocked_bot,
+                "stage": lead.stage,
+                "created_at": lead.created_at.isoformat() if lead.created_at else None,
+            }
+            for lead, username, orders, paid in rows
         ]
     }
 
@@ -1187,4 +1471,41 @@ async def smokepay_webhook(request: Request, db: DbSession) -> dict:
     except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(status_code=500, detail="Retry.") from None  # 5xx: SmokePay retries
+    return {"ok": True}
+
+
+@router.post("/pay/stripe", include_in_schema=False)
+async def stripe_webhook(request: Request, db: DbSession) -> dict:
+    raw = await request.body()
+    if not stripe_gateway.verify_signature(raw, request.headers.get("stripe-signature")):
+        raise HTTPException(status_code=401, detail="Invalid signature.")  # 4xx stops retries
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return {"ok": True}
+    if not isinstance(event, dict):
+        return {"ok": True}
+    if event.get("type") not in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+        return {"ok": True}
+    stripe_session = (event.get("data") or {}).get("object") or {}
+    if stripe_session.get("payment_status") not in ("paid", "no_payment_required"):
+        return {"ok": True}  # e.g. an unpaid expired session
+    metadata = stripe_session.get("metadata") or {}
+    external_id = str(metadata.get("external_id") or stripe_session.get("client_reference_id") or "")
+    if not external_id.startswith(engine.ORDER_PREFIX):
+        return {"ok": True}
+    try:
+        order_id = uuid.UUID(external_id[len(engine.ORDER_PREFIX):])
+    except ValueError:
+        return {"ok": True}
+    order = await db.scalar(select(TgOrder).where(TgOrder.id == order_id, TgOrder.gateway == "stripe"))
+    if order is None:
+        return {"ok": True}  # charged by another gateway (failover) or unknown: only Stripe pays it
+    amount_total = stripe_session.get("amount_total")
+    amount = Decimal(str(amount_total)) / Decimal(100) if amount_total is not None else order.amount
+    try:
+        await engine.approve_order(db, order.id, amount)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Retry.") from None  # 5xx: Stripe retries
     return {"ok": True}

@@ -18,6 +18,7 @@ import {
   Link2,
   Megaphone,
   MessageCircle,
+  MessagesSquare,
   Puzzle,
   Receipt,
   Send,
@@ -58,11 +59,12 @@ export const PARTNER_FEATURE_BY_ROUTE: Record<string, ["post" | "bot", string]> 
   "/bot/pastas": ["bot", "flows"],
   "/bot/compartilhados-comigo": ["bot", "flows"],
   "/bot/robos": ["bot", "bots"],
+  "/bot/conversas": ["bot", "bots"],
   "/bot/remarketing": ["bot", "bots"],
   "/bot/gateways": ["bot", "bots"],
 };
 // Essential account pages a sócio can always reach.
-const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/feature/links"]);
+const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/novidades", "/feature/links", "/feature/chat"]);
 
 function matchBase(path: string): string | null {
   const keys = [...Object.keys(PARTNER_FEATURE_BY_ROUTE), ...PARTNER_ALWAYS_ALLOWED];
@@ -87,6 +89,7 @@ export const adminLinks: NavItem[] = [
   { label: "Visão geral", short: "Início", to: "/admin", icon: Home },
   { label: "Usuários", to: "/admin/users", icon: Users },
   { label: "Gerenciamento de Taxas", short: "Taxas", to: "/admin/fees", icon: Receipt },
+  { label: "Assinaturas", to: "/admin/subscriptions", icon: CreditCard },
   { label: "Saques dos sócios", short: "Saques", to: "/admin/partner-wallets", icon: Wallet },
   { label: "Gateways de pagamento", short: "Gateways", to: "/bot/gateways", icon: CircleDollarSign },
   { label: "Operações", to: "/admin/operations", icon: BarChart3 },
@@ -167,6 +170,7 @@ const postGroups: NavGroup[] = [
     title: "Suporte",
     icon: LifeBuoy,
     items: [
+      { label: "Chat global", to: "/feature/chat", icon: MessagesSquare },
       { label: "Dúvidas e erros", to: "/feature/support", icon: LifeBuoy },
       { label: "Contatos", to: "/feature/contacts", icon: MessageCircle },
     ],
@@ -184,8 +188,10 @@ const partnerPostRoutes = new Set([
   "/feature/links",
   "/configuracoes",
   "/avisos",
+  "/novidades",
   "/feature/support",
   "/feature/contacts",
+  "/feature/chat",
 ]);
 
 // Only hides what a collaborator cannot open; route guards and the API still
@@ -197,9 +203,11 @@ const collaboratorRoutes = new Set([
   "/feature/extensions",
   "/feature/support",
   "/feature/contacts",
+  "/feature/chat",
   "/feature/links",
   "/configuracoes",
   "/avisos",
+  "/novidades",
 ]);
 
 // ------------------------------------------------------------------ Flash
@@ -240,6 +248,7 @@ const botGroups: NavGroup[] = [
     icon: Bot,
     items: [
       { label: "Meus bots", to: "/bot/robos", icon: Bot },
+      { label: "Conversas", to: "/bot/conversas", icon: MessageCircle },
       { label: "Remarketing", to: "/bot/remarketing", icon: Megaphone },
     ],
   },

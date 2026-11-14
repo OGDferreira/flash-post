@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import mimetypes
 import traceback
@@ -34,12 +35,15 @@ from app.collaborators.invites import router as collaborator_invites_router
 from app.collaborators.router import router as collaborators_router
 from app.emails.router import router as emails_router
 from app.finance.router import router as finance_router
+from app.subscriptions.router import admin_router as subscription_admin_router, router as subscription_router
+from app.global_chat.router import router as global_chat_router
 from app.legal import router as legal_router
 from app.models import DiagnosticsEvent
 from app.instagram.router import router as instagram_router
 from app.instagram.folders_router import router as instagram_folders_router
 from app.instagram.media_router import router as media_router
 from app.instagram.webhooks import router as instagram_webhooks_router
+from app.instagram.automation_router import router as instagram_automation_router
 from app.loops.router import router as loops_router
 from app.notifications.router import router as notifications_router
 from app.shark.router import router as shark_router
@@ -104,6 +108,18 @@ async def lifespan(_app: FastAPI):
     scheduler.start()
     _app.state.background_scheduler = scheduler
     logger.info("FlashPost background scheduler started.")
+
+    async def _resync_bot_webhooks() -> None:
+        # Re-point every active bot's Telegram webhook at this host (self-heals after a host move).
+        try:
+            from app.bots.engine import resync_webhooks
+
+            async with get_session_factory()() as db:
+                await resync_webhooks(db)
+        except Exception:  # noqa: BLE001 - startup must never fail on this
+            logger.exception("Telegram webhook resync on startup failed.")
+
+    _app.state.webhook_resync_task = asyncio.create_task(_resync_bot_webhooks())
     try:
         yield
     finally:
@@ -170,7 +186,10 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(collaborators_router)
     application.include_router(emails_router)
     application.include_router(finance_router)
+    application.include_router(subscription_router)
+    application.include_router(subscription_admin_router)
     application.include_router(instagram_router)
+    application.include_router(instagram_automation_router)
     application.include_router(instagram_webhooks_router)
     application.include_router(instagram_folders_router)
     application.include_router(media_router)
@@ -190,6 +209,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(partner_wallets_router)
     application.include_router(extensions_router)
     application.include_router(support_router)
+    application.include_router(global_chat_router)
     application.include_router(ranking_router)
     application.include_router(flash_funnel_router)
     application.include_router(links_router)
@@ -289,9 +309,20 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
         resolved_frontend_dir = frontend_dir.resolve()
 
         @application.get("/{asset_path:path}", include_in_schema=False)
-        async def frontend_fallback(asset_path: str, request: Request) -> FileResponse:
+        async def frontend_fallback(asset_path: str, request: Request) -> Response:
             if asset_path == "api" or asset_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="Not found.")
+            # App icon via ?icon=dark|purple: the shell must carry the apple-touch-icon in the
+            # static markup — iOS reads it at parse time for "Adicionar à Tela de Início" and
+            # ignores the one JavaScript swaps in. Inject it server-side so the chosen icon sticks.
+            icon = request.query_params.get("icon")
+            if icon in {"dark", "purple"} and asset_path in {"", "index.html"}:
+                html = (
+                    index_file.read_text(encoding="utf-8")
+                    .replace('href="/brand/apple-touch-icon.png"', f'href="/brand/flash-icon-{icon}-180.png"')
+                    .replace('href="/manifest.webmanifest"', f'href="/manifest-{icon}.webmanifest"')
+                )
+                return Response(content=html, media_type="text/html", headers={"Cache-Control": "no-cache"})
             candidate = (frontend_dir / asset_path).resolve()
             if not candidate.is_relative_to(resolved_frontend_dir):
                 raise HTTPException(status_code=404, detail="Not found.")
