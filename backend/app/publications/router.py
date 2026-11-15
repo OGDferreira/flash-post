@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
 from app.models import (
     InstagramAccount,
+    InstagramCommentAutomation,
     InstagramMedia,
     InstagramScheduledPost,
     InstagramScheduledPostTarget,
@@ -34,6 +35,8 @@ csrf = [Depends(require_csrf)]
 
 class CreatePost(BaseModel):
     media_id: uuid.UUID
+    thumbnail_media_id: uuid.UUID | None = None
+    automation_id: uuid.UUID | None = None
     kind: Literal["post", "story"] = "post"
     caption: Annotated[str | None, Field(max_length=2200)] = None
     scheduled_for: datetime
@@ -67,10 +70,16 @@ async def _resolve_accounts(db, workspace_id, body: CreatePost) -> list[uuid.UUI
     return list(wanted)
 
 
-def _summary(post: InstagramScheduledPost, counts: dict[str, int]) -> dict:
+def _summary(
+    post: InstagramScheduledPost,
+    counts: dict[str, int],
+    items: list[dict] | None = None,
+) -> dict:
     return {
         "id": str(post.id),
         "media_id": str(post.media_id) if post.media_id else None,
+        "thumbnail_media_id": str(post.thumbnail_media_id) if post.thumbnail_media_id else None,
+        "automation_id": str(post.automation_id) if post.automation_id else None,
         "kind": post.kind,
         "caption": post.caption,
         "scheduled_for": _aware(post.scheduled_for).isoformat(),
@@ -83,6 +92,8 @@ def _summary(post: InstagramScheduledPost, counts: dict[str, int]) -> dict:
             "published": counts.get("published", 0),
             "failed": counts.get("failed", 0),
             "canceled": counts.get(TARGET_CANCELED, 0),
+            # Per-account breakdown so the calendar can drill down by profile.
+            "items": items or [],
         },
     }
 
@@ -97,19 +108,35 @@ async def list_posts(access: OwnerAccess, db: DbSession) -> dict:
             .limit(100)
         )
     )
-    counts_rows = await db.execute(
+    # Per-account target rows (with the account's @username) for the calendar.
+    target_rows = await db.execute(
         select(
             InstagramScheduledPostTarget.post_id,
+            InstagramScheduledPostTarget.account_id,
             InstagramScheduledPostTarget.status,
-            func.count(),
+            InstagramScheduledPostTarget.published_media_id,
+            InstagramAccount.username,
         )
+        .join(InstagramAccount, InstagramAccount.id == InstagramScheduledPostTarget.account_id)
         .where(InstagramScheduledPostTarget.workspace_id == access.workspace.id)
-        .group_by(InstagramScheduledPostTarget.post_id, InstagramScheduledPostTarget.status)
     )
     by_post: dict[uuid.UUID, dict[str, int]] = {}
-    for post_id, st, n in counts_rows:
-        by_post.setdefault(post_id, {})[st] = n
-    return {"publications": [_summary(p, by_post.get(p.id, {})) for p in posts]}
+    items_by_post: dict[uuid.UUID, list[dict]] = {}
+    for post_id, account_id, st, published_media_id, username in target_rows:
+        by_post.setdefault(post_id, {})[st] = by_post.setdefault(post_id, {}).get(st, 0) + 1
+        items_by_post.setdefault(post_id, []).append(
+            {
+                "account_id": str(account_id),
+                "username": username,
+                "status": st,
+                "published_media_id": published_media_id,
+            }
+        )
+    return {
+        "publications": [
+            _summary(p, by_post.get(p.id, {}), items_by_post.get(p.id, [])) for p in posts
+        ]
+    }
 
 
 @router.post("", dependencies=csrf, status_code=status.HTTP_201_CREATED)
@@ -122,6 +149,33 @@ async def create_post(body: CreatePost, access: OwnerAccess, db: DbSession) -> d
     )
     if media is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mídia não encontrada.")
+
+    thumbnail_id: uuid.UUID | None = None
+    if body.thumbnail_media_id is not None:
+        thumb = await db.scalar(
+            select(InstagramMedia).where(
+                InstagramMedia.id == body.thumbnail_media_id,
+                InstagramMedia.workspace_id == access.workspace.id,
+            )
+        )
+        if thumb is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Miniatura não encontrada.")
+        if thumb.media_type != "image":
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="A miniatura precisa ser uma imagem.")
+        thumbnail_id = thumb.id
+
+    automation_id: uuid.UUID | None = None
+    if body.automation_id is not None:
+        rule_id = await db.scalar(
+            select(InstagramCommentAutomation.id).where(
+                InstagramCommentAutomation.id == body.automation_id,
+                InstagramCommentAutomation.workspace_id == access.workspace.id,
+            )
+        )
+        if rule_id is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Automação não encontrada.")
+        automation_id = rule_id
+
     when = _aware(body.scheduled_for)
     if when < datetime.now(timezone.utc):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="A data precisa ser no futuro.")
@@ -133,6 +187,8 @@ async def create_post(body: CreatePost, access: OwnerAccess, db: DbSession) -> d
         workspace_id=access.workspace.id,
         created_by_user_id=access.membership.user_id,
         media_id=media.id,
+        thumbnail_media_id=thumbnail_id if body.kind == "post" else None,
+        automation_id=automation_id if body.kind == "post" else None,
         kind=KIND_STORY if body.kind == "story" else KIND_POST,
         caption=(body.caption or "").strip() or None if body.kind == "post" else None,
         scheduled_for=when,

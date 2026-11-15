@@ -17,6 +17,7 @@ from app.instagram.storage import SupabaseStorage
 from app.loops.scheduler import workspaces_allowed_to_post
 from app.models import (
     InstagramAccount,
+    InstagramCommentAutomation,
     InstagramMedia,
     InstagramScheduledPost,
     InstagramScheduledPostTarget,
@@ -36,6 +37,47 @@ logger = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
 # How many due targets one tick drains before yielding.
 MAX_PER_TICK = 20
+
+
+async def _arm_automation(db, template_id, account_id, published_media_id: str) -> None:
+    """Clone the chosen ManyChat rule, scoped to the just-published post+account.
+
+    Best-effort: a per-post copy means the keyword automation answers comments on
+    exactly this post, without touching the owner's template rule. Idempotent on
+    (template, published media)."""
+    template = await db.get(InstagramCommentAutomation, template_id)
+    if template is None or template.trigger_type != "comment":
+        return
+    # Published media ids are unique per account+post, so this is a clean dedupe
+    # against a retried publish arming the same post twice.
+    exists = await db.scalar(
+        select(InstagramCommentAutomation.id).where(
+            InstagramCommentAutomation.workspace_id == template.workspace_id,
+            InstagramCommentAutomation.media_id == published_media_id[:191],
+        )
+    )
+    if exists is not None:
+        return
+    clone = InstagramCommentAutomation(
+        workspace_id=template.workspace_id,
+        created_by_user_id=template.created_by_user_id,
+        name=f"{template.name} · post"[:120],
+        enabled=True,
+        trigger_type="comment",
+        instagram_account_id=account_id,
+        scope_account_ids=[str(account_id)],
+        scope_folder_ids=[],
+        keywords=list(template.keywords or []),
+        match_mode=template.match_mode,
+        media_id=published_media_id[:191],
+        public_reply_enabled=template.public_reply_enabled,
+        public_replies=list(template.public_replies or []),
+        dm_enabled=template.dm_enabled,
+        dm_text=template.dm_text,
+        dm_texts=list(template.dm_texts or []),
+        dm_buttons=list(template.dm_buttons or []),
+    )
+    db.add(clone)
 
 
 async def _refresh_post_status(db, post_id) -> None:
@@ -82,6 +124,11 @@ async def process_one_due_scheduled_target(now: datetime | None = None) -> bool:
         media = await db.scalar(
             select(InstagramMedia).where(InstagramMedia.id == post.media_id)
         )
+        cover = None
+        if post.thumbnail_media_id is not None:
+            cover = await db.scalar(
+                select(InstagramMedia).where(InstagramMedia.id == post.thumbnail_media_id)
+            )
         if account is None or media is None:
             target.status = TARGET_FAILED
             target.last_error = "Conta conectada ou mídia não está mais disponível."
@@ -113,11 +160,15 @@ async def process_one_due_scheduled_target(now: datetime | None = None) -> bool:
         post_id = post.id
         is_story = post.kind == KIND_STORY
         caption = post.caption if not is_story else None
+        # Stories take no cover; only feed posts arm a per-post automation.
+        cover_media = cover if not is_story else None
+        automation_id = post.automation_id if not is_story else None
+        account_id = account.id
         attempts = target.attempts
 
     try:
         published_media_id = await publish_media(
-            account, media, access_token, storage, caption=caption, story=is_story,
+            account, media, access_token, storage, caption=caption, cover=cover_media, story=is_story,
         )
     except Exception as exc:  # noqa: BLE001 - one target never stops the rest
         async with get_session_factory()() as db:
@@ -142,6 +193,8 @@ async def process_one_due_scheduled_target(now: datetime | None = None) -> bool:
             target.published_media_id = str(published_media_id)[:191]
             target.published_at = datetime.now(timezone.utc)
             await _refresh_post_status(db, post_id)
+            if automation_id is not None:
+                await _arm_automation(db, automation_id, account_id, str(published_media_id))
             await db.commit()
     logger.info(
         "Scheduled %s published to account %s (media %s -> %s).",

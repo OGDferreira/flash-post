@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    InstagramCommentAutomation,
     InstagramMedia,
     InstagramProfileFolder,
     InstagramScheduledPost,
@@ -131,3 +132,55 @@ async def test_worker_publishes_due_targets_including_story(
     refreshed_post = await db_session.get(InstagramScheduledPost, post_id)
     await db_session.refresh(refreshed_post)
     assert refreshed_post.status == "done"
+
+
+@pytest.mark.anyio
+async def test_feed_post_arms_automation_and_uses_thumbnail(
+    db_session: AsyncSession, owner, monkeypatch
+) -> None:
+    _user, workspace = owner
+    account = _active_account(workspace.id, "acc_arm")
+    video = _media(workspace.id, "reel", media_type="video")
+    thumb = _media(workspace.id, "capa", media_type="image")
+    template = InstagramCommentAutomation(
+        workspace_id=workspace.id, name="Link VIP", trigger_type="comment",
+        keywords=["quero"], public_reply_enabled=True, public_replies=["{oi|olá}!"],
+        dm_enabled=True, dm_text="segue o link",
+    )
+    db_session.add_all([account, video, thumb, template])
+    await db_session.flush()
+    post = InstagramScheduledPost(
+        workspace_id=workspace.id, media_id=video.id, thumbnail_media_id=thumb.id,
+        automation_id=template.id, kind="post", caption="legenda",
+        scheduled_for=datetime.now(timezone.utc) - timedelta(minutes=1), status="scheduled",
+    )
+    db_session.add(post)
+    await db_session.flush()
+    db_session.add(InstagramScheduledPostTarget(
+        post_id=post.id, workspace_id=workspace.id, account_id=account.id, status="queued"))
+    await db_session.commit()
+
+    seen: dict = {}
+
+    async def fake_publish(acc, med, token, storage, *, caption=None, cover=None, story=False, **_kw):
+        seen["cover"] = cover.id if cover is not None else None
+        seen["caption"] = caption
+        return "ig_pub_arm"
+
+    monkeypatch.setattr(pub_scheduler, "publish_media", fake_publish)
+    monkeypatch.setattr(pub_scheduler.SupabaseStorage, "from_settings", classmethod(lambda _c: object()))
+
+    handled = await pub_scheduler.run_due_scheduled_posts()
+    assert handled == 1
+    assert seen["cover"] == thumb.id and seen["caption"] == "legenda"
+
+    # A per-post automation was cloned, scoped to the published media + account.
+    clone = await db_session.scalar(
+        select(InstagramCommentAutomation).where(
+            InstagramCommentAutomation.media_id == "ig_pub_arm"
+        )
+    )
+    assert clone is not None
+    assert clone.id != template.id
+    assert clone.scope_account_ids == [str(account.id)]
+    assert clone.public_replies == ["{oi|olá}!"]

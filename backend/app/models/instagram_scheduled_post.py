@@ -71,6 +71,14 @@ class InstagramScheduledPost(Base):
     media_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("instagram_media.id", ondelete="SET NULL")
     )
+    # Optional Reels cover (a JPEG) and an optional ManyChat rule to arm on the
+    # published post (a per-post copy of the rule is created when it goes live).
+    thumbnail_media_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_media.id", ondelete="SET NULL")
+    )
+    automation_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("instagram_automations.id", ondelete="SET NULL")
+    )
     kind: Mapped[str] = mapped_column(String(16), nullable=False, default=KIND_POST)
     caption: Mapped[str | None] = mapped_column(Text)
     scheduled_for: Mapped[datetime] = mapped_column(
