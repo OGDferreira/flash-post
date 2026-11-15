@@ -36,7 +36,6 @@ from app.models.platform_subscription import (
     SUB_TRIALING,
 )
 
-TRIAL_DAYS = 7
 # A subscription PIX stays payable for a day.
 CHARGE_EXPIRATION_SECONDS = 24 * 60 * 60
 # external_id prefix so the bot-order webhook ignores these and vice versa.
@@ -91,11 +90,14 @@ async def get_or_create(db: AsyncSession, user: User) -> PlatformSubscription:
     sub = await db.scalar(select(PlatformSubscription).where(PlatformSubscription.user_id == user.id))
     if sub is not None:
         return sub
-    # New (or pre-existing, first seen now) owner: start the free trial from now.
+    # New (or pre-existing, first seen now) owner. The trial window is configurable
+    # (subscription_trial_days, default 0): with 0 the owner has no free access and
+    # must pick a plan or redeem a code before using the platform.
+    trial_days = max(0, get_settings().subscription_trial_days)
     sub = PlatformSubscription(
         user_id=user.id,
         status=SUB_TRIALING,
-        trial_end=utc_now() + timedelta(days=TRIAL_DAYS),
+        trial_end=utc_now() + timedelta(days=trial_days),
     )
     db.add(sub)
     await db.flush()

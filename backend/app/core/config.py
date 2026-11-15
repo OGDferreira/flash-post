@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # webhooks still match them, but the engine only logs what it *would* send
     # ("simulated") instead of calling the Graph API. Flip to true once reviewed.
     instagram_automation_enabled: bool = False
+    # Free trial days for a new operation owner before the paywall shows. Default 0:
+    # a new owner must pick a plan (pay PIX) or redeem a liberation code to get in.
+    # Set >0 to grant a trial window again.
+    subscription_trial_days: int = 0
     # Platform-wide Instagram Business Login app (env IG_APP_ID / IG_APP_SECRET), shared by
     # every user unless the Super Admin blocks someone. Never stored in the database or sent to
     # the browser. When unset, connecting falls back to each workspace's own Meta app.

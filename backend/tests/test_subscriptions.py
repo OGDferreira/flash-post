@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bots import smokepay
 from app.bots.smokepay import PixCharge
 from app.models import PlatformLiberationCode, PlatformPlan, PlatformSubscription, PlatformSubscriptionCharge
-from app.models.platform_subscription import CHARGE_PAID, SUB_ACTIVE, SUB_PAST_DUE, SUB_TRIALING
+from app.models.platform_subscription import CHARGE_PAID, SUB_ACTIVE, SUB_PAST_DUE
 from app.subscriptions import service
 from tests.test_loops import _csrf, _login
 
@@ -30,16 +30,16 @@ def _fake_pix(**_kwargs) -> PixCharge:
 
 
 @pytest.mark.anyio
-async def test_owner_gets_trial_collaborator_and_admin_exempt(
+async def test_new_owner_must_pick_plan_collaborator_and_admin_exempt(
     db_session: AsyncSession, owner, collaborator, super_admin
 ) -> None:
+    # Default trial is 0: a new owner gets no free access and sees the paywall.
     owner_user, _ = owner
     owner_state = await service.access_state(db_session, owner_user)
-    assert owner_state == {
-        "required": True, "active": True, "status": SUB_TRIALING,
-        "until": owner_state["until"], "in_trial": True,
-    }
-    assert owner_state["until"] is not None  # 7-day trial window set
+    assert owner_state["required"] is True
+    assert owner_state["active"] is False
+    assert owner_state["in_trial"] is False
+    # Exempt: collaborators (no owned operation) and the Super Admin.
     assert (await service.access_state(db_session, collaborator))["required"] is False
     assert (await service.access_state(db_session, super_admin))["required"] is False
 
