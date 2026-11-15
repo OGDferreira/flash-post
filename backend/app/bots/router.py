@@ -885,7 +885,9 @@ async def upload_media(
         raise HTTPException(status_code=415, detail="O conteúdo do arquivo não corresponde ao tipo.")
     safe = PurePosixPath(filename.replace("\\", "/")).name.strip()[:200] or "arquivo"
     media_id = uuid.uuid4()
-    path = f"{access.workspace.id}/bots/{media_id}/{safe}"
+    # Chave do Storage sem "#"/espaços (Supabase rejeita com 400); o nome
+    # original fica em file_name só pra exibição.
+    path = f"{access.workspace.id}/bots/{media_id}/{SupabaseStorage.safe_object_name(safe)}"
     try:
         await SupabaseStorage.from_settings().upload(path, content, content_type)
     except (RuntimeError, SupabaseStorageError, httpx.HTTPError) as exc:

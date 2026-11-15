@@ -81,6 +81,62 @@ async def test_owner_uploads_private_media_and_saves_workspace_metadata(
     assert persisted.storage_path == path
 
 
+def test_safe_object_name_strips_storage_unsafe_chars() -> None:
+    # Supabase Storage rejeita "#" na chave (HTTP 400); hashtags viram "_".
+    name = SupabaseStorage.safe_object_name(
+        "pamela_#fyp_#explore_#reels 2026-10-26_De-pmbcMKw6.mp4"
+    )
+    assert "#" not in name
+    assert " " not in name
+    assert name.endswith(".mp4")
+    assert set(name) <= set(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+    )
+    assert SupabaseStorage.safe_object_name("###.mp4").endswith(".mp4")
+    assert SupabaseStorage.safe_object_name("") == "arquivo"
+
+
+@pytest.mark.anyio
+async def test_media_upload_sanitizes_hashtag_filename_in_storage_key(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+
+    class FakeStorage:
+        def __init__(self) -> None:
+            self.uploaded: tuple[str, bytes, str] | None = None
+
+        async def upload(self, path: str, content: bytes, content_type: str) -> None:
+            self.uploaded = (path, content, content_type)
+
+    storage = FakeStorage()
+    monkeypatch.setattr(
+        SupabaseStorage, "from_settings", classmethod(lambda _cls: storage)
+    )
+    await _login(client)
+    csrf = await _csrf(client)
+    jpeg_data = b"\xff\xd8\xff" + b"image-data"
+
+    response = await client.post(
+        "/api/media?filename=pamela_%23fyp_%23explore_%23reels.jpg&purpose=post",
+        content=jpeg_data,
+        headers={"X-CSRF-Token": csrf, "Content-Type": "image/jpeg"},
+    )
+
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    # Nome bonito preservado pra exibição…
+    assert payload["filename"] == "pamela_#fyp_#explore_#reels.jpg"
+    # …mas a chave do Storage é ASCII-safe (sem "#").
+    assert storage.uploaded is not None
+    path = storage.uploaded[0]
+    assert "#" not in path and "%23" not in path
+    assert path.endswith(".jpg")
+
+
 @pytest.mark.anyio
 async def test_media_upload_rejects_mismatched_file_content(
     client: AsyncClient,
