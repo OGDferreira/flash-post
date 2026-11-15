@@ -43,9 +43,6 @@ type Publication = {
 };
 type PublicationsList = { publications: Publication[] };
 
-const STATUS_LABEL: Record<string, string> = {
-  scheduled: "Agendada", publishing: "Publicando", done: "Concluída", canceled: "Cancelada",
-};
 const TARGET_LABEL: Record<string, string> = {
   queued: "na fila", publishing: "publicando", published: "publicada", failed: "falhou", canceled: "cancelada",
 };
