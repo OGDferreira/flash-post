@@ -681,3 +681,47 @@ async def test_approved_message_switch(client, db_session, owner, apis, enabled,
     assert "Sua entrega" in texts
     if expected:  # the message comes before the delivery
         assert texts.index(next(t for t in texts if t.startswith("Recebemos seu Pix"))) < texts.index("Sua entrega")
+
+
+@pytest.mark.anyio
+async def test_plan_overrides_approved_message(client, db_session, owner, apis) -> None:
+    # A plan with its own "payment approved" text uses it instead of the funnel default.
+    headers = await _login(client)
+    flow = _flow(welcome=[])
+    flow["plans"][0]["delivery"] = {"type": "default", "text": "Sua entrega"}
+    flow["plans"][0]["approved_text"] = "VIP liberado, {nome}! 🔥"
+    flow["payment"] = {"approved_text": "Recebemos seu Pix, {nome}!", "approved_enabled": True}
+    bot, _ = await _setup(client, headers, flow)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    await _pay(client, db_session, order)
+    texts = [m["text"] for m in apis.methods("sendMessage")]
+    assert any(t.startswith("VIP liberado") for t in texts)  # the plan's own message
+    assert not any(t.startswith("Recebemos seu Pix") for t in texts)  # not the funnel default
+    assert "Sua entrega" in texts
+
+
+@pytest.mark.anyio
+async def test_upsell_overrides_approved_message(client, db_session, owner, apis) -> None:
+    # An upsell with its own approved text uses it when that upsell is paid.
+    headers = await _login(client)
+    flow = _flow(welcome=[])
+    flow["plans"][0]["delivery"] = {"type": "default", "text": "Sua entrega"}
+    flow["payment"] = {"approved_text": "Padrão aprovado!", "approved_enabled": True}
+    flow["upsells"] = [{
+        "name": "Extra", "price": "9.90", "text": "Leva mais?", "delivery": PACK,
+        "approved_text": "Upsell no bolso, {nome}!",
+    }]
+    bot, _ = await _setup(client, headers, flow)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    plan_order = await db_session.scalar(select(TgOrder))
+    await _pay(client, db_session, plan_order)
+    await _send(client, db_session, bot["id"], _tap("up:0:" + str(plan_order.id)))
+    upsell_order = await db_session.scalar(
+        select(TgOrder).where(TgOrder.id != plan_order.id)
+    )
+    await _pay(client, db_session, upsell_order)
+    texts = [m["text"] for m in apis.methods("sendMessage")]
+    assert any(t.startswith("Upsell no bolso") for t in texts)  # the upsell's own message

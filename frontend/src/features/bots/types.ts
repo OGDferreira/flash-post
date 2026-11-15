@@ -48,6 +48,8 @@ export type Plan = {
   order_bump?: OrderBump | null;
   /** Fixed card price in USD (international "fixed" pricing); empty = convert by the rate. */
   price_usd?: string | null;
+  /** Own "payment approved" message; empty/null = use the funnel default. */
+  approved_text?: string | null;
 };
 
 /** Per-funnel card/international settings (Stripe). ``enabled`` only takes effect when the
@@ -90,6 +92,8 @@ export type UpsellStep = {
   decline_label: string;
   hide_decline: boolean;
   delivery: Delivery | null;
+  /** Own "payment approved" message; empty/null = use the funnel default. */
+  approved_text?: string | null;
 };
 
 export type CustomOffer = {
@@ -97,6 +101,8 @@ export type CustomOffer = {
   price: string;
   duration_days: number | null;
   delivery: Delivery | null;
+  /** Own "payment approved" message; empty/null = use the funnel default. */
+  approved_text?: string | null;
 };
 
 export type DownsellStep = {

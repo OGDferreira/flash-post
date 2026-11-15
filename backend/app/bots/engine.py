@@ -656,7 +656,8 @@ async def _has_paid(db: AsyncSession, lead: TgLead) -> bool:
 
 
 def custom_offer_plan(index: int, offer: CustomOffer) -> Plan:
-    return Plan(id=f"ds{index}", name=offer.name, price=offer.price, duration_days=offer.duration_days, delivery=offer.delivery)
+    return Plan(id=f"ds{index}", name=offer.name, price=offer.price, duration_days=offer.duration_days,
+                delivery=offer.delivery, approved_text=offer.approved_text)
 
 
 async def send_downsell(
@@ -690,7 +691,8 @@ async def send_downsell(
 
 
 def upsell_plan(index: int, step: UpsellStep) -> Plan:
-    return Plan(id=f"up{index}", name=step.name, price=step.price, duration_days=step.duration_days, delivery=step.delivery)
+    return Plan(id=f"up{index}", name=step.name, price=step.price, duration_days=step.duration_days,
+                delivery=step.delivery, approved_text=step.approved_text)
 
 
 async def schedule_upsell(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int, chain: str) -> None:
@@ -1802,12 +1804,15 @@ async def approve_order(
         info.get("kind") == "upsell" or delivery is None or delivery.type == "upsell" or delivery.start_upsell
     )
     approved = flow.payment.approved_enabled if flow else None
-    send_approved = bool(flow) and bool(flow.payment.approved_text) and (
+    # The offer (plan/upsell/downsell) can carry its own "payment approved" message;
+    # otherwise the funnel's default one is used.
+    approved_text = (plan.approved_text if plan and plan.approved_text else (flow.payment.approved_text if flow else None))
+    send_approved = bool(flow) and bool(approved_text) and (
         approved is True or (approved is None and not upsell_next)
     )
     try:
         if send_approved:
-            await tg.send_message(lead.chat_id, render(flow.payment.approved_text, lead, order.offer_name, order.amount, bot))
+            await tg.send_message(lead.chat_id, render(approved_text, lead, order.offer_name, order.amount, bot))
         if delivery and delivery.type != "upsell":
             await deliver(db, tg, bot, lead, order, plan, delivery)
             # Any purchase (plan, upsell or downsell) fires this delivery's post-purchase drip.

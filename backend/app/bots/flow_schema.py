@@ -113,6 +113,8 @@ class Plan(_Model):
     button_text: Label | None = None
     button_style: ButtonStyle = "default"
     delivery: Delivery | None = None  # None = flow's default_delivery
+    # Own "payment approved" message for this plan; None = use the funnel's default (Payment.approved_text).
+    approved_text: Text | None = None
     # Order bump: "default" uses the flow's, "custom" uses order_bump, "off" skips it.
     bump_mode: Literal["default", "custom", "off"] = "default"
     order_bump: OrderBump | None = None
@@ -171,6 +173,8 @@ class UpsellStep(_Model):
     decline_label: Label = "Não, obrigado"
     hide_decline: bool = False
     delivery: Delivery | None = None  # None = flow's default_delivery
+    # Own "payment approved" message for this upsell; None = funnel default.
+    approved_text: Text | None = None
 
 
 class CustomOffer(_Model):
@@ -180,6 +184,8 @@ class CustomOffer(_Model):
     price: Money
     duration_days: Annotated[int, Field(ge=1, le=3650)] | None = 30
     delivery: Delivery | None = None  # None = flow's default_delivery
+    # Own "payment approved" message for this downsell offer; None = funnel default.
+    approved_text: Text | None = None
 
 
 class DownsellStep(_Model):

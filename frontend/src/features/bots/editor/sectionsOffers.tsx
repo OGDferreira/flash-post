@@ -35,6 +35,43 @@ function StepActions({ onCopy, onRemove, canCopy }: { onCopy: () => void; onRemo
   );
 }
 
+// Optional per-offer "payment approved" message. Empty/null = the funnel's default
+// (Pagamentos → "Mensagem de pagamento aprovado") is used for this offer.
+function ApprovedMessageField({
+  value,
+  onChange,
+}: {
+  value: string | null | undefined;
+  onChange: (next: string | null) => void;
+}) {
+  const custom = value != null;
+  return (
+    <div className="space-y-2 rounded-xl border border-line-soft p-3">
+      <Switch
+        checked={custom}
+        label="Mensagem de pagamento aprovado própria"
+        onChange={(on) => onChange(on ? value ?? "" : null)}
+      />
+      {custom ? (
+        <>
+          <RichTextEditor
+            label="Mensagem desta oferta"
+            rows={3}
+            value={value ?? ""}
+            variables={BASE_VARIABLES}
+            onChange={(text) => onChange(text)}
+          />
+          <p className="text-[11px] text-muted">
+            Substitui a mensagem padrão do funil só para esta oferta.
+          </p>
+        </>
+      ) : (
+        <p className="text-[11px] text-muted">Usa a mensagem padrão do funil (aba Pagamentos).</p>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- Planos
 
 function PlanEditor({ plan, onChange, hasDefaultBump }: { plan: Plan; onChange: (next: Plan) => void; hasDefaultBump: boolean }) {
@@ -89,6 +126,9 @@ function PlanEditor({ plan, onChange, hasDefaultBump }: { plan: Plan; onChange: 
           <option value="off">Sem order bump neste plano</option>
         </select>
         {plan.bump_mode === "custom" && plan.order_bump && <BumpEditor allowDefault value={plan.order_bump} onChange={(order_bump) => set({ order_bump })} />}
+      </div>
+      <div className="border-t border-line-soft pt-4">
+        <ApprovedMessageField value={plan.approved_text} onChange={(approved_text) => set({ approved_text })} />
       </div>
     </>
   );
@@ -280,6 +320,7 @@ export function UpsellSection({ draft, set }: SectionProps) {
                 <DurationSelect value={step.duration_days} onChange={(duration_days) => setStep(index, { duration_days })} />
               )}
               <OfferDelivery value={step.delivery} onChange={(delivery) => setStep(index, { delivery })} />
+              <ApprovedMessageField value={step.approved_text} onChange={(approved_text) => setStep(index, { approved_text })} />
             </div>
           </Collapsible>
         ))}
@@ -397,6 +438,7 @@ function DownsellList({ sequence, steps, plans, onChange }: { sequence: Sequence
                 </div>
                 <DurationSelect value={step.custom_offer.duration_days} onChange={(duration_days) => setStep(index, { custom_offer: { ...step.custom_offer!, duration_days } })} />
                 <OfferDelivery allowUpsell value={step.custom_offer.delivery} onChange={(delivery) => setStep(index, { custom_offer: { ...step.custom_offer!, delivery } })} />
+                <ApprovedMessageField value={step.custom_offer.approved_text} onChange={(approved_text) => setStep(index, { custom_offer: { ...step.custom_offer!, approved_text } })} />
               </div>
             ) : (
               <div className="grid grid-cols-[120px_1fr] gap-3">
