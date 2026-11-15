@@ -11,6 +11,7 @@ from app.models import (
     InstagramAccount,
     InstagramAutomationEvent,
     InstagramCommentAutomation,
+    InstagramProfileFolder,
 )
 
 IG_USER = "17840000000009999"
@@ -153,3 +154,93 @@ async def test_automation_crud_and_live_flag(client, owner):
     deleted = await client.delete(f"/api/instagram/automations/{rule_id}", headers=headers)
     assert deleted.status_code == 200
     assert (await client.get("/api/instagram/automations", headers=headers)).json()["automations"] == []
+
+
+@pytest.mark.anyio
+async def test_spintax_varies_message():
+    from app.instagram.automation import expand_spintax
+
+    picks = {expand_spintax("{oi|olá|opa}, {segue|aqui} o link") for _ in range(40)}
+    # Every expansion resolves both groups and leaves no braces behind.
+    assert all("{" not in p and "}" not in p for p in picks)
+    assert len(picks) > 1  # it actually varies
+    assert expand_spintax("sem variação") == "sem variação"
+
+
+@pytest.mark.anyio
+async def test_folder_scope_fires_only_for_accounts_in_folder(db_session, owner, monkeypatch):
+    _user, workspace = owner
+    folder = InstagramProfileFolder(workspace_id=workspace.id, name="VIP")
+    db_session.add(folder)
+    await db_session.flush()
+
+    in_folder = await _account(db_session, workspace.id)
+    in_folder.profile_folder_id = folder.id
+    out_folder = InstagramAccount(
+        workspace_id=workspace.id,
+        instagram_user_id="17840000000008888",
+        username="outra_conta",
+        encrypted_access_token=encrypt_value("tok2"),
+        token_expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+    )
+    db_session.add(out_folder)
+
+    rule = InstagramCommentAutomation(
+        workspace_id=workspace.id,
+        name="Só VIP",
+        trigger_type="comment",
+        keywords=[],  # qualquer comentário
+        scope_folder_ids=[str(folder.id)],
+        public_reply_enabled=True,
+        public_replies=["{oi|olá} 👋"],
+        dm_enabled=False,
+    )
+    db_session.add(rule)
+    await db_session.commit()
+
+    calls: list[str] = []
+
+    async def fake_post(self, url, *args, **kwargs):
+        calls.append(url)
+        return httpx.Response(200, json={"id": "ok"}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(automation.get_settings(), "instagram_automation_enabled", True, raising=False)
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    # Account outside the folder: nothing fires.
+    payload_out = _comment_payload("c-out", "qualquer coisa")
+    payload_out["entry"][0]["id"] = "17840000000008888"
+    await automation.process_webhook(db_session, payload_out)
+    assert calls == []
+
+    # Account inside the folder: fires even with no keyword.
+    await automation.process_webhook(db_session, _comment_payload("c-in", "qualquer coisa"))
+    assert any("/replies" in url for url in calls)
+
+
+@pytest.mark.anyio
+async def test_db_toggle_turns_automations_live(db_session, owner, monkeypatch):
+    from app.instagram.automation import AUTOMATIONS_ENABLED_KEY, automations_live
+    from app.models import SystemSetting
+
+    monkeypatch.setattr(automation.get_settings(), "instagram_automation_enabled", False, raising=False)
+    assert await automations_live(db_session) is False  # env off, no DB row
+    db_session.add(SystemSetting(key=AUTOMATIONS_ENABLED_KEY, value={"enabled": True}))
+    await db_session.commit()
+    assert await automations_live(db_session) is True  # DB toggle turns it on
+
+
+@pytest.mark.anyio
+async def test_live_toggle_endpoint_super_admin_only(client, owner, super_admin):
+    # The owner cannot flip the global live flag.
+    owner_headers = await _login(client)
+    denied = await client.put("/api/instagram/automations/live", headers=owner_headers, json={"enabled": True})
+    assert denied.status_code in (401, 403)
+
+    # The Super Admin can.
+    token = (await client.get("/api/auth/csrf")).json()["csrf_token"]
+    await client.post("/api/auth/login", headers={"X-CSRF-Token": token},
+                      json={"email": "superadmin@example.com", "password": "super admin password"})
+    admin_headers = {"X-CSRF-Token": (await client.get("/api/auth/csrf")).json()["csrf_token"]}
+    ok = await client.put("/api/instagram/automations/live", headers=admin_headers, json={"enabled": True})
+    assert ok.status_code == 200 and ok.json()["live"] is True

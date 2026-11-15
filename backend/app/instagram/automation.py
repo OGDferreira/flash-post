@@ -11,6 +11,7 @@ as ``simulated`` so the owner can see what *would* fire.
 """
 import logging
 import random
+import re
 from collections.abc import Mapping, Sequence
 
 import httpx
@@ -23,10 +24,22 @@ from app.models import (
     InstagramAccount,
     InstagramAutomationEvent,
     InstagramCommentAutomation,
+    SystemSetting,
 )
 
 GRAPH_ENDPOINT = "https://graph.instagram.com/v25.0"
+# DB toggle so the owner can flip the automations live/off without a redeploy;
+# the env flag (instagram_automation_enabled) still forces it on when set.
+AUTOMATIONS_ENABLED_KEY = "instagram_automations_enabled"
 logger = logging.getLogger(__name__)
+
+
+async def automations_live(db) -> bool:
+    """True when real sending is on, from the env flag or the DB toggle."""
+    if get_settings().instagram_automation_enabled:
+        return True
+    row = await db.get(SystemSetting, AUTOMATIONS_ENABLED_KEY)
+    return bool(row and isinstance(row.value, dict) and row.value.get("enabled"))
 
 
 # ----------------------------------------------------------------- matching
@@ -47,6 +60,37 @@ def matches(rule: InstagramCommentAutomation, text: str) -> bool:
     return any(_normalize(kw) in body for kw in keywords)
 
 
+_SPINTAX = re.compile(r"\{([^{}]*)\}")
+
+
+def expand_spintax(text: str, *, _depth: int = 0) -> str:
+    """Resolve ``{oi|olá|opa}`` groups to one random option, nesting allowed.
+
+    Lets the owner write one message that reads differently every fire, so the
+    Direct/reply doesn't look like a bot. A lone ``{}`` or ``{a}`` passes through."""
+    if not text or "{" not in text or _depth > 8:
+        return text or ""
+
+    def pick(match: "re.Match[str]") -> str:
+        return random.choice(match.group(1).split("|"))
+
+    expanded = _SPINTAX.sub(pick, text)
+    return expand_spintax(expanded, _depth=_depth + 1) if expanded != text else expanded
+
+
+def _rule_targets_account(rule: InstagramCommentAutomation, account: InstagramAccount) -> bool:
+    """True when ``rule`` is scoped to ``account`` (by folder, by account, or
+    globally when it carries no scope)."""
+    accounts = [str(a) for a in (rule.scope_account_ids or []) if a]
+    folders = [str(f) for f in (rule.scope_folder_ids or []) if f]
+    if not accounts and not folders:
+        # No explicit scope: fall back to the legacy single-account column.
+        return rule.instagram_account_id in (None, account.id)
+    if str(account.id) in accounts:
+        return True
+    return account.profile_folder_id is not None and str(account.profile_folder_id) in folders
+
+
 # ----------------------------------------------------------------- Graph calls
 
 
@@ -55,10 +99,17 @@ async def _post(client: httpx.AsyncClient, path: str, data: dict) -> None:
     response.raise_for_status()
 
 
-def _dm_message(rule: InstagramCommentAutomation) -> dict:
+def _pick_dm_text(rule: InstagramCommentAutomation) -> str:
+    """One DM variation (rotated), with spintax expanded. Falls back to dm_text."""
+    variations = [t for t in (rule.dm_texts or []) if isinstance(t, str) and t.strip()]
+    chosen = random.choice(variations) if variations else (rule.dm_text or "")
+    return expand_spintax(chosen)
+
+
+def _dm_message(rule: InstagramCommentAutomation, text: str | None = None) -> dict:
     """The messages-API ``message`` object: plain text, or a button template when
     the rule carries link buttons."""
-    text = rule.dm_text or ""
+    text = _pick_dm_text(rule) if text is None else text
     buttons = [
         {"type": "web_url", "url": b["url"], "title": b["label"][:20]}
         for b in (rule.dm_buttons or [])
@@ -86,10 +137,12 @@ async def _send_comment_actions(
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
         if rule.public_reply_enabled and rule.public_replies:
-            reply = random.choice([r for r in rule.public_replies if isinstance(r, str) and r.strip()] or [""])
+            reply = expand_spintax(
+                random.choice([r for r in rule.public_replies if isinstance(r, str) and r.strip()] or [""])
+            )
             if reply.strip():
                 await _post(client, f"{comment_id}/replies", {"message": reply[:900], "access_token": access_token})
-        if rule.dm_enabled and (rule.dm_text or rule.dm_buttons):
+        if rule.dm_enabled and (rule.dm_text or rule.dm_texts or rule.dm_buttons):
             await _post(
                 client,
                 f"{ig_user_id}/messages",
@@ -145,10 +198,9 @@ async def _fire(
     if event is False:
         return True  # already handled by a previous delivery of this webhook
 
-    settings = get_settings()
-    if not settings.instagram_automation_enabled:
+    if not await automations_live(db):
         event.status = "simulated"
-        event.detail = "Automação desligada (aguardando Meta App Review); nada foi enviado."
+        event.detail = "Automação desligada; nada foi enviado."
         await _bump(db, rule)
         return True
 
@@ -189,18 +241,18 @@ async def _bump(db, rule: InstagramCommentAutomation) -> None:
 
 
 async def _rules_for(db, account: InstagramAccount, trigger_type: str) -> Sequence[InstagramCommentAutomation]:
+    # Scope lives in JSON (folders/accounts), so fetch the workspace's rules and
+    # filter per account in Python. Rule counts per workspace stay small.
     rows = await db.scalars(
         select(InstagramCommentAutomation)
         .where(
             InstagramCommentAutomation.workspace_id == account.workspace_id,
             InstagramCommentAutomation.enabled.is_(True),
             InstagramCommentAutomation.trigger_type == trigger_type,
-            (InstagramCommentAutomation.instagram_account_id == account.id)
-            | (InstagramCommentAutomation.instagram_account_id.is_(None)),
         )
         .order_by(InstagramCommentAutomation.created_at.asc())
     )
-    return list(rows)
+    return [rule for rule in rows if _rule_targets_account(rule, account)]
 
 
 # ----------------------------------------------------------------- webhook entry

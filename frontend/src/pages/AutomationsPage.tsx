@@ -5,6 +5,7 @@ import {
   MessageCircle,
   Pencil,
   Plus,
+  Power,
   Trash2,
   X,
 } from "lucide-react";
@@ -21,6 +22,8 @@ type Automation = {
   enabled: boolean;
   trigger_type: TriggerType;
   instagram_account_id: string | null;
+  account_ids: string[];
+  folder_ids: string[];
   keywords: string[];
   match_mode: MatchMode;
   media_id: string | null;
@@ -28,26 +31,32 @@ type Automation = {
   public_replies: string[];
   dm_enabled: boolean;
   dm_text: string | null;
+  dm_texts: string[];
   dm_buttons: LinkButton[];
   fired_count: number;
   last_fired_at: string | null;
 };
 
-type AutomationsResponse = { automations: Automation[]; live: boolean };
+type AutomationsResponse = { automations: Automation[]; live: boolean; can_toggle: boolean };
 type AccountOption = { id: string; username: string; profile_picture_url: string | null };
 type AccountsResponse = { accounts: AccountOption[] };
+type FolderOption = { id: string; name: string; color: string | null };
+type FoldersResponse = { folders: FolderOption[] };
 
 type Draft = {
   name: string;
   enabled: boolean;
   trigger_type: TriggerType;
-  instagram_account_id: string | null;
+  account_ids: string[];
+  folder_ids: string[];
+  anyComment: boolean;
   keywordsText: string;
   match_mode: MatchMode;
   public_reply_enabled: boolean;
   repliesText: string;
   dm_enabled: boolean;
   dm_text: string;
+  dmVariationsText: string;
   dm_buttons: LinkButton[];
 };
 
@@ -61,40 +70,57 @@ function emptyDraft(): Draft {
     name: "",
     enabled: true,
     trigger_type: "comment",
-    instagram_account_id: null,
+    account_ids: [],
+    folder_ids: [],
+    anyComment: false,
     keywordsText: "",
     match_mode: "any",
     public_reply_enabled: true,
     repliesText: "",
     dm_enabled: true,
     dm_text: "",
+    dmVariationsText: "",
     dm_buttons: [],
   };
 }
 
 function toDraft(rule: Automation): Draft {
+  const accountIds = rule.account_ids ?? [];
+  const folderIds = rule.folder_ids ?? [];
+  // Carry a legacy single-account rule into the new multi-select.
+  if (rule.instagram_account_id && accountIds.length === 0) accountIds.push(rule.instagram_account_id);
   return {
     name: rule.name,
     enabled: rule.enabled,
     trigger_type: rule.trigger_type,
-    instagram_account_id: rule.instagram_account_id,
+    account_ids: accountIds,
+    folder_ids: folderIds,
+    anyComment: (rule.keywords ?? []).length === 0,
     keywordsText: (rule.keywords ?? []).join(", "),
     match_mode: rule.match_mode,
     public_reply_enabled: rule.public_reply_enabled,
     repliesText: (rule.public_replies ?? []).join("\n"),
     dm_enabled: rule.dm_enabled,
     dm_text: rule.dm_text ?? "",
+    dmVariationsText: (rule.dm_texts ?? []).join("\n"),
     dm_buttons: rule.dm_buttons ?? [],
   };
 }
 
 function toPayload(draft: Draft) {
-  const keywords = draft.keywordsText
-    .split(/[,\n]/)
-    .map((kw) => kw.trim())
-    .filter(Boolean)
-    .slice(0, 30);
+  const keywords = draft.anyComment
+    ? []
+    : draft.keywordsText
+        .split(/[,\n]/)
+        .map((kw) => kw.trim())
+        .filter(Boolean)
+        .slice(0, 30);
   const public_replies = draft.repliesText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 10);
+  const dm_texts = draft.dmVariationsText
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
@@ -103,13 +129,15 @@ function toPayload(draft: Draft) {
     name: draft.name.trim(),
     enabled: draft.enabled,
     trigger_type: draft.trigger_type,
-    instagram_account_id: draft.instagram_account_id,
+    account_ids: draft.account_ids,
+    folder_ids: draft.folder_ids,
     keywords,
     match_mode: draft.match_mode,
     public_reply_enabled: draft.trigger_type === "comment" && draft.public_reply_enabled,
     public_replies,
     dm_enabled: draft.dm_enabled,
     dm_text: draft.dm_text.trim() || null,
+    dm_texts,
     dm_buttons: draft.dm_buttons
       .map((b) => ({ label: b.label.trim(), url: b.url.trim() }))
       .filter((b) => b.label && b.url)
@@ -118,8 +146,8 @@ function toPayload(draft: Draft) {
 }
 
 /** ManyChat-style Instagram automations: a keyword in a comment/DM fires a public
- * reply and/or a DM. The engine only sends for real once Meta approves the scopes;
- * until then rules are saved and matched, but sends are simulated (see the banner). */
+ * reply and/or a DM. Scope by isolated profiles and/or profile folders; messages
+ * rotate and support spintax ({oi|olá}) so they don't look robotic. */
 export function AutomationsPage() {
   const cache = useQueryClient();
   const list = useQuery({
@@ -130,14 +158,25 @@ export function AutomationsPage() {
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<AccountsResponse>("/api/instagram/accounts"),
   });
+  const foldersQuery = useQuery({
+    queryKey: ["instagram", "folders"],
+    queryFn: () => apiRequest<FoldersResponse>("/api/instagram/folders?include_accounts=false"),
+  });
   const accounts = accountsQuery.data?.accounts ?? [];
+  const folders = foldersQuery.data?.folders ?? [];
 
   const [editing, setEditing] = useState<Automation | null>(null);
   const [creating, setCreating] = useState(false);
 
   const live = list.data?.live ?? false;
+  const canToggle = list.data?.can_toggle ?? false;
   const rules = list.data?.automations ?? [];
 
+  const setLive = useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiRequest("/api/instagram/automations/live", { method: "PUT", body: { enabled } }),
+    onSuccess: () => cache.invalidateQueries({ queryKey: ["instagram", "automations"] }),
+  });
   const toggle = useMutation({
     mutationFn: (rule: Automation) =>
       apiRequest(`/api/instagram/automations/${rule.id}`, {
@@ -152,8 +191,16 @@ export function AutomationsPage() {
     onSuccess: () => cache.invalidateQueries({ queryKey: ["instagram", "automations"] }),
   });
 
-  const accountName = (id: string | null) =>
-    id ? accounts.find((a) => a.id === id)?.username ?? "conta" : "todas as contas";
+  const scopeLabel = (rule: Automation) => {
+    const ids = rule.account_ids?.length ? rule.account_ids : rule.instagram_account_id ? [rule.instagram_account_id] : [];
+    const names = [
+      ...(rule.folder_ids ?? []).map((f) => folders.find((x) => x.id === f)?.name ?? "pasta"),
+      ...ids.map((a) => "@" + (accounts.find((x) => x.id === a)?.username ?? "conta")),
+    ];
+    if (names.length === 0) return "todas as contas";
+    if (names.length <= 2) return names.join(", ");
+    return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+  };
 
   return (
     <div className="space-y-4">
@@ -166,23 +213,47 @@ export function AutomationsPage() {
             Palavra-chave em comentário ou DM dispara uma resposta pública e uma mensagem no Direct.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setEditing(null);
-            setCreating(true);
-          }}
-          className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white"
-        >
-          <Plus size={16} /> Nova automação
-        </button>
+        <div className="flex items-center gap-2">
+          {canToggle && (
+            <button
+              type="button"
+              onClick={() => setLive.mutate(!live)}
+              disabled={setLive.isPending}
+              className={`inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-sm font-semibold ${
+                live
+                  ? "border-success/40 bg-success/10 text-success"
+                  : "border-line text-fg hover:border-brand"
+              }`}
+            >
+              {setLive.isPending ? (
+                <LoaderCircle size={15} className="animate-spin" />
+              ) : (
+                <Power size={15} />
+              )}
+              {live ? "Envio real ligado" : "Ligar envio real"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setEditing(null);
+              setCreating(true);
+            }}
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white"
+          >
+            <Plus size={16} /> Nova automação
+          </button>
+        </div>
       </div>
 
       {!live && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
           <strong>Modo simulação.</strong> As regras já ficam salvas e o sistema reconhece a
-          palavra-chave, mas nada é enviado ao Instagram até a Meta aprovar as permissões de
-          mensagens e comentários no App Review. Cada disparo fica registrado como “simulado”.
+          palavra-chave, mas nada é enviado ao Instagram.{" "}
+          {canToggle
+            ? "Clique em “Ligar envio real” quando a Meta aprovar as permissões."
+            : "Fica assim até a Meta aprovar as permissões no App Review."}{" "}
+          Cada disparo fica registrado como “simulado”.
         </div>
       )}
 
@@ -191,6 +262,7 @@ export function AutomationsPage() {
           key={editing?.id ?? "new"}
           initial={editing ? toDraft(editing) : emptyDraft()}
           accounts={accounts}
+          folders={folders}
           onClose={() => {
             setCreating(false);
             setEditing(null);
@@ -230,7 +302,7 @@ export function AutomationsPage() {
                 </div>
                 <p className="mt-1 text-xs text-muted">
                   {rule.trigger_type === "comment" ? "Comentário" : "Direct"} ·{" "}
-                  {accountName(rule.instagram_account_id)} ·{" "}
+                  {scopeLabel(rule)} ·{" "}
                   {rule.match_mode === "exact" ? "texto exato" : "contém a palavra"} · disparou{" "}
                   {rule.fired_count}×
                 </p>
@@ -244,7 +316,9 @@ export function AutomationsPage() {
                     </span>
                   ))}
                   {rule.keywords.length === 0 && (
-                    <span className="text-xs text-amber-300">sem palavra-chave — não dispara</span>
+                    <span className="rounded-md bg-surface-inset px-2 py-0.5 text-xs text-accent">
+                      qualquer {rule.trigger_type === "comment" ? "comentário" : "mensagem"}
+                    </span>
                   )}
                 </div>
               </div>
@@ -290,12 +364,14 @@ export function AutomationsPage() {
 function AutomationForm({
   initial,
   accounts,
+  folders,
   ruleId,
   onClose,
   onSaved,
 }: {
   initial: Draft;
   accounts: AccountOption[];
+  folders: FolderOption[];
   ruleId: string | null;
   onClose: () => void;
   onSaved: () => void;
@@ -311,11 +387,12 @@ function AutomationForm({
     mutationFn: () => {
       const payload = toPayload(draft);
       if (!payload.name) throw new Error("Dê um nome para a automação.");
-      if (payload.keywords.length === 0) throw new Error("Adicione pelo menos uma palavra-chave.");
+      if (!draft.anyComment && payload.keywords.length === 0)
+        throw new Error("Adicione pelo menos uma palavra-chave, ou marque “qualquer comentário”.");
       if (!payload.public_reply_enabled && !payload.dm_enabled)
         throw new Error("Ative a resposta pública ou o Direct (ou os dois).");
-      if (payload.dm_enabled && !payload.dm_text)
-        throw new Error("Escreva a mensagem do Direct ou desative o Direct.");
+      if (payload.dm_enabled && !payload.dm_text && payload.dm_texts.length === 0)
+        throw new Error("Escreva a mensagem do Direct (ou uma variação), ou desative o Direct.");
       return apiRequest(
         ruleId ? `/api/instagram/automations/${ruleId}` : "/api/instagram/automations",
         { method: ruleId ? "PUT" : "POST", body: payload },
@@ -326,6 +403,9 @@ function AutomationForm({
   });
 
   const isComment = draft.trigger_type === "comment";
+  const toggleId = (list: string[], id: string) =>
+    list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+  const scopeCount = draft.account_ids.length + draft.folder_ids.length;
 
   return (
     <section className="glass-panel space-y-4 p-4 sm:p-5">
@@ -354,56 +434,114 @@ function AutomationForm({
         />
       </label>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs font-medium text-muted">
-          Gatilho
-          <select
-            className={INPUT}
-            value={draft.trigger_type}
-            onChange={(e) => set("trigger_type", e.target.value as TriggerType)}
-          >
-            <option value="comment">Comentário no post</option>
-            <option value="dm">Mensagem no Direct</option>
-          </select>
-        </label>
-        <label className="block text-xs font-medium text-muted">
-          Conta
-          <select
-            className={INPUT}
-            value={draft.instagram_account_id ?? ""}
-            onChange={(e) => set("instagram_account_id", e.target.value || null)}
-          >
-            <option value="">Todas as contas</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                @{a.username}
-              </option>
-            ))}
-          </select>
-        </label>
+      <label className="block text-xs font-medium text-muted">
+        Gatilho
+        <select
+          className={INPUT}
+          value={draft.trigger_type}
+          onChange={(e) => set("trigger_type", e.target.value as TriggerType)}
+        >
+          <option value="comment">Comentário no post</option>
+          <option value="dm">Mensagem no Direct</option>
+        </select>
+      </label>
+
+      {/* Scope: isolated profiles and/or profile folders. None = every account. */}
+      <div className="rounded-lg border border-line bg-surface-inset/40 p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-fg">Onde aplicar</span>
+          <span className="text-xs text-muted">
+            {scopeCount === 0 ? "todas as contas" : `${scopeCount} selecionado(s)`}
+          </span>
+        </div>
+        <p className="mt-0.5 text-xs text-muted">
+          Escolha pastas de perfis e/ou perfis isolados. Sem seleção = vale para todas as contas.
+        </p>
+        {folders.length > 0 && (
+          <div className="mt-2">
+            <span className="text-[11px] uppercase tracking-wide text-muted">Pastas de perfis</span>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {folders.map((f) => {
+                const on = draft.folder_ids.includes(f.id);
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => set("folder_ids", toggleId(draft.folder_ids, f.id))}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+                      on ? "border-brand bg-brand/15 text-fg" : "border-line text-muted hover:border-brand"
+                    }`}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ background: f.color ?? "#00c9d8" }}
+                    />
+                    {f.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div className="mt-2">
+          <span className="text-[11px] uppercase tracking-wide text-muted">Perfis isolados</span>
+          <div className="mt-1 flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
+            {accounts.map((a) => {
+              const on = draft.account_ids.includes(a.id);
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => set("account_ids", toggleId(draft.account_ids, a.id))}
+                  className={`rounded-full border px-2.5 py-1 text-xs ${
+                    on ? "border-brand bg-brand/15 text-fg" : "border-line text-muted hover:border-brand"
+                  }`}
+                >
+                  @{a.username}
+                </button>
+              );
+            })}
+            {accounts.length === 0 && (
+              <span className="text-xs text-muted">Nenhuma conta conectada ainda.</span>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs font-medium text-muted">
-          Palavras-chave (separe por vírgula)
+      {/* Keyword / any-comment */}
+      <div className="rounded-lg border border-line bg-surface-inset/40 p-3">
+        <label className="flex items-center gap-2 text-sm font-medium text-fg">
           <input
-            className={INPUT}
-            value={draft.keywordsText}
-            placeholder="quero, link, eu quero"
-            onChange={(e) => set("keywordsText", e.target.value)}
+            type="checkbox"
+            checked={draft.anyComment}
+            onChange={(e) => set("anyComment", e.target.checked)}
           />
+          Responder qualquer {isComment ? "comentário" : "mensagem"} (sem palavra-chave)
         </label>
-        <label className="block text-xs font-medium text-muted">
-          Como comparar
-          <select
-            className={INPUT}
-            value={draft.match_mode}
-            onChange={(e) => set("match_mode", e.target.value as MatchMode)}
-          >
-            <option value="any">Comentário contém a palavra</option>
-            <option value="exact">Texto exato</option>
-          </select>
-        </label>
+        {!draft.anyComment && (
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs font-medium text-muted">
+              Palavras-chave (separe por vírgula)
+              <input
+                className={INPUT}
+                value={draft.keywordsText}
+                placeholder="quero, link, eu quero"
+                onChange={(e) => set("keywordsText", e.target.value)}
+              />
+            </label>
+            <label className="block text-xs font-medium text-muted">
+              Como comparar
+              <select
+                className={INPUT}
+                value={draft.match_mode}
+                onChange={(e) => set("match_mode", e.target.value as MatchMode)}
+              >
+                <option value="any">Contém a palavra</option>
+                <option value="exact">Texto exato</option>
+              </select>
+            </label>
+          </div>
+        )}
       </div>
 
       {isComment && (
@@ -423,7 +561,7 @@ function AutomationForm({
                 className={AREA}
                 rows={3}
                 value={draft.repliesText}
-                placeholder={"Te chamei no Direct! 💬\nPronto, te mandei no privado 📩"}
+                placeholder={"Te chamei no Direct! 💬\nPronto, {te mandei|acabei de mandar} no privado 📩"}
                 onChange={(e) => set("repliesText", e.target.value)}
               />
             </label>
@@ -453,6 +591,20 @@ function AutomationForm({
                 onChange={(e) => set("dm_text", e.target.value)}
               />
             </label>
+            <label className="mt-2 block text-xs text-muted">
+              Variações (uma por linha — opcional, escolhe uma por disparo)
+              <textarea
+                className={AREA}
+                rows={2}
+                value={draft.dmVariationsText}
+                placeholder={"Opa! Segue o link 👇\nFala! Aqui ó, aproveita 🔥"}
+                onChange={(e) => set("dmVariationsText", e.target.value)}
+              />
+            </label>
+            <p className="mt-1 text-[11px] text-muted">
+              Dica: use <code className="text-accent">{"{oi|olá|opa}"}</code> dentro de qualquer
+              mensagem para variar palavras automaticamente e não ficar robótico.
+            </p>
             <ButtonsEditor
               buttons={draft.dm_buttons}
               onChange={(buttons) => set("dm_buttons", buttons)}

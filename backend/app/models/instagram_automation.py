@@ -73,6 +73,15 @@ class InstagramCommentAutomation(Base):
     # Comment rules only: restrict to a single post (Instagram media id); null = all.
     media_id: Mapped[str | None] = mapped_column(String(191))
 
+    # Scope by profiles/folders. Both empty = every account of the workspace
+    # (the legacy ``instagram_account_id`` still scopes old rows to one account).
+    scope_account_ids: Mapped[list[str]] = mapped_column(
+        _JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    scope_folder_ids: Mapped[list[str]] = mapped_column(
+        _JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+
     public_reply_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
@@ -83,6 +92,11 @@ class InstagramCommentAutomation(Base):
         Boolean, nullable=False, default=True, server_default=text("true")
     )
     dm_text: Mapped[str | None] = mapped_column(Text)
+    # DM variations: one is picked at random per fire (spintax inside each still
+    # expands too), so the Direct looks less robotic. Falls back to ``dm_text``.
+    dm_texts: Mapped[list[str]] = mapped_column(
+        _JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
     # [{"label": str, "url": str}] rendered as a button template on the DM.
     dm_buttons: Mapped[list[dict[str, Any]]] = mapped_column(
         _JSON, nullable=False, default=list
