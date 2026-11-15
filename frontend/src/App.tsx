@@ -37,6 +37,7 @@ const RankingPage = lazyPage(() => import("@/pages/RankingPage"), "RankingPage")
 const InstagramAccountsPage = lazyPage(() => import("@/pages/InstagramAccountsPage"), "InstagramAccountsPage");
 const LoopsPage = lazyPage(() => import("@/pages/LoopsPage"), "LoopsPage");
 const AutomationsPage = lazyPage(() => import("@/pages/AutomationsPage"), "AutomationsPage");
+const PublicationsPage = lazyPage(() => import("@/pages/PublicationsPage"), "PublicationsPage");
 const ErrorLogsPage = lazyPage(() => import("@/pages/ErrorLogsPage"), "ErrorLogsPage");
 const EmailsPage = lazyPage(() => import("@/pages/EmailsPage"), "EmailsPage");
 const IntegrationsPage = lazyPage(() => import("@/pages/IntegrationsPage"), "IntegrationsPage");
@@ -107,6 +108,7 @@ export default function App() {
                   <Route element={<RequireWorkspaceOwner />}>
                     <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
                     <Route path="/feature/automations" element={<AutomationsPage />} />
+                    <Route path="/feature/publications" element={<PublicationsPage />} />
                     <Route
                       path="/feature/analytics"
                       element={

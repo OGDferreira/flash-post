@@ -168,11 +168,14 @@ async def publish_media(
     before_publish: Callable[[str], Awaitable[None]] | None = None,
     caption: str | None = None,
     cover: InstagramMedia | None = None,
+    story: bool = False,
 ) -> str:
     """Create, wait for and publish a container.
 
     ``caption`` (when given) replaces the media's own caption; ``cover`` is a
-    JPEG used as the Reels cover (``cover_url``) of a video.
+    JPEG used as the Reels cover (``cover_url``) of a video. ``story`` publishes
+    to Stories (``media_type=STORIES``) instead of the feed — image or video,
+    no caption and no cover.
 
     ``before_publish(container_id)`` runs right before ``media_publish`` and
     must persist the container so an uncertain answer can be reconciled
@@ -190,13 +193,17 @@ async def publish_media(
         "access_token": access_token,
         "image_url" if media.media_type == "image" else "video_url": signed_url,
     }
-    if media.media_type == "video":
-        create_payload["media_type"] = "REELS"
-        if cover is not None:
-            create_payload["cover_url"] = await storage.create_signed_url(cover.storage_path)
-    caption = caption if caption is not None else media.caption
-    if caption:
-        create_payload["caption"] = caption
+    if story:
+        # Stories take image or video via media_type=STORIES; no caption, no cover.
+        create_payload["media_type"] = "STORIES"
+    else:
+        if media.media_type == "video":
+            create_payload["media_type"] = "REELS"
+            if cover is not None:
+                create_payload["cover_url"] = await storage.create_signed_url(cover.storage_path)
+        caption = caption if caption is not None else media.caption
+        if caption:
+            create_payload["caption"] = caption
 
     timeout = httpx.Timeout(30.0)
     stage = "account identity verification"

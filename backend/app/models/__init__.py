@@ -23,6 +23,10 @@ from app.models.instagram_automation import (
     InstagramCommentAutomation,
 )
 from app.models.instagram_profile_folder import InstagramProfileFolder
+from app.models.instagram_scheduled_post import (
+    InstagramScheduledPost,
+    InstagramScheduledPostTarget,
+)
 from app.models.instagram_loop import (
     InstagramLoop,
     InstagramLoopAccount,
@@ -130,6 +134,8 @@ __all__ = [
     "InstagramMediaInsight",
     "InstagramMedia",
     "InstagramProfileFolder",
+    "InstagramScheduledPost",
+    "InstagramScheduledPostTarget",
     "InstagramPublicationJob",
     "PushSubscription",
     "MilestoneNotification",

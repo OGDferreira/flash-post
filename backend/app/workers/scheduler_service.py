@@ -19,8 +19,11 @@ _BOTS_ADVISORY_LOCK_KEY = 731904284
 _SHARED_LOOPS_ADVISORY_LOCK_KEY = 731904285
 _CHAT_CLEANUP_ADVISORY_LOCK_KEY = 731904286
 _SUBSCRIPTIONS_ADVISORY_LOCK_KEY = 731904287
+_SCHEDULED_POSTS_ADVISORY_LOCK_KEY = 731904288
 CHAT_CLEANUP_MINUTES = 30
 SUBSCRIPTIONS_SWEEP_MINUTES = 60
+# One-off scheduled posts/stories are checked often so they fire near their time.
+_SCHEDULED_POSTS_INTERVAL_SECONDS = 60
 SHARED_LOOPS_SYNC_MINUTES = 10
 _BOT_JOBS_INTERVAL_SECONDS = 5
 _BOT_RECONCILE_EVERY_TICKS = 2  # about every 10 seconds
@@ -294,6 +297,35 @@ async def _run_subscriptions_sweep_with_database_lock() -> None:
         logger.error("Subscription sweep failed (%s); it will retry.", type(exc).__name__)
 
 
+async def _run_scheduled_posts_with_database_lock() -> None:
+    """Publish any due one-off scheduled posts/stories (feed + stories)."""
+    from app.publications.scheduler import run_due_scheduled_posts
+
+    engine = get_engine()
+    try:
+        if engine.dialect.name != "postgresql":
+            await run_due_scheduled_posts()
+            return
+        async with engine.connect() as connection:
+            acquired = await connection.scalar(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                {"lock_key": _SCHEDULED_POSTS_ADVISORY_LOCK_KEY},
+            )
+            if not acquired:
+                return
+            try:
+                handled = await run_due_scheduled_posts()
+                if handled:
+                    logger.info("Scheduled publications: %s target(s) published this tick.", handled)
+            finally:
+                await connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": _SCHEDULED_POSTS_ADVISORY_LOCK_KEY},
+                )
+    except Exception as exc:
+        logger.error("Scheduled publications tick failed (%s); it will retry.", type(exc).__name__)
+
+
 def create_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(
@@ -365,5 +397,15 @@ def create_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         max_instances=1,
         misfire_grace_time=300,
+    )
+    scheduler.add_job(
+        _run_scheduled_posts_with_database_lock,
+        trigger="interval",
+        seconds=_SCHEDULED_POSTS_INTERVAL_SECONDS,
+        id="flashpost-scheduled-posts",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=60,
     )
     return scheduler
