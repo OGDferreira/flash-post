@@ -130,6 +130,7 @@ const postGroups: NavGroup[] = [
       { label: "Contas conectadas", short: "Contas", to: "/feature/accounts", icon: Users },
       { label: "Pastas de perfis", short: "Pastas", to: "/feature/profile-folders", icon: Folder },
       { label: "Loops", to: "/feature/loops", icon: InfinityIcon },
+      { label: "Automações", to: "/feature/automations", icon: MessageCircle },
       { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
     ],
   },
