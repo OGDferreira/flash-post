@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_service_role_key: SecretStr | None = None
     instagram_publishing_enabled: bool = False
+    # Parallel Instagram publishers per scheduler tick. Each one holds a database connection
+    # only for the brief claim/record steps and none during the ~40 s Meta video transcode, so
+    # the fixed pool (10) and the Supabase pooler's 15-client cap bound the *connections*, not
+    # this number. Raise it to lift publishing throughput (each worker ≈ 90 Reels/hour).
+    publication_workers: Annotated[int, Field(ge=1, le=32)] = 16
     # Platform-wide Instagram Business Login app (env IG_APP_ID / IG_APP_SECRET), shared by
     # every user unless the Super Admin blocks someone. Never stored in the database or sent to
     # the browser. When unset, connecting falls back to each workspace's own Meta app.
