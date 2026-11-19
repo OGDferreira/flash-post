@@ -1,7 +1,10 @@
 import { AlertTriangle, Bell } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { EmptyState } from "@/components/PageState";
 import { useShellContext } from "@/layouts/shellContext";
+
+const isInternal = (url?: string | null): url is string => typeof url === "string" && url.startsWith("/");
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -29,6 +32,11 @@ export function NoticesPage() {
                   {item.at && <time className="shrink-0 text-[11px] text-muted" dateTime={item.at}>{when(item.at)}</time>}
                 </div>
                 <p className="mt-1 text-sm leading-5 text-fg-2">{item.message}</p>
+                {isInternal(item.url) && (
+                  <Link className="mt-1.5 inline-block text-sm font-medium text-accent hover:underline" to={item.url}>
+                    Ver detalhes →
+                  </Link>
+                )}
               </div>
             </li>
           ))}

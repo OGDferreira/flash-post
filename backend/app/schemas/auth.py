@@ -4,11 +4,20 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator, model_validator
 
+from app.core.cpf import InvalidCpf, validate_cpf
 from app.core.nickname import normalize_nickname
+
+
+def _normalize_cpf_field(value: str) -> str:
+    try:
+        return validate_cpf(value)
+    except InvalidCpf as exc:
+        raise ValueError(str(exc)) from None
 
 
 class RegisterRequest(BaseModel):
     full_name: Annotated[str, Field(min_length=1, max_length=160)]
+    cpf: Annotated[str, Field(min_length=1, max_length=20)]
     email: EmailStr
     nickname: str
     password: Annotated[str, Field(min_length=8, max_length=256)]
@@ -16,6 +25,11 @@ class RegisterRequest(BaseModel):
     invite_code: Annotated[str | None, Field(max_length=40)] = None
     # Signed commission offer from the invite link; agreeing is part of signing up.
     invite_terms: Annotated[str | None, Field(max_length=300)] = None
+
+    @field_validator("cpf")
+    @classmethod
+    def validate_cpf_field(cls, value: str) -> str:
+        return _normalize_cpf_field(value)
 
     @field_validator("full_name")
     @classmethod
@@ -95,6 +109,11 @@ class UserResponse(BaseModel):
     username: str | None
     nickname: str
     full_name: str
+    # Formatted CPF (000.000.000-00) or null for accounts that haven't filled it yet.
+    cpf: str | None = None
+    # False while a required field (today: CPF) is still missing — the app forces
+    # the "complete seu cadastro" pop-up until it's true.
+    profile_complete: bool = True
     avatar_url: str | None
     role: str
     workspace_role: str | None
@@ -130,6 +149,27 @@ class WorkspaceResponse(BaseModel):
 class MessageResponse(BaseModel):
     message: str
     csrf_token: str | None = None
+
+
+class ProfileCompleteRequest(BaseModel):
+    """What an existing (incomplete) account fills in to keep using the app.
+    Today that's only the CPF; full_name is accepted too in case it's blank."""
+
+    cpf: Annotated[str, Field(min_length=1, max_length=20)]
+    full_name: Annotated[str | None, Field(max_length=160)] = None
+
+    @field_validator("cpf")
+    @classmethod
+    def validate_cpf_field(cls, value: str) -> str:
+        return _normalize_cpf_field(value)
+
+    @field_validator("full_name")
+    @classmethod
+    def strip_full_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 class PasswordChangeRequest(BaseModel):

@@ -27,6 +27,13 @@ class User(Base):
         ),
         Index("uq_users_nickname_normalized", "nickname_normalized", unique=True),
         Index(
+            "uq_users_cpf",
+            "cpf",
+            unique=True,
+            postgresql_where=text("cpf IS NOT NULL"),
+            sqlite_where=text("cpf IS NOT NULL"),
+        ),
+        Index(
             "uq_users_invite_code",
             "invite_code",
             unique=True,
@@ -42,6 +49,9 @@ class User(Base):
     nickname_normalized: Mapped[str] = mapped_column(String(160), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     full_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    # 11-digit CPF (digits only). Nullable so accounts created before CPF became
+    # required can keep signing in until they complete their profile.
+    cpf: Mapped[str | None] = mapped_column(String(11))
     avatar_url: Mapped[str | None] = mapped_column(String(2048))
     # Code a chief shares so new users become affiliates (created lazily).
     invite_code: Mapped[str | None] = mapped_column(String(16))

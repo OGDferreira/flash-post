@@ -110,6 +110,13 @@ class FakeApis:
         if "/api/pix/" in url:
             self.calls.append(("pix.get", {"id": url.rsplit("/", 1)[-1]}))
             return httpx.Response(200, json={"id": "tx-1", "status": self.pix_status, "amount": self.pix_amount, "payer_name": "Comprador"})
+        if "api.stripe.com" in url and "/v1/checkout/sessions" in url:
+            from urllib.parse import parse_qs
+            body = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
+            self.calls.append(("stripe.checkout", body))
+            assert request.headers["authorization"] == "Bearer stripe_test_key"
+            ref = body.get("client_reference_id", "cs")
+            return httpx.Response(200, json={"id": f"cs_{ref}", "url": f"https://checkout.stripe.com/pay/cs_{ref}"})
         raise AssertionError(f"unexpected request {url}")
 
 

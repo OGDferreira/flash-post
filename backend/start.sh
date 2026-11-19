@@ -14,4 +14,4 @@ until alembic upgrade head; do
   attempt=$((attempt + 1))
   sleep 10
 done
-exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-10000}"
+exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-10000}" --proxy-headers --forwarded-allow-ips "*"

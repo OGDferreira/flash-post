@@ -1,4 +1,6 @@
 import asyncio
+import re
+from pathlib import PurePosixPath
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -6,6 +8,11 @@ import httpx
 from app.core.config import get_settings
 
 MEDIA_BUCKET = "instagram-media"
+# Supabase Storage rejects object keys with characters outside a safe set
+# (e.g. "#" from Instagram hashtag filenames → HTTP 400). Keep only
+# alphanumerics, dot, dash and underscore in the key; the real display name
+# is stored separately on the media row.
+_UNSAFE_KEY_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
 SIGNED_URL_TTL_SECONDS = 4 * 60 * 60
 SIGN_MAX_ATTEMPTS = 4
 SIGN_BACKOFF_SECONDS = 2
@@ -50,6 +57,21 @@ class SupabaseStorage:
     @staticmethod
     def _quoted_path(path: str) -> str:
         return "/".join(quote(part, safe="") for part in path.split("/"))
+
+    @staticmethod
+    def safe_object_name(filename: str, *, fallback: str = "arquivo") -> str:
+        """Nome de arquivo seguro pra chave do Storage (sem #, espaços etc.).
+
+        Preserva a extensão e deixa só [A-Za-z0-9._-]; o resto vira "_".
+        O nome bonito (com hashtags) continua guardado na linha da mídia.
+        """
+        name = PurePosixPath(filename.replace("\\", "/")).name
+        stem = PurePosixPath(name).stem
+        suffix = PurePosixPath(name).suffix
+        clean_stem = _UNSAFE_KEY_CHARS.sub("_", stem).strip("._-")
+        clean_suffix = _UNSAFE_KEY_CHARS.sub("", suffix)
+        safe = (clean_stem or fallback) + clean_suffix
+        return safe[:200]
 
     @staticmethod
     def normalize_path(path: str) -> str:

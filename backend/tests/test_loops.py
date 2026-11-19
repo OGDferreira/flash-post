@@ -819,7 +819,7 @@ async def test_authentication_rejection_immediately_marks_account_as_errored(
         ),
     )
     await db_session.refresh(account)
-    assert account.status == "error"
+    assert account.status == "disconnected"
     assert account.error_at is not None
     assert await db_session.get(InstagramLoopAccount, (loop.id, account.id)) is None
     assert await db_session.get(InstagramPublicationJob, queued_job.id) is None
@@ -1231,7 +1231,7 @@ async def test_identity_rejection_marks_account_as_error_and_removes_from_loop(
     )
 
     await db_session.refresh(account)
-    assert account.status == "error"
+    assert account.status == "disconnected"
     assert await db_session.get(InstagramLoopAccount, (loop.id, account.id)) is None
 
 

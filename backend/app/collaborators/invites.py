@@ -220,12 +220,15 @@ async def register_with_invite(
         raise HTTPException(status_code=409, detail="Este e-mail já possui cadastro.")
     if await _nickname_in_use(db, payload.nickname):
         raise HTTPException(status_code=409, detail="Este apelido já está em uso.")
+    if await db.scalar(select(User.id).where(User.cpf == payload.cpf)):
+        raise HTTPException(status_code=409, detail="Já existe uma conta com este CPF.")
 
     user = User(
         email=str(payload.email),
         nickname=payload.nickname,
         nickname_normalized=nickname_key(payload.nickname),
         full_name=payload.full_name,
+        cpf=payload.cpf,
         password_hash=hash_password(payload.password),
         is_active=True,
         is_verified=True,

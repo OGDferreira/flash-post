@@ -18,6 +18,9 @@ export type Delivery = {
   link?: { label: string; url: string } | null;
   join_button_label: string;
   start_upsell: boolean;
+  /** Messages (text/audio) dripped to the buyer after this delivery, for any purchase that
+   *  uses it (plan, order bump, upsell or downsell). Each has its own delay_seconds. */
+  after_purchase?: Block[];
 };
 
 export type ButtonStyle = "default" | "primary" | "success" | "danger";
@@ -43,7 +46,25 @@ export type Plan = {
   delivery?: Delivery | null;
   bump_mode: "default" | "custom" | "off";
   order_bump?: OrderBump | null;
+  /** Fixed card price in USD (international "fixed" pricing); empty = convert by the rate. */
+  price_usd?: string | null;
+  /** Own "payment approved" message; empty/null = use the funnel default. */
+  approved_text?: string | null;
 };
+
+/** Per-funnel card/international settings (Stripe). ``enabled`` only takes effect when the
+ *  "Vendas Internacionais" gateway is live. */
+export type International = {
+  enabled: boolean;
+  currencies: "USD"[];
+  pricing: "variable" | "fixed";
+  usd_rate: string;
+  translate: boolean;
+};
+
+export function emptyInternational(): International {
+  return { enabled: false, currencies: [], pricing: "variable", usd_rate: "5.00", translate: false };
+}
 
 export type Offer = {
   text: string;
@@ -71,6 +92,8 @@ export type UpsellStep = {
   decline_label: string;
   hide_decline: boolean;
   delivery: Delivery | null;
+  /** Own "payment approved" message; empty/null = use the funnel default. */
+  approved_text?: string | null;
 };
 
 export type CustomOffer = {
@@ -78,6 +101,8 @@ export type CustomOffer = {
   price: string;
   duration_days: number | null;
   delivery: Delivery | null;
+  /** Own "payment approved" message; empty/null = use the funnel default. */
+  approved_text?: string | null;
 };
 
 export type DownsellStep = {
@@ -110,6 +135,7 @@ export function emptyPreviews(): Previews {
 export type FlowDefinition = {
   version: 1;
   age_gate: { enabled: boolean; text: string; button: string };
+  international?: International;
   welcome: Block[];
   offer: Offer;
   plans: Plan[];
@@ -207,9 +233,24 @@ export type BotOrder = {
   bot: string;
   lead: string | null;
   lead_username: string | null;
+  lead_id: string;
   source: string | null;
   created_at: string | null;
   paid_at: string | null;
+};
+
+export type LeadAudience = "all" | "paid" | "pix_unpaid" | "no_pix";
+
+export type BotLead = {
+  id: string;
+  name: string;
+  username: string | null;
+  bot: string;
+  has_pix: boolean;
+  paid: boolean;
+  blocked: boolean;
+  stage: string;
+  created_at: string | null;
 };
 
 export type BotsSummary = {
@@ -225,6 +266,49 @@ export type BotsConfig = {
   smokepay_configured: boolean;
   smokepay_webhook_configured: boolean;
   payment_webhook_url: string;
+};
+
+// ---------------------------------------------------------------- live chat
+
+export type Conversation = {
+  lead_id: string;
+  name: string;
+  username: string | null;
+  bot: string;
+  unread: number;
+  blocked: boolean;
+  last_at: string | null;
+  last_preview: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  direction: "in" | "out";
+  kind: "text" | "photo" | "video" | "audio" | "voice" | "video_note" | "document" | "sticker" | "other";
+  text: string | null;
+  from_operator: boolean;
+  has_media: boolean;
+  media_id: string | null;
+  created_at: string | null;
+};
+
+export type ConversationOrder = {
+  id: string;
+  kind: string;
+  name: string;
+  amount: string;
+  status: "pending" | "paid" | "expired" | "review" | "failed";
+  pix: string | null;
+  created_at: string | null;
+  paid_at: string | null;
+};
+
+export type ConversationDetail = {
+  lead: { id: string; name: string; username: string | null; bot: string | null; blocked: boolean; stage: string };
+  orders: ConversationOrder[];
+  pix_generated: number;
+  pix_paid: number;
+  messages: ChatMessage[];
 };
 
 export function brl(value: string | number) {

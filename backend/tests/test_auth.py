@@ -79,6 +79,7 @@ def test_registration_schema_accepts_public_display_names(
             "full_name": "Display Name User",
             "email": "display@example.com",
             "nickname": nickname,
+            "cpf": "628.194.821-12",
             "password": "a secure password",
             "confirm_password": "a secure password",
         }
@@ -97,6 +98,7 @@ def test_registration_schema_rejects_public_names_outside_length_bounds(
                 "full_name": "Display Name User",
                 "email": "display@example.com",
                 "nickname": nickname,
+                "cpf": "993.518.190-19",
                 "password": "a secure password",
                 "confirm_password": "a secure password",
             }
@@ -364,6 +366,7 @@ async def test_registration_creates_pending_owner_without_signing_in(
             "full_name": "Gui Operations",
             "email": " GuiOps@Example.com ",
             "nickname": "Gui Ferreira",
+            "cpf": "937.865.797-41",
             "password": "a secure password",
             "confirm_password": "a secure password",
         },
@@ -419,6 +422,7 @@ async def test_super_admin_can_approve_new_owner_without_changing_existing_user_
             "full_name": "Waiting Owner",
             "email": "waiting@example.com",
             "nickname": "Waiting Owner",
+            "cpf": "543.231.948-97",
             "password": "a secure password",
             "confirm_password": "a secure password",
         },
@@ -460,6 +464,7 @@ async def test_registration_accepts_unicode_public_nickname(
             "full_name": "João Ads",
             "email": "joao@example.com",
             "nickname": "   João    Ads ",
+            "cpf": "757.491.186-06",
             "password": "a secure password",
             "confirm_password": "a secure password",
         },
@@ -480,7 +485,7 @@ async def test_registration_adds_suffix_when_workspace_slug_is_taken(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    async def create(nickname: str, email: str) -> dict:
+    async def create(nickname: str, email: str, cpf: str) -> dict:
         response = await client.post(
             "/api/auth/register",
             headers={"X-CSRF-Token": await csrf(client)},
@@ -488,6 +493,7 @@ async def test_registration_adds_suffix_when_workspace_slug_is_taken(
                 "full_name": "New Owner",
                 "email": email,
                 "nickname": nickname,
+                "cpf": cpf,
                 "password": "a secure password",
                 "confirm_password": "a secure password",
             },
@@ -495,8 +501,8 @@ async def test_registration_adds_suffix_when_workspace_slug_is_taken(
         assert response.status_code == 201, response.text
         return response.json()
 
-    await create("00 do Site", "first@example.com")
-    await create("00-do-site", "second@example.com")
+    await create("00 do Site", "first@example.com", "252.760.189-87")
+    await create("00-do-site", "second@example.com", "555.979.711-15")
     workspaces = (
         await db_session.scalars(select(Workspace).order_by(Workspace.slug))
     ).all()
@@ -517,6 +523,7 @@ async def test_registration_rejects_duplicate_email_and_nickname_case_insensitiv
         "full_name": "Another User",
         "email": "new@example.com",
         "nickname": "New User",
+        "cpf": "471.049.746-01",
         "password": "a secure password",
         "confirm_password": "a secure password",
     }
@@ -554,6 +561,7 @@ async def test_registration_rate_limit_blocks_repeated_attempts(
         "full_name": "New User",
         "email": "OWNER@example.com",
         "nickname": "New Owner",
+        "cpf": "507.529.170-80",
         "password": "a secure password",
         "confirm_password": "a secure password",
     }
@@ -584,6 +592,7 @@ async def test_registration_validates_nickname_and_password(client: AsyncClient)
         "full_name": "New User",
         "email": "new@example.com",
         "nickname": " ",
+        "cpf": "342.366.712-55",
         "password": "short",
         "confirm_password": "short",
     }
@@ -755,7 +764,7 @@ async def test_super_admin_can_view_real_admin_metrics_and_paginated_lists(
 
 
 @pytest.mark.anyio
-async def test_super_admin_deletes_users_but_cannot_delete_self_or_workspace_owner(
+async def test_super_admin_force_deletes_any_user_including_workspace_owner(
     client: AsyncClient,
     db_session: AsyncSession,
     super_admin,
@@ -764,19 +773,29 @@ async def test_super_admin_deletes_users_but_cannot_delete_self_or_workspace_own
 ) -> None:
     await login(client, "superadmin@example.com", "super admin password")
 
+    # The one line the super admin cannot cross: deleting itself.
     self_delete = await client.delete(
         f"/api/admin/users/{super_admin.id}",
         headers={"X-CSRF-Token": await csrf(client)},
     )
     assert self_delete.status_code == 409
 
+    owner_user, workspace = owner
+
+    # Absolute power: the owner is deleted even with an ACTIVE workspace. The
+    # owned workspace goes with them (its contents cascade at the DB level),
+    # and so does the owner's own membership.
     owner_delete = await client.delete(
-        f"/api/admin/users/{owner[0].id}",
+        f"/api/admin/users/{owner_user.id}",
         headers={"X-CSRF-Token": await csrf(client)},
     )
-    assert owner_delete.status_code == 409
-    assert await db_session.get(User, owner[0].id) is not None
-
+    assert owner_delete.status_code == 204, owner_delete.text
+    assert await db_session.get(User, owner_user.id) is None
+    assert await db_session.get(Workspace, workspace.id) is None
+    assert await db_session.scalar(
+        select(WorkspaceMember).where(WorkspaceMember.user_id == owner_user.id)
+    ) is None
+    # A plain collaborator (no owned workspace) is still deletable too.
     deleted = await client.delete(
         f"/api/admin/users/{collaborator.id}",
         headers={"X-CSRF-Token": await csrf(client)},
@@ -900,3 +919,60 @@ async def test_one_time_notices_are_saved_on_the_account(client, owner) -> None:
     assert (await client.get("/api/auth/me")).json()["seen_notices"] == ["novidades-2026-11"]
     bad = await client.patch("/api/profile/preferences", headers={"X-CSRF-Token": csrf}, json={"seen_notice": "<script>"})
     assert bad.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_register_requires_valid_cpf_and_stores_it_normalized(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    token = await csrf(client)
+    base = {
+        "full_name": "Cpf User",
+        "email": "cpf@example.com",
+        "nickname": "Cpf User",
+        "password": "a secure password",
+        "confirm_password": "a secure password",
+    }
+    bad = await client.post(
+        "/api/auth/register", headers={"X-CSRF-Token": token}, json={**base, "cpf": "111.111.111-11"}
+    )
+    assert bad.status_code == 422  # repeated-digit CPF fails the checksum rule
+
+    good = await client.post(
+        "/api/auth/register", headers={"X-CSRF-Token": token}, json={**base, "cpf": "529.982.247-25"}
+    )
+    assert good.status_code == 201, good.text
+    assert good.json()["user"]["cpf"] == "529.982.247-25"  # returned formatted
+    assert good.json()["user"]["profile_complete"] is True
+    stored = await db_session.scalar(select(User.cpf).where(User.email == "cpf@example.com"))
+    assert stored == "52998224725"  # digits only in the database
+
+    # The same CPF cannot be reused by another account.
+    dup = await client.post(
+        "/api/auth/register",
+        headers={"X-CSRF-Token": await csrf(client)},
+        json={**base, "email": "other@example.com", "nickname": "Other One", "cpf": "52998224725"},
+    )
+    assert dup.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_incomplete_account_completes_profile_with_cpf(client: AsyncClient, owner) -> None:
+    from tests.test_loops import _csrf, _login
+
+    # The owner fixture is created without a CPF, so it must be flagged incomplete.
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    me = (await client.get("/api/auth/me")).json()
+    assert me["profile_complete"] is False and me["cpf"] is None
+
+    token = await _csrf(client)
+    invalid = await client.post("/api/profile/complete", headers={"X-CSRF-Token": token}, json={"cpf": "123"})
+    assert invalid.status_code == 422
+
+    done = await client.post("/api/profile/complete", headers={"X-CSRF-Token": token}, json={"cpf": "529.982.247-25"})
+    assert done.status_code == 200, done.text
+    assert done.json()["profile_complete"] is True and done.json()["cpf"] == "529.982.247-25"
+
+    # A CPF already set is identity, not a preference: it can't be swapped for another.
+    changed = await client.post("/api/profile/complete", headers={"X-CSRF-Token": token}, json={"cpf": "168.995.350-09"})
+    assert changed.status_code == 409

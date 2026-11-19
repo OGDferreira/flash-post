@@ -45,17 +45,26 @@ async def isolate_inactive_account(
     )
 
 
-_SUSPENDED_MARKERS = ("suspend", "disabled", "checkpoint")
+_SUSPENDED_MARKERS = ("suspend", "disabled", "checkpoint", "log in to www.instagram.com")
 _RESTRICTED_MARKERS = ("restrict",)
+_MANUAL_REASON = "desconectada manualmente"
 
 
 def classify_inactive_account(status: str, reason: str | None) -> str:
-    """Why an account is not connected: manual | suspended | restricted | expired."""
-    if status == "disconnected":
-        return "manual"
+    """Why an account is not connected: manual | suspended | restricted | expired.
+
+    Token-invalid accounts are now stored as ``disconnected`` too (same state as a manual
+    removal), so the badge is derived from the reason text rather than the status: only a
+    real manual disconnect carries the manual reason; everything else keeps its suspended/
+    restricted/expired badge.
+    """
     text = (reason or "").casefold()
+    if _MANUAL_REASON in text:
+        return "manual"
     if any(marker in text for marker in _SUSPENDED_MARKERS):
         return "suspended"
     if any(marker in text for marker in _RESTRICTED_MARKERS):
         return "restricted"
+    if status == "disconnected" and not text:
+        return "manual"
     return "expired"

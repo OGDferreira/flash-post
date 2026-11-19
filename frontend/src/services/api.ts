@@ -158,6 +158,10 @@ export type User = {
   username: string | null;
   nickname: string;
   full_name: string;
+  /** Formatted CPF (000.000.000-00) or null when the account hasn't filled it. */
+  cpf?: string | null;
+  /** False while a required field (today: CPF) is missing; forces the completion pop-up. */
+  profile_complete?: boolean;
   avatar_url: string | null;
   role: "SUPER_ADMIN" | "OWNER" | "COLLABORATOR" | "USER";
   workspace_role: "OWNER" | "COLLABORATOR" | null;

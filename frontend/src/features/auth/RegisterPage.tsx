@@ -12,10 +12,12 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { AuthShell } from "@/features/auth/AuthShell";
 import { ApiError, apiRequest, type User } from "@/services/api";
 import { isValidPublicNickname, normalizePublicNickname } from "@/features/auth/nickname";
+import { isValidCpf, maskCpf } from "@/features/auth/cpf";
 
 const registerSchema = z
   .object({
     full_name: z.string().trim().min(1, "Informe seu nome completo.").max(160),
+    cpf: z.string().refine(isValidCpf, "Informe um CPF válido."),
     email: z.string().trim().email("Informe um e-mail válido."),
     nickname: z
       .string()
@@ -45,6 +47,7 @@ export function RegisterPage() {
     mode: "onChange",
     defaultValues: {
       full_name: "",
+      cpf: "",
       email: "",
       nickname: "",
       password: "",
@@ -151,6 +154,23 @@ export function RegisterPage() {
               inputProps={{
                 autoComplete: "name",
                 ...form.register("full_name"),
+              }}
+            />
+            <Field
+              id="register-cpf"
+              label="CPF"
+              error={form.formState.errors.cpf?.message}
+              inputProps={{
+                inputMode: "numeric",
+                autoComplete: "off",
+                maxLength: 14,
+                placeholder: "000.000.000-00",
+                ...form.register("cpf"),
+                onChange: (event) =>
+                  form.setValue("cpf", maskCpf(event.target.value), {
+                    shouldValidate: true,
+                    shouldDirty: true,
+                  }),
               }}
             />
             <Field
