@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.security import PlatformRole, WorkspaceRole
 from app.core.time import utc_now
-from app.bots import smokepay
+from app.bots import smokepay, stripe_gateway
 from app.models import (
     PlatformLiberationCode,
     PlatformPlan,
@@ -27,6 +27,8 @@ from app.models import (
     WorkspaceMember,
 )
 from app.models.platform_subscription import (
+    BILLING_CARD,
+    BILLING_PIX,
     CHARGE_EXPIRED,
     CHARGE_PAID,
     CHARGE_PENDING,
@@ -114,7 +116,10 @@ def _in_trial(sub: PlatformSubscription, now: datetime | None = None) -> bool:
 async def access_state(db: AsyncSession, user: User) -> dict:
     """What the front-end needs to decide whether to show the paywall."""
     if not await requires_subscription(db, user):
-        return {"required": False, "active": True, "status": "exempt", "until": None, "in_trial": False}
+        return {
+            "required": False, "active": True, "status": "exempt",
+            "until": None, "in_trial": False, "card_billing": False,
+        }
     sub = await get_or_create(db, user)
     active = is_active(sub)
     until = effective_until(sub)
@@ -124,6 +129,8 @@ async def access_state(db: AsyncSession, user: User) -> dict:
         "status": sub.status,
         "until": until.isoformat() if until else None,
         "in_trial": _in_trial(sub),
+        # Whether this owner already has an authorized recurring card subscription.
+        "card_billing": bool(sub.stripe_subscription_id),
     }
 
 
@@ -186,7 +193,152 @@ async def apply_paid_charge(db: AsyncSession, external_id: str, paid_at: datetim
     charge.paid_at = paid_at or utc_now()
     if charge.plan_id is not None:
         sub.plan_id = charge.plan_id
+    sub.billing_method = BILLING_PIX
     _extend(sub, charge.period_days, now=charge.paid_at)
+    return True
+
+
+# --------------------------------------------------- Stripe (authorized recurring card)
+
+
+def card_billing_available() -> bool:
+    """True when the server can charge and confirm an authorized recurring card
+    subscription (Stripe secret key + webhook secret are set)."""
+    return stripe_gateway.configured()
+
+
+async def start_stripe_checkout(db: AsyncSession, user: User, plan: PlatformPlan) -> str:
+    """Open a Stripe Checkout in subscription mode for ``plan`` and return the URL.
+
+    Stripe saves the owner's card, authorizes recurring billing, and debits it every
+    cycle on its own. Our webhook attaches the Stripe ids and extends access on each
+    paid invoice. Returns the hosted Checkout URL to redirect the owner to.
+    """
+    interval = stripe_gateway.interval_for_plan(plan.code)
+    if interval is None:
+        raise SubscriptionError("Este plano não permite cobrança automática no cartão.")
+    if not card_billing_available():
+        raise SubscriptionError("Cobrança no cartão indisponível no momento.")
+    sub = await get_or_create(db, user)
+    settings = get_settings()
+    base = settings.public_base_url.rstrip("/")
+    external_id = f"{PLATFORM_SUB_PREFIX}{uuid.uuid4().hex}"
+    checkout = await stripe_gateway.create_subscription_checkout(
+        amount=plan.price,
+        interval=interval,
+        external_id=external_id,
+        description=f"Assinatura FlashPost - {plan.name}",
+        success_url=f"{base}/?assinatura=ok",
+        cancel_url=f"{base}/?assinatura=cancelada",
+        customer_id=sub.stripe_customer_id,
+        metadata={"sub_id": str(sub.id), "plan_id": str(plan.id)},
+    )
+    return checkout.url
+
+
+async def attach_stripe_subscription(
+    db: AsyncSession, *, sub_id: str, customer_id: str | None, subscription_id: str | None, plan_id: str | None
+) -> bool:
+    """Record the Stripe customer/subscription on the owner's subscription after a
+    completed Checkout. Idempotent. Access itself is extended by the paid invoice."""
+    try:
+        sub = await db.get(PlatformSubscription, uuid.UUID(str(sub_id)))
+    except (ValueError, TypeError):
+        return False
+    if sub is None:
+        return False
+    if customer_id:
+        sub.stripe_customer_id = customer_id
+    if subscription_id:
+        sub.stripe_subscription_id = subscription_id
+    sub.billing_method = BILLING_CARD
+    if plan_id:
+        try:
+            sub.plan_id = uuid.UUID(str(plan_id))
+        except (ValueError, TypeError):
+            pass
+    # Grant the first access window now so the owner gets in even if invoice.paid is
+    # delayed or arrives out of order. invoice.paid later sets the window to Stripe's
+    # exact period end (an absolute value), so this never double-counts.
+    now = utc_now()
+    if not is_active(sub, now):
+        plan = await db.get(PlatformPlan, sub.plan_id) if sub.plan_id else None
+        _extend(sub, plan.period_days if plan else 30, now=now)
+    return True
+
+
+async def apply_stripe_invoice(
+    db: AsyncSession,
+    *,
+    invoice_id: str,
+    subscription_id: str,
+    amount: Decimal | None,
+    period_end: datetime | None,
+) -> bool:
+    """Extend access when Stripe confirms an authorized card debit (invoice.paid).
+
+    Idempotent per invoice id. The paid window is set to Stripe's period end (the
+    authoritative renewal date); without it we fall back to the plan's period_days.
+    """
+    sub = await db.scalar(
+        select(PlatformSubscription).where(PlatformSubscription.stripe_subscription_id == subscription_id)
+    )
+    if sub is None:
+        return False
+    existing = await db.scalar(
+        select(PlatformSubscriptionCharge).where(PlatformSubscriptionCharge.external_id == invoice_id)
+    )
+    if existing is not None and existing.status == CHARGE_PAID:
+        return True  # already processed; Stripe retries are safe
+
+    plan = await db.get(PlatformPlan, sub.plan_id) if sub.plan_id else None
+    period_days = plan.period_days if plan else 30
+    now = utc_now()
+    if existing is None:
+        db.add(
+            PlatformSubscriptionCharge(
+                subscription_id=sub.id,
+                plan_id=sub.plan_id,
+                amount=amount if amount is not None else (plan.price if plan else Decimal("0")),
+                period_days=period_days,
+                status=CHARGE_PAID,
+                external_id=invoice_id,
+                paid_at=now,
+            )
+        )
+    else:
+        existing.status = CHARGE_PAID
+        existing.paid_at = now
+
+    sub.billing_method = BILLING_CARD
+    period_end = _aware(period_end)
+    if period_end is not None and period_end > now:
+        sub.current_period_end = period_end
+        sub.status = SUB_ACTIVE
+    else:
+        _extend(sub, period_days, now=now)
+    return True
+
+
+async def clear_stripe_subscription(db: AsyncSession, subscription_id: str) -> bool:
+    """Drop the Stripe subscription link when it's canceled/deleted on Stripe's side.
+    Access is left to run out on its own (the sweep flips it to past_due afterwards)."""
+    sub = await db.scalar(
+        select(PlatformSubscription).where(PlatformSubscription.stripe_subscription_id == subscription_id)
+    )
+    if sub is None:
+        return False
+    sub.stripe_subscription_id = None
+    return True
+
+
+async def cancel_card_billing(db: AsyncSession, user: User) -> bool:
+    """Cancel the owner's authorized recurring card billing. Keeps access until the
+    current paid window ends; Stripe stops debiting the card. Returns True if canceled."""
+    sub = await db.scalar(select(PlatformSubscription).where(PlatformSubscription.user_id == user.id))
+    if sub is None or not sub.stripe_subscription_id:
+        return False
+    await stripe_gateway.cancel_subscription(sub.stripe_subscription_id, at_period_end=True)
     return True
 
 
