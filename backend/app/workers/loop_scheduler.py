@@ -220,7 +220,11 @@ async def _mark_account_as_error(
     account: InstagramAccount,
     reason: str = "A autorização do Instagram expirou ou deixou de ser válida.",
 ) -> None:
-    await isolate_inactive_account(db, account, "error", reason)
+    # Token no longer usable (expired/revoked, or Instagram suspended/checkpointed the
+    # account): mark it "disconnected" like a manual removal so the owner just reconnects.
+    # The specific cause stays in status_reason and classify_inactive_account still derives
+    # the suspended/expired badge from it.
+    await isolate_inactive_account(db, account, "disconnected", reason)
 
 
 async def _update_account_health_after_failure(
