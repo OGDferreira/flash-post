@@ -45,6 +45,12 @@ CHARGE_PAID = "paid"
 CHARGE_EXPIRED = "expired"
 CHARGE_CANCELED = "canceled"
 
+# How the owner pays each cycle. "pix" = a fresh SmokePay PIX per cycle (manual).
+# "card" = an authorized recurring charge: Stripe keeps the saved card and debits it
+# automatically at each renewal (cobrança autorizada).
+BILLING_PIX = "pix"
+BILLING_CARD = "card"
+
 
 class PlatformPlan(Base):
     __tablename__ = "platform_plans"
@@ -91,6 +97,13 @@ class PlatformSubscription(Base):
     # the two is still in the future (and status not canceled).
     trial_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Authorized recurring billing on the card (Stripe). When ``stripe_subscription_id``
+    # is set the card is debited automatically each cycle; ``billing_method`` records how
+    # the current window was last paid ("pix" or "card"). ``stripe_customer_id`` lets us
+    # reuse the saved card and manage/cancel the subscription.
+    billing_method: Mapped[str | None] = mapped_column(String(16))
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(64))
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()

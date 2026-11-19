@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, SuperAdminUser, require_csrf
-from app.bots import smokepay
+from app.bots import smokepay, stripe_gateway
 from app.core.time import utc_now
 from app.models import PlatformLiberationCode, PlatformPlan, PlatformSubscriptionCharge
 from app.models.platform_subscription import CHARGE_PAID
@@ -39,6 +39,10 @@ class AccessOut(BaseModel):
     status: str
     until: str | None
     in_trial: bool
+    # Whether this owner already has an authorized recurring card subscription.
+    card_billing: bool = False
+    # Whether the server can offer authorized card billing at all (Stripe configured).
+    card_available: bool = False
     plans: list[PlanOut]
 
 
@@ -67,7 +71,7 @@ async def my_subscription(user: AuthenticatedUser, db: DbSession) -> AccessOut:
     state = await service.access_state(db, user)
     await db.commit()  # get_or_create may have inserted the trial row
     plans = await _active_plans(db) if state["required"] else []
-    return AccessOut(**state, plans=[_plan_out(p) for p in plans])
+    return AccessOut(**state, card_available=service.card_billing_available(), plans=[_plan_out(p) for p in plans])
 
 
 class CheckoutRequest(BaseModel):
@@ -94,6 +98,132 @@ async def checkout(payload: CheckoutRequest, user: AuthenticatedUser, db: DbSess
         id=charge.id, status=charge.status, amount=charge.amount,
         pix_copy_paste=charge.pix_copy_paste, due_at=charge.due_at,
     )
+
+
+class StripeCheckoutOut(BaseModel):
+    url: str
+
+
+@router.post("/checkout/stripe", response_model=StripeCheckoutOut, dependencies=[Depends(require_csrf)])
+async def checkout_stripe(payload: CheckoutRequest, user: AuthenticatedUser, db: DbSession) -> StripeCheckoutOut:
+    """Start an authorized recurring card subscription (Stripe) and return the hosted
+    Checkout URL. The card is then debited automatically each cycle."""
+    if not await service.requires_subscription(db, user):
+        raise HTTPException(status_code=403, detail="Sua conta não precisa de assinatura.")
+    plan = await db.scalar(
+        select(PlatformPlan).where(PlatformPlan.id == payload.plan_id, PlatformPlan.is_active.is_(True))
+    )
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plano indisponível.")
+    try:
+        url = await service.start_stripe_checkout(db, user, plan)
+    except service.SubscriptionError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except stripe_gateway.StripeError as exc:
+        await db.rollback()
+        logger.warning("Subscription card checkout failed for user %s: %s", user.id, exc)
+        raise HTTPException(status_code=502, detail="Não foi possível abrir o cartão agora. Tente novamente.") from None
+    await db.commit()
+    return StripeCheckoutOut(url=url)
+
+
+@router.post("/cancel", response_model=AccessOut, dependencies=[Depends(require_csrf)])
+async def cancel_card(user: AuthenticatedUser, db: DbSession) -> AccessOut:
+    """Cancel the owner's authorized recurring card billing. Access stays until the
+    current paid window ends; Stripe stops debiting the card."""
+    if not await service.requires_subscription(db, user):
+        raise HTTPException(status_code=403, detail="Sua conta não precisa de assinatura.")
+    try:
+        canceled = await service.cancel_card_billing(db, user)
+    except stripe_gateway.StripeError as exc:
+        await db.rollback()
+        logger.warning("Subscription card cancel failed for user %s: %s", user.id, exc)
+        raise HTTPException(status_code=502, detail="Não foi possível cancelar agora. Tente novamente.") from None
+    if not canceled:
+        raise HTTPException(status_code=404, detail="Nenhuma cobrança automática ativa.")
+    await db.commit()
+    state = await service.access_state(db, user)
+    plans = await _active_plans(db)
+    return AccessOut(**state, card_available=service.card_billing_available(), plans=[_plan_out(p) for p in plans])
+
+
+@router.post("/pay/stripe", include_in_schema=False)
+async def stripe_webhook(request: Request, db: DbSession) -> dict:
+    raw = await request.body()
+    if not stripe_gateway.verify_signature(raw, request.headers.get("stripe-signature")):
+        raise HTTPException(status_code=401, detail="Invalid signature.")  # 4xx stops retries
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return {"ok": True}
+    event_type = str(event.get("type") or "")
+    obj = (event.get("data") or {}).get("object") or {}
+    try:
+        if event_type == "checkout.session.completed" and obj.get("mode") == "subscription":
+            meta = obj.get("metadata") or {}
+            await service.attach_stripe_subscription(
+                db,
+                sub_id=str(meta.get("sub_id") or ""),
+                customer_id=obj.get("customer") and str(obj.get("customer")),
+                subscription_id=obj.get("subscription") and str(obj.get("subscription")),
+                plan_id=meta.get("plan_id") and str(meta.get("plan_id")),
+            )
+            await db.commit()
+        elif event_type == "invoice.paid":
+            subscription_id = str(obj.get("subscription") or "")
+            if subscription_id:
+                applied = await service.apply_stripe_invoice(
+                    db,
+                    invoice_id=str(obj.get("id") or ""),
+                    subscription_id=subscription_id,
+                    amount=_invoice_amount(obj),
+                    period_end=_invoice_period_end(obj),
+                )
+                await db.commit()
+                if applied:
+                    logger.info("Subscription card invoice %s confirmed.", obj.get("id"))
+        elif event_type == "customer.subscription.deleted":
+            subscription_id = str(obj.get("id") or "")
+            if subscription_id:
+                await service.clear_stripe_subscription(db, subscription_id)
+                await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Retry.") from None  # 5xx: Stripe retries
+    return {"ok": True}
+
+
+def _invoice_amount(invoice: dict) -> Decimal | None:
+    cents = invoice.get("amount_paid")
+    if cents is None:
+        cents = invoice.get("amount_due")
+    if cents is None:
+        return None
+    try:
+        return (Decimal(int(cents)) / Decimal(100)).quantize(Decimal("0.01"))
+    except (ValueError, TypeError):
+        return None
+
+
+def _invoice_period_end(invoice: dict) -> datetime | None:
+    """The end of the billed period = the new access window end. Stripe puts it on each
+    invoice line; fall back to the invoice-level period_end."""
+    from datetime import timezone as _tz
+
+    lines = ((invoice.get("lines") or {}).get("data")) or []
+    unix = None
+    if lines:
+        period = (lines[-1] or {}).get("period") or {}
+        unix = period.get("end")
+    if unix is None:
+        unix = invoice.get("period_end")
+    if unix is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(unix), tz=_tz.utc)
+    except (ValueError, TypeError, OSError):
+        return None
 
 
 @router.get("/charge/{charge_id}", response_model=ChargeOut)
@@ -127,7 +257,7 @@ async def redeem(payload: RedeemRequest, user: AuthenticatedUser, db: DbSession)
     await db.commit()
     state = await service.access_state(db, user)
     plans = await _active_plans(db)
-    return AccessOut(**state, plans=[_plan_out(p) for p in plans])
+    return AccessOut(**state, card_available=service.card_billing_available(), plans=[_plan_out(p) for p in plans])
 
 
 @router.post("/pay/smokepay", include_in_schema=False)

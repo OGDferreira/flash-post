@@ -13,6 +13,8 @@ type Access = {
   status: string;
   until: string | null;
   in_trial: boolean;
+  card_billing: boolean;
+  card_available: boolean;
   plans: Plan[];
 };
 type Charge = { id: string; status: string; amount: string; pix_copy_paste: string | null; due_at: string | null };
@@ -28,6 +30,9 @@ export function SubscriptionGate() {
   const cache = useQueryClient();
   const [charge, setCharge] = useState<Charge | null>(null);
   const [code, setCode] = useState("");
+  // Payment method for the next plan tap: a one-off PIX, or an authorized recurring
+  // card charge (Stripe debits the saved card automatically each cycle).
+  const [method, setMethod] = useState<"pix" | "card">("pix");
   // Let the CPF completion gate go first; only paywall once the profile is complete.
   const enabled = Boolean(user && !user.impersonator_name && user.profile_complete !== false);
 
@@ -43,6 +48,20 @@ export function SubscriptionGate() {
       apiRequest<Charge>("/api/subscription/checkout", { method: "POST", body: { plan_id: planId } }),
     onSuccess: (data) => setCharge(data),
   });
+
+  // Authorized recurring card billing: open Stripe Checkout and send the owner there.
+  const cardCheckout = useMutation({
+    mutationFn: (planId: string) =>
+      apiRequest<{ url: string }>("/api/subscription/checkout/stripe", {
+        method: "POST",
+        body: { plan_id: planId },
+      }),
+    onSuccess: (data) => {
+      window.location.href = data.url;
+    },
+  });
+
+  const pickPlan = (planId: string) => (method === "card" ? cardCheckout.mutate(planId) : checkout.mutate(planId));
 
   const redeem = useMutation({
     mutationFn: () => apiRequest<Access>("/api/subscription/redeem", { method: "POST", body: { code: code.trim() } }),
@@ -71,13 +90,20 @@ export function SubscriptionGate() {
   if (!enabled || !access.data || !access.data.required || access.data.active) return null;
 
   const redeemError = redeem.error instanceof ApiError ? redeem.error.message : null;
-  const checkoutError = checkout.error instanceof ApiError ? checkout.error.message : null;
+  const checkoutError =
+    checkout.error instanceof ApiError
+      ? checkout.error.message
+      : cardCheckout.error instanceof ApiError
+        ? cardCheckout.error.message
+        : null;
+  const busy = checkout.isPending || cardCheckout.isPending;
+  const cardAvailable = access.data.card_available;
 
   return (
     <Modal
       open
       title="Assinatura necessária"
-      description="Seu acesso venceu. Escolha um plano e pague via PIX para continuar usando a plataforma."
+      description="Seu acesso venceu. Escolha um plano para continuar usando a plataforma."
       onClose={() => {}}
       wide
     >
@@ -106,13 +132,41 @@ export function SubscriptionGate() {
         </div>
       ) : (
         <div className="space-y-3">
+          {cardAvailable && (
+            <div className="grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-inset p-1">
+              <button
+                type="button"
+                onClick={() => setMethod("pix")}
+                className={`h-9 rounded-md text-sm font-medium transition ${
+                  method === "pix" ? "bg-brand text-white" : "text-fg-2 hover:text-fg"
+                }`}
+              >
+                PIX
+              </button>
+              <button
+                type="button"
+                onClick={() => setMethod("card")}
+                className={`h-9 rounded-md text-sm font-medium transition ${
+                  method === "card" ? "bg-brand text-white" : "text-fg-2 hover:text-fg"
+                }`}
+              >
+                Cartão (automático)
+              </button>
+            </div>
+          )}
+          {cardAvailable && method === "card" && (
+            <p className="text-xs text-muted">
+              No cartão a cobrança é automática a cada ciclo — você não precisa pagar manualmente. Pode cancelar quando
+              quiser.
+            </p>
+          )}
           <div className="grid gap-2">
             {access.data.plans.map((plan) => (
               <button
                 key={plan.id}
                 type="button"
-                disabled={checkout.isPending}
-                onClick={() => checkout.mutate(plan.id)}
+                disabled={busy}
+                onClick={() => pickPlan(plan.id)}
                 className="flex items-center justify-between rounded-lg border border-line bg-surface-inset px-4 py-3 text-left transition hover:border-brand disabled:opacity-60"
               >
                 <span>
@@ -126,6 +180,11 @@ export function SubscriptionGate() {
               <p className="text-sm text-muted">Nenhum plano disponível no momento. Fale com o suporte.</p>
             )}
           </div>
+          {busy && method === "card" && (
+            <p className="flex items-center justify-center gap-2 text-xs text-muted">
+              <LoaderCircle size={13} className="animate-spin" /> Abrindo o checkout do cartão...
+            </p>
+          )}
           {checkoutError && <p className="text-xs text-danger" role="alert">{checkoutError}</p>}
 
           <div className="border-t border-line-soft pt-3">

@@ -133,3 +133,175 @@ async def test_super_admin_edits_plan_price_and_creates_code(
 
 async def _as_coro(value):
     return value
+
+
+# ---------------------------------------- Authorized recurring card billing (Stripe)
+
+import hashlib
+import json
+import hmac
+import time
+
+from pydantic import SecretStr
+
+from app.bots import stripe_gateway
+from app.core.config import get_settings
+from app.models.platform_subscription import BILLING_CARD
+
+
+def _enable_stripe(monkeypatch) -> None:
+    # A live-looking key: card billing only turns on with sk_live_* (see card_billing_available).
+    settings = get_settings()
+    monkeypatch.setattr(settings, "stripe_secret_key", SecretStr("sk_live_test"))
+    monkeypatch.setattr(settings, "stripe_webhook_secret", SecretStr("stripe_webhook_test"))
+
+
+def _stripe_headers(raw: bytes, secret: str = "stripe_webhook_test") -> dict:
+    ts = str(int(time.time()))
+    sig = hmac.new(secret.encode(), ts.encode() + b"." + raw, hashlib.sha256).hexdigest()
+    return {"stripe-signature": f"t={ts},v1={sig}", "content-type": "application/json"}
+
+
+def test_interval_for_plan_maps_known_cycles() -> None:
+    assert stripe_gateway.interval_for_plan("weekly") == "week"
+    assert stripe_gateway.interval_for_plan("monthly") == "month"
+    assert stripe_gateway.interval_for_plan("annual") == "year"
+    assert stripe_gateway.interval_for_plan("odd") is None
+
+
+@pytest.mark.anyio
+async def test_test_keys_hide_card_and_refuse_checkout(
+    db_session: AsyncSession, client: AsyncClient, owner, monkeypatch
+) -> None:
+    # Test keys (not sk_live_*): the card option stays hidden and the endpoint refuses,
+    # so PIX is the only working path until the account's live keys are in place.
+    settings = get_settings()
+    monkeypatch.setattr(settings, "stripe_secret_key", SecretStr("sk_test_123"))
+    monkeypatch.setattr(settings, "stripe_webhook_secret", SecretStr("stripe_webhook_test"))
+    plan = await _plan(db_session, "monthly")
+
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    me = await client.get("/api/subscription/me")
+    assert me.status_code == 200 and me.json()["card_available"] is False
+
+    resp = await client.post(
+        "/api/subscription/checkout/stripe", headers={"X-CSRF-Token": await _csrf(client)},
+        json={"plan_id": str(plan.id)},
+    )
+    assert resp.status_code == 400  # "Cobrança no cartão indisponível no momento."
+
+
+@pytest.mark.anyio
+async def test_card_available_and_checkout_opens_stripe(
+    db_session: AsyncSession, client: AsyncClient, owner, monkeypatch
+) -> None:
+    _enable_stripe(monkeypatch)
+    plan = await _plan(db_session, "monthly")
+
+    captured: dict = {}
+
+    async def _fake_checkout(**kwargs):
+        captured.update(kwargs)
+        return stripe_gateway.SubscriptionCheckout(session_id="cs_1", url="https://checkout.stripe.com/pay/cs_1")
+
+    monkeypatch.setattr(stripe_gateway, "create_subscription_checkout", _fake_checkout)
+
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    me = await client.get("/api/subscription/me")
+    assert me.status_code == 200 and me.json()["card_available"] is True
+
+    resp = await client.post(
+        "/api/subscription/checkout/stripe", headers={"X-CSRF-Token": await _csrf(client)},
+        json={"plan_id": str(plan.id)},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["url"] == "https://checkout.stripe.com/pay/cs_1"
+    assert captured["interval"] == "month"
+    assert captured["metadata"]["plan_id"] == str(plan.id)
+
+
+@pytest.mark.anyio
+async def test_stripe_webhook_attaches_then_invoice_extends_access(
+    db_session: AsyncSession, client: AsyncClient, owner, monkeypatch
+) -> None:
+    _enable_stripe(monkeypatch)
+    owner_user, _ = owner
+    plan = await _plan(db_session, "monthly")
+    sub = await service.get_or_create(db_session, owner_user)
+    await db_session.commit()
+
+    # 1) Checkout completed -> attach Stripe ids to the owner's subscription.
+    completed = {
+        "type": "checkout.session.completed",
+        "data": {"object": {
+            "mode": "subscription", "customer": "cus_1", "subscription": "sub_1",
+            "metadata": {"sub_id": str(sub.id), "plan_id": str(plan.id)},
+        }},
+    }
+    raw = json.dumps(completed).encode()
+    r1 = await client.post("/api/subscription/pay/stripe", content=raw, headers=_stripe_headers(raw))
+    assert r1.status_code == 200, r1.text
+    await db_session.refresh(sub)
+    assert sub.stripe_subscription_id == "sub_1" and sub.billing_method == BILLING_CARD
+
+    # 2) invoice.paid -> access window set to the invoice period end.
+    period_end = int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp())
+    invoice = {
+        "type": "invoice.paid",
+        "data": {"object": {
+            "id": "in_1", "subscription": "sub_1", "amount_paid": 5990,
+            "lines": {"data": [{"period": {"end": period_end}}]},
+        }},
+    }
+    raw2 = json.dumps(invoice).encode()
+    r2 = await client.post("/api/subscription/pay/stripe", content=raw2, headers=_stripe_headers(raw2))
+    assert r2.status_code == 200, r2.text
+    await db_session.refresh(sub)
+    assert sub.status == SUB_ACTIVE
+    assert service.is_active(sub) is True
+    assert service.effective_until(sub) > datetime.now(timezone.utc) + timedelta(days=29)
+
+    # Idempotent: re-delivering the same invoice doesn't double-extend.
+    before = sub.current_period_end
+    r3 = await client.post("/api/subscription/pay/stripe", content=raw2, headers=_stripe_headers(raw2))
+    assert r3.status_code == 200
+    await db_session.refresh(sub)
+    assert sub.current_period_end == before
+
+
+@pytest.mark.anyio
+async def test_stripe_webhook_rejects_bad_signature(client: AsyncClient, owner, monkeypatch) -> None:
+    _enable_stripe(monkeypatch)
+    raw = json.dumps({"type": "invoice.paid", "data": {"object": {}}}).encode()
+    resp = await client.post(
+        "/api/subscription/pay/stripe", content=raw,
+        headers={"stripe-signature": "t=1,v1=deadbeef", "content-type": "application/json"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_cancel_card_billing_calls_stripe_and_keeps_access(
+    db_session: AsyncSession, client: AsyncClient, owner, monkeypatch
+) -> None:
+    _enable_stripe(monkeypatch)
+    owner_user, _ = owner
+    sub = await service.get_or_create(db_session, owner_user)
+    sub.stripe_subscription_id = "sub_9"
+    sub.current_period_end = datetime.now(timezone.utc) + timedelta(days=10)
+    sub.status = SUB_ACTIVE
+    await db_session.commit()
+
+    calls: list = []
+
+    async def _fake_cancel(subscription_id, *, at_period_end=True):
+        calls.append((subscription_id, at_period_end))
+
+    monkeypatch.setattr(stripe_gateway, "cancel_subscription", _fake_cancel)
+
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    resp = await client.post("/api/subscription/cancel", headers={"X-CSRF-Token": await _csrf(client)})
+    assert resp.status_code == 200, resp.text
+    assert calls == [("sub_9", True)]
+    # Access stays until the window ends.
+    assert resp.json()["active"] is True
