@@ -150,8 +150,9 @@ from app.models.platform_subscription import BILLING_CARD
 
 
 def _enable_stripe(monkeypatch) -> None:
+    # A live-looking key: card billing only turns on with sk_live_* (see card_billing_available).
     settings = get_settings()
-    monkeypatch.setattr(settings, "stripe_secret_key", SecretStr("stripe_test_key"))
+    monkeypatch.setattr(settings, "stripe_secret_key", SecretStr("sk_live_test"))
     monkeypatch.setattr(settings, "stripe_webhook_secret", SecretStr("stripe_webhook_test"))
 
 
@@ -166,6 +167,28 @@ def test_interval_for_plan_maps_known_cycles() -> None:
     assert stripe_gateway.interval_for_plan("monthly") == "month"
     assert stripe_gateway.interval_for_plan("annual") == "year"
     assert stripe_gateway.interval_for_plan("odd") is None
+
+
+@pytest.mark.anyio
+async def test_test_keys_hide_card_and_refuse_checkout(
+    db_session: AsyncSession, client: AsyncClient, owner, monkeypatch
+) -> None:
+    # Test keys (not sk_live_*): the card option stays hidden and the endpoint refuses,
+    # so PIX is the only working path until the account's live keys are in place.
+    settings = get_settings()
+    monkeypatch.setattr(settings, "stripe_secret_key", SecretStr("sk_test_123"))
+    monkeypatch.setattr(settings, "stripe_webhook_secret", SecretStr("stripe_webhook_test"))
+    plan = await _plan(db_session, "monthly")
+
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    me = await client.get("/api/subscription/me")
+    assert me.status_code == 200 and me.json()["card_available"] is False
+
+    resp = await client.post(
+        "/api/subscription/checkout/stripe", headers={"X-CSRF-Token": await _csrf(client)},
+        json={"plan_id": str(plan.id)},
+    )
+    assert resp.status_code == 400  # "Cobrança no cartão indisponível no momento."
 
 
 @pytest.mark.anyio

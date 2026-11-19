@@ -202,9 +202,11 @@ async def apply_paid_charge(db: AsyncSession, external_id: str, paid_at: datetim
 
 
 def card_billing_available() -> bool:
-    """True when the server can charge and confirm an authorized recurring card
-    subscription (Stripe secret key + webhook secret are set)."""
-    return stripe_gateway.configured()
+    """True when the server can charge an authorized recurring card subscription for real:
+    Stripe secret key + webhook secret are set AND the key is live. With only test keys the
+    card option stays hidden and PIX remains the single working path (so the paywall can't
+    hand a real owner a test checkout that never charges)."""
+    return stripe_gateway.configured() and stripe_gateway.live_mode()
 
 
 async def start_stripe_checkout(db: AsyncSession, user: User, plan: PlatformPlan) -> str:

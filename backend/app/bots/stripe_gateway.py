@@ -59,6 +59,14 @@ def configured() -> bool:
     return _secret_key() is not None and _webhook_secret() is not None
 
 
+def live_mode() -> bool:
+    """True only with a live secret key (``sk_live_...``). Test keys can't actually debit a
+    real card, so features that charge end users gate on this and stay hidden until the
+    account's live keys are in place."""
+    key = _secret_key()
+    return bool(key and key.startswith("sk_live_"))
+
+
 async def create_checkout_session(
     *, amount: Decimal, external_id: str, description: str, success_url: str, cancel_url: str,
     currency: str = "brl",
