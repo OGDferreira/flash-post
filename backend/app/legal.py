@@ -2,8 +2,8 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 router = APIRouter(tags=["public information"])
-_SUPPORT_EMAIL = "lucassantosdz111@gmail.com"
-_LAST_UPDATED = "3 de outubro de 2026"
+_SUPPORT_EMAIL = "suporte@flashpost.tech"
+_LAST_UPDATED = "22 de novembro de 2026"
 
 _STYLE = """
 <style>
@@ -30,25 +30,49 @@ _PAGES = {
     "privacy": """
       <h1>Política de Privacidade</h1>
       <p class="updated">Última atualização: {updated}</p>
-      <p>Esta política explica como o FlashPost trata informações quando você usa o serviço. O FlashPost está em desenvolvimento e os recursos disponíveis podem mudar conforme novos módulos forem lançados.</p>
-      <h2>Informações tratadas</h2>
+      <p>Esta Política explica como o FlashPost trata dados pessoais quando você usa a plataforma FlashPost e o FlashBot, em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018 — LGPD). Ao criar uma conta ou usar o serviço, você declara ter lido e compreendido esta Política.</p>
+
+      <h2>Quem é o controlador</h2>
+      <p>O controlador dos dados tratados na plataforma é o FlashPost, responsável por decidir como e por que os dados pessoais são tratados. Contato do Encarregado pela Proteção de Dados (DPO): <a href="mailto:{email}">{email}</a>.</p>
+
+      <h2>Dados que tratamos</h2>
       <ul>
-        <li><strong>Cadastro e perfil:</strong> nome, e-mail, apelido público e, se informado, URL de imagem de perfil.</li>
-        <li><strong>Workspace:</strong> identificador do workspace, participação e função de acesso.</li>
-        <li><strong>Segurança da sessão:</strong> cookie de sessão protegido e informações técnicas necessárias para autenticação e proteção contra abuso.</li>
-        <li><strong>Aplicativos Meta do workspace:</strong> App IDs, nomes internos e App Secrets informados pelo OWNER. Os segredos são criptografados no servidor e não são retornados ao navegador após serem salvos.</li>
-        <li><strong>Conta profissional do Instagram conectada:</strong> identificador, nome de usuário, URL da foto de perfil, contagens de seguidores e publicações retornadas na autorização, validade do acesso e token OAuth. O token é armazenado criptografado e usado para manter a conexão autorizada.</li>
+        <li><strong>Cadastro e perfil:</strong> nome completo, e-mail, CPF, apelido público e, se informado, URL de imagem de perfil.</li>
+        <li><strong>Autenticação e segurança:</strong> senha (armazenada apenas como hash, nunca em texto), cookie de sessão protegido, registros técnicos de acesso e dados necessários para prevenir abuso e fraude.</li>
+        <li><strong>Workspace e colaboração:</strong> identificador do workspace, participação, função de acesso e convites.</li>
+        <li><strong>Assinaturas e pagamentos:</strong> plano contratado, situação da assinatura, valores, identificadores de transação e dados de cobrança processados pelos provedores de pagamento (PIX e cartão). Não armazenamos o número completo do cartão; esse dado é tratado diretamente pelo provedor de pagamento.</li>
+        <li><strong>Aplicativos Meta do workspace:</strong> App IDs, nomes internos e App Secrets informados pelo OWNER. Os segredos são criptografados no servidor e não são devolvidos ao navegador após salvos.</li>
+        <li><strong>Contas profissionais do Instagram conectadas:</strong> identificador, nome de usuário, foto de perfil, contagens de seguidores e publicações, validade do acesso e token OAuth (armazenado criptografado).</li>
+        <li><strong>FlashBot (funis, vendas e automações):</strong> configurações de funis e bots, mensagens e automações do FlashBot e integrações como ManyChat; e, quando um cliente final interage com um funil/bot do OWNER, os dados que esse cliente fornece para concluir a compra ou a interação. Nessas interações o OWNER é o controlador dos dados do seu cliente e o FlashPost atua como operador.</li>
       </ul>
-      <h2>Como usamos as informações</h2>
-      <p>Usamos essas informações para autenticar usuários, operar workspaces, proteger o serviço e permitir que um OWNER configure seu próprio aplicativo Meta e conecte contas profissionais do Instagram. O FlashPost oferece publicação por Loop, métricas operacionais de publicações e exibe as contagens de seguidores e publicações retornadas no momento da autorização. Métricas de Insights da Meta, como impressões, alcance e interações, ainda não são consultadas.</p>
-      <h2>Compartilhamento e serviços de terceiros</h2>
-      <p>Quando você inicia uma conexão com o Instagram, o navegador é direcionado à Meta para autenticação e consentimento. A Meta trata dados conforme seus próprios termos e políticas. O FlashPost não vende informações pessoais. Dados podem ser processados pelos provedores de hospedagem e banco de dados necessários para operar o serviço.</p>
+
+      <h2>Bases legais e finalidades (art. 7º da LGPD)</h2>
+      <ul>
+        <li><strong>Execução de contrato:</strong> criar e manter a conta, operar workspaces, publicar por Loop, processar assinaturas e pagamentos e prestar suporte.</li>
+        <li><strong>Cumprimento de obrigação legal/regulatória:</strong> guarda de registros fiscais e de acesso exigidos por lei.</li>
+        <li><strong>Legítimo interesse:</strong> segurança, prevenção à fraude e melhoria do serviço, sempre respeitando seus direitos.</li>
+        <li><strong>Consentimento:</strong> cookies não essenciais e comunicações opcionais. Você pode revogar o consentimento a qualquer momento (ver <a href="/cookies">Política de Cookies</a>).</li>
+      </ul>
+
+      <h2>Compartilhamento e operadores</h2>
+      <p>O FlashPost <strong>não vende</strong> dados pessoais. Compartilhamos dados apenas com operadores necessários para prestar o serviço: provedor de hospedagem/infraestrutura (VPS), provedor de banco de dados e armazenamento (Supabase), provedores de pagamento (PIX e Stripe) e a Meta/Instagram quando você inicia uma conexão. Cada terceiro trata os dados conforme os próprios termos e políticas.</p>
+
+      <h2>Transferência internacional</h2>
+      <p>Alguns provedores podem processar dados fora do Brasil. Nesses casos, buscamos provedores que ofereçam garantias adequadas de proteção, conforme a LGPD.</p>
+
       <h2>Armazenamento e segurança</h2>
-      <p>O FlashPost aplica controles de acesso por workspace e criptografa segredos de aplicativos e tokens de acesso antes de armazená-los. Nenhum sistema pode garantir segurança absoluta. Não compartilhe senhas, App Secrets ou tokens em mensagens de suporte.</p>
+      <p>Aplicamos controle de acesso por workspace, criptografia de segredos e tokens, senhas apenas como hash, cabeçalhos de segurança, limitação de tentativas e registro de eventos. Nenhum sistema é 100% seguro. Nunca compartilhe senha, App Secret ou token em mensagens de suporte.</p>
+
       <h2>Retenção e exclusão</h2>
-      <p>As informações são mantidas enquanto a conta ou a conexão correspondente estiver ativa e pelo tempo necessário para atender obrigações legítimas ou legais. Para solicitar acesso, correção ou exclusão de dados pessoais, escreva para <a href="mailto:{email}">{email}</a>, usando o assunto “Privacidade e dados — FlashPost”. Inclua o e-mail da conta FlashPost e descreva o pedido; não envie senha, App Secret ou token. A equipe poderá solicitar confirmação razoável de identidade antes de processar a solicitação.</p>
-      <p>Para remover uma conexão do Instagram, o OWNER pode usar “Desconectar” na aba Contas. Para excluir a conta FlashPost e dados associados, use o canal de contato acima; a exclusão de conta ainda é processada mediante solicitação, não por um botão de autoatendimento.</p>
-      <h2>Contato</h2>
+      <p>Mantemos os dados enquanto a conta ou a conexão estiver ativa e pelo prazo necessário para cumprir obrigações legais. Depois disso, os dados são excluídos ou anonimizados.</p>
+
+      <h2>Seus direitos como titular (art. 18 da LGPD)</h2>
+      <p>Você pode solicitar, a qualquer momento: confirmação de tratamento; acesso aos dados; correção de dados incompletos ou desatualizados; anonimização, bloqueio ou eliminação de dados desnecessários; portabilidade; informação sobre compartilhamento; e revogação do consentimento. Para exercer esses direitos, escreva para <a href="mailto:{email}">{email}</a> com o assunto “Privacidade e dados — FlashPost”, informando o e-mail da conta. Podemos pedir confirmação razoável de identidade antes de atender. Para excluir a conta, veja as <a href="/deletar">Instruções de exclusão de dados</a>.</p>
+
+      <h2>Cookies</h2>
+      <p>Usamos cookies essenciais e, com seu consentimento, cookies não essenciais. Detalhes e como gerenciar na <a href="/cookies">Política de Cookies</a>.</p>
+
+      <h2>Contato e Encarregado (DPO)</h2>
       <p>Dúvidas ou solicitações de privacidade: <a href="mailto:{email}">{email}</a>.</p>
     """,
     "terms": """
@@ -58,7 +82,11 @@ _PAGES = {
       <h2>O serviço</h2>
       <p>O FlashPost está em desenvolvimento e oferece contas, workspaces, publicação por Loop e métricas operacionais básicas. Recursos podem estar indisponíveis, em teste ou ser alterados. Métricas de Insights da Meta dependem da elegibilidade da conta e das permissões concedidas. Mensagens e webhooks da Meta não estão habilitados na integração atual.</p>
       <h2>Conta e segurança</h2>
-      <p>Você deve fornecer informações corretas, manter suas credenciais seguras e comunicar uso não autorizado. O OWNER é responsável por gerenciar acesso ao workspace e por ações realizadas por seus membros.</p>
+      <p>Você deve fornecer informações corretas, manter suas credenciais seguras e comunicar uso não autorizado. O OWNER é responsável por gerenciar acesso ao workspace e por ações realizadas por seus membros. O cadastro pode exigir confirmação de e-mail antes da liberação da conta.</p>
+      <h2>Assinaturas e pagamentos</h2>
+      <p>O acesso a recursos pagos depende de assinatura ativa. Os preços, periodicidade e condições são exibidos na contratação. Os pagamentos são processados por provedores externos (PIX e cartão via Stripe); o FlashPost não armazena os dados completos do cartão. A falta de pagamento pode suspender ou encerrar o acesso. Cancelamentos e eventuais reembolsos seguem as condições informadas no momento da contratação e a legislação aplicável, incluindo o Código de Defesa do Consumidor.</p>
+      <h2>FlashBot, funis e vendas</h2>
+      <p>O FlashBot permite criar funis, bots, automações e cobranças. O OWNER é o único responsável pelo conteúdo que publica, pelos produtos e serviços que vende, pelas mensagens automáticas e por cumprir as leis aplicáveis e os termos das plataformas integradas (Meta, Instagram, ManyChat, provedores de pagamento). Ao usar o FlashBot para tratar dados de seus clientes finais, o OWNER atua como controlador desses dados e o FlashPost como operador. É proibido usar o serviço para conteúdo ilícito, fraude, spam ou violação de direitos de terceiros.</p>
       <h2>Aplicativos Meta e contas Instagram</h2>
       <p>O OWNER que configurar a integração deve fornecer App IDs e App Secrets válidos de aplicativos Meta que controle e esteja autorizado a usar. Esses segredos são armazenados criptografados. Você declara ter autoridade para conectar a conta Instagram e conceder as permissões solicitadas. A conexão depende da Meta, da elegibilidade da conta e da validade do consentimento e dos tokens. Cada conta conectada permanece associada ao app usado para autorizá-la.</p>
       <p>O Instagram, a Meta e seus serviços são independentes do FlashPost e regidos pelos próprios termos e políticas. O FlashPost não é afiliado, endossado ou administrado pela Meta.</p>
@@ -89,6 +117,31 @@ _PAGES = {
       <h2>Contato</h2>
       <p>Dúvidas sobre o pedido: <a href="mailto:{email}">{email}</a>.</p>
     """,
+    "cookies": """
+      <h1>Política de Cookies</h1>
+      <p class="updated">Última atualização: {updated}</p>
+      <p>Esta Política explica como o FlashPost e o FlashBot usam cookies e tecnologias semelhantes (como armazenamento local no navegador). Ela complementa a <a href="/privacidade">Política de Privacidade</a> e segue a LGPD.</p>
+
+      <h2>O que são cookies</h2>
+      <p>Cookies são pequenos arquivos guardados no seu navegador. Também usamos o armazenamento local (localStorage/sessionStorage) para lembrar preferências e manter sua sessão. Neste texto, “cookies” abrange essas tecnologias.</p>
+
+      <h2>Categorias que usamos</h2>
+      <ul>
+        <li><strong>Essenciais (sempre ativos):</strong> necessários para você entrar, manter a sessão autenticada, proteger contra fraude (CSRF e limitação de tentativas) e fazer o serviço funcionar. Sem eles, a plataforma não opera. Não dependem de consentimento.</li>
+        <li><strong>Funcionais (opcionais):</strong> lembram preferências como tema, última tela usada e ajustes de interface, para a sua conveniência.</li>
+        <li><strong>Analíticos/de desempenho (opcionais):</strong> ajudam a entender o uso de forma agregada para melhorar o serviço.</li>
+      </ul>
+      <p>Os cookies opcionais só são ativados com o seu consentimento (opt-in). Enquanto você não aceitar, apenas os cookies essenciais são usados.</p>
+
+      <h2>Como gerenciar o consentimento</h2>
+      <p>Ao acessar o FlashPost ou o FlashBot, um aviso permite <strong>Aceitar</strong> ou usar <strong>Apenas essenciais</strong>. Você pode mudar sua escolha a qualquer momento limpando os dados do site no navegador ou acionando novamente o aviso de cookies. Você também pode bloquear ou apagar cookies nas configurações do seu navegador — nesse caso, algumas funções podem não funcionar corretamente.</p>
+
+      <h2>Cookies de terceiros</h2>
+      <p>Ao usar integrações (Meta/Instagram, provedores de pagamento), esses serviços podem definir seus próprios cookies, regidos pelas respectivas políticas. Não controlamos esses cookies de terceiros.</p>
+
+      <h2>Contato</h2>
+      <p>Dúvidas sobre cookies e privacidade: <a href="mailto:{email}">{email}</a>.</p>
+    """,
 }
 
 
@@ -113,6 +166,7 @@ def _page(title: str, body: str) -> HTMLResponse:
       <footer>
         FlashPost · <a href="/privacidade">Privacidade</a> ·
         <a href="/termosdeuso">Termos</a> ·
+        <a href="/cookies">Cookies</a> ·
         <a href="/deletar">Exclusão de dados</a>
       </footer>
     </main>
@@ -129,6 +183,11 @@ async def privacy_policy() -> HTMLResponse:
 @router.get("/termosdeuso", response_class=HTMLResponse, include_in_schema=False)
 async def terms_of_service() -> HTMLResponse:
     return _page("Termos de Serviço", _PAGES["terms"])
+
+
+@router.get("/cookies", response_class=HTMLResponse, include_in_schema=False)
+async def cookie_policy() -> HTMLResponse:
+    return _page("Política de Cookies", _PAGES["cookies"])
 
 
 @router.get("/deletar", response_class=HTMLResponse, include_in_schema=False)

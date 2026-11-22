@@ -1,6 +1,7 @@
 import { HomePanelPreference } from "@/components/HomePanelPreference";
 import { ConnectedAccountPopup } from "@/components/ConnectedAccountPopup";
 import { ReleaseNotices } from "@/components/ReleaseNotices";
+import { CookieConsent } from "@/components/CookieConsent";
 import { CompleteProfileGate } from "@/features/auth/CompleteProfileGate";
 import { SubscriptionGate } from "@/features/subscription/SubscriptionGate";
 import { homePath } from "@/features/auth/homePanel";
@@ -81,6 +82,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ConfirmHost />
+        <CookieConsent />
         <Suspense fallback={<LoadingState fullscreen label="Carregando página" />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
