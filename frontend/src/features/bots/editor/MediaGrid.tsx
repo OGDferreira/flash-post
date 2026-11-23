@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, FileAudio, Film, Image as ImageIcon, Library, Plus, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileAudio, Film, Image as ImageIcon, Library, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 
 import { Modal } from "@/components/ui/Modal";
 import { ApiError, apiRequest } from "@/services/api";
@@ -61,7 +61,7 @@ function Thumb({ media }: { media?: BotMedia }) {
     return <img alt={media.file_name} className="absolute inset-0 size-full object-cover" loading="lazy" src={preview.data.url} />;
   }
   if (media.kind === "video" && preview.data) {
-    return <video className="absolute inset-0 size-full object-cover" muted playsInline preload="metadata" src={`${preview.data.url}#t=0.5`} />;
+    return <video autoPlay className="absolute inset-0 size-full object-cover" loop muted playsInline preload="metadata" src={`${preview.data.url}#t=0.1`} />;
   }
   return (
     <span className="grid place-items-center gap-1 px-2 text-center text-muted">
@@ -90,9 +90,15 @@ export function MediaGrid({
 }) {
   const queryClient = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
+  const replaceInput = useRef<HTMLInputElement>(null);
   const [library, setLibrary] = useState(false);
+  // When set, picking a file / library item swaps the media at this position instead of adding.
+  const [replaceAt, setReplaceAt] = useState<number | null>(null);
   const media = useBotMedia();
   const byId = new Map((media.data?.media ?? []).map((item) => [item.id, item]));
+  const cacheCreated = (created: BotMedia[]) =>
+    queryClient.setQueryData<{ media: BotMedia[] }>(["bots", "media"], (old) => ({ media: [...created, ...(old?.media ?? [])] }));
+  const swapAt = (index: number, id: string) => onChange(value.map((other, i) => (i === index ? id : other)));
   const upload = useMutation({
     mutationFn: async (files: File[]) => {
       const created: BotMedia[] = [];
@@ -105,8 +111,20 @@ export function MediaGrid({
       return created;
     },
     onSuccess: (created) => {
-      queryClient.setQueryData<{ media: BotMedia[] }>(["bots", "media"], (old) => ({ media: [...created, ...(old?.media ?? [])] }));
+      cacheCreated(created);
       onChange([...value, ...created.map((item) => item.id)].slice(0, max));
+    },
+  });
+  // "Alterar mídia": upload a new file into one existing slot (order/links/settings kept).
+  const replace = useMutation({
+    mutationFn: async ({ file }: { file: File; index: number }) => {
+      const normalized = normalizeUpload(file);
+      return apiRequest<BotMedia>(`/api/bots/media?filename=${encodeURIComponent(normalized.name)}`, { method: "POST", body: normalized });
+    },
+    onSuccess: (created, { index }) => {
+      cacheCreated([created]);
+      swapAt(index, created.id);
+      setReplaceAt(null);
     },
   });
   const move = (index: number, delta: number) => {
@@ -141,6 +159,19 @@ export function MediaGrid({
                 <KindIcon kind={item?.kind} size={12} />
               </span>
               <div className="absolute right-1.5 top-1.5 flex gap-1">
+                <button
+                  aria-label="Alterar mídia"
+                  className="grid size-7 place-items-center rounded-md bg-black/60 text-white"
+                  disabled={replace.isPending}
+                  onClick={() => {
+                    setReplaceAt(index);
+                    replaceInput.current?.click();
+                  }}
+                  title="Alterar mídia (troca só o arquivo)"
+                  type="button"
+                >
+                  <RefreshCw size={13} />
+                </button>
                 <button
                   aria-label="Remover mídia"
                   className="grid size-7 place-items-center rounded-md bg-danger/90 text-white"
@@ -195,11 +226,27 @@ export function MediaGrid({
         ref={input}
         type="file"
       />
-      {upload.error && (
-        <p className="text-xs text-danger" role="alert">
-          {upload.error instanceof ApiError ? upload.error.message : "Falha no envio do arquivo."}
-        </p>
-      )}
+      <input
+        accept={kinds.map((kind) => ACCEPT[kind]).join(",")}
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file && replaceAt !== null) replace.mutate({ file, index: replaceAt });
+          else setReplaceAt(null);
+        }}
+        ref={replaceInput}
+        type="file"
+      />
+      {(() => {
+        const err = upload.error ?? replace.error;
+        return err ? (
+          <p className="text-xs text-danger" role="alert">
+            {err instanceof ApiError ? err.message : "Falha no envio do arquivo."}
+          </p>
+        ) : null;
+      })()}
+      {replace.isPending && <p className="text-xs text-muted">Trocando a mídia…</p>}
       <Modal open={library} title="Escolher da biblioteca" onClose={() => setLibrary(false)}>
         {available.length === 0 ? (
           <p className="text-sm text-muted">Nenhum arquivo disponível. Use “Enviar” para subir do seu aparelho.</p>

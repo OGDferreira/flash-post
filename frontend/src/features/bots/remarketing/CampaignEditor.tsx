@@ -40,11 +40,13 @@ import {
   emptyDelivery,
   type Campaign,
   type CampaignDefinition,
+  type CampaignDiscountedPlan,
   type CampaignMessage,
   type CampaignPeriod,
   type CampaignPlan,
   type CampaignTarget,
   type Flow,
+  type Plan,
 } from "../types";
 import { CampaignStats } from "./CampaignStats";
 
@@ -120,6 +122,7 @@ function payload(definition: CampaignDefinition): CampaignDefinition {
     })),
     offer: {
       plans: definition.offer.plans.map((plan) => ({ ...plan, price: money(plan.price), delivery: cleanDelivery(plan.delivery) })),
+      discounted_plans: (definition.offer.discounted_plans ?? []).map((item) => ({ ...item, discount_value: money(item.discount_value) })),
       order_bump: cleanBump(definition.offer.order_bump),
       redirect: definition.offer.redirect && definition.offer.redirect.label.trim() && definition.offer.redirect.url.trim() ? definition.offer.redirect : null,
     },
@@ -210,6 +213,9 @@ export function CampaignEditor({
     setDefinition({ ...definition, messages: definition.messages.map((item, index) => (index === variant ? { ...item, ...patch } : item)) });
   const setPlan = (index: number, patch: Partial<CampaignPlan>) =>
     setOffer({ plans: definition.offer.plans.map((item, i) => (i === index ? { ...item, ...patch } : item)) });
+  const discounted = definition.offer.discounted_plans ?? [];
+  const updateDiscounted = (planId: string, patch: Partial<CampaignDiscountedPlan>) =>
+    setOffer({ discounted_plans: discounted.map((item) => (item.plan_id === planId ? { ...item, ...patch } : item)) });
 
   const target = TARGETS.find((item) => item.value === definition.audience.target) ?? TARGETS[1];
   const missingDefault = !hasDefaultDelivery && !flow?.protected && definition.offer.plans.some((plan) => !plan.delivery);
@@ -598,6 +604,63 @@ export function CampaignEditor({
                     ))}
                     {missingDefault && <p className="text-xs text-warning">Este fluxo não tem entrega padrão: escolha uma entrega própria para cada plano.</p>}
                   </Box>
+                  {flowPlans.length > 0 && (
+                    <Box
+                      icon={<Package size={18} />}
+                      title="Planos existentes com desconto"
+                      aside={<span className="text-xs text-muted">reaproveitam a entrega do funil</span>}
+                    >
+                      <p className="text-xs text-muted">Reoferte planos que já existem no funil com um preço menor. A entrega continua a mesma do plano original.</p>
+                      <div className="grid gap-2">
+                        {flowPlans.map((plan) => {
+                          const picked = discounted.find((item) => item.plan_id === plan.id);
+                          return (
+                            <div className="rounded-xl border border-line bg-surface-inset p-3" key={plan.id}>
+                              <label className="flex items-center justify-between gap-3 text-sm">
+                                <span className="min-w-0">
+                                  <span className="block truncate font-medium text-fg">{plan.name}</span>
+                                  <span className="text-xs text-muted">de {brl(plan.price)}</span>
+                                </span>
+                                <Switch
+                                  checked={Boolean(picked)}
+                                  label={`Desconto em ${plan.name}`}
+                                  onChange={(on) =>
+                                    setOffer({
+                                      discounted_plans: on
+                                        ? [...discounted, { plan_id: plan.id, discount_type: "percent", discount_value: "10", button_style: "success" }]
+                                        : discounted.filter((item) => item.plan_id !== plan.id),
+                                    })
+                                  }
+                                />
+                              </label>
+                              {picked && (
+                                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                  <Field label="Tipo de desconto">
+                                    <select
+                                      className="field"
+                                      value={picked.discount_type}
+                                      onChange={(event) => updateDiscounted(plan.id, { discount_type: event.target.value as "percent" | "fixed" })}
+                                    >
+                                      <option value="percent">Percentual (%)</option>
+                                      <option value="fixed">Valor fixo (R$)</option>
+                                    </select>
+                                  </Field>
+                                  <Field label={picked.discount_type === "percent" ? "Desconto (%)" : "Desconto (R$)"}>
+                                    <input
+                                      className="field"
+                                      inputMode="decimal"
+                                      value={picked.discount_value}
+                                      onChange={(event) => updateDiscounted(plan.id, { discount_value: event.target.value.replace(",", ".") })}
+                                    />
+                                  </Field>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </Box>
+                  )}
                   <ToggleBox
                     checked={Boolean(definition.offer.order_bump)}
                     description="Oferta adicional específica para esta campanha, antes de gerar o Pix."
@@ -675,6 +738,7 @@ export function CampaignEditor({
                         .join(" · ") || "Só mensagem"}
                     />
                   </div>
+                  <CampaignPreview definition={definition} flowPlans={flowPlans} />
                   {ready ? (
                     <p className="rounded-xl border border-success/30 bg-success-soft px-4 py-3 text-sm text-success">Tudo certo. A campanha está pronta para ser salva.</p>
                   ) : (
@@ -799,6 +863,49 @@ function ReviewCard({ icon, label, title, detail, onEdit }: { icon: ReactNode; l
       <button className="text-xs font-medium text-accent" onClick={onEdit} type="button">
         Editar
       </button>
+    </div>
+  );
+}
+
+function previewDiscount(price: string, item: CampaignDiscountedPlan): number {
+  const base = Math.max(0, Number(String(price).replace(",", ".")) || 0);
+  const value = Math.max(0, Number(String(item.discount_value).replace(",", ".")) || 0);
+  const out = item.discount_type === "percent" ? base * (1 - value / 100) : base - value;
+  return Math.max(1, Math.round(out * 100) / 100); // mínimo do SmokePay
+}
+
+/** "Ver prévia": how the lead sees the remarketing message + offer buttons in Telegram. */
+function CampaignPreview({ definition, flowPlans }: { definition: CampaignDefinition; flowPlans: Plan[] }) {
+  const message = definition.messages[0];
+  const text = (message?.text ?? "").split("{nome}").join("Lucas") || "(sem texto)";
+  const brlNum = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const buttons: { label: string; link?: boolean }[] = [];
+  for (const plan of definition.offer.plans) buttons.push({ label: `${plan.name} · ${brl(plan.price || 0)}` });
+  for (const item of definition.offer.discounted_plans ?? []) {
+    const plan = flowPlans.find((candidate) => candidate.id === item.plan_id);
+    if (plan) buttons.push({ label: `🔥 ${plan.name} por ${brlNum(previewDiscount(plan.price, item))} (antes ${brl(plan.price)})` });
+  }
+  for (const button of message?.buttons ?? []) if (button.label.trim()) buttons.push({ label: button.label, link: true });
+  if (definition.offer.redirect?.label?.trim()) buttons.push({ label: definition.offer.redirect.label, link: true });
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">Prévia da mensagem</p>
+      <div className="max-w-[90%] space-y-1.5 rounded-2xl rounded-bl-md bg-[#182533] p-3 text-sm text-white">
+        {(message?.media_ids.length ?? 0) > 0 && (
+          <div className="rounded-lg bg-black/30 px-3 py-6 text-center text-[11px] text-white/70">
+            {message!.media_ids.length} mídia(s){message!.spoiler ? " · spoiler" : ""}
+          </div>
+        )}
+        <p className="whitespace-pre-wrap break-words">{text}</p>
+        {buttons.map((button, index) => (
+          <div className="flex items-center justify-center gap-1 rounded-lg bg-[#2b5278] px-2 py-2 text-center text-xs font-medium" key={index}>
+            {button.label}
+            {button.link && <ExternalLink size={11} />}
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] text-muted">É assim que o lead vê no Telegram. Simulação — nada é enviado.</p>
     </div>
   );
 }

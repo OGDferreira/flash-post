@@ -250,6 +250,7 @@ function OfferDelivery({ value, onChange, allowUpsell = false }: { value: Delive
 
 export function UpsellSection({ draft, set }: SectionProps) {
   const { open, toggle, setOpen } = useOpen();
+  const [bulkMedia, setBulkMedia] = useState<string[]>([]);
   const setStep = (index: number, patch: Partial<UpsellStep>) =>
     set({ upsells: draft.upsells.map((item, i) => (i === index ? { ...item, ...patch } : item)) });
   return (
@@ -259,6 +260,22 @@ export function UpsellSection({ draft, set }: SectionProps) {
       description="Ofertas enviadas depois que o lead paga. Recusou ou comprou, vai para a próxima."
       aside={<span className="text-xs text-muted">{draft.upsells.length}/20</span>}
     >
+      {draft.upsells.length > 1 && (
+        <div className="mb-3 space-y-2 rounded-xl border border-line-soft p-3">
+          <p className="text-sm font-medium text-fg">Alterar a mídia de todos os upsells de uma vez</p>
+          <p className="text-xs text-muted">
+            Escolha a mídia e aplique às {draft.upsells.length} sequências. Troca só o arquivo; o resto de cada upsell continua igual.
+          </p>
+          <MediaGrid max={3} title="Mídia para todos os upsells" value={bulkMedia} onChange={setBulkMedia} />
+          <Button
+            disabled={!bulkMedia.length}
+            onClick={() => set({ upsells: draft.upsells.map((step) => ({ ...step, media_ids: [...bulkMedia] })) })}
+            size="sm"
+          >
+            Aplicar a todos os upsells
+          </Button>
+        </div>
+      )}
       <div className="space-y-2">
         {draft.upsells.map((step, index) => (
           <Collapsible
@@ -708,6 +725,13 @@ export function PaymentSection({ draft, set }: SectionProps) {
   const payment = draft.payment;
   const setPayment = (patch: Partial<typeof payment>) => set({ payment: { ...payment, ...patch } });
   const vars = [...BASE_VARIABLES, "{plano}", "{valor}"];
+  // The two modes can be on at once; legacy funnels only carry ``layout``.
+  const qrOn = payment.qr_enabled ?? ((payment.layout ?? "qr") === "qr");
+  const stepsOn = payment.steps_enabled ?? ((payment.layout ?? "qr") === "steps");
+  const setModes = (qr: boolean, steps: boolean) => {
+    if (!qr && !steps) return; // keep at least one way to pay
+    setPayment({ qr_enabled: qr, steps_enabled: steps, layout: qr ? "qr" : "steps" });
+  };
   return (
     <Panel icon={<CreditCard size={18} />} title="Pagamento Pix" description="Textos do Pix e quanto tempo o código vale.">
       <Field label="Validade do Pix (minutos)">
@@ -720,30 +744,51 @@ export function PaymentSection({ draft, set }: SectionProps) {
           onChange={(event) => setPayment({ expiration_minutes: Math.min(1440, Math.max(5, Number(event.target.value) || 30)) })}
         />
       </Field>
-      <Field label="Formato do Pix">
-        <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
-          {([
-            ["qr", "QR Code", "Uma mensagem: QR Code, texto e o código Pix."],
-            ["steps", "Passo a passo", "Instruções de pagamento, o código numa caixa “copy” e os botões Verificar status / Copiar código."],
-          ] as const).map(([value, title, hint]) => (
-            <button
-              aria-checked={(payment.layout ?? "qr") === value}
-              className={`rounded-xl border p-3 text-left ${(payment.layout ?? "qr") === value ? "border-brand bg-brand-soft" : "border-line hover:border-brand"}`}
-              key={value}
-              onClick={() => setPayment({ layout: value })}
-              role="radio"
-              type="button"
-            >
-              <span className="block text-sm font-medium text-fg">{title}</span>
-              <span className="mt-1 block text-xs text-muted">{hint}</span>
-            </button>
-          ))}
-        </div>
-      </Field>
-      {(payment.layout ?? "qr") === "steps" ? (
+
+      <div className="space-y-2 rounded-xl border border-line-soft p-3">
+        <Switch
+          checked={!!payment.intro_enabled}
+          label="Mensagem antes do pagamento"
+          onChange={(intro_enabled) => setPayment({ intro_enabled })}
+        />
+        <p className="text-xs text-muted">Enviada logo antes do Pix: uma mídia e/ou um texto para preparar o lead.</p>
+        {payment.intro_enabled && (
+          <div className="space-y-2">
+            <MediaGrid
+              kinds={["photo", "video"]}
+              max={3}
+              title="Mídia da mensagem"
+              value={payment.intro_media_ids ?? []}
+              onChange={(intro_media_ids) => setPayment({ intro_media_ids })}
+            />
+            <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
+              <span>Borrar a mídia (spoiler)</span>
+              <Switch checked={!!payment.intro_spoiler} label="Borrar a mídia" onChange={(intro_spoiler) => setPayment({ intro_spoiler })} />
+            </label>
+            <RichTextEditor label="Texto da mensagem" rows={3} value={payment.intro_text ?? ""} variables={vars} onChange={(intro_text) => setPayment({ intro_text })} />
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2 rounded-xl border border-line-soft p-3">
+        <p className="text-sm font-medium text-fg">Como mostrar o Pix</p>
+        <p className="text-xs text-muted">Pode ligar os dois ao mesmo tempo: o lead recebe o QR Code e o passo a passo.</p>
+        <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
+          <span>QR Code <span className="block text-xs text-muted">Imagem com o QR, o texto e o código Pix.</span></span>
+          <Switch checked={qrOn} label="QR Code" onChange={(on) => setModes(on, stepsOn)} />
+        </label>
+        <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
+          <span>Passo a passo <span className="block text-xs text-muted">Instruções, o código numa caixa “copy” e os botões.</span></span>
+          <Switch checked={stepsOn} label="Passo a passo" onChange={(on) => setModes(qrOn, on)} />
+        </label>
+      </div>
+      {qrOn && (
+        <RichTextEditor label="Mensagem do Pix (QR Code)" rows={3} value={payment.pix_text} variables={vars} onChange={(pix_text) => setPayment({ pix_text })} />
+      )}
+      {stepsOn && (
         <>
           <RichTextEditor
-            label="Instruções de pagamento"
+            label="Instruções de pagamento (passo a passo)"
             rows={6}
             value={payment.steps_text ?? STEPS_TEXT}
             variables={vars}
@@ -752,17 +797,17 @@ export function PaymentSection({ draft, set }: SectionProps) {
           <Field label="Texto acima do código">
             <input className="field" maxLength={200} value={payment.code_intro ?? "Copie o código abaixo:"} onChange={(event) => setPayment({ code_intro: event.target.value })} />
           </Field>
-          <Field label="Texto junto dos botões">
-            <input
-              className="field"
-              maxLength={500}
-              value={payment.after_code_text ?? "Após efetuar o pagamento, clique no botão abaixo ⤵️"}
-              onChange={(event) => setPayment({ after_code_text: event.target.value })}
-            />
-          </Field>
+          {!qrOn && (
+            <Field label="Texto junto dos botões">
+              <input
+                className="field"
+                maxLength={500}
+                value={payment.after_code_text ?? "Após efetuar o pagamento, clique no botão abaixo ⤵️"}
+                onChange={(event) => setPayment({ after_code_text: event.target.value })}
+              />
+            </Field>
+          )}
         </>
-      ) : (
-        <RichTextEditor label="Mensagem do Pix" rows={3} value={payment.pix_text} variables={vars} onChange={(pix_text) => setPayment({ pix_text })} />
       )}
       <div className="space-y-2 rounded-xl border border-line-soft p-3">
         <Switch
