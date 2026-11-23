@@ -109,16 +109,9 @@ def _platform_app() -> tuple[str, str] | None:
 
 
 async def _ensure_own_apps_allowed(access, db) -> None:
-    """With the platform app on, workspace apps are only for the Super Admin and for users
-    the Super Admin removed from the platform app (they go back to their own apps)."""
-    if _platform_app() is None:
-        return
-    user = await db.get(User, access.membership.user_id)
-    if user is None or not (user.platform_role == "SUPER_ADMIN" or user.platform_app_blocked):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="As contas agora são conectadas pelo app da plataforma; não é preciso cadastrar app próprio.",
-        )
+    """Every workspace OWNER manages their own Meta apps. The platform app stays available
+    as a one-tap option for the Super Admin, but no longer takes the page away from anyone."""
+    return
 
 
 def _redirect_uri() -> str:
@@ -466,17 +459,8 @@ async def list_meta_apps(
     platform = _platform_app()
     user = await db.get(User, access.membership.user_id)
     is_super_admin = user is not None and user.platform_role == "SUPER_ADMIN"
-    blocked = bool(user and user.platform_app_blocked) and not is_super_admin
-    if platform is not None and not is_super_admin and not blocked:
-        # Everyone connects through the platform app; their own Meta apps stay hidden.
-        return InstagramMetaAppsResponse(
-            can_manage=False,
-            callback_url=_redirect_uri(),
-            selected_app_id=None,
-            apps=[],
-            platform=InstagramPlatformApp(available=True),
-        )
-    # Users removed from the platform app go back to their workspace apps.
+    # Everyone manages and connects through their own Meta apps. The platform one-tap
+    # stays available only to the Super Admin (who owns the platform app credentials).
     return InstagramMetaAppsResponse(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
         callback_url=_redirect_uri(),
@@ -485,7 +469,7 @@ async def list_meta_apps(
             _meta_app_response(app, connected_counts.get(app.id, 0)) for app in apps
         ],
         platform=InstagramPlatformApp(
-            available=platform is not None and not blocked,
+            available=platform is not None and is_super_admin,
             app_id=platform[0] if platform is not None and is_super_admin else None,
         ),
     )
@@ -678,15 +662,10 @@ async def connect_account(
 ) -> InstagramConnectResponse:
     settings = get_settings()
     platform = _platform_app()
-    # The platform app connects everyone (no app to pick). An explicit app_id is only sent by
-    # the Super Admin's own Apps Meta page, which still works with workspace apps.
-    if platform is not None and app_id is None:
-        user = await db.get(User, access.membership.user_id)
-        if user is None or (user.platform_app_blocked and user.platform_role != "SUPER_ADMIN"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="A conexão de contas não está liberada para o seu usuário. Fale com o suporte.",
-            )
+    # The platform one-tap is the Super Admin's own shortcut (no app to pick). Everyone else
+    # connects with their own Meta app, so without an app_id we fall through to their selected app.
+    user_for_platform = await db.get(User, access.membership.user_id) if platform is not None and app_id is None else None
+    if platform is not None and app_id is None and user_for_platform is not None and user_for_platform.platform_role == "SUPER_ADMIN":
         if settings.master_encryption_key is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
