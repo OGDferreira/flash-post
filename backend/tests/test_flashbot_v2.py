@@ -21,7 +21,17 @@ from test_telegram_bots import (  # noqa: F401  (apis is a fixture)
     _start,
     _tap,
     apis,
+    pix_message,
 )
+
+
+def _reply(text: str = "pode sim") -> dict:
+    user = {"id": 555, "is_bot": False, "first_name": "Lucas", "username": "lucas"}
+    return {"message": {"message_id": 70, "from": user, "chat": {"id": 555, "type": "private"}, "text": text}}
+
+
+def _call_texts(apis) -> list[str]:
+    return [(body.get("caption") or body.get("text") or "") for _, body in apis.calls]
 
 PACK = {"type": "default", "text": "Seu conteúdo 💕", "link": {"label": "Abrir", "url": "https://example.com/c"}}
 
@@ -725,3 +735,74 @@ async def test_upsell_overrides_approved_message(client, db_session, owner, apis
     await _pay(client, db_session, upsell_order)
     texts = [m["text"] for m in apis.methods("sendMessage")]
     assert any(t.startswith("Upsell no bolso") for t in texts)  # the upsell's own message
+
+
+@pytest.mark.anyio
+async def test_payment_qr_and_steps_can_run_together(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    flow = _flow(welcome=[], payment={
+        "expiration_minutes": 15, "qr_enabled": True, "steps_enabled": True,
+        "steps_text": "Passo a passo aqui", "code_intro": "Copie:",
+    })
+    flow["plans"][0]["delivery"] = {"type": "default", "text": "VIP"}
+    bot, _ = await _setup(client, headers, flow)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    texts = _call_texts(apis)
+    assert "Passo a passo aqui" in texts                       # step-by-step instructions
+    assert any("language-copy" in t for t in texts)            # copy box
+    assert apis.methods("sendPhoto"), "the QR image should also be sent"
+    qr = pix_message(apis)                                     # last message with the code = the QR photo
+    assert "reply_markup" in qr and qr["reply_markup"]["inline_keyboard"]
+
+
+@pytest.mark.anyio
+async def test_payment_intro_message_goes_before_the_pix(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    flow = _flow(welcome=[], payment={
+        "expiration_minutes": 15, "intro_enabled": True, "intro_text": "Olha so antes de pagar",
+    })
+    flow["plans"][0]["delivery"] = {"type": "default", "text": "VIP"}
+    bot, _ = await _setup(client, headers, flow)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    texts = _call_texts(apis)
+    intro_i = next(i for i, t in enumerate(texts) if t == "Olha so antes de pagar")
+    code_i = next(i for i, t in enumerate(texts) if "<code>" in t)
+    assert intro_i < code_i
+
+
+@pytest.mark.anyio
+async def test_humanized_conversation_waits_for_lead_reply(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    # Block 2 only goes after the lead replies to block 1.
+    flow = _flow(welcome=[
+        {"type": "text", "text": "Oi!"},
+        {"type": "text", "text": "Posso te mostrar?", "wait_for_reply": True},
+        {"type": "text", "text": "Entao olha"},
+    ])
+    bot, _ = await _setup(client, headers, flow)
+    await _send(client, db_session, bot["id"], _start())
+    texts = [m["text"] for m in apis.methods("sendMessage")]
+    assert "Oi!" in texts                                       # first message went out
+    assert "Posso te mostrar?" not in texts                     # paused, waiting for the reply
+    assert "Escolha" not in " ".join(texts)                     # offer not sent yet
+    lead = await db_session.scalar(select(TgLead))
+    assert lead.welcome_wait == {"next": 1}
+
+    await _send(client, db_session, bot["id"], _reply())  # lead answers -> resume
+    texts = [m["text"] for m in apis.methods("sendMessage")]
+    assert "Posso te mostrar?" in texts and "Entao olha" in texts and any("Escolha" in t for t in texts)
+    await db_session.commit()
+    await db_session.refresh(lead)
+    assert lead.welcome_wait is None
+
+
+@pytest.mark.anyio
+async def test_welcome_disabled_sends_the_offer_directly(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    flow = _flow(welcome_enabled=False, welcome=[{"type": "text", "text": "NAO ENVIAR"}])
+    bot, _ = await _setup(client, headers, flow)
+    await _send(client, db_session, bot["id"], _start())
+    texts = [m["text"] for m in apis.methods("sendMessage")]
+    assert "NAO ENVIAR" not in texts and any("Escolha" in t for t in texts)

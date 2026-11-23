@@ -473,30 +473,82 @@ async def cancel_lead_jobs(db: AsyncSession, lead: TgLead, kinds: tuple[str, ...
 
 async def start_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
     """Send the welcome right away; blocks after a delay (and what follows them)
-    are queued as jobs with their delays."""
+    are queued as jobs with their delays. When the "conversa humanizada" sequence uses
+    "wait for reply" blocks, it runs step by step instead, pausing for the lead."""
     await cancel_lead_jobs(db, lead, ("send_block", "send_offer"))
     tg = telegram(bot)
-    run = utcnow()
-    nonce = secrets.token_hex(4)
     lead.stage = "welcome"
-    immediate = True
-    for index, block in enumerate(flow.welcome):
-        # The first block always answers /start right away; delays only space the next ones.
-        delay = block.delay_seconds if index else 0
-        immediate = immediate and delay == 0
-        run += timedelta(seconds=delay, microseconds=index)
-        if immediate:
-            await send_block(db, tg, bot, lead, block)
-        else:
-            await schedule(db, bot, "send_block", run, f"welcome:{lead.id}:{nonce}:{index}", lead, {"index": index})
-    if immediate:
+    lead.welcome_wait = None
+    blocks = list(flow.welcome) if flow.welcome_enabled else []
+    if not blocks:
         await send_offer(db, tg, bot, lead, flow)
+    elif any(block.wait_for_reply for block in blocks):
+        # Humanized path: send one block at a time; a "wait for reply" block pauses here
+        # and the lead's next message resumes it (see ``resume_welcome``).
+        await _continue_welcome(db, bot, lead, flow, 0)
     else:
-        # Microsecond offset keeps the offer after the last block.
-        run += timedelta(microseconds=len(flow.welcome) + 1)
-        await schedule(db, bot, "send_offer", run, f"offer:{lead.id}:{nonce}", lead)
+        # Fast path (unchanged): pre-schedule the whole sequence by its time delays.
+        run = utcnow()
+        nonce = secrets.token_hex(4)
+        immediate = True
+        for index, block in enumerate(blocks):
+            # The first block always answers /start right away; delays only space the next ones.
+            delay = block.delay_seconds if index else 0
+            immediate = immediate and delay == 0
+            run += timedelta(seconds=delay, microseconds=index)
+            if immediate:
+                await send_block(db, tg, bot, lead, block)
+            else:
+                await schedule(db, bot, "send_block", run, f"welcome:{lead.id}:{nonce}:{index}", lead, {"index": index})
+        if immediate:
+            await send_offer(db, tg, bot, lead, flow)
+        else:
+            # Microsecond offset keeps the offer after the last block.
+            run += timedelta(microseconds=len(blocks) + 1)
+            await schedule(db, bot, "send_offer", run, f"offer:{lead.id}:{nonce}", lead)
     if flow.downsells_no_pix:
         await schedule_downsells(db, bot, lead, flow, "no_pix")
+
+
+async def _continue_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int) -> None:
+    """Send welcome blocks from ``index`` on, stopping at the first "wait for reply" block
+    (saved in ``lead.welcome_wait``) or a timed one (queued as a chained job). The end of the
+    sequence sends the offer."""
+    tg = telegram(bot)
+    blocks = list(flow.welcome)
+    nonce = secrets.token_hex(4)
+    i = index
+    while 0 <= i < len(blocks):
+        await send_block(db, tg, bot, lead, blocks[i])
+        nxt = i + 1
+        if nxt >= len(blocks):
+            lead.welcome_wait = None
+            await send_offer(db, tg, bot, lead, flow)
+            return
+        following = blocks[nxt]
+        if following.wait_for_reply:
+            lead.welcome_wait = {"next": nxt}
+            return
+        if following.delay_seconds > 0:
+            lead.welcome_wait = None
+            run = utcnow() + timedelta(seconds=following.delay_seconds)
+            await schedule(db, bot, "send_block", run, f"welcome:{lead.id}:{nonce}:{nxt}", lead, {"index": nxt, "chain": True})
+            return
+        i = nxt  # no gate before it: send it right away
+
+
+async def resume_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> bool:
+    """A lead replied while the humanized sequence was paused: send the next block on.
+    Returns True when it resumed something."""
+    waiting = lead.welcome_wait
+    if not waiting or not flow.welcome_enabled:
+        return False
+    nxt = int(waiting.get("next", -1)) if isinstance(waiting, dict) else -1
+    lead.welcome_wait = None
+    if 0 <= nxt < len(flow.welcome):
+        await _continue_welcome(db, bot, lead, flow, nxt)
+        return True
+    return False
 
 
 def _extra_rows(flow: FlowDefinition) -> list[list[dict]]:
@@ -757,7 +809,11 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
             return
         index = int(job.payload.get("index", -1))
         if job.kind == "send_block":
-            if 0 <= index < len(flow.welcome):
+            if job.payload.get("chain"):
+                # Humanized sequence resuming after a timed gap: keep walking the blocks.
+                if 0 <= index < len(flow.welcome):
+                    await _continue_welcome(db, bot, lead, flow, index)
+            elif 0 <= index < len(flow.welcome):
                 await send_block(db, tg, bot, lead, flow.welcome[index])
         elif job.kind == "send_offer":
             await send_offer(db, tg, bot, lead, flow)
@@ -922,11 +978,18 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
         if chat.get("type") != "private" or not sender:
             return None
         if not text.startswith("/start"):
-            # Not a funnel command: capture it for the live-chat inbox and stop. The
-            # funnel itself only reacts to /start and button taps.
+            # Not a funnel command: capture it for the live-chat inbox. The funnel otherwise
+            # only reacts to /start and button taps — except a paused humanized sequence,
+            # which this reply resumes.
             lead = await upsert_lead(db, bot, sender, chat["id"])
             kind, file_id, body = _inbound_content(message)
             log_message(db, bot, lead, "in", kind, text=body, tg_file_id=file_id)
+            if lead.welcome_wait:
+                flow = await load_flow(db, bot, lead)
+                if flow is not None:
+                    _set_translate_target(flow, lead)
+                    if await resume_welcome(db, bot, lead, flow):
+                        return lead.id
             return None
         lead = await upsert_lead(db, bot, sender, chat["id"])
         log_message(db, bot, lead, "in", "text", text=text, unread=False)  # the conversation begins at /start
@@ -1320,56 +1383,64 @@ async def create_order(
     lead.stage = "pix"
     if order.gateway == "stripe":
         return await _send_stripe_checkout(db, tg, bot, lead, flow, order)
-    caption = render(flow.payment.pix_text, lead, order.offer_name, order.amount, bot)
+    pay = flow.payment
+    caption = render(pay.pix_text, lead, order.offer_name, order.amount, bot)
     code = order.pix_copy_paste or ""
     # Record the payment message (text + the PIX code) in the live-chat inbox.
     log_message(db, bot, lead, "out", "text",
                 text=((caption + "\n\n") if caption else "") + (f"PIX: {code}" if code else ""))
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": flow.payment.copy_button, "copy_text": {"text": code[:256]}}],
-            [{"text": flow.payment.check_button, "callback_data": f"chk:{order.id}"}],
-        ]
-    }
-    if len(code) > 256:  # copy_text is limited to 256 chars; fall back to tap-to-copy text
-        keyboard["inline_keyboard"].pop(0)
-    if flow.support_username:
-        keyboard["inline_keyboard"].append([button("💬 Suporte", url=f"https://t.me/{flow.support_username}")])
-    if flow.payment.layout == "steps":
-        # Instructions, the code in a copy box, then "check" first and "copy" below it.
-        rows = keyboard["inline_keyboard"]
-        if rows and "copy_text" in rows[0][0]:
-            rows[0], rows[1] = rows[1], rows[0]
-        try:
-            steps = render(flow.payment.steps_text, lead, order.offer_name, order.amount, bot)
+
+    # Optional warm-up message (media + text) sent right before the Pix itself.
+    if pay.intro_enabled and (pay.intro_text or pay.intro_media_ids):
+        intro_text = render(pay.intro_text, lead, order.offer_name, order.amount, bot)
+        intro_ids = list(pay.intro_media_ids)
+        await send_media_then_text(db, tg, bot, lead.chat_id, intro_ids, pay.intro_spoiler, intro_text, None)
+        first = await _first_media(db, bot, intro_ids)
+        log_message(db, bot, lead, "out", _log_kind(first), text=intro_text, media_id=first.id if first else None)
+
+    long_code = len(code) > 256  # copy_text is limited to 256 chars; fall back to tap-to-copy text
+    copy_row = [{"text": pay.copy_button, "copy_text": {"text": code[:256]}}]
+    check_row = [{"text": pay.check_button, "callback_data": f"chk:{order.id}"}]
+    support_rows = [[button("💬 Suporte", url=f"https://t.me/{flow.support_username}")]] if flow.support_username else []
+    show_steps, show_qr = pay.show_steps(), pay.show_qr()
+    try:
+        # Step-by-step: instructions, then the code in a copy box. The action buttons ride on
+        # this message only when the QR is not also being sent (otherwise the QR carries them).
+        if show_steps:
+            steps = render(pay.steps_text, lead, order.offer_name, order.amount, bot)
             if steps:
                 await tg.send_message(lead.chat_id, steps)
-            intro = html.escape(flow.payment.code_intro)
+            code_intro = html.escape(pay.code_intro)
             await tg.send_message(
-                lead.chat_id, (intro + "\n\n" if intro else "") + f'<pre><code class="language-copy">{html.escape(code)}</code></pre>'
+                lead.chat_id, (code_intro + "\n\n" if code_intro else "") + f'<pre><code class="language-copy">{html.escape(code)}</code></pre>'
             )
-            await tg.send_message(lead.chat_id, render(flow.payment.after_code_text, lead, order.offer_name, order.amount, bot) or "👇", keyboard)
-            return order
-        finally:
-            timings["telegram"] = time.perf_counter() - mark
-            logger.info("pix steps: %s", " ".join(f"{k}={v * 1000:.0f}ms" for k, v in timings.items()))
-    body = (caption + "\n\n" if caption else "") + f"<code>{html.escape(code)}</code>"
-    png = pix_qr_png(code, qr)
-    try:
-        if png:
-            try:
-                if len(body) <= 1024:  # QR, text, code and buttons in one message
-                    await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), body, keyboard)
-                    return order
-                await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), caption)
-                body = f"<code>{html.escape(code)}</code>"
-            except TelegramError:
-                pass
-        await tg.send_message(lead.chat_id, body, keyboard)
+            if not show_qr:
+                rows = [check_row] + ([] if long_code else [copy_row]) + support_rows
+                await tg.send_message(
+                    lead.chat_id,
+                    render(pay.after_code_text, lead, order.offer_name, order.amount, bot) or "👇",
+                    {"inline_keyboard": rows},
+                )
+        # QR image + text + code; carries the action buttons (last message of the step).
+        if show_qr:
+            rows = ([] if long_code else [copy_row]) + [check_row] + support_rows
+            keyboard = {"inline_keyboard": rows}
+            body = (caption + "\n\n" if caption else "") + f"<code>{html.escape(code)}</code>"
+            png = pix_qr_png(code, qr)
+            if png:
+                try:
+                    if len(body) <= 1024:  # QR, text, code and buttons in one message
+                        await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), body, keyboard)
+                        return order
+                    await tg.send_media("sendPhoto", "photo", lead.chat_id, InputFile("pix.png", png, "image/png"), caption)
+                    body = f"<code>{html.escape(code)}</code>"
+                except TelegramError:
+                    pass
+            await tg.send_message(lead.chat_id, body, keyboard)
         return order
     finally:
         timings["telegram"] = time.perf_counter() - mark
-        logger.info("pix steps: %s", " ".join(f"{k}={v * 1000:.0f}ms" for k, v in timings.items()))
+        logger.info("pix send: %s", " ".join(f"{k}={v * 1000:.0f}ms" for k, v in timings.items()))
 
 
 async def _send_stripe_checkout(
