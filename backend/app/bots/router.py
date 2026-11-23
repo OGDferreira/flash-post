@@ -591,7 +591,9 @@ async def export_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) ->
 @router.post("/flows/{flow_id}/import-code", dependencies=csrf)
 async def flow_import_code(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
     flow = await _exportable(db, flow_id, access)
-    return {"code": portable.make_code(flow.id), "valid_days": portable.CODE_TTL_SECONDS // 86400}
+    code = await portable.make_code(db, flow)
+    await db.commit()
+    return {"code": code, "valid_days": portable.CODE_TTL_SECONDS // 86400}
 
 
 @router.post("/flows/import", status_code=201, dependencies=csrf)

@@ -70,8 +70,29 @@ class CampaignPlan(_Model):
     button_style: ButtonStyle = "success"
 
 
+class CampaignDiscountedPlan(_Model):
+    """An existing funnel plan re-offered at a discount in the remarketing campaign.
+
+    The plan's own delivery (and duration) come from the funnel at send time, so the buyer
+    gets exactly the same access — only the price is lowered here.
+    """
+
+    plan_id: Annotated[str, Field(min_length=1, max_length=32)]
+    discount_type: Literal["percent", "fixed"] = "percent"
+    discount_value: Annotated[Decimal, Field(gt=0, le=Decimal("100000"), decimal_places=2)] = Decimal("10")
+    button_style: ButtonStyle = "success"
+
+    @model_validator(mode="after")
+    def _check(self) -> "CampaignDiscountedPlan":
+        if self.discount_type == "percent" and self.discount_value >= 100:
+            raise ValueError("O desconto em % precisa ser menor que 100.")
+        return self
+
+
 class CampaignOffer(_Model):
     plans: list[CampaignPlan] = Field(default_factory=list, max_length=10)
+    # Existing funnel plans re-offered with a discount (no new plan needed).
+    discounted_plans: list[CampaignDiscountedPlan] = Field(default_factory=list, max_length=10)
     order_bump: OrderBump | None = None
     redirect: LinkButton | None = None  # e.g. a free previews channel
 
@@ -81,6 +102,14 @@ class CampaignOffer(_Model):
         if self.order_bump is not None and self.order_bump.delivery is None:
             raise ValueError("Escolha a entrega do order bump da campanha.")
         return self
+
+
+def discounted_price(price: Decimal, item: CampaignDiscountedPlan) -> Decimal:
+    if item.discount_type == "percent":
+        out = price * (Decimal("100") - item.discount_value) / Decimal("100")
+    else:
+        out = price - item.discount_value
+    return max(out.quantize(Decimal("0.01")), Decimal("1.00"))  # SmokePay minimum
 
 
 class CampaignDefinition(_Model):
@@ -235,11 +264,23 @@ def _offer_id(campaign_id: uuid.UUID, index: int) -> str:
     return f"rm{campaign_id.hex[:12]}-{index}"
 
 
-def campaign_keyboard(campaign: TgCampaign, definition: CampaignDefinition, message: CampaignMessage) -> dict | None:
+def campaign_keyboard(
+    campaign: TgCampaign, definition: CampaignDefinition, message: CampaignMessage,
+    flow: "FlowDefinition | None" = None,
+) -> dict | None:
     rows = [
         [engine.button(f"{plan.name} · {engine.brl(plan.price)}", plan.button_style, callback_data=f"rmk:{campaign.id.hex}:{index}")]
         for index, plan in enumerate(definition.offer.plans)
     ]
+    # Existing funnel plans at a discount; priced from the live funnel plan.
+    if flow is not None:
+        for index, item in enumerate(definition.offer.discounted_plans):
+            plan = flow.plan(item.plan_id)
+            if plan is None:
+                continue
+            new_price = discounted_price(plan.price, item)
+            label = f"🔥 {plan.name} por {engine.brl(new_price)} (antes {engine.brl(plan.price)})"
+            rows.append([engine.button(label, item.button_style, callback_data=f"rmk:{campaign.id.hex}:e{index}")])
     rows += [[engine.button(item.label, url=str(item.url))] for item in message.buttons]
     if definition.offer.redirect:
         rows.append([engine.button(definition.offer.redirect.label, url=str(definition.offer.redirect.url))])
@@ -336,6 +377,15 @@ async def run_campaign_batch(db: AsyncSession, campaign_id: uuid.UUID, deadline:
         await _finish_campaign(db, campaign)
         await db.commit()
         return
+    # The funnel behind this campaign, so discounted existing plans can be priced/labelled.
+    flow_def: FlowDefinition | None = None
+    if definition.offer.discounted_plans and campaign.flow_id is not None:
+        flow_row = await db.get(TgFlow, campaign.flow_id)
+        if flow_row is not None:
+            try:
+                flow_def = FlowDefinition.model_validate(flow_row.definition)
+            except ValidationError:
+                flow_def = None
     bots: dict[uuid.UUID, tuple[TgBot, TelegramClient] | None] = {}
     for lead in leads:
         if time.monotonic() > deadline:
@@ -352,7 +402,7 @@ async def run_campaign_batch(db: AsyncSession, campaign_id: uuid.UUID, deadline:
             message = definition.messages[position % len(definition.messages)]
             await engine.send_media_then_text(
                 db, tg, bot, lead.chat_id, message.media_ids, message.spoiler,
-                engine.render(message.text, lead, bot=bot), campaign_keyboard(campaign, definition, message),
+                engine.render(message.text, lead, bot=bot), campaign_keyboard(campaign, definition, message, flow_def),
             )
             campaign.sent += 1
         except TelegramError as exc:
@@ -391,18 +441,41 @@ async def handle_campaign_tap(
     parts = data.split(":")
     bump_answer = parts[1] if parts[0] == "rmkb" and len(parts) == 4 else None
     hex_id, raw_index = (parts[2], parts[3]) if bump_answer else ((parts[1], parts[2]) if len(parts) == 3 else ("", ""))
+    existing = raw_index.startswith("e")  # "e<n>": a discounted existing funnel plan
     try:
         campaign = await db.get(TgCampaign, uuid.UUID(hex=hex_id))
-        index = int(raw_index)
         definition = CampaignDefinition.model_validate(campaign.definition) if campaign else None
     except (ValueError, ValidationError):
-        campaign, definition, index = None, None, -1
+        campaign, definition = None, None
+    try:
+        index = int(raw_index[1:] if existing else raw_index)
+    except ValueError:
+        index = -1
     # A partner's lead on the owner's shared funnel taps the owner's campaign in the partner's bot.
     reachable = campaign is not None and (
         campaign.workspace_id == bot.workspace_id
         or (lead.flow_id == campaign.flow_id and bot.workspace_id in await audience_workspaces(db, campaign.workspace_id, campaign.flow_id))
     )
-    if not reachable or definition is None or not 0 <= index < len(definition.offer.plans):
+    if not reachable or definition is None or index < 0:
+        await tg.answer_callback(callback_id, gone)
+        return None
+    if existing:
+        # Discounted existing funnel plan: price it off the live plan and reuse its delivery.
+        if not index < len(definition.offer.discounted_plans):
+            await tg.answer_callback(callback_id, gone)
+            return None
+        disc = definition.offer.discounted_plans[index]
+        base = flow.plan(disc.plan_id)
+        if base is None:
+            await tg.answer_callback(callback_id, gone)
+            return None
+        plan = Plan(id=base.id, name=base.name, price=discounted_price(base.price, disc),
+                    duration_days=base.duration_days, delivery=base.delivery)
+        await tg.answer_callback(callback_id, "Gerando seu Pix…")
+        await engine.create_order(db, tg, bot, lead, flow, plan, kind="remarketing",
+                                  offer_id=_offer_id(campaign.id, 1000 + index), retry=data)
+        return lead.id
+    if not index < len(definition.offer.plans):
         await tg.answer_callback(callback_id, gone)
         return None
     item = definition.offer.plans[index]
