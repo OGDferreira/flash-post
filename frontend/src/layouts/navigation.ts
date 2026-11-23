@@ -340,16 +340,14 @@ function buildNavigationFor(opts: {
   return { app, direct: [], flat: [], groups: [], admin };
 }
 
-// Shown only to the Super Admin (the platform's Meta app and the error log).
-export const SUPER_ADMIN_ONLY_ROUTES = new Set(["/feature/meta-apps", "/feature/error-logs"]);
+// Shown only to the Super Admin (the platform error log). Everyone manages their own Meta apps.
+export const SUPER_ADMIN_ONLY_ROUTES = new Set(["/feature/error-logs"]);
 
 export function buildNavigation(
   opts: Parameters<typeof buildNavigationFor>[0] & { platformAppBlocked?: boolean },
 ): NavModel {
   const model = buildNavigationFor(opts);
   if (opts.isSuperAdmin) return model;
-  // Users removed from the platform app manage their own Meta apps again.
-  const keep = (to: string) =>
-    !SUPER_ADMIN_ONLY_ROUTES.has(to) || (to === "/feature/meta-apps" && Boolean(opts.platformAppBlocked));
+  const keep = (to: string) => !SUPER_ADMIN_ONLY_ROUTES.has(to);
   return { ...model, direct: model.direct.filter(({ to }) => keep(to)), groups: only(model.groups, keep) };
 }
