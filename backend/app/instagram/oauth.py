@@ -14,8 +14,33 @@ INSTAGRAM_TOKEN_REFRESH_ENDPOINT = "https://graph.instagram.com/refresh_access_t
 INSTAGRAM_BASIC_PERMISSION = "instagram_business_basic"
 INSTAGRAM_PUBLISH_PERMISSION = "instagram_business_content_publish"
 INSTAGRAM_INSIGHTS_PERMISSION = "instagram_business_manage_insights"
+
+# Instagram API with Unified Login (Facebook Login for Business). The client logs in
+# through the Facebook dialog with a configuration (config_id), the code is exchanged
+# on graph.facebook.com, and every data call uses graph.facebook.com with the returned
+# Business Integration System User access token. See Meta's "Instagram API with Unified
+# Login" docs.
+FACEBOOK_GRAPH_ENDPOINT = "https://graph.facebook.com/v23.0"
+FACEBOOK_OAUTH_DIALOG_ENDPOINT = "https://www.facebook.com/v23.0/dialog/oauth"
+# Value stored in InstagramAccount.login_kind.
+LOGIN_KIND_INSTAGRAM = "instagram_login"
+LOGIN_KIND_UNIFIED = "unified_login"
+# Value stored in InstagramAppCredential.credential_kind for Unified Login apps.
+UNIFIED_CREDENTIAL_KIND = "instagram_unified_login"
+# A system-user token configured to never expire still needs a non-null
+# token_expires_at. Store a far-future sentinel so the refresh sweep never picks it up.
+NON_EXPIRING_TOKEN_SENTINEL = timedelta(days=365 * 50)
 # Metrics that count unique accounts: a period total is not the sum of days.
 _NON_ADDITIVE_METRICS = frozenset({"reach", "accounts_engaged"})
+
+
+def graph_base_for(login_kind: str | None) -> str:
+    """Graph API base URL for an account's login kind."""
+    return (
+        FACEBOOK_GRAPH_ENDPOINT
+        if login_kind == LOGIN_KIND_UNIFIED
+        else INSTAGRAM_GRAPH_ENDPOINT
+    )
 
 
 class InstagramOAuthError(ValueError):
@@ -42,6 +67,174 @@ def build_authorization_url(
         "enable_fb_login": "false",
     }
     return f"{INSTAGRAM_AUTHORIZATION_ENDPOINT}?{urlencode(parameters)}"
+
+
+def build_unified_authorization_url(
+    meta_app_id: str,
+    redirect_uri: str,
+    state: str,
+    config_id: str,
+) -> str:
+    """Facebook Login for Business dialog URL for the Instagram API with Unified Login.
+
+    The configuration (``config_id``) carries the permissions and assets, so no scope
+    list is sent. ``client_id`` is the Meta app ID (not an Instagram app ID).
+    """
+    parameters = {
+        "client_id": meta_app_id,
+        "config_id": config_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "state": state,
+    }
+    return f"{FACEBOOK_OAUTH_DIALOG_ENDPOINT}?{urlencode(parameters)}"
+
+
+def _unified_account(entry: object) -> dict[str, object] | None:
+    if not isinstance(entry, dict):
+        return None
+    instagram_user_id = entry.get("id")
+    username = entry.get("username")
+    if (
+        not isinstance(instagram_user_id, (str, int))
+        or not str(instagram_user_id)
+        or not isinstance(username, str)
+        or not username.strip()
+        or len(username) > 100
+    ):
+        return None
+    return {
+        "instagram_user_id": str(instagram_user_id),
+        "username": username.strip(),
+        "profile_picture_url": None,
+        "follower_count": None,
+        "media_count": None,
+    }
+
+
+async def exchange_unified_authorization_code(
+    code: str,
+    redirect_uri: str,
+    meta_app_id: str,
+    meta_app_secret: str,
+) -> tuple[str, datetime, str | None, list[dict[str, object]]]:
+    """Exchange a Unified Login code and resolve every shared Instagram account.
+
+    Returns ``(access_token, token_expires_at, client_business_id, accounts)``. One
+    Business Integration System User token covers every account the client shared, so
+    the caller stores the same token on each. ``token_expires_at`` is a far-future
+    sentinel when the configuration issues a non-expiring token.
+    """
+    timeout = httpx.Timeout(15.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        token_response = await client.get(
+            f"{FACEBOOK_GRAPH_ENDPOINT}/oauth/access_token",
+            params={
+                "client_id": meta_app_id,
+                "client_secret": meta_app_secret,
+                "redirect_uri": redirect_uri,
+                "code": code,
+            },
+        )
+        token_response.raise_for_status()
+        token_body = _object(
+            token_response.json(), "Meta returned an invalid token response."
+        )
+        access_token = token_body.get("access_token")
+        expires_in = token_body.get("expires_in")
+        if not isinstance(access_token, str) or not access_token:
+            raise InstagramOAuthError("Meta did not return an access token.")
+
+        # /me on a system-user token is the business integration system user, not the
+        # Instagram account; it carries the client business ID for token management.
+        business_response = await client.get(
+            f"{FACEBOOK_GRAPH_ENDPOINT}/me",
+            params={"fields": "client_business_id", "access_token": access_token},
+        )
+        business_response.raise_for_status()
+        business_body = _object(
+            business_response.json(), "Meta returned an invalid business response."
+        )
+        client_business_id = business_body.get("client_business_id")
+        if not isinstance(client_business_id, str) or not client_business_id:
+            client_business_id = None
+
+        assigned_response = await client.get(
+            f"{FACEBOOK_GRAPH_ENDPOINT}/me/assigned_instagram_accounts",
+            params={"fields": "id,username", "access_token": access_token},
+        )
+        assigned_response.raise_for_status()
+        assigned_body = _object(
+            assigned_response.json(),
+            "Meta returned an invalid Instagram accounts response.",
+        )
+        data = assigned_body.get("data")
+        if not isinstance(data, list) or not data:
+            raise InstagramOAuthError(
+                "Nenhuma conta do Instagram foi compartilhada com o app."
+            )
+
+        accounts: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for entry in data:
+            account = _unified_account(entry)
+            if account is None or account["instagram_user_id"] in seen:
+                continue
+            seen.add(str(account["instagram_user_id"]))
+            try:
+                profile_response = await client.get(
+                    f"{FACEBOOK_GRAPH_ENDPOINT}/{account['instagram_user_id']}",
+                    params={
+                        "fields": (
+                            "username,profile_picture_url,followers_count,media_count"
+                        ),
+                        "access_token": access_token,
+                    },
+                )
+            except httpx.HTTPError:
+                profile_response = None
+            if profile_response is not None and profile_response.status_code == 200:
+                try:
+                    profile = _object(profile_response.json(), "")
+                except (ValueError, InstagramOAuthError):
+                    profile = {}
+                picture = profile.get("profile_picture_url")
+                if (
+                    isinstance(picture, str)
+                    and picture.startswith("https://")
+                    and len(picture) <= 2048
+                ):
+                    account["profile_picture_url"] = picture
+                followers = profile.get("followers_count")
+                if (
+                    isinstance(followers, int)
+                    and not isinstance(followers, bool)
+                    and followers >= 0
+                ):
+                    account["follower_count"] = followers
+                media = profile.get("media_count")
+                if (
+                    isinstance(media, int)
+                    and not isinstance(media, bool)
+                    and media >= 0
+                ):
+                    account["media_count"] = media
+                username = profile.get("username")
+                if isinstance(username, str) and username.strip() and len(username) <= 100:
+                    account["username"] = username.strip()
+            accounts.append(account)
+
+    if not accounts:
+        raise InstagramOAuthError("Meta returned no usable Instagram accounts.")
+    if (
+        isinstance(expires_in, int)
+        and not isinstance(expires_in, bool)
+        and expires_in > 0
+    ):
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+    else:
+        expires_at = datetime.now(timezone.utc) + NON_EXPIRING_TOKEN_SENTINEL
+    return access_token, expires_at, client_business_id, accounts
 
 
 def _object(payload: object, message: str) -> dict[str, object]:
@@ -222,13 +415,22 @@ async def refresh_instagram_long_lived_token(
 
 async def fetch_instagram_profile_metrics(
     access_token: str,
+    *,
+    node: str = "me",
+    graph_base: str = INSTAGRAM_GRAPH_ENDPOINT,
 ) -> tuple[int | None, int | None, int | None]:
+    # On a Unified Login system-user token "/me" is the system user, not the Instagram
+    # account, so callers pass the Instagram account ID as ``node`` with the Facebook
+    # Graph base; "user_id" is only a valid field on the "/me" node.
+    fields = "followers_count,follows_count,media_count"
+    if node == "me":
+        fields = "user_id," + fields
     timeout = httpx.Timeout(15.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(
-            f"{INSTAGRAM_GRAPH_ENDPOINT}/me",
+            f"{graph_base}/{node}",
             params={
-                "fields": "user_id,followers_count,follows_count,media_count",
+                "fields": fields,
                 "access_token": access_token,
             },
         )
@@ -321,6 +523,8 @@ async def fetch_instagram_views(
     access_token: str,
     since: datetime,
     until: datetime,
+    *,
+    graph_base: str = INSTAGRAM_GRAPH_ENDPOINT,
 ) -> int:
     timeout = httpx.Timeout(15.0)
     start_timestamp = int(since.astimezone(timezone.utc).timestamp())
@@ -329,7 +533,7 @@ async def fetch_instagram_views(
     )
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(
-            f"{INSTAGRAM_GRAPH_ENDPOINT}/{instagram_user_id}/insights",
+            f"{graph_base}/{instagram_user_id}/insights",
             params={
                 "metric": "views",
                 "period": "day",
@@ -368,6 +572,8 @@ async def fetch_instagram_media_views(
     access_token: str,
     since: datetime,
     until: datetime,
+    *,
+    graph_base: str = INSTAGRAM_GRAPH_ENDPOINT,
 ) -> tuple[int, int, list[str]]:
     start = since.astimezone(timezone.utc)
     end = until.astimezone(timezone.utc)
@@ -387,7 +593,7 @@ async def fetch_instagram_media_views(
             if cursor:
                 params["after"] = cursor
             response = await client.get(
-                f"{INSTAGRAM_GRAPH_ENDPOINT}/{instagram_user_id}/media",
+                f"{graph_base}/{instagram_user_id}/media",
                 params=params,
             )
             _raise_for_insights_response(response)
@@ -449,7 +655,7 @@ async def fetch_instagram_media_views(
             async with semaphore:
                 try:
                     media_response = await client.get(
-                        f"{INSTAGRAM_GRAPH_ENDPOINT}/{media_id}/insights",
+                        f"{graph_base}/{media_id}/insights",
                         params={
                             "metric": "views",
                             "access_token": access_token,
@@ -526,6 +732,8 @@ async def fetch_instagram_account_insights(
     access_token: str,
     since: datetime,
     until: datetime,
+    *,
+    graph_base: str = INSTAGRAM_GRAPH_ENDPOINT,
 ) -> tuple[dict[str, int | None], dict[str, str]]:
     supported_metric_names = (
         "reach",
@@ -565,7 +773,7 @@ async def fetch_instagram_account_insights(
             async with semaphore:
                 try:
                     response = await client.get(
-                        f"{INSTAGRAM_GRAPH_ENDPOINT}/{instagram_user_id}/insights",
+                        f"{graph_base}/{instagram_user_id}/insights",
                         params={
                             "metric": metric_name,
                             "period": "day",
@@ -701,7 +909,16 @@ class InstagramInsightsPermissionError(InstagramOAuthError):
         )
 
 
-async def revoke_instagram_permissions(access_token: str) -> bool:
+async def revoke_instagram_permissions(
+    access_token: str,
+    *,
+    login_kind: str = LOGIN_KIND_INSTAGRAM,
+) -> bool:
+    # A Unified Login system-user token is shared across every Instagram account the
+    # client connected, so revoking it would disconnect the others too. Disconnecting
+    # one account only drops the stored token locally; nothing is revoked at Meta.
+    if login_kind == LOGIN_KIND_UNIFIED:
+        return False
     timeout = httpx.Timeout(15.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.delete(

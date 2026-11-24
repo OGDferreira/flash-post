@@ -26,7 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import decrypt_value
 from app.core.security import WorkspaceRole
-from app.instagram.oauth import fetch_instagram_profile_metrics
+from app.instagram.oauth import (
+    LOGIN_KIND_UNIFIED,
+    fetch_instagram_profile_metrics,
+    graph_base_for,
+)
 from app.models import (
     AccountFollowerMilestone,
     DailyViewsGoal,
@@ -322,7 +326,15 @@ async def _refresh_followers(db: AsyncSession, now: datetime) -> None:
     for account in accounts:
         try:
             token = decrypt_value(account.encrypted_access_token or "")
-            followers, _follows, media = await fetch_instagram_profile_metrics(token)
+            followers, _follows, media = await fetch_instagram_profile_metrics(
+                token,
+                node=(
+                    account.instagram_user_id
+                    if account.login_kind == LOGIN_KIND_UNIFIED
+                    else "me"
+                ),
+                graph_base=graph_base_for(account.login_kind),
+            )
         except Exception:  # noqa: BLE001 - one account failing must not stop the rest
             continue
         if followers is not None:

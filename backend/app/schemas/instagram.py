@@ -33,6 +33,12 @@ class InstagramMetaAppCreateRequest(BaseModel):
     display_name: Annotated[str, Field(min_length=1, max_length=120)]
     app_id: Annotated[str, Field(min_length=1, max_length=64, pattern=r"^\d+$")]
     app_secret: Annotated[str, Field(min_length=1, max_length=512)]
+    # "instagram_business_login" = Instagram API with Instagram Login (Instagram App ID).
+    # "instagram_unified_login" = Instagram API with Unified Login (Meta App ID + config_id).
+    credential_kind: Literal[
+        "instagram_business_login", "instagram_unified_login"
+    ] = "instagram_business_login"
+    config_id: Annotated[str | None, Field(max_length=64)] = None
 
     @field_validator("display_name")
     @classmethod
@@ -55,10 +61,28 @@ class InstagramMetaAppCreateRequest(BaseModel):
             raise ValueError("Enter the Instagram App Secret.")
         return normalized
 
+    @field_validator("config_id", mode="before")
+    @classmethod
+    def strip_config_id(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def require_config_for_unified(self) -> "InstagramMetaAppCreateRequest":
+        if self.credential_kind == "instagram_unified_login":
+            if not self.config_id or not self.config_id.isdigit():
+                raise ValueError(
+                    "Informe o ID da configuração (config_id) do Login Unificado."
+                )
+        else:
+            # config_id only applies to Unified Login.
+            self.config_id = None
+        return self
+
 
 class InstagramMetaAppUpdateRequest(BaseModel):
     display_name: Annotated[str | None, Field(min_length=1, max_length=120)] = None
     app_secret: Annotated[str | None, Field(min_length=1, max_length=512)] = None
+    config_id: Annotated[str | None, Field(max_length=64)] = None
 
     @field_validator("display_name")
     @classmethod
@@ -80,10 +104,23 @@ class InstagramMetaAppUpdateRequest(BaseModel):
             raise ValueError("Enter the Instagram App Secret.")
         return normalized
 
+    @field_validator("config_id", mode="before")
+    @classmethod
+    def strip_config_id(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
     @model_validator(mode="after")
     def require_update_value(self) -> "InstagramMetaAppUpdateRequest":
-        if self.display_name is None and self.app_secret is None:
-            raise ValueError("Provide a name or a new Instagram App Secret.")
+        if (
+            self.display_name is None
+            and self.app_secret is None
+            and self.config_id is None
+        ):
+            raise ValueError(
+                "Provide a name, a new Instagram App Secret or a config_id."
+            )
+        if self.config_id is not None and not self.config_id.isdigit():
+            raise ValueError("O config_id deve conter apenas números.")
         return self
 
 
@@ -92,7 +129,10 @@ class InstagramMetaAppResponse(BaseModel):
     display_name: str
     meta_app_name: str
     app_id: str
-    credential_kind: Literal["legacy", "instagram_business_login"]
+    credential_kind: Literal[
+        "legacy", "instagram_business_login", "instagram_unified_login"
+    ]
+    config_id: str | None = None
     category: str | None
     app_link: str | None
     is_selected: bool

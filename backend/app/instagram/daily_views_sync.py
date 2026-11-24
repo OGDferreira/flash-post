@@ -21,6 +21,7 @@ from app.instagram.oauth import (
     InstagramInsightsPermissionError,
     InstagramOAuthError,
     fetch_instagram_views,
+    graph_base_for,
     instagram_api_error_detail,
 )
 from app.models import InstagramAccount, InstagramAccountDailyViews
@@ -70,7 +71,13 @@ async def sync_account_daily_views(
             if start < end:
                 calls += 1
                 try:
-                    views = await fetch_instagram_views(account.instagram_user_id, token, start, end)
+                    views = await fetch_instagram_views(
+                        account.instagram_user_id,
+                        token,
+                        start,
+                        end,
+                        graph_base=graph_base_for(account.login_kind),
+                    )
                 except InstagramInsightsPermissionError:
                     account.insights_sync_error = instagram_api_error_detail(InstagramInsightsPermissionError())
                     break

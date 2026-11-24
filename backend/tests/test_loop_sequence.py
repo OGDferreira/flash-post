@@ -307,11 +307,11 @@ async def test_lost_publish_response_is_reconciled_without_publishing_twice(
 
     existing_publishes: list[str] = []
 
-    async def status(_user_id, container_id, _token):
+    async def status(_user_id, container_id, _token, **_kwargs):
         assert container_id == "container-777"
         return container_status
 
-    async def publish_existing(_user_id, container_id, _token):
+    async def publish_existing(_user_id, container_id, _token, **_kwargs):
         existing_publishes.append(container_id)
         return "ig-media-1"
 
@@ -367,7 +367,7 @@ async def test_unresolvable_outcome_blocks_the_account_for_review(
     job.next_retry_at = requested
     await db_session.commit()
 
-    async def unreachable(*_args):
+    async def unreachable(*_args, **_kwargs):
         return None
 
     monkeypatch.setattr(loop_scheduler, "fetch_container_status", unreachable)

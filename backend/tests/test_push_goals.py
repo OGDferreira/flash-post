@@ -225,7 +225,7 @@ async def test_goal_tick_notifies_once_per_day_and_target_in_goal_time_zone(
     measured_accounts: list[str] = []
     views_by_account = {"178400000101": 1200, "178400000202": 99999}
 
-    async def fake_views(instagram_user_id, _token, since, until):
+    async def fake_views(instagram_user_id, _token, since, until, **_kwargs):
         measured_accounts.append(instagram_user_id)
         assert since < until
         return views_by_account[instagram_user_id]
@@ -277,7 +277,7 @@ async def test_goal_tick_retries_when_push_delivery_fails_transiently(
     db_session.add(DailyViewsGoal(workspace_id=workspace.id, user_id=owner_user.id, target_views=10))
     await db_session.commit()
 
-    async def fake_views(*_args):
+    async def fake_views(*_args, **_kwargs):
         return 20
 
     outcomes = [PushResult(ok=False, gone=False, status_code=503), PushResult(ok=True, gone=False, status_code=201)]
@@ -312,7 +312,7 @@ async def test_milestones_push_highest_new_threshold_once_per_day(
     await db_session.commit()
     views = {"value": 120_000}
 
-    async def fake_views(_ig, _token, _since, _until):
+    async def fake_views(_ig, _token, _since, _until, **_kwargs):
         return views["value"]
 
     sent: list[dict] = []
@@ -363,7 +363,7 @@ async def test_follower_milestone_baseline_then_crossing(
         sent.append(kwargs["payload"])
         return PushResult(ok=True, gone=False, status_code=201)
 
-    async def fake_views(*_args):
+    async def fake_views(*_args, **_kwargs):
         return 0
 
     monkeypatch.setattr(goals_module, "fetch_instagram_views", fake_views)
