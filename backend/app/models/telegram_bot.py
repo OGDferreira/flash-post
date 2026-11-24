@@ -116,6 +116,32 @@ class TgBot(Base):
     )
 
 
+class TgFlowImportCode(Base):
+    """Short, expiring code (e.g. ``FBF-ABC-XYZ``) that copies a funnel to another user.
+
+    Replaces the old long signed token: the code here is random and the mapping to the
+    funnel is stored, so the code stays short. Legacy long codes still import via the
+    signed-token fallback until they expire.
+    """
+
+    __tablename__ = "tg_flow_import_codes"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_tg_flow_import_codes_code"),
+        Index("ix_tg_flow_import_codes_flow", "flow_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = _workspace_fk()
+    flow_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="CASCADE"), nullable=False
+    )
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class TgGroup(Base):
     """A group/channel where a bot is a member; filled from my_chat_member updates."""
 
@@ -191,6 +217,9 @@ class TgLead(Base):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     stage: Mapped[str] = mapped_column(String(32), nullable=False, default="new", server_default="new")
+    # Humanized conversation: when the welcome sequence is paused waiting for the lead to
+    # reply, holds {"next": <index of the next welcome block>}; None when not paused.
+    welcome_wait: Mapped[dict | None] = mapped_column(JSON)
     # Came in through a funnel whose owner takes 100% of the sales: never shown to the seller.
     seller_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(

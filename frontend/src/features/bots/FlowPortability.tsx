@@ -33,7 +33,7 @@ export function ImportFlowModal({ open, onClose, onDone }: { open: boolean; onCl
       onClose();
     },
   });
-  const ready = mode === "file" ? Boolean(file) : code.trim().length >= 10;
+  const ready = mode === "file" ? Boolean(file) : code.trim().length >= 6;
   return (
     <Modal
       busy={run.isPending}
@@ -70,7 +70,7 @@ export function ImportFlowModal({ open, onClose, onDone }: { open: boolean; onCl
         ) : (
           <label className="grid gap-1.5 text-sm text-fg-2">
             Código de importação
-            <textarea className="field min-h-24 font-mono text-xs" onChange={(event) => setCode(event.target.value)} value={code} />
+            <input className="field font-mono" onChange={(event) => setCode(event.target.value)} placeholder="FBF-XXX-XXX" value={code} />
           </label>
         )}
         <p className="text-xs text-muted">

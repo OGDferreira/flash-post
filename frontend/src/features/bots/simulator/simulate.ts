@@ -119,9 +119,12 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
   };
 
   const welcome = () => {
-    for (const block of flow.welcome) {
-      if (block.delay_seconds > 0) note(`⏱ ${block.delay_seconds}s depois`);
-      bot({ text: fill(block.text), media: block.media_ids, spoiler: block.spoiler });
+    if (flow.welcome_enabled !== false) {
+      for (const block of flow.welcome) {
+        if (block.wait_for_reply) note("💬 aguarda o lead responder");
+        else if (block.delay_seconds > 0) note(`⏱ ${block.delay_seconds}s depois`);
+        bot({ text: fill(block.text), media: block.media_ids, spoiler: block.spoiler });
+      }
     }
     offer();
   };
@@ -132,15 +135,27 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
     st.generated = true;
     const vars = { "{plano}": next.name, "{valor}": brl(next.amount) };
     const p = flow.payment;
-    if (p.layout === "steps") {
+    // Optional warm-up message (media + text) before the Pix.
+    if (p.intro_enabled && (p.intro_text || (p.intro_media_ids?.length ?? 0) > 0)) {
+      bot({ text: fill(p.intro_text, vars), media: p.intro_media_ids ?? [], spoiler: p.intro_spoiler });
+    }
+    let showQr = p.qr_enabled ?? ((p.layout ?? "qr") === "qr");
+    const showSteps = p.steps_enabled ?? ((p.layout ?? "qr") === "steps");
+    if (!showQr && !showSteps) showQr = true;
+    if (showSteps) {
       const steps = fill(p.steps_text, vars);
       if (steps) bot({ text: steps });
-      bot({ text: p.code_intro || "", code: SIM_PIX_CODE });
-      bot({
-        text: fill(p.after_code_text, vars) || "👇",
-        buttons: [[{ label: p.check_button, action: "check" }], [{ label: p.copy_button, copy: true }], ...support()],
-      });
-    } else {
+      if (showQr) {
+        bot({ text: p.code_intro || "", code: SIM_PIX_CODE }); // QR message carries the buttons
+      } else {
+        bot({ text: p.code_intro || "", code: SIM_PIX_CODE });
+        bot({
+          text: fill(p.after_code_text, vars) || "👇",
+          buttons: [[{ label: p.check_button, action: "check" }], [{ label: p.copy_button, copy: true }], ...support()],
+        });
+      }
+    }
+    if (showQr) {
       bot({
         qr: true,
         text: fill(p.pix_text, vars),

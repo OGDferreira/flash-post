@@ -8,6 +8,8 @@ export type Block = {
   media_ids: string[];
   spoiler: boolean;
   delay_seconds: number;
+  /** Humanized conversation: wait for the lead to reply before sending this block. */
+  wait_for_reply?: boolean;
 };
 
 export type Delivery = {
@@ -136,6 +138,8 @@ export type FlowDefinition = {
   version: 1;
   age_gate: { enabled: boolean; text: string; button: string };
   international?: International;
+  /** "Conversa humanizada" master switch for the welcome sequence (default on). */
+  welcome_enabled?: boolean;
   welcome: Block[];
   offer: Offer;
   plans: Plan[];
@@ -150,11 +154,19 @@ export type FlowDefinition = {
      *  (skipped when an upsell follows). */
     approved_enabled?: boolean | null;
     expired_text: string;
-    /** "qr": QR + text + code in one message; "steps": instructions, copy box, buttons. */
+    /** Legacy single choice; folded on load into qr_enabled/steps_enabled. */
     layout?: "qr" | "steps";
+    /** Both can be on at the same time. null/undefined on both = derive from layout. */
+    qr_enabled?: boolean | null;
+    steps_enabled?: boolean | null;
     steps_text?: string;
     code_intro?: string;
     after_code_text?: string;
+    /** Optional message (media + text) sent right before the Pix. */
+    intro_enabled?: boolean;
+    intro_text?: string | null;
+    intro_media_ids?: string[];
+    intro_spoiler?: boolean;
   };
   default_delivery?: Delivery | null;
   order_bump?: OrderBump | null;
@@ -168,6 +180,8 @@ export type FlowDefinition = {
   /** Started and never generated a PIX. */
   downsells_no_pix?: DownsellStep[] | null;
   support_username?: string | null;
+  /** @ do bot no Telegram mostrado no teste do funil (abre t.me/<@>). */
+  bot_handle?: string | null;
 };
 
 export type Flow = {
@@ -340,11 +354,18 @@ export type CampaignPeriod = "total" | "today" | "yesterday" | "7d" | "30d" | "c
 
 export type CampaignMessage = { text: string; media_ids: string[]; spoiler: boolean; buttons: LinkButton[] };
 export type CampaignPlan = { name: string; price: string; duration_days: number | null; delivery: Delivery | null; button_style: ButtonStyle };
+/** An existing funnel plan re-offered at a discount in the campaign. */
+export type CampaignDiscountedPlan = {
+  plan_id: string;
+  discount_type: "percent" | "fixed";
+  discount_value: string;
+  button_style: ButtonStyle;
+};
 
 export type CampaignDefinition = {
   audience: { target: CampaignTarget; period: CampaignPeriod; start?: string | null; end?: string | null };
   messages: CampaignMessage[];
-  offer: { plans: CampaignPlan[]; order_bump: OrderBump | null; redirect: LinkButton | null };
+  offer: { plans: CampaignPlan[]; discounted_plans?: CampaignDiscountedPlan[]; order_bump: OrderBump | null; redirect: LinkButton | null };
 };
 
 export type RecurrenceKind = "daily" | "hours" | "weekdays";
@@ -391,6 +412,6 @@ export function emptyCampaignDefinition(): CampaignDefinition {
   return {
     audience: { target: "not_bought", period: "total", start: null, end: null },
     messages: [{ text: "", media_ids: [], spoiler: false, buttons: [] }],
-    offer: { plans: [], order_bump: null, redirect: null },
+    offer: { plans: [], discounted_plans: [], order_bump: null, redirect: null },
   };
 }

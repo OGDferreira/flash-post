@@ -61,7 +61,8 @@ function Media({ id, spoiler }: { id: string; spoiler?: boolean }) {
       {item?.kind === "audio" ? (
         <div className="grid size-full place-items-center text-[11px] text-white/70">🎤 áudio</div>
       ) : url && item?.kind === "video" ? (
-        <video className={`size-full object-cover ${blur}`} muted playsInline preload="metadata" src={`${url}#t=0.5`} />
+        // Autoplay muted + loop = a GIF-like animated preview; the frame itself is the thumbnail.
+        <video autoPlay className={`size-full object-cover ${blur}`} loop muted playsInline preload="metadata" src={`${url}#t=0.1`} />
       ) : url ? (
         <img alt="" className={`size-full object-cover ${blur}`} loading="lazy" src={url} />
       ) : (
@@ -165,13 +166,25 @@ export function FlowSimulator({ flow, onClose }: { flow: FlowDefinition; onClose
   }, [toast]);
 
   const { controls } = result;
+  const handle = (flow.bot_handle ?? "").replace(/^@/, "");
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-line bg-[#0e1621] shadow-2xl">
       <header className="flex items-center gap-2 border-b border-white/10 bg-[#17212b] px-3 py-2.5 text-white">
         <span className="grid size-9 place-items-center rounded-full bg-[#3390ec] text-sm font-bold">B</span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">Teste do funil</p>
-          <p className="text-[11px] text-white/60">simulação · nada é cobrado nem enviado</p>
+          {handle ? (
+            <a
+              className="inline-flex items-center gap-1 text-[11px] text-[#6ab2f2] hover:underline"
+              href={`https://t.me/${handle}`}
+              rel="noreferrer"
+              target="_blank"
+            >
+              @{handle} <ExternalLink size={10} />
+            </a>
+          ) : (
+            <p className="text-[11px] text-white/60">simulação · nada é cobrado nem enviado</p>
+          )}
         </div>
         <button
           aria-label="Reiniciar o teste"

@@ -161,9 +161,11 @@ export function MetaAppsPage() {
             }`}
             role="status"
           >
-            {metaApps.data.platform.available
-              ? `App da plataforma ativo (App ID ${metaApps.data.platform.app_id ?? "—"}): todos os usuários conectam por ele, exceto quem você bloquear em Usuários.`
-              : "App da plataforma não configurado: defina IG_APP_ID e IG_APP_SECRET no Render. Até lá, cada workspace usa o próprio app."}
+            {!metaApps.data.platform.available
+              ? "App da plataforma não configurado: defina IG_APP_ID e IG_APP_SECRET no servidor. Até lá, cada workspace usa o próprio app."
+              : metaApps.data.platform.app_id
+                ? `App da plataforma ativo (App ID ${metaApps.data.platform.app_id}): todos conectam por ele ou pelo próprio app, exceto quem você bloquear em Usuários.`
+                : "Ao conectar uma conta você pode usar o app do FlashPost (em um toque) ou cadastrar aqui o seu próprio app Meta."}
           </div>
         )}
         <MetaSetupModal callbackUrl={metaApps.data?.callback_url} onClose={() => setSetupOpen(false)} open={setupOpen} />

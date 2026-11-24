@@ -1664,10 +1664,13 @@ async def test_platform_app_does_not_hide_own_apps_from_regular_users(
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
 
-    # a regular OWNER manages their own apps and the platform one-tap is not offered to them
+    # a regular OWNER manages their own apps AND is offered the platform (FlashPost) app too,
+    # but never sees the platform app's raw id
     apps = (await client.get("/api/instagram/apps")).json()
     assert apps["can_manage"] is True
-    assert apps["platform"]["available"] is False
+    assert apps["platform"]["available"] is True
+    assert apps["platform"]["blocked"] is False
+    assert apps["platform"]["app_id"] is None
     created = await client.post(
         "/api/instagram/apps", headers={"X-CSRF-Token": token},
         json={"display_name": "Meu app", "app_id": "5550000000000001", "app_secret": "owner-app-secret"},
@@ -1693,6 +1696,49 @@ async def test_platform_app_does_not_hide_own_apps_from_regular_users(
     )
     assert account is not None and account.app_credential_id is not None
     assert decrypt_value(account.encrypted_access_token) == "owner-token"
+
+
+@pytest.mark.anyio
+async def test_regular_owner_can_connect_with_the_platform_app(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # With use_platform the FlashPost app connects the account for any owner, using the
+    # platform credentials (not a workspace app).
+    settings = Settings(
+        public_base_url="http://testserver",
+        master_encryption_key=SecretStr(os.environ["MASTER_ENCRYPTION_KEY"]),
+        ig_app_id="1767450201069461",
+        ig_app_secret=SecretStr("platform-app-secret"),
+        _env_file=None,
+    )
+
+    async def fake_exchange(code: str, _redirect_uri: str, app_id: str, app_secret: str):
+        assert (app_id, app_secret) == ("1767450201069461", "platform-app-secret")
+        return ("17841000000000777", "via_flashpost", None, 10, 2, "platform-token",
+                datetime.now(timezone.utc) + timedelta(days=59))
+
+    monkeypatch.setattr(instagram_router, "get_settings", lambda: settings)
+    monkeypatch.setattr(instagram_router, "exchange_instagram_authorization_code", fake_exchange)
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+
+    start = await client.post(
+        "/api/instagram/connect", params={"use_platform": "true"}, headers={"X-CSRF-Token": token}
+    )
+    assert start.status_code == 200, start.text
+    query = parse_qs(urlparse(start.json()["authorization_url"]).query)
+    assert query["client_id"] == ["1767450201069461"]
+    state = query["state"][0]
+    callback = await client.get("/api/instagram/callback", params={"code": "c", "state": state})
+    assert callback.status_code == 303 and "instagram=connected" in callback.headers["location"]
+    account = await db_session.scalar(
+        select(InstagramAccount).where(InstagramAccount.instagram_user_id == "17841000000000777")
+    )
+    assert account is not None
+    assert decrypt_value(account.encrypted_access_token) == "platform-token"
 
 
 @pytest.mark.anyio

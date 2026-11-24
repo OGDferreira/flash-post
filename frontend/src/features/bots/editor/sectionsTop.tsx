@@ -121,6 +121,16 @@ export function BotsSection({ flowId, draft, set }: SectionProps) {
           onChange={(event) => set({ support_username: event.target.value.replace(/[^A-Za-z0-9_]/g, "").slice(0, 32) || null })}
         />
       </Panel>
+
+      <Panel icon={<MessageSquare size={18} />} title="@ do bot (opcional)" description="Aparece como link no teste do funil e abre a conversa do bot no Telegram (t.me/).">
+        <input
+          className="field"
+          maxLength={33}
+          placeholder="@seu_bot"
+          value={draft.bot_handle ? `@${draft.bot_handle.replace(/^@/, "")}` : ""}
+          onChange={(event) => set({ bot_handle: event.target.value.replace(/[^A-Za-z0-9_]/g, "").slice(0, 32) || null })}
+        />
+      </Panel>
       <ConnectBotModal
         defaultFlowId={flowId}
         flows={flows.data?.flows ?? []}
@@ -281,10 +291,24 @@ export function WelcomeSection({ draft, set }: SectionProps) {
       </Panel>
 
       <Panel
-        title="Mensagens antes da boas-vindas (opcional)"
-        description="Sequência enviada antes, com espera entre cada uma, para simular uma conversa."
-        aside={<span className="text-xs text-muted">{draft.welcome.length}/30</span>}
+        title="Conversa humanizada (opcional)"
+        description="Sequência enviada antes da boas-vindas, com espera ou aguardando a resposta do lead entre cada mensagem."
+        aside={
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted">{draft.welcome.length}/30</span>
+            <Switch
+              checked={draft.welcome_enabled !== false}
+              label="Conversa humanizada"
+              onChange={(welcome_enabled) => set({ welcome_enabled })}
+            />
+          </div>
+        }
       >
+        {draft.welcome_enabled === false && draft.welcome.length > 0 && (
+          <p className="rounded-lg border border-line-soft bg-well px-3 py-2 text-xs text-muted">
+            Desligada: estas mensagens ficam salvas, mas o bot envia a boas-vindas direto. Ligue para usá-las.
+          </p>
+        )}
         <div className="space-y-2">
           {draft.welcome.map((block, index) => {
             const meta = blockTypes.find((item) => item.value === block.type)!;
@@ -294,7 +318,7 @@ export function WelcomeSection({ draft, set }: SectionProps) {
                 open={openBlock === index}
                 onToggle={() => setOpenBlock(openBlock === index ? null : index)}
                 title={`${index + 1}. ${meta.label}`}
-                subtitle={index === 0 ? "enviada na hora do /start" : block.delay_seconds ? `espera ${block.delay_seconds}s` : "sem espera"}
+                subtitle={index === 0 ? "enviada na hora do /start" : block.wait_for_reply ? "após o lead responder" : block.delay_seconds ? `espera ${block.delay_seconds}s` : "sem espera"}
                 actions={
                   <span className="flex gap-1">
                     <button aria-label="Subir" className="btn-ghost !min-h-8 !px-2" disabled={index === 0} onClick={() => set({ welcome: move(draft.welcome, index, -1) })} type="button"><ArrowUp size={14} /></button>
@@ -309,10 +333,19 @@ export function WelcomeSection({ draft, set }: SectionProps) {
                       {blockTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                     </select>
                   </Field>
-                  <Field label={index === 0 ? "Enviada na hora do /start" : "Esperar antes (segundos)"}>
-                    <input className="field" disabled={index === 0} min={0} max={86400} type="number" value={index === 0 ? 0 : block.delay_seconds} onChange={(event) => setBlock(index, { ...block, delay_seconds: Math.max(0, Number(event.target.value) || 0) })} />
+                  <Field label={index === 0 ? "Enviada na hora do /start" : block.wait_for_reply ? "Aguarda a resposta do lead" : "Esperar antes (segundos)"}>
+                    <input className="field" disabled={index === 0 || block.wait_for_reply} min={0} max={86400} type="number" value={index === 0 ? 0 : block.delay_seconds} onChange={(event) => setBlock(index, { ...block, delay_seconds: Math.max(0, Number(event.target.value) || 0) })} />
                   </Field>
                 </div>
+                {index > 0 && (
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
+                    <span>
+                      Aguardar a resposta do lead
+                      <span className="block text-xs text-muted">Em vez de esperar um tempo, só envia esta mensagem depois que o lead responder a anterior.</span>
+                    </span>
+                    <Switch checked={!!block.wait_for_reply} label="Aguardar resposta do lead" onChange={(wait_for_reply) => setBlock(index, { ...block, wait_for_reply })} />
+                  </label>
+                )}
                 {meta.max > 0 && (
                   <MediaGrid
                     kinds={block.type === "voice" ? ["audio"] : block.type === "photo" ? ["photo"] : block.type === "album" ? ["photo", "video"] : ["video"]}
@@ -331,7 +364,7 @@ export function WelcomeSection({ draft, set }: SectionProps) {
         <Button
           disabled={draft.welcome.length >= 30}
           onClick={() => {
-            set({ welcome: [...draft.welcome, { type: "text", text: "", media_ids: [], spoiler: false, delay_seconds: 0 }] });
+            set({ welcome: [...draft.welcome, { type: "text", text: "", media_ids: [], spoiler: false, delay_seconds: 0, wait_for_reply: false }] });
             setOpenBlock(draft.welcome.length);
           }}
           size="sm"

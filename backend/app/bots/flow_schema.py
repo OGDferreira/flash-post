@@ -36,6 +36,10 @@ class Block(_Model):
     media_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
     spoiler: bool = False  # Telegram's blurred "spoiler" media
     delay_seconds: Annotated[int, Field(ge=0, le=86400)] = 0  # wait before sending this block
+    # Humanized conversation: when True, the bot waits for the lead to reply before sending
+    # this block (instead of / on top of the time delay). Only used in the welcome sequence;
+    # ignored in the after-purchase drip.
+    wait_for_reply: bool = False
 
     @model_validator(mode="after")
     def _check(self) -> "Block":
@@ -242,9 +246,15 @@ class Payment(_Model):
     # skipped when an upsell follows right after the payment.
     approved_enabled: bool | None = None
     expired_text: Text = "Seu Pix expirou. Toque abaixo para gerar um novo."
-    # How the Pix is shown: "qr" = QR code + text + code in one message; "steps" = the
-    # payment instructions, then the code in a copy box, then the buttons.
+    # Legacy single choice of how the Pix was shown: "qr" = QR code + text + code in one
+    # message; "steps" = instructions, the code in a copy box, then the buttons. Kept so
+    # funnels saved before the switch keep validating; folded on load into the two toggles
+    # below, which can now be on at the same time.
     layout: Literal["qr", "steps"] = "qr"
+    # Both can be on: the lead gets the QR image AND the step-by-step with the copy box.
+    # None on both (funnels saved before the switch) = derive from ``layout``.
+    qr_enabled: bool | None = None
+    steps_enabled: bool | None = None
     steps_text: Text = (
         "✅ <b>Como realizar o pagamento:</b>\n\n"
         "1. Abra o aplicativo do seu banco.\n"
@@ -254,6 +264,35 @@ class Payment(_Model):
     )
     code_intro: Annotated[str, Field(max_length=200)] = "Copie o código abaixo:"
     after_code_text: Annotated[str, Field(max_length=500)] = "Após efetuar o pagamento, clique no botão abaixo ⤵️"
+    # Optional message (media + text) sent right before the Pix, for a warmer payment step.
+    intro_enabled: bool = False
+    intro_text: Text | None = None
+    intro_media_ids: MediaList3
+    intro_spoiler: bool = False
+
+    @model_validator(mode="after")
+    def _fold_layout(self) -> "Payment":
+        # Old funnels only set ``layout``; map it to the two independent toggles.
+        if self.qr_enabled is None and self.steps_enabled is None:
+            self.qr_enabled = self.layout == "qr"
+            self.steps_enabled = self.layout == "steps"
+        else:
+            self.qr_enabled = bool(self.qr_enabled)
+            self.steps_enabled = bool(self.steps_enabled)
+        # Never leave the lead with no way to pay.
+        if not self.qr_enabled and not self.steps_enabled:
+            self.qr_enabled = True
+        # Keep ``layout`` meaningful for anything still reading it (QR wins when both are on).
+        self.layout = "qr" if self.qr_enabled else "steps"
+        if self.intro_enabled and not (self.intro_text or self.intro_media_ids):
+            raise ValueError("Configure a mensagem (texto ou mídia) que vai antes do pagamento.")
+        return self
+
+    def show_qr(self) -> bool:
+        return self.qr_enabled is None and self.layout == "qr" or bool(self.qr_enabled)
+
+    def show_steps(self) -> bool:
+        return self.steps_enabled is None and self.layout == "steps" or bool(self.steps_enabled)
 
 
 class International(_Model):
@@ -284,6 +323,9 @@ class FlowDefinition(_Model):
     version: Literal[1] = 1
     age_gate: AgeGate = Field(default_factory=AgeGate)
     international: International = Field(default_factory=International)
+    # "Conversa humanizada": the pre-offer sequence runs only when this is on. Default True
+    # so funnels saved before the toggle (and any with welcome blocks) behave exactly as before.
+    welcome_enabled: bool = True
     welcome: list[Block] = Field(default_factory=list, max_length=30)  # optional pre-offer sequence
     offer: Offer = Field(default_factory=Offer)
     plans: list[Plan] = Field(default_factory=list, max_length=10)
@@ -301,6 +343,8 @@ class FlowDefinition(_Model):
     # Sequence for leads who started and never generated a PIX (None = not migrated yet).
     downsells_no_pix: Annotated[list[DownsellStep], Field(max_length=20)] | None = None
     support_username: Annotated[str, Field(max_length=33, pattern=r"^@?[A-Za-z0-9_]{0,32}$")] | None = None
+    # @ do bot no Telegram, mostrado como link no teste do funil (abre t.me/<@>).
+    bot_handle: Annotated[str, Field(max_length=33, pattern=r"^@?[A-Za-z0-9_]{0,32}$")] | None = None
 
     @model_validator(mode="after")
     def _check(self) -> "FlowDefinition":
@@ -325,6 +369,8 @@ class FlowDefinition(_Model):
                     raise ValueError(f"O downsell {index} ({label}) usa um plano que não existe mais.")
         if self.support_username:
             self.support_username = self.support_username.lstrip("@") or None
+        if self.bot_handle:
+            self.bot_handle = self.bot_handle.lstrip("@") or None
         if self.international.enabled and self.international.pricing == "fixed" and "USD" in self.international.currencies:
             missing = [plan.name for plan in self.plans if plan.price_usd is None]
             if missing:
@@ -344,6 +390,7 @@ class FlowDefinition(_Model):
             found.update(block.media_ids)
         found.update(self.offer.media_ids)
         found.update(self.previews.media_ids)
+        found.update(self.payment.intro_media_ids)
         bumps = [self.order_bump] + [plan.order_bump for plan in self.plans]
         deliveries = [p.delivery for p in self.plans] + [self.default_delivery]
         for bump in bumps:

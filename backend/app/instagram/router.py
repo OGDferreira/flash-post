@@ -459,8 +459,10 @@ async def list_meta_apps(
     platform = _platform_app()
     user = await db.get(User, access.membership.user_id)
     is_super_admin = user is not None and user.platform_role == "SUPER_ADMIN"
-    # Everyone manages and connects through their own Meta apps. The platform one-tap
-    # stays available only to the Super Admin (who owns the platform app credentials).
+    # The platform (FlashPost) app is offered to every owner as one option next to their own
+    # Meta apps, so they can connect with the tool's app or pick their own. The Super Admin can
+    # still block it per user; only the Super Admin sees the raw platform app id.
+    platform_blocked = user is not None and user.platform_app_blocked and not is_super_admin
     return InstagramMetaAppsResponse(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
         callback_url=_redirect_uri(),
@@ -469,7 +471,8 @@ async def list_meta_apps(
             _meta_app_response(app, connected_counts.get(app.id, 0)) for app in apps
         ],
         platform=InstagramPlatformApp(
-            available=platform is not None and is_super_admin,
+            available=platform is not None,
+            blocked=platform_blocked,
             app_id=platform[0] if platform is not None and is_super_admin else None,
         ),
     )
@@ -658,14 +661,20 @@ async def connect_account(
     access: WorkspaceMemberAccess,
     db: DbSession,
     app_id: uuid.UUID | None = Query(default=None),
+    use_platform: bool = Query(default=False),
     return_to: Literal["/dashboard", "/feature/accounts"] = "/feature/accounts",
 ) -> InstagramConnectResponse:
     settings = get_settings()
     platform = _platform_app()
-    # The platform one-tap is the Super Admin's own shortcut (no app to pick). Everyone else
-    # connects with their own Meta app, so without an app_id we fall through to their selected app.
-    user_for_platform = await db.get(User, access.membership.user_id) if platform is not None and app_id is None else None
-    if platform is not None and app_id is None and user_for_platform is not None and user_for_platform.platform_role == "SUPER_ADMIN":
+    # The platform (FlashPost) app is one explicit choice in the picker, offered to every owner
+    # next to their own apps; the Super Admin can block it per user. Picked with use_platform.
+    user_for_platform = await db.get(User, access.membership.user_id) if use_platform and platform is not None else None
+    platform_blocked = (
+        user_for_platform is not None
+        and user_for_platform.platform_app_blocked
+        and user_for_platform.platform_role != "SUPER_ADMIN"
+    )
+    if use_platform and platform is not None and not platform_blocked:
         if settings.master_encryption_key is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -680,6 +689,11 @@ async def connect_account(
             "return_to": return_to,
         })
         return InstagramConnectResponse(authorization_url=build_authorization_url(platform[0], _redirect_uri(), state))
+    if use_platform:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="O app do FlashPost não está liberado para a sua conta.",
+        )
 
     credential_query = select(InstagramAppCredential).where(
         InstagramAppCredential.workspace_id == access.workspace.id,

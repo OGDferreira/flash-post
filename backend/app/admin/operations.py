@@ -269,7 +269,9 @@ async def admin_flow_code(flow_id: uuid.UUID, _admin: SuperAdminUser, db: DbSess
     from app.bots import portable
 
     flow = await _flow(db, flow_id)
-    return {"code": portable.make_code(flow.id), "valid_days": portable.CODE_TTL_SECONDS // 86400}
+    code = await portable.make_code(db, flow)
+    await db.commit()
+    return {"code": code, "valid_days": portable.CODE_TTL_SECONDS // 86400}
 
 
 # ------------------------------------------------------------------ platform fee
