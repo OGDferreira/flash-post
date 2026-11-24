@@ -161,7 +161,7 @@ async def test_fast_analytics_summary_skips_live_meta_requests(
     db_session.add(_account(workspace.id, "fast_summary_profile", 321, 24))
     await db_session.commit()
 
-    async def unexpected_meta_request(*_args):
+    async def unexpected_meta_request(*_args, **_kwargs):
         raise AssertionError("Fast analytics must not wait for Meta API requests.")
 
     monkeypatch.setattr(

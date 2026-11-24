@@ -76,7 +76,7 @@ async def test_engagement_tick_streak_warning_and_summary(
         sent.append(kwargs["payload"])
         return PushResult(ok=True, gone=False, status_code=201)
 
-    async def fake_views(*_args):
+    async def fake_views(*_args, **_kwargs):
         return 4321
 
     monkeypatch.setattr(ms, "send_web_push", fake_send)
