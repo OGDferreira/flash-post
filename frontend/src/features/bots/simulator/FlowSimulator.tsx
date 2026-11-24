@@ -166,7 +166,7 @@ export function FlowSimulator({ flow, onClose }: { flow: FlowDefinition; onClose
   }, [toast]);
 
   const { controls } = result;
-  const handle = (flow.instagram_handle ?? "").replace(/^@/, "");
+  const handle = (flow.bot_handle ?? "").replace(/^@/, "");
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-line bg-[#0e1621] shadow-2xl">
       <header className="flex items-center gap-2 border-b border-white/10 bg-[#17212b] px-3 py-2.5 text-white">
@@ -176,7 +176,7 @@ export function FlowSimulator({ flow, onClose }: { flow: FlowDefinition; onClose
           {handle ? (
             <a
               className="inline-flex items-center gap-1 text-[11px] text-[#6ab2f2] hover:underline"
-              href={`https://instagram.com/${handle}`}
+              href={`https://t.me/${handle}`}
               rel="noreferrer"
               target="_blank"
             >

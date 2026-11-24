@@ -343,8 +343,8 @@ class FlowDefinition(_Model):
     # Sequence for leads who started and never generated a PIX (None = not migrated yet).
     downsells_no_pix: Annotated[list[DownsellStep], Field(max_length=20)] | None = None
     support_username: Annotated[str, Field(max_length=33, pattern=r"^@?[A-Za-z0-9_]{0,32}$")] | None = None
-    # @ do Instagram do bot, mostrado como link no teste do funil (abre instagram.com/<@>).
-    instagram_handle: Annotated[str, Field(max_length=31, pattern=r"^@?[A-Za-z0-9_.]{0,30}$")] | None = None
+    # @ do bot no Telegram, mostrado como link no teste do funil (abre t.me/<@>).
+    bot_handle: Annotated[str, Field(max_length=33, pattern=r"^@?[A-Za-z0-9_]{0,32}$")] | None = None
 
     @model_validator(mode="after")
     def _check(self) -> "FlowDefinition":
@@ -369,8 +369,8 @@ class FlowDefinition(_Model):
                     raise ValueError(f"O downsell {index} ({label}) usa um plano que não existe mais.")
         if self.support_username:
             self.support_username = self.support_username.lstrip("@") or None
-        if self.instagram_handle:
-            self.instagram_handle = self.instagram_handle.lstrip("@") or None
+        if self.bot_handle:
+            self.bot_handle = self.bot_handle.lstrip("@") or None
         if self.international.enabled and self.international.pricing == "fixed" and "USD" in self.international.currencies:
             missing = [plan.name for plan in self.plans if plan.price_usd is None]
             if missing:

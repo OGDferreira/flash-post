@@ -110,7 +110,7 @@ function toPayload(definition: FlowDefinition): FlowDefinition {
     downsell_audience: null,
     previews: definition.previews ? { ...definition.previews, text: blank(definition.previews.text) } : undefined,
     support_username: blank(definition.support_username),
-    instagram_handle: blank(definition.instagram_handle),
+    bot_handle: blank(definition.bot_handle),
   };
 }
 

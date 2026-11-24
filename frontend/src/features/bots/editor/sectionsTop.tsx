@@ -122,13 +122,13 @@ export function BotsSection({ flowId, draft, set }: SectionProps) {
         />
       </Panel>
 
-      <Panel icon={<MessageSquare size={18} />} title="@ do Instagram (opcional)" description="Aparece como link no teste do funil e abre o perfil do bot no Instagram.">
+      <Panel icon={<MessageSquare size={18} />} title="@ do bot (opcional)" description="Aparece como link no teste do funil e abre a conversa do bot no Telegram (t.me/).">
         <input
           className="field"
-          maxLength={31}
-          placeholder="@seu_perfil"
-          value={draft.instagram_handle ? `@${draft.instagram_handle.replace(/^@/, "")}` : ""}
-          onChange={(event) => set({ instagram_handle: event.target.value.replace(/[^A-Za-z0-9_.]/g, "").slice(0, 30) || null })}
+          maxLength={33}
+          placeholder="@seu_bot"
+          value={draft.bot_handle ? `@${draft.bot_handle.replace(/^@/, "")}` : ""}
+          onChange={(event) => set({ bot_handle: event.target.value.replace(/[^A-Za-z0-9_]/g, "").slice(0, 32) || null })}
         />
       </Panel>
       <ConnectBotModal

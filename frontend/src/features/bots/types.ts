@@ -180,8 +180,8 @@ export type FlowDefinition = {
   /** Started and never generated a PIX. */
   downsells_no_pix?: DownsellStep[] | null;
   support_username?: string | null;
-  /** @ do Instagram do bot mostrado no teste do funil. */
-  instagram_handle?: string | null;
+  /** @ do bot no Telegram mostrado no teste do funil (abre t.me/<@>). */
+  bot_handle?: string | null;
 };
 
 export type Flow = {
