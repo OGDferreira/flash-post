@@ -21,6 +21,7 @@ from app.core.crypto import decrypt_value
 from app.instagram.oauth import (
     INSTAGRAM_GRAPH_ENDPOINT,
     INSTAGRAM_INSIGHTS_PERMISSION,
+    graph_base_for,
     instagram_api_error_detail,
 )
 from app.models import InstagramAccount, InstagramMediaInsight
@@ -46,9 +47,11 @@ _METRICS = {
 _STORY_METRICS = ("views", "reach", "replies", "shares", "total_interactions")
 
 
-async def _story_metrics(client: httpx.AsyncClient, story_id: str, token: str) -> dict[str, int | None]:
+async def _story_metrics(
+    client: httpx.AsyncClient, story_id: str, token: str, graph_base: str = INSTAGRAM_GRAPH_ENDPOINT
+) -> dict[str, int | None]:
     response = await client.get(
-        f"{INSTAGRAM_GRAPH_ENDPOINT}/{story_id}/insights",
+        f"{graph_base}/{story_id}/insights",
         params={"metric": ",".join(_STORY_METRICS), "access_token": token},
     )
     if response.status_code == 200:
@@ -56,19 +59,21 @@ async def _story_metrics(client: httpx.AsyncClient, story_id: str, token: str) -
     values: dict[str, int | None] = {}
     for metric in _STORY_METRICS:  # one metric Meta refuses must not hide the others
         single = await client.get(
-            f"{INSTAGRAM_GRAPH_ENDPOINT}/{story_id}/insights", params={"metric": metric, "access_token": token}
+            f"{graph_base}/{story_id}/insights", params={"metric": metric, "access_token": token}
         )
         if single.status_code == 200:
             values.update(_metric_values(single.json()))
     return values
 
 
-async def _live_stories(client: httpx.AsyncClient, instagram_user_id: str, token: str) -> list[tuple[dict, dict]]:
+async def _live_stories(
+    client: httpx.AsyncClient, instagram_user_id: str, token: str, graph_base: str = INSTAGRAM_GRAPH_ENDPOINT
+) -> list[tuple[dict, dict]]:
     """The account's live stories with their metrics; [] when Meta refuses (the feed sync
     must never fail because of stories)."""
     try:
         response = await client.get(
-            f"{INSTAGRAM_GRAPH_ENDPOINT}/{instagram_user_id}/stories",
+            f"{graph_base}/{instagram_user_id}/stories",
             params={"fields": "id,media_type,media_product_type,timestamp,permalink,thumbnail_url,media_url",
                     "access_token": token},
         )
@@ -84,7 +89,7 @@ async def _live_stories(client: httpx.AsyncClient, instagram_user_id: str, token
             except ValueError:
                 continue
             item["_posted_at"] = posted if posted.tzinfo else posted.replace(tzinfo=timezone.utc)
-            out.append((item, await _story_metrics(client, item["id"], token)))
+            out.append((item, await _story_metrics(client, item["id"], token, graph_base)))
         return out
     except (httpx.HTTPError, ValueError):
         return []
@@ -113,12 +118,12 @@ def _metric_values(payload: object) -> dict[str, int | None]:
 
 
 async def _media_metrics(
-    client: httpx.AsyncClient, media_id: str, token: str
+    client: httpx.AsyncClient, media_id: str, token: str, graph_base: str = INSTAGRAM_GRAPH_ENDPOINT
 ) -> tuple[dict[str, int | None], str | None]:
     """All metrics in one call; if Meta rejects the set (a metric unsupported
     for this media type), ask for each metric separately."""
     response = await client.get(
-        f"{INSTAGRAM_GRAPH_ENDPOINT}/{media_id}/insights",
+        f"{graph_base}/{media_id}/insights",
         params={"metric": ",".join(_METRICS), "access_token": token},
     )
     if response.status_code == 200:
@@ -129,7 +134,7 @@ async def _media_metrics(
     errors: list[str] = []
     for metric in _METRICS:
         single = await client.get(
-            f"{INSTAGRAM_GRAPH_ENDPOINT}/{media_id}/insights",
+            f"{graph_base}/{media_id}/insights",
             params={"metric": metric, "access_token": token},
         )
         if single.status_code == 200:
@@ -156,6 +161,7 @@ async def sync_account_media_insights(
         await db.commit()
         return 0
 
+    graph_base = graph_base_for(account.login_kind)
     cutoff = current - timedelta(days=SYNC_LOOKBACK_DAYS)
     items: list[dict] = []
     try:
@@ -172,7 +178,7 @@ async def sync_account_media_insights(
                 if after:
                     params["after"] = after
                 response = await client.get(
-                    f"{INSTAGRAM_GRAPH_ENDPOINT}/{account.instagram_user_id}/media", params=params
+                    f"{graph_base}/{account.instagram_user_id}/media", params=params
                 )
                 response.raise_for_status()
                 payload = response.json()
@@ -208,12 +214,12 @@ async def sync_account_media_insights(
             async def load(item: dict):
                 async with semaphore:
                     try:
-                        return item, *await _media_metrics(client, item["id"], token)
+                        return item, *await _media_metrics(client, item["id"], token, graph_base)
                     except httpx.HTTPError as exc:
                         return item, {}, instagram_api_error_detail(exc)
 
             results = await asyncio.gather(*(load(item) for item in items[:SYNC_MAX_MEDIA]))
-            stories = await _live_stories(client, account.instagram_user_id, token)
+            stories = await _live_stories(client, account.instagram_user_id, token, graph_base)
     except (httpx.HTTPError, ValueError) as exc:
         detail = instagram_api_error_detail(exc) if isinstance(exc, httpx.HTTPError) else str(exc)
         if INSTAGRAM_INSIGHTS_PERMISSION in detail:

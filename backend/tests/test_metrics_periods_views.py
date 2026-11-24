@@ -138,7 +138,7 @@ async def test_daily_sync_writes_days_keeps_final_days_and_records_errors(
     await db_session.commit()
     calls: list[tuple[datetime, datetime]] = []
 
-    async def fake_views(_user_id, _token, since, until):
+    async def fake_views(_user_id, _token, since, until, **_kwargs):
         calls.append((since, until))
         return 7
 
@@ -158,7 +158,7 @@ async def test_daily_sync_writes_days_keeps_final_days_and_records_errors(
     assert refreshed_days and all(day >= TODAY - timedelta(days=daily_views_sync.FINAL_AFTER_DAYS) for day in refreshed_days)
     assert len((await db_session.scalars(select(InstagramAccountDailyViews))).all()) == len(rows)  # no duplicates
 
-    async def failing(*_args):
+    async def failing(*_args, **_kwargs):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(daily_views_sync, "fetch_instagram_views", failing)

@@ -20,12 +20,14 @@ from app.instagram.account_state import classify_inactive_account
 from app.core.time import APP_TIME_ZONE_NAME, BRAZIL_TIME_ZONE, day_bounds_utc, local_date, local_day_bounds_utc, utc_now
 from app.instagram.oauth import (
     INSTAGRAM_INSIGHTS_PERMISSION,
+    LOGIN_KIND_UNIFIED,
     InstagramInsightsPermissionError,
     InstagramOAuthError,
     fetch_instagram_account_insights,
     fetch_instagram_media_views,
     fetch_instagram_profile_metrics,
     fetch_instagram_views,
+    graph_base_for,
     instagram_api_error_detail,
 )
 from app.models import (
@@ -176,7 +178,15 @@ async def _fetch_account_meta(
     try:
         live_followers, live_follows, live_media = await _cached_meta_call(
             ("profile", account.id, token_key, _cache_window(now)),
-            lambda: fetch_instagram_profile_metrics(access_token),
+            lambda: fetch_instagram_profile_metrics(
+                access_token,
+                node=(
+                    account.instagram_user_id
+                    if account.login_kind == LOGIN_KIND_UNIFIED
+                    else "me"
+                ),
+                graph_base=graph_base_for(account.login_kind),
+            ),
         )
         result.profile = (live_followers, live_follows, live_media)
         missing_fields = [
@@ -210,14 +220,22 @@ async def _fetch_account_meta(
             result.account_insights, result.account_insight_errors = await _cached_meta_call(
                 ("account_insights", account.id, token_key, *window),
                 lambda: fetch_instagram_account_insights(
-                    account.instagram_user_id, access_token, insight_start, insight_end
+                    account.instagram_user_id,
+                    access_token,
+                    insight_start,
+                    insight_end,
+                    graph_base=graph_base_for(account.login_kind),
                 ),
             )
         if include_media_views:
             views, video_count, video_errors = await _cached_meta_call(
                 ("media_views", account.id, token_key, *window),
                 lambda: fetch_instagram_media_views(
-                    account.instagram_user_id, access_token, insight_start, insight_end
+                    account.instagram_user_id,
+                    access_token,
+                    insight_start,
+                    insight_end,
+                    graph_base=graph_base_for(account.login_kind),
                 ),
             )
             if video_errors:
@@ -256,7 +274,11 @@ async def _fetch_account_meta(
         result.period_views = await _cached_meta_call(
             ("period_views", account.id, token_key, *window),
             lambda: fetch_instagram_views(
-                account.instagram_user_id, access_token, insight_start, insight_end
+                account.instagram_user_id,
+                access_token,
+                insight_start,
+                insight_end,
+                graph_base=graph_base_for(account.login_kind),
             ),
         )
     except InstagramInsightsPermissionError:

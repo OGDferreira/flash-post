@@ -172,13 +172,13 @@ async def test_partial_video_view_failures_are_reported_as_unavailable(
     db_session.add(account)
     await db_session.commit()
 
-    async def profile_metrics(*_args):
+    async def profile_metrics(*_args, **_kwargs):
         return 10, 3, 2
 
-    async def media_views(*_args):
+    async def media_views(*_args, **_kwargs):
         return 500, 4, ["HTTP 500"]
 
-    async def period_views(*_args):
+    async def period_views(*_args, **_kwargs):
         return 1234
 
     monkeypatch.setattr(analytics_router, "fetch_instagram_profile_metrics", profile_metrics)

@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable, Mapping
 
 import httpx
 
+from app.instagram.oauth import LOGIN_KIND_UNIFIED, graph_base_for
 from app.instagram.storage import SupabaseStorage
 from app.models import InstagramAccount, InstagramMedia
 
@@ -206,30 +207,38 @@ async def publish_media(
             create_payload["caption"] = caption
 
     timeout = httpx.Timeout(30.0)
+    graph_base = graph_base_for(account.login_kind)
+    is_unified = account.login_kind == LOGIN_KIND_UNIFIED
     stage = "account identity verification"
     instagram_user_id = str(account.instagram_user_id)
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
-            identity_response = await _request_with_retry(
-                client,
-                "GET",
-                f"{GRAPH_ENDPOINT}/me",
-                params={"fields": "user_id,username", "access_token": access_token},
-            )
-            instagram_user_id, token_username = _instagram_user_identity(
-                identity_response.json()
-            )
-            if token_username.casefold() != str(account.username).casefold():
-                raise InstagramPublishingError(
-                    "The saved Instagram token belongs to a different account; reconnect it before publishing."
+            if is_unified:
+                # On a Unified Login system-user token "/me" resolves to the business
+                # integration system user, not the Instagram account, so there is no
+                # identity to match: trust the stored Instagram account ID.
+                stage = "media container creation"
+            else:
+                identity_response = await _request_with_retry(
+                    client,
+                    "GET",
+                    f"{graph_base}/me",
+                    params={"fields": "user_id,username", "access_token": access_token},
                 )
-            if instagram_user_id != str(account.instagram_user_id):
-                logger.warning(
-                    "Stored Instagram user ID does not match the token for account %s; "
-                    "using the ID returned by /me.",
-                    account.username,
+                instagram_user_id, token_username = _instagram_user_identity(
+                    identity_response.json()
+                )
+                if token_username.casefold() != str(account.username).casefold():
+                    raise InstagramPublishingError(
+                        "The saved Instagram token belongs to a different account; reconnect it before publishing."
                     )
-            stage = "media container creation"
+                if instagram_user_id != str(account.instagram_user_id):
+                    logger.warning(
+                        "Stored Instagram user ID does not match the token for account %s; "
+                        "using the ID returned by /me.",
+                        account.username,
+                        )
+                stage = "media container creation"
             logger.info(
                 "Creating Instagram media container for account %s, media %s.",
                 account.username,
@@ -238,7 +247,7 @@ async def publish_media(
             create_response = await _request_with_retry(
                 client,
                 "POST",
-                f"{GRAPH_ENDPOINT}/{instagram_user_id}/media",
+                f"{graph_base}/{instagram_user_id}/media",
                 data=create_payload,
             )
             container_id = _response_id(create_response.json())
@@ -256,7 +265,7 @@ async def publish_media(
                     status_response = await _request_with_retry(
                         client,
                         "GET",
-                        f"{GRAPH_ENDPOINT}/{container_id}",
+                        f"{graph_base}/{container_id}",
                         params={
                             "fields": "status_code,status",
                             "access_token": access_token,
@@ -322,7 +331,7 @@ async def publish_media(
                 account.username,
             )
             publish_response = await client.post(
-                f"{GRAPH_ENDPOINT}/{instagram_user_id}/media_publish",
+                f"{graph_base}/{instagram_user_id}/media_publish",
                 data={
                     "creation_id": container_id,
                     "access_token": access_token,
@@ -360,14 +369,18 @@ async def publish_media(
 
 
 async def fetch_container_status(
-    instagram_user_id: str, container_id: str, access_token: str
+    instagram_user_id: str,
+    container_id: str,
+    access_token: str,
+    *,
+    graph_base: str = GRAPH_ENDPOINT,
 ) -> str | None:
     """Container ``status_code`` (FINISHED, PUBLISHED, IN_PROGRESS, ERROR,
     EXPIRED) or None when Meta could not be reached."""
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
             response = await client.get(
-                f"{GRAPH_ENDPOINT}/{container_id}",
+                f"{graph_base}/{container_id}",
                 params={"fields": "status_code", "access_token": access_token},
             )
     except httpx.HTTPError:
@@ -386,7 +399,11 @@ async def fetch_container_status(
 
 
 async def publish_existing_container(
-    instagram_user_id: str, container_id: str, access_token: str
+    instagram_user_id: str,
+    container_id: str,
+    access_token: str,
+    *,
+    graph_base: str = GRAPH_ENDPOINT,
 ) -> str:
     """Publish a container that is FINISHED but not yet published.
 
@@ -395,7 +412,7 @@ async def publish_existing_container(
     async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
         try:
             response = await client.post(
-                f"{GRAPH_ENDPOINT}/{instagram_user_id}/media_publish",
+                f"{graph_base}/{instagram_user_id}/media_publish",
                 data={"creation_id": container_id, "access_token": access_token},
             )
             response.raise_for_status()
