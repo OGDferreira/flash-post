@@ -180,23 +180,6 @@ const postGroups: NavGroup[] = [
   },
 ];
 
-// A sócio (partner) sees a lean Flash: their accounts, the loops shared with them,
-// the posts ranking and their revenue. Route guards and the API still enforce permissions.
-const partnerPostRoutes = new Set([
-  "/dashboard",
-  "/feature/accounts",
-  "/feature/meta-apps", // their own Meta apps, to connect their own accounts (only they see them)
-  "/feature/loops",
-  "/feature/ranking",
-  "/feature/links",
-  "/configuracoes",
-  "/avisos",
-  "/novidades",
-  "/feature/support",
-  "/feature/contacts",
-  "/feature/chat",
-]);
-
 // Only hides what a collaborator cannot open; route guards and the API still
 // enforce permissions.
 const collaboratorRoutes = new Set([
@@ -321,15 +304,13 @@ function buildNavigationFor(opts: {
       const direct = app === "bot" ? botDirect : postDirect;
       return { app, direct: direct.filter(({ to }) => keep(to)), flat: [], groups: only(groups, keep), admin };
     }
+    // Full-panel sócio: same panel as an independent owner. The only thing they still can't do
+    // as a partner is recruit sub-partners, so the bot app keeps the affiliates item hidden.
     if (app === "bot") {
       if (opts.isPartner) {
         return { app, direct: botDirect, flat: [], groups: only(botGroups, (to) => !partnerBotHidden.has(to)), admin };
       }
       return { app, direct: botDirect, flat: [], groups: botGroups, admin };
-    }
-    if (opts.isPartner) {
-      const keep = (to: string) => partnerPostRoutes.has(to);
-      return { app, direct: postDirect.filter(({ to }) => keep(to)), flat: [], groups: only(postGroups, keep), admin };
     }
     return { app, direct: postDirect, flat: [], groups: postGroups, admin };
   }
