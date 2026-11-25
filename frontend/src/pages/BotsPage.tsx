@@ -9,7 +9,6 @@ import { ConversionOverview } from "@/features/bots/ConversionOverview";
 
 import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
 import { AnalyticsPanel } from "@/features/bots/AnalyticsPanel";
-import { FlashFunnelPanel } from "@/features/bots/FlashFunnelPanel";
 import { BotsListPanel } from "@/features/bots/BotsListPanel";
 import { ConversationsPanel } from "@/features/bots/ConversationsPanel";
 import { FoldersPanel } from "@/features/bots/FoldersPanel";
@@ -82,7 +81,7 @@ export function BotsPage() {
           )}
           {/* Each section is its own screen: the dashboard lives in "Painel", the robots in "Meus bots". */}
           {tab === "home" && <ConversionOverview onPeriod={setPeriod} period={period} />}
-          {(tab === "flows" || tab === "bots" || tab === "analises") && (
+          {(tab === "flows" || tab === "bots") && (
             <div className="dashboard-card flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3">
               <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
                 <CalendarDays size={14} /> Período
@@ -104,12 +103,7 @@ export function BotsPage() {
           period={period}
         />
       )}
-      {tab === "analises" && (
-        <div className="space-y-4">
-          <FlashFunnelPanel period={period} />
-          <AnalyticsPanel period={period} />
-        </div>
-      )}
+      {tab === "analises" && <AnalyticsPanel onPeriod={setPeriod} period={period} />}
       {tab === "folders" && <FoldersPanel />}
       {tab === "remarketing" && <RemarketingPanel flowId={remarketingFlow} onEditingChange={setEditing} onFlowChange={setRemarketingFlow} />}
       {tab === "shared" && <SharedFlowsPanel />}
