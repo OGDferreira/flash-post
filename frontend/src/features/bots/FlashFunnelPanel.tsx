@@ -29,12 +29,12 @@ function Stage({ icon, label, value, hint, fill, width }: {
   icon: React.ReactNode; label: string; value: string; hint?: string; fill: string; width: number;
 }) {
   return (
-    <div className="min-w-0 flex-1 rounded-xl border border-line-soft bg-surface-inset p-3">
+    <div className="min-w-0 rounded-xl border border-line-soft bg-surface-inset p-3">
       <p className="flex items-center gap-1.5 text-[11px] text-muted">
-        <span className="text-accent">{icon}</span>
-        {label}
+        <span className="shrink-0 text-accent">{icon}</span>
+        <span className="truncate">{label}</span>
       </p>
-      <p className="mt-1 text-xl font-bold text-fg tabular-nums">{value}</p>
+      <p className="mt-1 text-lg font-bold text-fg tabular-nums sm:text-xl">{value}</p>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-well">
         <div className="h-full rounded-full" style={{ width: `${Math.max(value === "0" ? 0 : 4, width)}%`, background: fill }} />
       </div>
@@ -79,7 +79,7 @@ export function FlashFunnelPanel({ period, botId, flowId }: { period: MetricsPer
                 <h3 className="min-w-0 truncate text-sm font-semibold text-fg">{bot.bot_name}</h3>
                 <span className="text-base font-bold text-success">{brl(bot.revenue)}</span>
               </div>
-              <div className="mt-3 flex items-stretch gap-2">
+              <div className="mt-3 grid grid-cols-3 gap-2">
                 <Stage
                   fill="var(--grad-a)"
                   icon={<Users size={13} />}
