@@ -150,7 +150,9 @@ async def test_flash_funnel_counts_each_upsell_step(client, db_session, owner) -
     bots = (await client.get("/api/analytics/flash-funnel?period=today")).json()["bots"]
     assert len(bots) == 1
     bot = bots[0]
-    assert (bot["leads"], bot["pix"], bot["sales"], bot["revenue"]) == (1, 1, 1, 29.8)
+    # headline Pix/Vendas are totals: entry order + every paid upsell step
+    assert (bot["leads"], bot["pix"], bot["sales"], bot["revenue"]) == (1, 2, 2, 29.8)
+    assert (bot["entry_pix"], bot["entry_sales"], bot["upsell_sales"]) == (1, 1, 1)
     assert [(u["step"], u["offered"], u["paid"], u["take_rate"]) for u in bot["upsells"]] == [(1, 1, 1, 100.0), (2, 1, 0, 0.0)]
 
 
