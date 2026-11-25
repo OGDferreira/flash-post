@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   Sparkles,
   TrendingDown,
+  Trophy,
   Users,
   Workflow,
   X,
@@ -161,6 +162,7 @@ export function AnalyticsPanel({ period, onPeriod }: { period: MetricsPeriod; on
             {filters.bot || filters.flow || filters.plan ? " · com filtros" : " · toda a operação"} · comparado ao período anterior de mesmo tamanho
           </p>
           <Kpis data={query.data} />
+          <RankingHighlights data={query.data} />
           {/* Plan filter doesn't scope the per-step upsell funnel, so only bot/funnel flow into it. */}
           <FlashFunnelPanel botId={filters.bot || undefined} flowId={filters.flow || undefined} period={period} />
           <ConversionByType data={query.data} />
@@ -299,6 +301,77 @@ function Section({ icon, title, subtitle, children, right }: { icon: ReactNode; 
       </div>
       {children}
     </section>
+  );
+}
+
+/** A compact top-5 list (bots by faturamento, funis by conversão) for the selected period. */
+function RankList({ title, icon, rows, metric, width, sub, empty }: {
+  title: string;
+  icon: ReactNode;
+  rows: Row[];
+  metric: (row: Row) => string;
+  width: (row: Row) => number;
+  sub?: (row: Row) => string;
+  empty: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted">
+        <span className="text-accent">{icon}</span>
+        {title}
+      </p>
+      {rows.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-line px-3 py-6 text-center text-xs text-muted">{empty}</p>
+      ) : (
+        <ol className="space-y-1.5">
+          {rows.map((row, index) => (
+            <li className="rounded-xl border border-line-soft bg-surface-inset p-2.5" key={row.id}>
+              <div className="flex items-center gap-2">
+                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-brand/15 text-[11px] font-bold text-accent">{index + 1}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{row.name}</span>
+                <span className="shrink-0 text-sm font-semibold text-fg tabular-nums">{metric(row)}</span>
+              </div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-well">
+                <div className="h-full rounded-full bg-accent/70" style={{ width: `${Math.max(3, width(row))}%` }} />
+              </div>
+              {sub && <p className="mt-1 truncate text-[10px] text-muted">{sub(row)}</p>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function RankingHighlights({ data }: { data: Full }) {
+  const topBots = [...data.bots].sort((a, b) => b.revenue - a.revenue || b.sales - a.sales).filter((row) => row.revenue > 0 || row.sales > 0).slice(0, 5);
+  const topFlows = [...data.flows].sort((a, b) => b.conversion - a.conversion || b.revenue - a.revenue).filter((row) => row.leads > 0 || row.sales > 0).slice(0, 5);
+  if (!topBots.length && !topFlows.length) return null;
+  const botMax = Math.max(1, ...topBots.map((row) => row.revenue));
+  const flowMax = Math.max(1, ...topFlows.map((row) => row.conversion));
+  return (
+    <Section icon={<Trophy size={17} />} subtitle="No período selecionado" title="Ranking">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <RankList
+          empty="Nenhum bot faturou no período."
+          icon={<Bot size={13} />}
+          metric={(row) => money(row.revenue)}
+          rows={topBots}
+          sub={(row) => `${formatNumber(row.sales)} ${row.sales === 1 ? "venda" : "vendas"} · ${formatNumber(row.leads)} leads`}
+          title="Bots por faturamento"
+          width={(row) => (row.revenue / botMax) * 100}
+        />
+        <RankList
+          empty="Nenhum funil com leads no período."
+          icon={<Workflow size={13} />}
+          metric={(row) => formatPercent(row.conversion)}
+          rows={topFlows}
+          sub={(row) => `${formatNumber(row.sales)} ${row.sales === 1 ? "venda" : "vendas"} · ${money(row.revenue)}`}
+          title="Funis por conversão (lead → venda)"
+          width={(row) => (row.conversion / flowMax) * 100}
+        />
+      </div>
+    </Section>
   );
 }
 
