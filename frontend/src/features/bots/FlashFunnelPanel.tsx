@@ -29,12 +29,12 @@ function Stage({ icon, label, value, hint, fill, width }: {
   icon: React.ReactNode; label: string; value: string; hint?: string; fill: string; width: number;
 }) {
   return (
-    <div className="min-w-0 flex-1 rounded-xl border border-line-soft bg-surface-inset p-3">
-      <p className="flex items-center gap-1.5 text-[11px] text-muted">
-        <span className="text-accent">{icon}</span>
-        {label}
+    <div className="min-w-0 rounded-xl border border-line-soft bg-surface-inset p-2.5 sm:p-3">
+      <p className="flex items-center gap-1 text-[11px] text-muted">
+        <span className="shrink-0 text-accent">{icon}</span>
+        <span className="truncate">{label}</span>
       </p>
-      <p className="mt-1 text-xl font-bold text-fg tabular-nums">{value}</p>
+      <p className="mt-1 truncate text-lg font-bold text-fg tabular-nums sm:text-xl">{value}</p>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-well">
         <div className="h-full rounded-full" style={{ width: `${Math.max(value === "0" ? 0 : 4, width)}%`, background: fill }} />
       </div>
@@ -68,18 +68,23 @@ export function FlashFunnelPanel({ period, botId, flowId }: { period: MetricsPer
           <p className="text-[11px] uppercase tracking-[0.12em] text-muted">Leads → Pix → vendas (com upsell) · {funnel.data.period_label}</p>
         </div>
       </div>
-      <div className="grid gap-3 xl:grid-cols-2">
-        {funnel.data.bots.map((bot) => {
+      <div className="grid min-w-0 gap-3 xl:grid-cols-2">
+        {funnel.data.bots.map((bot, index) => {
           const top = Math.max(1, bot.leads, bot.pix, bot.sales);
           const soldInUpsell = bot.upsell_sales > 0;
           const maxTake = Math.max(1, ...bot.upsells.map((step) => step.offered));
           return (
-            <article className="rounded-2xl border border-line-soft bg-surface p-3.5 sm:p-4" key={bot.bot_id}>
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="min-w-0 truncate text-sm font-semibold text-fg">{bot.bot_name}</h3>
-                <span className="text-base font-bold text-success">{brl(bot.revenue)}</span>
+            <article className="min-w-0 overflow-hidden rounded-2xl border border-line-soft bg-surface p-3 sm:p-4" key={bot.bot_id}>
+              <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+                <h3 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-fg">
+                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-brand/15 text-[11px] font-bold text-accent tabular-nums">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 truncate">{bot.bot_name}</span>
+                </h3>
+                <span className="shrink-0 text-base font-bold text-success tabular-nums">{brl(bot.revenue)}</span>
               </div>
-              <div className="mt-3 flex items-stretch gap-2">
+              <div className="mt-3 grid grid-cols-3 gap-2">
                 <Stage
                   fill="var(--grad-a)"
                   icon={<Users size={13} />}
@@ -97,7 +102,7 @@ export function FlashFunnelPanel({ period, botId, flowId }: { period: MetricsPer
                 />
                 <Stage
                   fill="var(--color-success)"
-                  hint={soldInUpsell ? `inclui ${count(bot.upsell_sales)} em upsell` : `${rate(bot.pix_to_sale)} dos Pix viraram venda`}
+                  hint={soldInUpsell ? `inclui ${count(bot.upsell_sales)} em upsell` : `${rate(bot.pix_to_sale)} viraram venda`}
                   icon={<TrendingUp size={13} />}
                   label="Vendas"
                   value={count(bot.sales)}
@@ -107,11 +112,18 @@ export function FlashFunnelPanel({ period, botId, flowId }: { period: MetricsPer
               {bot.upsells.length > 0 && (
                 <div className="mt-3">
                   <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted">Esteira de upsell</p>
-                  <ul className="space-y-1.5">
+                  <ul className="space-y-2">
                     {bot.upsells.map((step) => (
-                      <li className="flex items-center gap-2.5" key={step.step}>
-                        <span className="w-14 shrink-0 text-xs text-fg-2">Etapa {step.step}</span>
-                        <div className="h-5 min-w-0 flex-1 overflow-hidden rounded-md bg-well">
+                      <li className="min-w-0 space-y-1" key={step.step}>
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="shrink-0 text-fg-2">Etapa {step.step}</span>
+                          <span className="min-w-0 truncate text-right tabular-nums">
+                            <span className="font-semibold text-accent">{rate(step.take_rate)}</span>
+                            <span className="text-muted"> · </span>
+                            <span className="font-medium text-success">{brl(step.revenue)}</span>
+                          </span>
+                        </div>
+                        <div className="h-5 min-w-0 overflow-hidden rounded-md bg-well">
                           <div
                             className="flex h-full items-center rounded-md bg-accent/70 px-2"
                             style={{ width: `${Math.max(step.offered ? 6 : 0, (step.offered / maxTake) * 100)}%` }}
@@ -119,8 +131,6 @@ export function FlashFunnelPanel({ period, botId, flowId }: { period: MetricsPer
                             <span className="truncate text-[10px] font-medium text-white">{count(step.paid)}/{count(step.offered)}</span>
                           </div>
                         </div>
-                        <span className="w-12 shrink-0 text-right text-xs font-semibold text-accent tabular-nums">{rate(step.take_rate)}</span>
-                        <span className="w-20 shrink-0 text-right text-xs font-medium text-success tabular-nums">{brl(step.revenue)}</span>
                       </li>
                     ))}
                   </ul>
