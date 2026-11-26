@@ -287,6 +287,10 @@ class Payment(_Model):
     # (the delivery goes straight away); None (funnels saved before the switch): as before,
     # skipped when an upsell follows right after the payment.
     approved_enabled: bool | None = None
+    # Optional image sent together with the "payment approved" message (media + caption in the
+    # same Telegram message; falls back to media then text when the caption is too long).
+    approved_media_ids: MediaList3
+    approved_spoiler: bool = False
     expired_text: Text = "Seu Pix expirou. Toque abaixo para gerar um novo."
     # Legacy single choice of how the Pix was shown: "qr" = QR code + text + code in one
     # message; "steps" = instructions, the code in a copy box, then the buttons. Kept so
@@ -435,6 +439,7 @@ class FlowDefinition(_Model):
         found.update(self.offer.media_ids)
         found.update(self.previews.media_ids)
         found.update(self.payment.intro_media_ids)
+        found.update(self.payment.approved_media_ids)
         bumps = [self.order_bump] + [plan.order_bump for plan in self.plans]
         deliveries = [p.delivery for p in self.plans] + [self.default_delivery]
         for bump in bumps:
