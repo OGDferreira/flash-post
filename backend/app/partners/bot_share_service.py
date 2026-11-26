@@ -369,6 +369,59 @@ async def set_sale_status(
     return sale
 
 
+async def notify_partner_sales(db: AsyncSession, sales: list[BotPartnerSale]) -> None:
+    """After a shared-bot sale is recorded, tell each partner their cut: in-app + web push
+    (via notify_user) and, if they set one, an HTTP webhook. Best-effort; never raises."""
+    import logging
+
+    log = logging.getLogger(__name__)
+    for sale in sales:
+        try:
+            part = await db.get(BotPartner, sale.partnership_id)
+            bot = await db.get(TgBot, sale.bot_id)
+            bot_name = bot.name if bot is not None else "bot"
+            gross = money(sale.gross)
+            share = money(sale.partner_amount)
+            await notify_user(
+                db,
+                sale.partner_user_id,
+                "bot_partner_sale",
+                "Nova venda na parceria 💸",
+                f"Venda de {gross} no {bot_name}. Sua parte ({sale.partner_percent}%): {share}.",
+                url="/bot/parceiros",
+            )
+            await db.commit()
+            if part is not None and part.notify_webhook_url:
+                await _post_sale_webhook(part.notify_webhook_url, sale, bot_name)
+        except Exception:
+            await db.rollback()
+            log.exception("Partner sale notification failed for sale %s.", sale.id)
+
+
+async def _post_sale_webhook(url: str, sale: BotPartnerSale, bot_name: str) -> None:
+    """POST a compact JSON about the sale to the partner's webhook. Best-effort, short timeout."""
+    import logging
+
+    from app.bots import http
+
+    payload = {
+        "event": "bot_partner_sale",
+        "bot": bot_name,
+        "gross": float(money(sale.gross)),
+        "gateway_fee": float(money(sale.gateway_fee)),
+        "bot_fee": float(money(sale.bot_fee)),
+        "net": float(money(sale.net)),
+        "partner_percent": float(sale.partner_percent),
+        "partner_amount": float(money(sale.partner_amount)),
+        "paid_at": sale.paid_at.isoformat(),
+    }
+    try:
+        async with http.client(10.0) as session:
+            await session.post(url, json=payload)
+    except Exception:
+        logging.getLogger(__name__).warning("Partner sale webhook POST failed (sale %s).", sale.id)
+
+
 async def notify_partner_invite(db: AsyncSession, part: BotPartner, owner: User, bot: TgBot) -> None:
     await notify_user(
         db,

@@ -189,6 +189,47 @@ async def test_owner_marks_commission_paid_and_partner_sees_status(client, db_se
 
 
 @pytest.mark.anyio
+async def test_sale_notifies_partner_and_webhook_config(client, db_session, owner, apis) -> None:
+    from app.models import AppNotification
+
+    headers = await _login(client)
+    bot, flow = await _setup(client, headers)
+    owner_user, workspace = owner
+    partner = await _partner_user(db_session)
+    part = BotPartner(
+        bot_id=uuid.UUID(bot["id"]), owner_user_id=owner_user.id, partner_user_id=partner.id,
+        partner_percent=Decimal("40.00"), bot_fee=Decimal("0.00"), status="ACTIVE",
+        accepted_at=datetime.now(timezone.utc),
+    )
+    db_session.add(part)
+    await db_session.commit()
+
+    order = await _paid_order(db_session, workspace.id, uuid.UUID(bot["id"]), uuid.UUID(flow["id"]), gateway_fee="0.00")
+    created = await svc.record_sale_split(db_session, order)
+    await db_session.commit()
+    await svc.notify_partner_sales(db_session, created)
+
+    from sqlalchemy import select as _select
+
+    notes = list(await db_session.scalars(
+        _select(AppNotification).where(AppNotification.user_id == partner.id, AppNotification.kind == "bot_partner_sale")
+    ))
+    assert len(notes) == 1
+
+    # Partner configures a webhook URL for the shared bot.
+    await client.post("/api/auth/login", headers={"X-CSRF-Token": await _csrf(client)},
+                      json={"email": "augusto@example.com", "password": "partner password 123"})
+    pheaders = {"X-CSRF-Token": await _csrf(client)}
+    res = await client.patch(f"/api/bot-partners/shared/{bot['id']}/notify", headers=pheaders,
+                             json={"notify_webhook_url": "https://hook.example.com/sale"})
+    assert res.status_code == 200, res.text
+    assert res.json()["notify_webhook_url"] == "https://hook.example.com/sale"
+    bad = await client.patch(f"/api/bot-partners/shared/{bot['id']}/notify", headers=pheaders,
+                             json={"notify_webhook_url": "not-a-url"})
+    assert bad.status_code == 422
+
+
+@pytest.mark.anyio
 async def test_no_split_without_active_partner(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, flow = await _setup(client, headers)

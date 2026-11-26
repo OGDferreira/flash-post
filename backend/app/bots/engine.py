@@ -1861,10 +1861,12 @@ async def approve_order(
     try:
         # A whole-bot partnership splits this sale's net on top (separate ledger); never let
         # a split error undo a paid sale or its delivery.
-        from app.partners.bot_share_service import record_sale_split
+        from app.partners.bot_share_service import notify_partner_sales, record_sale_split
 
-        if await record_sale_split(db, order):
+        created_splits = await record_sale_split(db, order)
+        if created_splits:
             await db.commit()
+            await notify_partner_sales(db, created_splits)  # in-app + push + webhook, best-effort
     except Exception:
         await db.rollback()
         logger.exception("Bot-partner split failed for order %s; the sale is unaffected.", order.id)

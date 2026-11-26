@@ -381,8 +381,27 @@ async def shared_bot_detail(bot_id: uuid.UUID, user: AuthenticatedUser, db: DbSe
     return {
         **svc.partnership_out(part, owner, user, bot),
         "can_edit": part.status == "ACTIVE",
+        "notify_webhook_url": part.notify_webhook_url,
         "flows": [{"id": str(f.id), "name": f.name} for f in flows],
     }
+
+
+class NotifyWebhookPayload(BaseModel):
+    notify_webhook_url: Annotated[str | None, Field(default=None, max_length=500)] = None
+
+
+@router.patch("/shared/{bot_id}/notify", dependencies=csrf)
+async def set_partner_webhook(
+    bot_id: uuid.UUID, payload: NotifyWebhookPayload, user: AuthenticatedUser, db: DbSession
+) -> dict:
+    """The partner sets (or clears) the webhook that receives a sale ping for this bot."""
+    access = await _access_or_404(db, user, bot_id, require_active=False)
+    url = (payload.notify_webhook_url or "").strip() or None
+    if url is not None and not (url.startswith("https://") or url.startswith("http://")):
+        raise HTTPException(status_code=422, detail="O webhook deve ser uma URL http(s) válida.")
+    access.partnership.notify_webhook_url = url
+    await db.commit()
+    return {"notify_webhook_url": url}
 
 
 @router.get("/shared/{bot_id}/flows/{flow_id}")
