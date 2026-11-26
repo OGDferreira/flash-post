@@ -28,7 +28,16 @@ export type Partnership = {
   bot?: { id: string; name: string; username: string };
   can_edit?: boolean;
   notify_webhook_url?: string | null;
+  split_by_kind?: Partial<Record<SplitKind, number>> | null;
   flows?: { id: string; name: string }[];
+};
+
+export type SplitKind = "plan" | "upsell" | "downsell" | "remarketing";
+export const SPLIT_KIND_LABEL: Record<SplitKind, string> = {
+  plan: "Plano principal",
+  upsell: "Upsell",
+  downsell: "Downsell",
+  remarketing: "Remarketing",
 };
 
 export type CommissionStatus = "pending" | "paid" | "denied";
@@ -112,7 +121,13 @@ export function resendInvite(id: string, inviteExpiryDays?: number) {
 
 export function updatePartnership(
   id: string,
-  body: { partner_percent?: string; bot_fee?: string; status?: "ACTIVE" | "PAUSED" | "REVOKED"; access_level?: AccessLevel },
+  body: {
+    partner_percent?: string;
+    bot_fee?: string;
+    status?: "ACTIVE" | "PAUSED" | "REVOKED";
+    access_level?: AccessLevel;
+    split_by_kind?: Partial<Record<SplitKind, number | null>> | null;
+  },
 ) {
   return apiRequest<Partnership>(`/api/bot-partners/${id}`, { method: "PATCH", body });
 }

@@ -36,6 +36,21 @@ from app.partners.service import (
 
 CENT = Decimal("0.01")
 ACTIVE_STATES = ("PENDING", "ACTIVE", "PAUSED")
+# Offer kinds a sale can be, each able to carry its own partner percent.
+SPLIT_KINDS = ("plan", "upsell", "downsell", "remarketing")
+
+
+def effective_percent(part: BotPartner, kind: str | None) -> Decimal:
+    """The partner's cut for a sale of this kind: the per-kind override if set, else the
+    general ``partner_percent``."""
+    overrides = part.split_by_kind or {}
+    value = overrides.get(kind) if kind else None
+    if value is None:
+        return Decimal(str(part.partner_percent))
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return Decimal(str(part.partner_percent))
 
 
 def _floor(value: Decimal) -> Decimal:
@@ -77,6 +92,7 @@ def partnership_out(part: BotPartner, owner: User | None, partner: User | None, 
         "invite_expiry_days": part.invite_expiry_days,
         "invite_expires_at": part.invite_expires_at.isoformat() if part.invite_expires_at else None,
         "expired": invite_expired(part),
+        "split_by_kind": part.split_by_kind or None,
         "owner": user_brief(owner),
         "partner": user_brief(partner),
     }
@@ -142,6 +158,21 @@ async def active_percent_sum(
     if exclude is not None:
         query = query.where(BotPartner.id != exclude)
     return Decimal(str(await db.scalar(query) or 0))
+
+
+async def active_kind_percent_sums(
+    db: AsyncSession, bot_id: uuid.UUID, exclude: uuid.UUID | None = None
+) -> dict[str, Decimal]:
+    """Per offer kind, the sum of the effective cut of every ACTIVE partner of a bot
+    (optionally excluding one). Used to keep each kind's total within 100%."""
+    query = select(BotPartner).where(BotPartner.bot_id == bot_id, BotPartner.status == "ACTIVE")
+    if exclude is not None:
+        query = query.where(BotPartner.id != exclude)
+    sums = {kind: Decimal("0") for kind in SPLIT_KINDS}
+    for part in await db.scalars(query):
+        for kind in SPLIT_KINDS:
+            sums[kind] += effective_percent(part, kind)
+    return sums
 
 
 async def active_partners_of_bot(db: AsyncSession, bot_id: uuid.UUID) -> list[BotPartner]:
@@ -236,7 +267,8 @@ async def record_sale_split(db: AsyncSession, order: TgOrder) -> list[BotPartner
         net = net_after_gateway - bot_fee
         if net < 0:
             net = Decimal("0.00")
-        partner_amount = _floor(net * part.partner_percent / Decimal(100))
+        pct = effective_percent(part, order.kind)  # per-kind override, else general percent
+        partner_amount = _floor(net * pct / Decimal(100))
         owner_amount = net - partner_amount
         sale = BotPartnerSale(
             partnership_id=part.id,
@@ -248,7 +280,7 @@ async def record_sale_split(db: AsyncSession, order: TgOrder) -> list[BotPartner
             gateway_fee=gateway_fee,
             bot_fee=bot_fee,
             net=net,
-            partner_percent=part.partner_percent,
+            partner_percent=pct,
             partner_amount=partner_amount,
             owner_amount=owner_amount,
             paid_at=order.paid_at or utc_now(),

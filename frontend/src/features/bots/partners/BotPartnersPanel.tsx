@@ -4,9 +4,62 @@ import { Clock, Eye, Handshake, Pause, Play, Plus, RotateCcw, Trash2, UserPlus }
 
 import { apiRequest, ApiError } from "@/services/api";
 import type { Bot } from "../types";
-import { botPartners, invitePartner, ownerFinance, removePartnership, resendInvite, updatePartnership, type AccessLevel, type Partnership } from "./api";
+import { botPartners, invitePartner, ownerFinance, removePartnership, resendInvite, SPLIT_KIND_LABEL, updatePartnership, type AccessLevel, type Partnership, type SplitKind } from "./api";
 
 const ACCESS_LABEL: Record<AccessLevel, string> = { operational: "Operacional", read_only: "Somente leitura" };
+const SPLIT_KINDS: SplitKind[] = ["plan", "upsell", "downsell", "remarketing"];
+
+function SplitByKindEditor({ part, onChanged }: { part: Partnership; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const current = part.split_by_kind ?? {};
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(SPLIT_KINDS.map((k) => [k, current[k] != null ? String(current[k]) : ""])),
+  );
+  const save = useMutation({
+    mutationFn: () => {
+      const body: Partial<Record<SplitKind, number | null>> = {};
+      for (const k of SPLIT_KINDS) {
+        const raw = (values[k] ?? "").replace(",", ".").trim();
+        body[k] = raw === "" ? null : Number(raw);
+      }
+      return updatePartnership(part.id, { split_by_kind: body });
+    },
+    onSuccess: onChanged,
+  });
+  const hasAny = SPLIT_KINDS.some((k) => current[k] != null);
+
+  return (
+    <div className="mt-3 rounded-xl border border-line bg-well/60 p-3">
+      <button className="flex w-full items-center justify-between text-left text-xs font-medium text-fg-2" onClick={() => setOpen((o) => !o)} type="button">
+        <span>Split por plano {hasAny ? "(personalizado)" : "(usa a % geral)"}</span>
+        <span className="text-muted">{open ? "−" : "+"}</span>
+      </button>
+      {open && (
+        <>
+          <p className="mt-1 text-[11px] text-muted">Deixe em branco para usar a % geral ({Number(part.partner_percent)}%) naquele tipo de oferta.</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {SPLIT_KINDS.map((k) => (
+              <label key={k} className="text-[11px] text-muted">
+                {SPLIT_KIND_LABEL[k]}
+                <input
+                  className="field !min-h-9 !text-sm"
+                  inputMode="decimal"
+                  placeholder={`${Number(part.partner_percent)}%`}
+                  value={values[k] ?? ""}
+                  onChange={(e) => setValues((v) => ({ ...v, [k]: e.target.value }))}
+                />
+              </label>
+            ))}
+          </div>
+          <button className="btn-secondary !min-h-8 mt-2 !text-xs" disabled={save.isPending} onClick={() => save.mutate()} type="button">
+            Salvar split por plano
+          </button>
+          {save.error && <p className="mt-1 text-xs text-danger">{save.error instanceof ApiError ? save.error.message : "Não foi possível salvar."}</p>}
+        </>
+      )}
+    </div>
+  );
+}
 import { PartnerFinanceCard } from "./PartnerFinanceCard";
 
 const STATUS_LABEL: Record<Partnership["status"], string> = {
@@ -101,6 +154,7 @@ function PartnerRow({ part, canZeroFee, onChanged }: { part: Partnership; canZer
           {(save.error || remove.error) instanceof ApiError ? (save.error || remove.error)!.message : "Não foi possível salvar."}
         </p>
       )}
+      <SplitByKindEditor part={part} onChanged={onChanged} />
     </div>
   );
 }

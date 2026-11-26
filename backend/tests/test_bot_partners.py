@@ -317,6 +317,59 @@ async def test_invite_expiry_blocks_accept_and_resend_revives(client, db_session
 
 
 @pytest.mark.anyio
+async def test_split_by_kind_overrides_percent_per_offer(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, flow = await _setup(client, headers)
+    owner_user, workspace = owner
+    partner = await _partner_user(db_session)
+    part = BotPartner(
+        bot_id=uuid.UUID(bot["id"]), owner_user_id=owner_user.id, partner_user_id=partner.id,
+        partner_percent=Decimal("50.00"), bot_fee=Decimal("0.00"), status="ACTIVE",
+        accepted_at=datetime.now(timezone.utc), split_by_kind={"upsell": 20},
+    )
+    db_session.add(part)
+    await db_session.commit()
+
+    # A plan sale uses the general 50%.
+    plan_order = await _paid_order(db_session, workspace.id, uuid.UUID(bot["id"]), uuid.UUID(flow["id"]), gateway_fee="0.00")
+    [plan_sale] = await svc.record_sale_split(db_session, plan_order)
+    assert plan_sale.partner_percent == Decimal("50.00")
+    assert plan_sale.partner_amount == Decimal("50.00")
+
+    # An upsell sale uses the 20% override.
+    up_lead = TgLead(workspace_id=workspace.id, bot_id=uuid.UUID(bot["id"]), flow_id=uuid.UUID(flow["id"]), tg_user_id=5, chat_id=5)
+    db_session.add(up_lead)
+    await db_session.flush()
+    up_order = TgOrder(
+        workspace_id=workspace.id, bot_id=uuid.UUID(bot["id"]), lead_id=up_lead.id, flow_id=uuid.UUID(flow["id"]),
+        kind="upsell", offer_id="up0", offer_name="Up", amount=Decimal("100.00"), gateway="smokepay",
+        gateway_fee=Decimal("0.00"), net_amount=Decimal("100.00"), status="paid", paid_at=datetime.now(timezone.utc),
+    )
+    db_session.add(up_order)
+    await db_session.commit()
+    await db_session.refresh(up_order)
+    [up_sale] = await svc.record_sale_split(db_session, up_order)
+    assert up_sale.partner_percent == Decimal("20.00")
+    assert up_sale.partner_amount == Decimal("20.00")
+
+    # Per-kind validation: a second active partner can't push one kind over 100%.
+    p2 = await _partner_user(db_session, email="b@example.com", nickname="Parceiro B")
+    part2 = BotPartner(
+        bot_id=uuid.UUID(bot["id"]), owner_user_id=owner_user.id, partner_user_id=p2.id,
+        partner_percent=Decimal("40.00"), bot_fee=Decimal("0.00"), status="PAUSED",
+        accepted_at=datetime.now(timezone.utc),
+    )
+    db_session.add(part2)
+    await db_session.commit()
+    # part(plan 50) + part2(plan 40) = 90 ok to activate; now set part2 plan to 60 → 110 blocked.
+    ok = await client.patch(f"/api/bot-partners/{part2.id}", headers=headers, json={"status": "ACTIVE"})
+    assert ok.status_code == 200, ok.text
+    over = await client.patch(f"/api/bot-partners/{part2.id}", headers=headers, json={"split_by_kind": {"plan": 60}})
+    assert over.status_code == 409
+    assert "plano principal" in over.json()["detail"]
+
+
+@pytest.mark.anyio
 async def test_no_split_without_active_partner(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, flow = await _setup(client, headers)

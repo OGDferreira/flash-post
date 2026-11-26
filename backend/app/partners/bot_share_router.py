@@ -90,6 +90,23 @@ class PartnershipUpdate(BaseModel):
     bot_fee: Annotated[Decimal | None, Field(default=None, ge=0)] = None  # Super Admin only
     status: Annotated[str | None, Field(default=None)] = None  # ACTIVE | PAUSED | REVOKED
     access_level: Annotated[str | None, Field(default=None, pattern="^(operational|read_only)$")] = None
+    # Per-offer-kind percent overrides, e.g. {"plan": 50, "upsell": 30}; null/absent clears.
+    split_by_kind: Annotated[dict[str, Decimal | None] | None, Field(default=None)] = None
+
+
+def _clean_split_by_kind(raw: dict[str, Decimal | None] | None) -> dict[str, float] | None:
+    """Keep only known kinds with a 0–100 value; drop nulls. Empty → None (use general %)."""
+    if not raw:
+        return None
+    out: dict[str, float] = {}
+    for kind, value in raw.items():
+        if kind not in svc.SPLIT_KINDS or value is None:
+            continue
+        v = Decimal(str(value))
+        if v < 0 or v > 100:
+            raise HTTPException(status_code=422, detail="Cada porcentagem por plano deve ficar entre 0 e 100.")
+        out[kind] = float(svc.money(v))
+    return out or None
 
 
 class PayoutPayload(BaseModel):
@@ -200,6 +217,7 @@ async def update_partnership(
     part = await _partnership_for_owner(db, await db.get(User, access.workspace.owner_id), partnership_id)
     # The cut this partner would take once the change is applied (new percent if given).
     new_percent = svc.money(payload.partner_percent) if payload.partner_percent is not None else part.partner_percent
+    new_split = _clean_split_by_kind(payload.split_by_kind) if "split_by_kind" in payload.model_fields_set else part.split_by_kind
     # Whether this partner counts as active after the change.
     will_be_active = (payload.status == "ACTIVE") or (payload.status is None and part.status == "ACTIVE")
     if will_be_active:
@@ -213,8 +231,21 @@ async def update_partnership(
                     f"Reduza alguma porcentagem ou pause outro parceiro."
                 ),
             )
+        # Each offer kind must also stay within 100% across active partners.
+        kind_others = await svc.active_kind_percent_sums(db, part.bot_id, exclude=part.id)
+        proposed = BotPartner(partner_percent=new_percent, split_by_kind=new_split)
+        for kind in svc.SPLIT_KINDS:
+            total = kind_others[kind] + svc.effective_percent(proposed, kind)
+            if total > Decimal("100"):
+                label = {"plan": "plano principal", "upsell": "upsell", "downsell": "downsell", "remarketing": "remarketing"}[kind]
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"A soma das porcentagens de '{label}' dos parceiros ativos passaria de 100% ({total:.2f}%).",
+                )
     if payload.partner_percent is not None:
         part.partner_percent = new_percent
+    if "split_by_kind" in payload.model_fields_set:
+        part.split_by_kind = new_split
     if payload.bot_fee is not None:
         if not _is_super_admin(user):
             raise HTTPException(status_code=403, detail="Só o super admin pode alterar a taxa do bot.")
