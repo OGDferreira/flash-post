@@ -149,6 +149,46 @@ async def test_activating_over_100_percent_is_blocked(client, db_session, owner,
 
 
 @pytest.mark.anyio
+async def test_owner_marks_commission_paid_and_partner_sees_status(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, flow = await _setup(client, headers)
+    owner_user, workspace = owner
+    partner = await _partner_user(db_session)
+    part = BotPartner(
+        bot_id=uuid.UUID(bot["id"]), owner_user_id=owner_user.id, partner_user_id=partner.id,
+        partner_percent=Decimal("50.00"), bot_fee=Decimal("0.00"), status="ACTIVE",
+        accepted_at=datetime.now(timezone.utc),
+    )
+    db_session.add(part)
+    await db_session.commit()
+
+    order = await _paid_order(db_session, workspace.id, uuid.UUID(bot["id"]), uuid.UUID(flow["id"]), gateway_fee="0.00")
+    [sale] = await svc.record_sale_split(db_session, order)
+    await db_session.commit()
+    assert sale.payout_status == "pending"
+
+    # Owner marks the commission paid.
+    res = await client.patch(f"/api/bot-partners/sales/{sale.id}/status", headers=headers, json={"status": "paid", "note": "pix enviado"})
+    assert res.status_code == 200, res.text
+    assert res.json()["payout_status"] == "paid"
+
+    # Partner logs in and sees the status + the by-status totals.
+    await client.post("/api/auth/login", headers={"X-CSRF-Token": await _csrf(client)},
+                      json={"email": "augusto@example.com", "password": "partner password 123"})
+    pheaders = {"X-CSRF-Token": await _csrf(client)}
+    fin = await client.get(f"/api/bot-partners/shared/{bot['id']}/finance?period=all", headers=pheaders)
+    assert fin.status_code == 200, fin.text
+    body = fin.json()
+    assert body["sales"][0]["payout_status"] == "paid"
+    assert body["by_status"]["paid"]["count"] == 1
+    assert body["by_status"]["paid"]["partner_amount"] == 50.0
+
+    # A partner cannot change the status (not their endpoint / not their owner scope).
+    nope = await client.patch(f"/api/bot-partners/sales/{sale.id}/status", headers=pheaders, json={"status": "pending"})
+    assert nope.status_code in (403, 404)
+
+
+@pytest.mark.anyio
 async def test_no_split_without_active_partner(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, flow = await _setup(client, headers)

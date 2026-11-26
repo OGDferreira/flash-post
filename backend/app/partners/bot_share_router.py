@@ -45,6 +45,7 @@ from app.core.time import utc_now
 from app.models import (
     BotPartner,
     BotPartnerPayout,
+    BotPartnerSale,
     TgBot,
     TgFlow,
     TgFlowFolderItem,
@@ -86,6 +87,11 @@ class PayoutPayload(BaseModel):
     amount: Annotated[Decimal, Field(gt=0)]
     note: Annotated[str | None, Field(default=None, max_length=500)] = None
     paid_at: date | None = None
+
+
+class SaleStatusPayload(BaseModel):
+    status: Annotated[str, Field(pattern="^(pending|paid|denied)$")]
+    note: Annotated[str | None, Field(default=None, max_length=500)] = None
 
 
 async def _owned_bot_or_404(db, owner_user_id: uuid.UUID, bot_id: uuid.UUID) -> TgBot:
@@ -254,6 +260,37 @@ async def add_payout(partnership_id: uuid.UUID, payload: PayoutPayload, access: 
     return {
         "id": str(payout.id), "party": payout.party, "amount": float(payout.amount),
         "note": payout.note, "paid_at": payout.paid_at.isoformat(),
+    }
+
+
+@router.patch("/sales/{sale_id}/status", dependencies=csrf)
+async def set_commission_status(
+    sale_id: uuid.UUID, payload: SaleStatusPayload, access: OwnerAccess, user: AuthenticatedUser, db: DbSession
+) -> dict:
+    """The owner marks one recorded commission as paid / denied / pending."""
+    owner_id = access.workspace.owner_id
+    sale = await db.get(BotPartnerSale, sale_id)
+    if sale is None or sale.owner_user_id != owner_id:
+        raise HTTPException(status_code=404, detail="Comissão não encontrada.")
+    prev = sale.payout_status
+    await svc.set_sale_status(db, sale, payload.status, by_user_id=user.id, note=payload.note)
+    if payload.status != prev and payload.status in ("paid", "denied"):
+        label = "paga" if payload.status == "paid" else "negada"
+        await svc.notify_user(
+            db,
+            sale.partner_user_id,
+            "bot_partner_commission",
+            f"Comissão {label}",
+            f"Uma comissão de {svc.money(sale.partner_amount)} foi marcada como {label}.",
+            url="/bot/parceiros",
+        )
+    await db.commit()
+    await db.refresh(sale)
+    return {
+        "id": str(sale.id),
+        "payout_status": sale.payout_status,
+        "status_note": sale.status_note,
+        "status_changed_at": sale.status_changed_at.isoformat() if sale.status_changed_at else None,
     }
 
 

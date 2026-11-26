@@ -99,6 +99,7 @@ class BotPartnerSale(Base):
         Index("ix_bot_partner_sales_partnership_paid", "partnership_id", "paid_at"),
         Index("ix_bot_partner_sales_partner_paid", "partner_user_id", "paid_at"),
         Index("ix_bot_partner_sales_owner_paid", "owner_user_id", "paid_at"),
+        Index("ix_bot_partner_sales_status", "partnership_id", "payout_status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -119,6 +120,14 @@ class BotPartnerSale(Base):
     partner_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     owner_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Commission settlement status the owner controls: 'pending' | 'paid' | 'denied'.
+    payout_status: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="pending", server_default="pending"
+    )
+    status_note: Mapped[str | None] = mapped_column(Text)
+    status_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Audit reference to the user who last changed the status (no DB-level FK).
+    status_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
