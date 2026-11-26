@@ -63,6 +63,8 @@ export const PARTNER_FEATURE_BY_ROUTE: Record<string, ["post" | "bot", string]> 
   "/bot/conversas": ["bot", "bots"],
   "/bot/remarketing": ["bot", "bots"],
   "/bot/gateways": ["bot", "bots"],
+  "/bot/parceiros": ["bot", "bots"],
+  "/bot/bots-compartilhados": ["bot", "bots"],
 };
 // Essential account pages a sócio can always reach.
 const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/novidades", "/feature/links", "/feature/chat"]);
@@ -258,6 +260,15 @@ const botGroups: NavGroup[] = [
     title: "Sócios e comissões",
     icon: Handshake,
     items: [{ label: "Sócios, convites e comissões", short: "Sócios", to: "/feature/affiliates", icon: Handshake }],
+  },
+  {
+    id: "bot-parceiros-bot",
+    title: "Parceiros do bot",
+    icon: Handshake,
+    items: [
+      { label: "Parceiros do bot", short: "Parceiros", to: "/bot/parceiros", icon: Handshake },
+      { label: "Bots compartilhados comigo", short: "Compartilhados", to: "/bot/bots-compartilhados", icon: Share2 },
+    ],
   },
   {
     id: "bot-conta",

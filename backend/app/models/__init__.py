@@ -56,6 +56,7 @@ from app.models.push import (
 )
 from app.models.workspace import Workspace, WorkspaceMember
 from app.models.fee_change_log import FeeChangeLog
+from app.models.bot_partner import BotPartner, BotPartnerSale, BotPartnerPayout
 from app.models.platform_subscription import (
     PlatformLiberationCode,
     PlatformPlan,
@@ -108,6 +109,9 @@ __all__ = [
     "Base",
     "Extension",
     "FeeChangeLog",
+    "BotPartner",
+    "BotPartnerSale",
+    "BotPartnerPayout",
     "PlatformPlan",
     "PlatformSubscription",
     "PlatformSubscriptionCharge",

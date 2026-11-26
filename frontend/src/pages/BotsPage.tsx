@@ -17,6 +17,8 @@ import { GatewaysPanel } from "@/features/bots/GatewaysPanel";
 import { RemarketingPanel } from "@/features/bots/remarketing/RemarketingPanel";
 import { SharedByMePanel } from "@/features/partners/SharedByMePanel";
 import { SharedFlowsPanel } from "@/features/partners/SharedTemplates";
+import { BotPartnersPanel } from "@/features/bots/partners/BotPartnersPanel";
+import { SharedBotsPanel } from "@/features/bots/partners/SharedBotsPanel";
 
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
@@ -33,6 +35,8 @@ export const BOT_SECTIONS = {
   shared: { slug: "compartilhados-comigo", title: "Compartilhados comigo", eyebrow: "Funis", hint: "Funis de outro proprietário que você pode usar nos seus bots. Gateway e comissão são definidos por quem compartilhou." },
   sales: { slug: "vendas", title: "Leads, starts e vendas", eyebrow: "Vendas e financeiro", hint: "Cada Pix gerado e pago, com taxas, comissões e o líquido de cada venda." },
   gateways: { slug: "gateways", title: "Gateways de pagamento", eyebrow: "Configuração", hint: "Configure os gateways dos seus funis próprios. Funis compartilhados com você usam o gateway de quem compartilhou." },
+  partners: { slug: "parceiros", title: "Parceiros do bot", eyebrow: "Parceiros", hint: "Compartilhe um bot e o funil dele com outro usuário independente, defina a porcentagem e acompanhe a divisão de cada venda." },
+  sharedBots: { slug: "bots-compartilhados", title: "Bots compartilhados comigo", eyebrow: "Parceiros", hint: "Bots que outro usuário compartilhou com você: edite o funil, veja as análises e o financeiro com a divisão dos lucros." },
 } as const;
 
 type Tab = keyof typeof BOT_SECTIONS;
@@ -110,6 +114,8 @@ export function BotsPage() {
       {tab === "sharedByMe" && <SharedByMePanel />}
       {tab === "sales" && <BotSalesPanel />}
       {tab === "gateways" && <GatewaysPanel />}
+      {tab === "partners" && <BotPartnersPanel />}
+      {tab === "sharedBots" && <SharedBotsPanel onEditingChange={setEditing} />}
     </div>
   );
 }

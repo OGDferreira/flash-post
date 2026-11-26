@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { apiRequest } from "@/services/api";
 import { emptyDelivery, type Block, type BotGroup, type Delivery, type OrderBump } from "../types";
 import { MediaGrid } from "./MediaGrid";
+import { useBotApi } from "./apiBase";
 import { BASE_VARIABLES, RichTextEditor } from "./RichTextEditor";
 import { Field, MoneyInput, Switch } from "./ui";
 
@@ -112,9 +113,10 @@ function AfterPurchase({ messages, onChange }: { messages: Block[]; onChange: (n
 }
 
 export function useBotGroups() {
+  const { groupsUrl } = useBotApi();
   return useQuery({
-    queryKey: ["bots", "groups"],
-    queryFn: () => apiRequest<{ groups: BotGroup[] }>("/api/bots/groups/list"),
+    queryKey: ["bots", "groups", groupsUrl],
+    queryFn: () => apiRequest<{ groups: BotGroup[] }>(groupsUrl),
     retry: false,
   });
 }

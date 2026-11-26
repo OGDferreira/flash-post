@@ -26,6 +26,7 @@ import { confirmAction } from "@/lib/confirm";
 import { ApiError, apiRequest } from "@/services/api";
 import type { Delivery, DownsellStep, Flow, FlowDefinition, OrderBump } from "./types";
 import { BotsSection, InternationalSection, WelcomeSection, type SectionProps } from "./editor/sectionsTop";
+import { useBotApi } from "./editor/apiBase";
 import { FlowSimulator } from "./simulator/FlowSimulator";
 import {
   BumpSection,
@@ -40,7 +41,7 @@ import {
 type Section = { id: string; label: string; group: string; icon: ComponentType<{ size?: number }>; component: ComponentType<SectionProps> };
 
 // Same order and groups as the SharkBot editor's side navigation.
-const sections: Section[] = [
+const allSections: Section[] = [
   { id: "bots", label: "Bots", group: "Estrutura", icon: BotIcon, component: BotsSection },
   { id: "international", label: "Vendas Internacionais", group: "Estrutura", icon: Globe, component: InternationalSection },
   { id: "welcome", label: "Boas-vindas", group: "Estrutura", icon: Hand, component: WelcomeSection },
@@ -52,7 +53,7 @@ const sections: Section[] = [
   { id: "payment", label: "Pagamento", group: "Operação", icon: CreditCard, component: PaymentSection },
   { id: "settings", label: "Verificação +18", group: "Operação", icon: Settings2, component: SettingsSection },
 ];
-const groups = [...new Set(sections.map((item) => item.group))];
+
 
 const blank = (value?: string | null) => (value && value.trim() ? value : null);
 export const money = (value: string | number) => Number(String(value).replace(",", ".")).toFixed(2);
@@ -116,7 +117,13 @@ function toPayload(definition: FlowDefinition): FlowDefinition {
 
 export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => void }) {
   const queryClient = useQueryClient();
-  const flow = useQuery({ queryKey: ["bots", "flow", flowId], queryFn: () => apiRequest<Flow>(`/api/bots/flows/${flowId}`), retry: false });
+  const api = useBotApi();
+  const sections = useMemo(
+    () => (api.showBotsSection ? allSections : allSections.filter((item) => item.id !== "bots")),
+    [api.showBotsSection],
+  );
+  const groups = useMemo(() => [...new Set(sections.map((item) => item.group))], [sections]);
+  const flow = useQuery({ queryKey: ["bots", "flow", flowId], queryFn: () => apiRequest<Flow>(api.flowUrl(flowId)), retry: false });
   const [name, setName] = useState("");
   const [draft, setDraft] = useState<FlowDefinition | null>(null);
   const [savedJson, setSavedJson] = useState("");
@@ -154,7 +161,7 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   }, [dirty]);
 
   const save = useMutation({
-    mutationFn: () => apiRequest<Flow>(`/api/bots/flows/${flowId}`, { method: "PUT", body: { name, definition: toPayload(draft!) } }),
+    mutationFn: () => apiRequest<Flow>(api.flowUrl(flowId), { method: "PUT", body: { name, definition: toPayload(draft!) } }),
     onSuccess: (updated) => {
       queryClient.setQueryData(["bots", "flow", flowId], updated);
       void queryClient.invalidateQueries({ queryKey: ["bots", "flows"] });
