@@ -18,6 +18,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -85,6 +86,11 @@ class BotPartner(Base):
     )
     # Optional webhook the partner sets to receive a sale ping (Telegram bot, Zapier, ...).
     notify_webhook_url: Mapped[str | None] = mapped_column(String(500))
+    # Invite validity: a PENDING invite expires after this many days (set at invite time).
+    invite_expiry_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=7, server_default="7"
+    )
+    invite_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

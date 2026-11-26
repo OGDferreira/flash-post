@@ -20,6 +20,9 @@ export type Partnership = {
   bot_fee: number;
   accepted_at: string | null;
   created_at: string;
+  invite_expiry_days?: number;
+  invite_expires_at?: string | null;
+  expired?: boolean;
   owner: PartnerUser | null;
   partner: PartnerUser | null;
   bot?: { id: string; name: string; username: string };
@@ -96,8 +99,15 @@ export function botPartners(botId: string) {
   }>(`/api/bot-partners/bots/${botId}`);
 }
 
-export function invitePartner(botId: string, body: { identifier: string; partner_percent: string; bot_fee?: string; access_level?: AccessLevel }) {
+export function invitePartner(botId: string, body: { identifier: string; partner_percent: string; bot_fee?: string; access_level?: AccessLevel; invite_expiry_days?: number }) {
   return apiRequest<Partnership>(`/api/bot-partners/bots/${botId}/invite`, { method: "POST", body });
+}
+
+export function resendInvite(id: string, inviteExpiryDays?: number) {
+  return apiRequest<Partnership>(`/api/bot-partners/${id}/resend`, {
+    method: "POST",
+    body: { invite_expiry_days: inviteExpiryDays },
+  });
 }
 
 export function updatePartnership(
