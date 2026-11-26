@@ -12,6 +12,7 @@ import {
   Eye,
   Globe,
   Hand,
+  MessageSquare,
   PlayCircle,
   Save,
   Settings2,
@@ -34,6 +35,7 @@ import {
   PaymentSection,
   PlansSection,
   PreviewsSection,
+  SmartRepliesSection,
   SettingsSection,
   UpsellSection,
 } from "./editor/sectionsOffers";
@@ -50,6 +52,7 @@ const allSections: Section[] = [
   { id: "downsell", label: "Downsell", group: "Conversão", icon: TrendingDown, component: DownsellSection },
   { id: "bump", label: "Order bump", group: "Conversão", icon: ShoppingCart, component: BumpSection },
   { id: "previews", label: "Prévias", group: "Conversão", icon: Eye, component: PreviewsSection },
+  { id: "smart_replies", label: "Respostas no DM", group: "Conversão", icon: MessageSquare, component: SmartRepliesSection },
   { id: "payment", label: "Pagamento", group: "Operação", icon: CreditCard, component: PaymentSection },
   { id: "settings", label: "Verificação +18", group: "Operação", icon: Settings2, component: SettingsSection },
 ];

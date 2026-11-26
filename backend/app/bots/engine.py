@@ -11,10 +11,12 @@ webhook racing the "Já paguei" button never pays or delivers twice.
 import base64
 import io
 import html
+import re
 import logging
 import secrets
 import time
 import uuid
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
@@ -22,7 +24,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots import atenaspay, smokepay, stripe_gateway
-from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, UpsellStep
+from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, SmartReplies, SmartReplyRule, UpsellStep
 from app.bots.richtext import sanitize
 from app.bots.telegram import InputFile, TelegramClient, TelegramError, translate_target
 from app.partners.service import billing_route
@@ -958,6 +960,68 @@ def _inbound_content(message: dict) -> tuple[str, str | None, str | None]:
     return "other", None, caption
 
 
+_SPINTAX = re.compile(r"\{([^{}]+\|[^{}]*)\}")
+
+
+def expand_spintax(text: str, _depth: int = 0) -> str:
+    """Resolve ``{a|b|c}`` groups to one random option (nesting allowed) so a smart reply
+    reads differently each time. A lone ``{nome}`` (no ``|``) passes through for ``render``."""
+    if not text or "{" not in text or _depth > 8:
+        return text or ""
+    expanded = _SPINTAX.sub(lambda m: secrets.choice(m.group(1).split("|")), text)
+    return expand_spintax(expanded, _depth + 1) if expanded != text else expanded
+
+
+def _fold(text: str | None) -> str:
+    """Lowercase and strip accents so keyword matching ignores case and acentuação."""
+    if not text:
+        return ""
+    folded = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in folded if not unicodedata.combining(ch)).lower()
+
+
+def match_smart_reply(smart: "SmartReplies", text: str) -> "SmartReplyRule | None":
+    """First keyword rule whose any keyword is contained in ``text`` (accent/case-insensitive)."""
+    folded = _fold(text)
+    for rule in smart.rules:
+        for keyword in rule.keywords:
+            if keyword and _fold(keyword) in folded:
+                return rule
+    return None
+
+
+async def _apply_smart_then(
+    db: AsyncSession, bot: TgBot, lead: TgLead, flow: "FlowDefinition", then: str
+) -> None:
+    """After a smart reply: optionally re-send the plans or the whole offer to keep the funnel moving."""
+    tg = telegram(bot)
+    if then == "plans":
+        await send_plans(tg, bot, lead, flow)
+    elif then == "offer":
+        await send_offer(db, tg, bot, lead, flow)
+
+
+async def handle_smart_reply(db: AsyncSession, bot: TgBot, lead: TgLead, flow: "FlowDefinition", body: str) -> bool:
+    """A lead typed something off-script: answer with a keyword rule or the fallback, then
+    optionally nudge the funnel. Returns True when it answered (so its jobs run right away)."""
+    smart = flow.smart_replies
+    if not smart.enabled:
+        return False
+    rule = match_smart_reply(smart, body)
+    reply, then = (rule.reply, rule.then) if rule else (
+        (smart.fallback_text, smart.fallback_then) if smart.fallback_enabled else (None, "none")
+    )
+    if not reply:
+        return False
+    tg = telegram(bot)
+    await tg.send_chat_action(lead.chat_id, "typing")
+    text = render(expand_spintax(reply), lead, bot=bot)
+    await tg.send_message(lead.chat_id, text)
+    log_message(db, bot, lead, "out", "text", text=text)
+    await _apply_smart_then(db, bot, lead, flow, then)
+    return True
+
+
 async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid.UUID | None:
     """Apply one Telegram update. Returns the lead whose jobs should run right away."""
     if "my_chat_member" in update_data:
@@ -984,12 +1048,16 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
             lead = await upsert_lead(db, bot, sender, chat["id"])
             kind, file_id, body = _inbound_content(message)
             log_message(db, bot, lead, "in", kind, text=body, tg_file_id=file_id)
-            if lead.welcome_wait:
-                flow = await load_flow(db, bot, lead)
-                if flow is not None:
-                    _set_translate_target(flow, lead)
-                    if await resume_welcome(db, bot, lead, flow):
-                        return lead.id
+            flow = await load_flow(db, bot, lead)
+            if flow is None:
+                return None
+            _set_translate_target(flow, lead)
+            if lead.welcome_wait and await resume_welcome(db, bot, lead, flow):
+                return lead.id
+            # Off-script free text (a question, an objection): answer with a keyword rule or the
+            # fallback so the funnel keeps a coherent conversation instead of going silent.
+            if body and not await _has_paid(db, lead) and await handle_smart_reply(db, bot, lead, flow, body):
+                return lead.id
             return None
         lead = await upsert_lead(db, bot, sender, chat["id"])
         log_message(db, bot, lead, "in", "text", text=text, unread=False)  # the conversation begins at /start

@@ -134,6 +134,32 @@ export function emptyPreviews(): Previews {
   return { enabled: false, label: "👀 Ver prévias", style: "primary", text: "👀 Prévias liberadas! Elas somem em {tempo}.", media_ids: [], spoiler: false, delete_after_seconds: 60 };
 }
 
+export type SmartThen = "none" | "plans" | "offer";
+
+export type SmartReplyRule = {
+  keywords: string[];
+  reply: string;
+  then: SmartThen;
+};
+
+export type SmartReplies = {
+  enabled: boolean;
+  rules: SmartReplyRule[];
+  fallback_enabled: boolean;
+  fallback_text: string;
+  fallback_then: SmartThen;
+};
+
+export function emptySmartReplies(): SmartReplies {
+  return {
+    enabled: false,
+    rules: [],
+    fallback_enabled: false,
+    fallback_text: "Não entendi 😅 Toque em um dos botões acima para continuar, ou me diga o que você procura.",
+    fallback_then: "none",
+  };
+}
+
 export type FlowDefinition = {
   version: 1;
   age_gate: { enabled: boolean; text: string; button: string };
@@ -142,6 +168,8 @@ export type FlowDefinition = {
   welcome_enabled?: boolean;
   welcome: Block[];
   offer: Offer;
+  /** Keyword replies + fallback for leads who type something off-script in the DM. */
+  smart_replies?: SmartReplies;
   plans: Plan[];
   payment: {
     expiration_minutes: number;

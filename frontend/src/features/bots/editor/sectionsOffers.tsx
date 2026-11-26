@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Copy, CreditCard, Eye, Gift, Plus, QrCode, ShieldCheck, ShoppingCart, Timer, Trash2, TrendingDown, TrendingUp, Truck } from "lucide-react";
+import { Copy, CreditCard, Eye, Gift, MessageSquare, Plus, QrCode, ShieldCheck, ShoppingCart, Timer, Trash2, TrendingDown, TrendingUp, Truck } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
-import { brl, emptyBump, emptyDelivery, emptyPreviews, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type Plan, type UpsellStep } from "../types";
+import { brl, emptyBump, emptyDelivery, emptyPreviews, emptySmartReplies, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type Plan, type SmartReplyRule, type SmartThen, type UpsellStep } from "../types";
 import { BumpEditor, DeliveryEditor } from "./DeliveryEditor";
 import { MediaGrid } from "./MediaGrid";
 import { FontMenu, toFancy } from "./fancyFonts";
@@ -692,6 +692,116 @@ export function PreviewsSection({ draft, set }: SectionProps) {
         </div>
       ) : (
         <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão “{previews.label}” junto dos planos.</p>
+      )}
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------------- Respostas no DM
+
+const THEN_OPTIONS: { value: SmartThen; label: string }[] = [
+  { value: "none", label: "Só responder" },
+  { value: "plans", label: "Responder e reenviar os planos" },
+  { value: "offer", label: "Responder e reenviar a oferta" },
+];
+
+function ThenPicker({ value, onChange }: { value: SmartThen; onChange: (value: SmartThen) => void }) {
+  return (
+    <Field label="Depois de responder">
+      <select className="field" value={value} onChange={(event) => onChange(event.target.value as SmartThen)}>
+        {THEN_OPTIONS.map((item) => (
+          <option key={item.value} value={item.value}>
+            {item.label}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+}
+
+export function SmartRepliesSection({ draft, set }: SectionProps) {
+  const smart = draft.smart_replies ?? emptySmartReplies();
+  const setSmart = (patch: Partial<NonNullable<FlowDefinition["smart_replies"]>>) => set({ smart_replies: { ...smart, ...patch } });
+  const setRule = (index: number, patch: Partial<SmartReplyRule>) =>
+    setSmart({ rules: smart.rules.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)) });
+  const addRule = () => setSmart({ rules: [...smart.rules, { keywords: [], reply: "", then: "none" }] });
+  const removeRule = (index: number) => setSmart({ rules: smart.rules.filter((_, i) => i !== index) });
+
+  return (
+    <Panel
+      icon={<MessageSquare size={18} />}
+      title="Respostas no DM"
+      description="Quando o lead escreve algo fora do script (uma dúvida, uma objeção) em vez de tocar num botão, o bot reconhece por palavra-chave e responde — e pode reenviar os planos para manter a conversa andando. Desligado, o bot fica em silêncio como antes."
+      aside={<Switch checked={smart.enabled} label="Respostas no DM" onChange={(enabled) => setSmart({ enabled })} />}
+    >
+      {smart.enabled ? (
+        <div className="grid gap-4">
+          <div className="grid gap-3">
+            {smart.rules.map((rule, index) => (
+              <div className="grid gap-3 rounded-xl border border-line-soft p-3" key={index}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-fg">Regra {index + 1}</span>
+                  <button aria-label="Remover regra" className="text-muted hover:text-danger" onClick={() => removeRule(index)} type="button">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+                <Field label="Palavras-chave" hint="Separe por vírgula. Basta uma aparecer na mensagem (ignora maiúsculas e acentos).">
+                  <input
+                    className="field"
+                    placeholder="preço, quanto custa, valor"
+                    value={rule.keywords.join(", ")}
+                    onChange={(event) =>
+                      setRule(index, {
+                        keywords: event.target.value
+                          .split(",")
+                          .map((word) => word.trim())
+                          .filter(Boolean)
+                          .slice(0, 20),
+                      })
+                    }
+                  />
+                </Field>
+                <RichTextEditor
+                  label="Resposta"
+                  required
+                  rows={2}
+                  value={rule.reply}
+                  variables={BASE_VARIABLES}
+                  onChange={(reply) => setRule(index, { reply })}
+                />
+                <ThenPicker value={rule.then} onChange={(then) => setRule(index, { then })} />
+              </div>
+            ))}
+            <Button disabled={smart.rules.length >= 30} size="sm" onClick={addRule}>
+              <Plus size={16} /> Adicionar palavra-chave
+            </Button>
+          </div>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
+            <span>
+              Resposta padrão (fallback)
+              <span className="block text-xs text-muted">Quando a mensagem não bate com nenhuma palavra-chave acima.</span>
+            </span>
+            <Switch checked={smart.fallback_enabled} label="Fallback" onChange={(fallback_enabled) => setSmart({ fallback_enabled })} />
+          </label>
+          {smart.fallback_enabled && (
+            <div className="grid gap-3">
+              <RichTextEditor
+                label="Mensagem de fallback"
+                required
+                rows={2}
+                value={smart.fallback_text}
+                variables={BASE_VARIABLES}
+                onChange={(fallback_text) => setSmart({ fallback_text })}
+              />
+              <ThenPicker value={smart.fallback_then} onChange={(fallback_then) => setSmart({ fallback_then })} />
+            </div>
+          )}
+          <p className="text-xs text-muted">
+            Dica: use variações com <code>{"{a|b|c}"}</code> na resposta para o bot não soar robótico (ele sorteia uma a cada envio).
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-muted">Desligado. Ligue para o bot responder quando o lead digitar algo em vez de tocar nos botões.</p>
       )}
     </Panel>
   );
