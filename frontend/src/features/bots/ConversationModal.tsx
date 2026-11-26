@@ -23,12 +23,12 @@ export function ConversationModal({ leadId, onClose }: { leadId: string | null; 
   if (!leadId) return null;
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-3 sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="h-[100dvh] w-full max-w-[560px] sm:h-[80vh] sm:max-h-[680px]">
+      <div className="h-[85dvh] max-h-[620px] w-full max-w-[460px]">
         <Conversation key={leadId} leadId={leadId} onBack={onClose} inModal />
       </div>
     </div>,
