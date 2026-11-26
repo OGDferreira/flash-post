@@ -9,10 +9,13 @@ export type PartnerUser = {
   email: string;
 };
 
+export type AccessLevel = "operational" | "read_only";
+
 export type Partnership = {
   id: string;
   bot_id: string;
   status: "PENDING" | "ACTIVE" | "PAUSED" | "DECLINED" | "REVOKED";
+  access_level: AccessLevel;
   partner_percent: number;
   bot_fee: number;
   accepted_at: string | null;
@@ -93,13 +96,13 @@ export function botPartners(botId: string) {
   }>(`/api/bot-partners/bots/${botId}`);
 }
 
-export function invitePartner(botId: string, body: { identifier: string; partner_percent: string; bot_fee?: string }) {
+export function invitePartner(botId: string, body: { identifier: string; partner_percent: string; bot_fee?: string; access_level?: AccessLevel }) {
   return apiRequest<Partnership>(`/api/bot-partners/bots/${botId}/invite`, { method: "POST", body });
 }
 
 export function updatePartnership(
   id: string,
-  body: { partner_percent?: string; bot_fee?: string; status?: "ACTIVE" | "PAUSED" | "REVOKED" },
+  body: { partner_percent?: string; bot_fee?: string; status?: "ACTIVE" | "PAUSED" | "REVOKED"; access_level?: AccessLevel },
 ) {
   return apiRequest<Partnership>(`/api/bot-partners/${id}`, { method: "PATCH", body });
 }

@@ -230,6 +230,47 @@ async def test_sale_notifies_partner_and_webhook_config(client, db_session, owne
 
 
 @pytest.mark.anyio
+async def test_read_only_partner_cannot_edit_funnel(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, flow = await _setup(client, headers)
+    await _partner_user(db_session)
+
+    # Owner invites with read-only access.
+    invite = await client.post(
+        f"/api/bot-partners/bots/{bot['id']}/invite", headers=headers,
+        json={"identifier": "augusto@example.com", "partner_percent": "30", "access_level": "read_only"},
+    )
+    assert invite.status_code == 201, invite.text
+    part_id = invite.json()["id"]
+    assert invite.json()["access_level"] == "read_only"
+
+    # Partner accepts, sees can_edit False.
+    await client.post("/api/auth/login", headers={"X-CSRF-Token": await _csrf(client)},
+                      json={"email": "augusto@example.com", "password": "partner password 123"})
+    pheaders = {"X-CSRF-Token": await _csrf(client)}
+    await client.post(f"/api/bot-partners/{part_id}/accept", headers=pheaders)
+    detail = await client.get(f"/api/bot-partners/shared/{bot['id']}", headers=pheaders)
+    assert detail.json()["can_edit"] is False
+    assert detail.json()["access_level"] == "read_only"
+
+    # Saving the funnel is blocked (403), but Análises still works.
+    got = await client.get(f"/api/bot-partners/shared/{bot['id']}/flows/{flow['id']}", headers=pheaders)
+    assert got.status_code == 200
+    blocked = await client.put(
+        f"/api/bot-partners/shared/{bot['id']}/flows/{flow['id']}", headers=pheaders,
+        json={"name": "x", "definition": got.json()["definition"]},
+    )
+    assert blocked.status_code == 403
+
+    # Owner flips to operational → editing allowed.
+    await client.post("/api/auth/login", headers={"X-CSRF-Token": await _csrf(client)},
+                      json={"email": "owner@example.com", "password": "correct horse battery staple"})
+    oheaders = {"X-CSRF-Token": await _csrf(client)}
+    upd = await client.patch(f"/api/bot-partners/{part_id}", headers=oheaders, json={"access_level": "operational"})
+    assert upd.status_code == 200 and upd.json()["access_level"] == "operational"
+
+
+@pytest.mark.anyio
 async def test_no_split_without_active_partner(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, flow = await _setup(client, headers)

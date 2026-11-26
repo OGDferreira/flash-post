@@ -74,12 +74,14 @@ class InvitePayload(BaseModel):
     identifier: Annotated[str, Field(min_length=1, max_length=320)]  # e-mail, @username or nickname
     partner_percent: Annotated[Decimal, Field(ge=0, le=100)]
     bot_fee: Annotated[Decimal | None, Field(default=None, ge=0)] = None  # Super Admin only
+    access_level: Annotated[str, Field(pattern="^(operational|read_only)$")] = "operational"
 
 
 class PartnershipUpdate(BaseModel):
     partner_percent: Annotated[Decimal | None, Field(default=None, ge=0, le=100)] = None
     bot_fee: Annotated[Decimal | None, Field(default=None, ge=0)] = None  # Super Admin only
     status: Annotated[str | None, Field(default=None)] = None  # ACTIVE | PAUSED | REVOKED
+    access_level: Annotated[str | None, Field(default=None, pattern="^(operational|read_only)$")] = None
 
 
 class PayoutPayload(BaseModel):
@@ -158,6 +160,7 @@ async def invite_partner(
         existing.status = "PENDING"
         existing.partner_percent = svc.money(payload.partner_percent)
         existing.bot_fee = bot_fee
+        existing.access_level = payload.access_level
         existing.invited_by_user_id = user.id
         existing.accepted_at = None
         part = existing
@@ -165,6 +168,7 @@ async def invite_partner(
         part = BotPartner(
             bot_id=bot.id, owner_user_id=owner_user.id, partner_user_id=target.id,
             partner_percent=svc.money(payload.partner_percent), bot_fee=bot_fee,
+            access_level=payload.access_level,
             status="PENDING", invited_by_user_id=user.id,
         )
         db.add(part)
@@ -201,6 +205,8 @@ async def update_partnership(
         if not _is_super_admin(user):
             raise HTTPException(status_code=403, detail="Só o super admin pode alterar a taxa do bot.")
         part.bot_fee = svc.money(payload.bot_fee)
+    if payload.access_level is not None:
+        part.access_level = payload.access_level
     if payload.status is not None:
         if payload.status not in ("ACTIVE", "PAUSED", "REVOKED"):
             raise HTTPException(status_code=422, detail="Status inválido.")
@@ -304,6 +310,15 @@ async def _access_or_404(db, user: User, bot_id: uuid.UUID, *, require_active: b
     return access
 
 
+def _require_operational(access: svc.PartnerAccess) -> None:
+    """Editing the funnel/media is only for operational partners, not read-only ones."""
+    if access.partnership.access_level != "operational":
+        raise HTTPException(
+            status_code=403,
+            detail="Seu acesso a este bot é somente leitura. Peça ao dono para liberar a edição.",
+        )
+
+
 @router.get("/shared")
 async def my_shared_bots(user: AuthenticatedUser, db: DbSession) -> dict:
     parts = await svc.shared_with(db, user.id)
@@ -380,7 +395,7 @@ async def shared_bot_detail(bot_id: uuid.UUID, user: AuthenticatedUser, db: DbSe
     flows = await _bot_flows(db, bot)
     return {
         **svc.partnership_out(part, owner, user, bot),
-        "can_edit": part.status == "ACTIVE",
+        "can_edit": part.status == "ACTIVE" and part.access_level == "operational",
         "notify_webhook_url": part.notify_webhook_url,
         "flows": [{"id": str(f.id), "name": f.name} for f in flows],
     }
@@ -435,6 +450,7 @@ class SharedFlowSave(BaseModel):
 @router.put("/shared/{bot_id}/flows/{flow_id}", dependencies=csrf)
 async def shared_save_flow(bot_id: uuid.UUID, flow_id: uuid.UUID, payload: SharedFlowSave, user: AuthenticatedUser, db: DbSession) -> dict:
     access = await _access_or_404(db, user, bot_id)  # editing requires an ACTIVE partnership
+    _require_operational(access)
     flow = await _partner_flow_or_404(db, access.bot, flow_id)
     definition = _validate_definition(payload.definition)
     media_ids = definition.media_ids()
@@ -485,6 +501,7 @@ async def shared_media_upload(
     from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 
     access = await _access_or_404(db, user, bot_id)  # uploading requires an ACTIVE partnership
+    _require_operational(access)
     workspace_id = access.bot.workspace_id
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if content_type in ("video/quicktime", "video/x-m4v"):

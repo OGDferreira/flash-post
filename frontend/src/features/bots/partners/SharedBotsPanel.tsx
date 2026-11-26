@@ -100,14 +100,24 @@ function SharedBotDetail({ botId, tab, onTab, onEdit, onBack }: {
 
       {tab === "funil" && (
         <div className="space-y-2">
-          {!canEdit && <p className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">A parceria está pausada: você vê o funil, mas as edições ficam bloqueadas até o dono reativar.</p>}
+          {!canEdit && detail.data?.access_level === "read_only" ? (
+            <p className="rounded-xl border border-line bg-well px-4 py-3 text-sm text-fg-2">Seu acesso a este bot é <strong>somente leitura</strong>: você acompanha Análises e Financeiro, mas a edição do funil fica com o dono.</p>
+          ) : !canEdit ? (
+            <p className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">A parceria está pausada: você vê o funil, mas as edições ficam bloqueadas até o dono reativar.</p>
+          ) : null}
           {flows.length === 0 && <p className="text-sm text-muted">Este bot ainda não tem um funil configurado pelo dono.</p>}
-          {flows.map((f) => (
-            <button key={f.id} className="flex w-full items-center justify-between rounded-2xl border border-line bg-surface px-4 py-3 text-left hover:border-brand" onClick={() => onEdit(f.id)} type="button">
-              <span className="font-medium text-fg">{f.name}</span>
-              <span className="flex items-center gap-1 text-sm text-accent"><Pencil size={15} /> Editar funil</span>
-            </button>
-          ))}
+          {flows.map((f) =>
+            canEdit ? (
+              <button key={f.id} className="flex w-full items-center justify-between rounded-2xl border border-line bg-surface px-4 py-3 text-left hover:border-brand" onClick={() => onEdit(f.id)} type="button">
+                <span className="font-medium text-fg">{f.name}</span>
+                <span className="flex items-center gap-1 text-sm text-accent"><Pencil size={15} /> Editar funil</span>
+              </button>
+            ) : (
+              <div key={f.id} className="flex w-full items-center justify-between rounded-2xl border border-line bg-surface px-4 py-3 text-left opacity-80">
+                <span className="font-medium text-fg">{f.name}</span>
+              </div>
+            ),
+          )}
         </div>
       )}
       {tab === "analises" && <SharedBotAnalytics botId={botId} />}

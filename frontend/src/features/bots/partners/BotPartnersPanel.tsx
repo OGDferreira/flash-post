@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Handshake, Pause, Play, Plus, Trash2, UserPlus } from "lucide-react";
+import { Eye, Handshake, Pause, Play, Plus, Trash2, UserPlus } from "lucide-react";
 
 import { apiRequest, ApiError } from "@/services/api";
 import type { Bot } from "../types";
-import { botPartners, invitePartner, ownerFinance, removePartnership, updatePartnership, type Partnership } from "./api";
+import { botPartners, invitePartner, ownerFinance, removePartnership, updatePartnership, type AccessLevel, type Partnership } from "./api";
+
+const ACCESS_LABEL: Record<AccessLevel, string> = { operational: "Operacional", read_only: "Somente leitura" };
 import { PartnerFinanceCard } from "./PartnerFinanceCard";
 
 const STATUS_LABEL: Record<Partnership["status"], string> = {
@@ -28,9 +30,14 @@ function PartnerRow({ part, canZeroFee, onChanged }: { part: Partnership; canZer
           <p className="truncate font-semibold text-fg">{name}</p>
           <p className="truncate text-xs text-muted">{part.partner?.username ? `@${part.partner.username}` : part.partner?.email}</p>
         </div>
-        <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${part.status === "ACTIVE" ? "bg-success-soft text-success" : part.status === "PAUSED" ? "bg-warning/15 text-warning" : "bg-well text-fg-2"}`}>
-          {STATUS_LABEL[part.status]}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {part.access_level === "read_only" && (
+            <span className="flex items-center gap-1 rounded-full bg-well px-2 py-1 text-[11px] font-medium text-fg-2"><Eye size={12} /> {ACCESS_LABEL.read_only}</span>
+          )}
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${part.status === "ACTIVE" ? "bg-success-soft text-success" : part.status === "PAUSED" ? "bg-warning/15 text-warning" : "bg-well text-fg-2"}`}>
+            {STATUS_LABEL[part.status]}
+          </span>
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap items-end gap-2">
         <label className="text-xs text-muted">
@@ -40,6 +47,18 @@ function PartnerRow({ part, canZeroFee, onChanged }: { part: Partnership; canZer
         <label className="text-xs text-muted">
           Taxa do bot (R$/venda)
           <input className="field !min-h-9 !w-28 !text-sm disabled:opacity-60" disabled={!canZeroFee} inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} title={canZeroFee ? "" : "Só o super admin altera a taxa do bot."} />
+        </label>
+        <label className="text-xs text-muted">
+          Acesso
+          <select
+            className="field !min-h-9 !w-auto !text-sm"
+            value={part.access_level}
+            disabled={save.isPending}
+            onChange={(e) => save.mutate({ access_level: e.target.value as AccessLevel })}
+          >
+            <option value="operational">Operacional</option>
+            <option value="read_only">Somente leitura</option>
+          </select>
         </label>
         <button
           className="btn-secondary !min-h-9"
@@ -75,8 +94,9 @@ function InviteForm({ botId, onInvited, canZeroFee, defaultFee }: { botId: strin
   const [identifier, setIdentifier] = useState("");
   const [percent, setPercent] = useState("50");
   const [fee, setFee] = useState(String(defaultFee));
+  const [access, setAccess] = useState<AccessLevel>("operational");
   const invite = useMutation({
-    mutationFn: () => invitePartner(botId, { identifier: identifier.trim(), partner_percent: percent.replace(",", "."), ...(canZeroFee ? { bot_fee: fee.replace(",", ".") } : {}) }),
+    mutationFn: () => invitePartner(botId, { identifier: identifier.trim(), partner_percent: percent.replace(",", "."), access_level: access, ...(canZeroFee ? { bot_fee: fee.replace(",", ".") } : {}) }),
     onSuccess: () => { setIdentifier(""); onInvited(); },
   });
   return (
@@ -91,6 +111,13 @@ function InviteForm({ botId, onInvited, canZeroFee, defaultFee }: { botId: strin
         <label className="text-xs text-muted">
           % do parceiro
           <input className="field !min-h-9 !w-24 !text-sm" inputMode="decimal" value={percent} onChange={(e) => setPercent(e.target.value)} />
+        </label>
+        <label className="text-xs text-muted">
+          Acesso
+          <select className="field !min-h-9 !w-auto !text-sm" value={access} onChange={(e) => setAccess(e.target.value as AccessLevel)}>
+            <option value="operational">Operacional (edita funil)</option>
+            <option value="read_only">Somente leitura</option>
+          </select>
         </label>
         {canZeroFee && (
           <label className="text-xs text-muted">

@@ -76,6 +76,10 @@ class BotPartner(Base):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="PENDING", server_default="PENDING"
     )
+    # 'operational' (edits the funnel + sees analytics/finance) or 'read_only' (only reads).
+    access_level: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="operational", server_default="operational"
+    )
     invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
