@@ -20,7 +20,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
 from app.bots import atenaspay, engine, portable, smokepay, stripe_gateway
-from app.bots.flow_schema import FlowDefinition, default_flow
+from app.bots.flow_schema import FlowDefinition, Offer, UpsellStep, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
@@ -611,6 +611,149 @@ async def import_flow(request: Request, access: OwnerAccess, db: DbSession) -> d
 @router.post("/flows/import-code", status_code=201, dependencies=csrf)
 async def import_flow_code(payload: ImportCode, access: OwnerAccess, db: DbSession) -> dict:
     flow = await portable.import_from_code(db, payload.code, access.workspace.id)
+    await db.commit()
+    await db.refresh(flow)
+    return _flow_out(flow)
+
+
+# ------------------------------------------------ Funil Frankenstein
+# Pick the upsell steps that sell the most across every funnel and assemble a new funnel
+# from them. Each chosen step is copied whole (price, media, copy, delivery) and made
+# self-contained, so the new funnel is a normal, editable draft.
+
+
+class FrankensteinStep(BaseModel):
+    flow_id: uuid.UUID
+    index: Annotated[int, Field(ge=0, le=19)]
+
+
+class FrankensteinCreate(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=120)] = "Funil Frankenstein"
+    steps: Annotated[list[FrankensteinStep], Field(min_length=1, max_length=20)]
+
+
+def _upsell_offer_index(offer_id: str | None) -> int | None:
+    """Upsell orders carry ``offer_id = f"up{index}"`` (0-based position in ``upsells``)."""
+    if offer_id and offer_id.startswith("up") and offer_id[2:].isdigit():
+        return int(offer_id[2:])
+    return None
+
+
+@router.get("/flows/frankenstein/steps")
+async def frankenstein_steps(
+    access: OwnerAccess, db: DbSession, period: AnalyticsPeriod = "30d",
+    start_date: date | None = None, end_date: date | None = None,
+) -> dict:
+    """Every upsell step of the operation's own funnels, ranked by what it sold in the
+    period, so the owner can build a new funnel from the best-converting steps."""
+    start, end = period_bounds(period, start_date, end_date, utc_now())
+    hide = not admin_view()
+
+    query = select(TgFlow).where(TgFlow.workspace_id == access.workspace.id)
+    if hide:
+        query = query.where(TgFlow.hidden_by_admin.is_(False))
+    # Only the operation's own funnels (never a copy received from a chief).
+    flows = [f for f in await db.scalars(query.order_by(TgFlow.created_at)) if f.template_flow_id is None]
+
+    def window(column):
+        return [c for c in ((column >= start) if start else None, (column < end) if end else None) if c is not None]
+
+    metrics: dict[tuple[uuid.UUID, int], dict] = {}
+
+    def bucket(flow_id, index) -> dict:
+        return metrics.setdefault((flow_id, index), {"pix": 0, "paid": 0, "revenue": Decimal("0.00")})
+
+    for flow_id, offer_id, total in await db.execute(
+        select(TgOrder.flow_id, TgOrder.offer_id, func.count(TgOrder.id))
+        .where(TgOrder.workspace_id == access.workspace.id, TgOrder.kind == "upsell", *window(TgOrder.created_at))
+        .group_by(TgOrder.flow_id, TgOrder.offer_id)
+    ):
+        index = _upsell_offer_index(offer_id)
+        if flow_id is not None and index is not None:
+            bucket(flow_id, index)["pix"] += total
+    for flow_id, offer_id, total, amount in await db.execute(
+        select(TgOrder.flow_id, TgOrder.offer_id, func.count(TgOrder.id), func.coalesce(func.sum(TgOrder.amount), 0))
+        .where(TgOrder.workspace_id == access.workspace.id, TgOrder.kind == "upsell", TgOrder.status == "paid", *window(TgOrder.paid_at))
+        .group_by(TgOrder.flow_id, TgOrder.offer_id)
+    ):
+        index = _upsell_offer_index(offer_id)
+        if flow_id is not None and index is not None:
+            item = bucket(flow_id, index)
+            item["paid"] += total
+            item["revenue"] += Decimal(str(amount or 0))
+
+    steps = []
+    for flow in flows:
+        try:
+            definition = FlowDefinition.model_validate(flow.definition)
+        except ValidationError:
+            continue
+        for index, step in enumerate(definition.upsells):
+            data = metrics.get((flow.id, index), {"pix": 0, "paid": 0, "revenue": Decimal("0.00")})
+            steps.append({
+                "flow_id": str(flow.id),
+                "flow_name": flow.name,
+                "index": index,
+                "name": step.name,
+                "price": str(step.price),
+                "pix": data["pix"],
+                "paid": data["paid"],
+                "revenue": float(data["revenue"]),
+                "conversion": round(data["paid"] / data["pix"] * 100, 1) if data["pix"] else None,
+                "has_media": bool(step.media_ids),
+            })
+    # Best sellers first: revenue, then paid sales, then Pix generated.
+    steps.sort(key=lambda s: (s["revenue"], s["paid"], s["pix"]), reverse=True)
+    return {"period_label": period_label(start, end), "steps": steps}
+
+
+@router.post("/flows/frankenstein", status_code=201, dependencies=csrf)
+async def create_frankenstein(payload: FrankensteinCreate, access: OwnerAccess, db: DbSession) -> dict:
+    wanted = {step.flow_id for step in payload.steps}
+    flows = {
+        flow.id: flow
+        for flow in await db.scalars(
+            select(TgFlow).where(TgFlow.id.in_(wanted), TgFlow.workspace_id == access.workspace.id)
+        )
+    }
+    definitions: dict[uuid.UUID, FlowDefinition] = {}
+    chosen: list[UpsellStep] = []
+    for ref in payload.steps:
+        flow = flows.get(ref.flow_id)
+        if flow is None:
+            raise HTTPException(status_code=404, detail="Um dos funis escolhidos não existe mais.")
+        definition = definitions.get(ref.flow_id)
+        if definition is None:
+            try:
+                definition = FlowDefinition.model_validate(flow.definition)
+            except ValidationError:
+                raise HTTPException(status_code=422, detail=f'O funil "{flow.name}" está inválido e não pode ser reaproveitado.') from None
+            definitions[ref.flow_id] = definition
+        if ref.index >= len(definition.upsells):
+            raise HTTPException(status_code=422, detail=f'Uma etapa escolhida do funil "{flow.name}" não existe mais.')
+        step = definition.upsells[ref.index].model_copy(deep=True)
+        # Self-contained: bake in the source funnel's default delivery when the step relied on it,
+        # so the new funnel doesn't need that funnel's default delivery to be valid.
+        if step.delivery is None and definition.default_delivery is not None:
+            step.delivery = definition.default_delivery.model_copy(deep=True)
+        chosen.append(step)
+
+    definition = default_flow()
+    definition.upsells = chosen
+    try:
+        definition = FlowDefinition.model_validate(definition.model_dump(mode="json"))
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        raise HTTPException(status_code=422, detail=f"Não foi possível montar o funil: {first.get('msg')}") from None
+
+    flow = TgFlow(workspace_id=access.workspace.id, name=payload.name.strip(), definition=definition.model_dump(mode="json"))
+    db.add(flow)
+    await db.flush()
+    from app.partners import service as partner_service
+
+    await partner_service.notify_admins_partner_activity(
+        db, access.membership.user_id, f'montou o funil Frankenstein "{flow.name}"', "/bot/funis"
+    )
     await db.commit()
     await db.refresh(flow)
     return _flow_out(flow)

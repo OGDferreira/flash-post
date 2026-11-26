@@ -12,6 +12,7 @@ from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
 from app.instagram.oauth import (
     InstagramOAuthError,
+    graph_base_for,
     instagram_api_error_detail,
     refresh_instagram_long_lived_token,
 )
@@ -737,7 +738,12 @@ async def reconcile_uncertain_publications(now: datetime | None = None) -> int:
                 except (RuntimeError, ValueError):
                     token = None
             status_code = (
-                await fetch_container_status(account.instagram_user_id, job.container_id, token)
+                await fetch_container_status(
+                    account.instagram_user_id,
+                    job.container_id,
+                    token,
+                    graph_base=graph_base_for(account.login_kind),
+                )
                 if token and account is not None
                 else None
             )
@@ -751,7 +757,10 @@ async def reconcile_uncertain_publications(now: datetime | None = None) -> int:
             if status_code == "FINISHED" and token and account is not None:
                 try:
                     published_id = await publish_existing_container(
-                        account.instagram_user_id, job.container_id, token
+                        account.instagram_user_id,
+                        job.container_id,
+                        token,
+                        graph_base=graph_base_for(account.login_kind),
                     )
                 except Exception as exc:
                     if is_definitive_publish_rejection(exc):

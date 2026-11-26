@@ -80,6 +80,7 @@ async def test_video_container_finishes_processing_before_publication(
     account = SimpleNamespace(
         username="loop_account",
         instagram_user_id="stale-stored-id",
+        login_kind="instagram_login",
     )
     media = SimpleNamespace(
         id="media-123",
@@ -108,3 +109,64 @@ async def test_video_container_finishes_processing_before_publication(
     assert client.calls[2][1].endswith("/container-123")
     assert client.calls[3][1].endswith("/container-123")
     assert client.calls[4][1].endswith("/instagram-user-123/media_publish")
+
+
+class _UnifiedImageStorage:
+    async def create_signed_url(self, storage_path: str) -> str:
+        assert storage_path == "workspace/photo.jpg"
+        return "https://storage.example/signed-photo-url"
+
+
+class _UnifiedGraphClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args) -> None:
+        return None
+
+    async def post(self, url: str, data: dict[str, str]) -> _Response:
+        self.calls.append(("POST", url))
+        if url.endswith("/media"):
+            assert data["image_url"] == "https://storage.example/signed-photo-url"
+            return _Response({"id": "container-u1"})
+        if url.endswith("/media_publish"):
+            assert data["creation_id"] == "container-u1"
+            return _Response({"id": "published-u2"})
+        raise AssertionError(f"Unexpected POST endpoint: {url}")
+
+    async def get(self, url: str, params: dict[str, str]) -> _Response:  # pragma: no cover
+        self.calls.append(("GET", url))
+        raise AssertionError(f"Unified Login must not call GET {url}")
+
+
+@pytest.mark.anyio
+async def test_unified_login_publishes_via_facebook_graph_without_me_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _UnifiedGraphClient()
+    monkeypatch.setattr(publishing.httpx, "AsyncClient", lambda **_kwargs: client)
+    account = SimpleNamespace(
+        username="unified_account",
+        instagram_user_id="17800000000000009",
+        login_kind="unified_login",
+    )
+    media = SimpleNamespace(
+        id="media-u",
+        media_type="image",
+        storage_path="workspace/photo.jpg",
+        caption="Olá",
+    )
+
+    published_id = await publishing.publish_media(
+        account, media, "system-user-token", _UnifiedImageStorage()
+    )
+
+    assert published_id == "published-u2"
+    # No identity "/me" call; both writes go to graph.facebook.com with the stored ID.
+    assert [method for method, _url in client.calls] == ["POST", "POST"]
+    assert all(url.startswith("https://graph.facebook.com/") for _m, url in client.calls)
+    assert client.calls[0][1].endswith("/17800000000000009/media")
+    assert client.calls[1][1].endswith("/17800000000000009/media_publish")

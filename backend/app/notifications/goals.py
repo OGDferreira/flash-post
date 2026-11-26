@@ -19,6 +19,7 @@ from app.instagram.oauth import (
     InstagramInsightsPermissionError,
     InstagramOAuthError,
     fetch_instagram_views,
+    graph_base_for,
     instagram_api_error_detail,
 )
 from app.models import (
@@ -99,7 +100,16 @@ async def _account_views_today(
     except (RuntimeError, ValueError):
         return None, "token ilegível"
     try:
-        return await fetch_instagram_views(account.instagram_user_id, token, since, until), None
+        return (
+            await fetch_instagram_views(
+                account.instagram_user_id,
+                token,
+                since,
+                until,
+                graph_base=graph_base_for(account.login_kind),
+            ),
+            None,
+        )
     except InstagramInsightsPermissionError:
         return None, "permissão de Insights ausente"
     except (httpx.HTTPError, InstagramOAuthError, RuntimeError, ValueError) as exc:

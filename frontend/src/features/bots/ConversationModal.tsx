@@ -28,7 +28,7 @@ export function ConversationModal({ leadId, onClose }: { leadId: string | null; 
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="h-[88dvh] w-full max-w-[560px] sm:h-[80vh]">
+      <div className="h-[100dvh] w-full max-w-[560px] sm:h-[80vh] sm:max-h-[680px]">
         <Conversation key={leadId} leadId={leadId} onBack={onClose} inModal />
       </div>
     </div>,

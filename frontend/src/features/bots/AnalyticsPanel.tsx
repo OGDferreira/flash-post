@@ -6,15 +6,18 @@ import {
   ArrowUpRight,
   Bot,
   CalendarClock,
+  CalendarDays,
   Clock3,
   CreditCard,
   Filter,
-  Layers,
   Megaphone,
   Package,
   Radio,
+  Repeat,
   ShoppingCart,
   Sparkles,
+  TrendingDown,
+  Trophy,
   Users,
   Workflow,
   X,
@@ -22,7 +25,8 @@ import {
 
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { apiRequest } from "@/services/api";
-import { formatNumber, formatPercent, isPeriodReady, moneyFormat, periodParams, type MetricsPeriod } from "@/features/analytics/period";
+import { FlashFunnelPanel } from "@/features/bots/FlashFunnelPanel";
+import { formatNumber, formatPercent, isPeriodReady, moneyFormat, PeriodFilter, periodParams, type MetricsPeriod } from "@/features/analytics/period";
 
 type Row = {
   id: string;
@@ -88,6 +92,9 @@ type SortBy = "revenue" | "sales" | "approval" | "conversion";
 
 const money = (value: number) => moneyFormat.format(value || 0);
 const KIND_LABEL = { plan: "Planos", upsell: "Upsell", downsell: "Downsell", remarketing: "Remarketing" } as const;
+const KIND_ICON = { plan: Package, remarketing: Megaphone, downsell: TrendingDown, upsell: Repeat } as const;
+/** The order Guilherme reads them in: entrada, resgate, oferta menor, oferta maior. */
+const KIND_ORDER = ["plan", "remarketing", "downsell", "upsell"] as const;
 const GATEWAY_LABEL: Record<string, string> = { smokepay: "SmokePay", snakepay: "SnakePay", atenaspay: "Athenas Pay" };
 const RANK_TABS: { id: RankTab; label: string; icon: typeof Bot }[] = [
   { id: "plans", label: "Planos", icon: Package },
@@ -115,8 +122,9 @@ function duration(seconds: number | null) {
   return `${(seconds / 86400).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} dias`;
 }
 
-/** Análises: everything about the operation's Flash sales, filtered by bot, funnel and plan. */
-export function AnalyticsPanel({ period }: { period: MetricsPeriod }) {
+/** Análises: everything about the operation's Flash sales, filtered by period, bot, funnel and plan.
+ *  Hierarchy, top to bottom: filtros → KPIs → funil por bot → conversão por tipo → detalhe. */
+export function AnalyticsPanel({ period, onPeriod }: { period: MetricsPeriod; onPeriod: (next: MetricsPeriod) => void }) {
   const [filters, setFilters] = useState<Filters>({ bot: "", flow: "", plan: "" });
   const params = useMemo(() => {
     const out: Record<string, string> = { ...periodParams(period) };
@@ -132,69 +140,94 @@ export function AnalyticsPanel({ period }: { period: MetricsPeriod }) {
     placeholderData: keepPreviousData,
   });
 
-  if (query.isLoading) return <LoadingState label="Carregando análises" />;
-  if (query.error || !query.data) {
-    return <ErrorState message="Não foi possível carregar as análises." onRetry={() => void query.refetch()} />;
-  }
-  const data = query.data;
-  const filtered = Boolean(filters.bot || filters.flow || filters.plan);
+  const options = query.data?.options;
 
   return (
-    <div className={`space-y-4 transition-opacity ${query.isFetching ? "opacity-70" : ""}`}>
-      <FiltersBar data={data} filters={filters} onChange={setFilters} />
-      <p className="px-1 text-xs text-muted">
-        {data.period_label}
-        {filtered ? " · com filtros" : " · toda a operação"} · comparado ao período anterior de mesmo tamanho
-      </p>
-      <Kpis data={data} />
-      <FunnelCard summary={data.summary} />
-      <WhenItSells data={data} />
-      <WhatSells data={data} />
-      <Offers data={data} />
-      <Customers data={data} />
-      <Gateways rows={data.gateways} />
+    <div className="space-y-4">
+      <FiltersBar
+        filters={filters}
+        onChange={setFilters}
+        onPeriod={onPeriod}
+        options={options}
+        period={period}
+      />
+      {query.isLoading ? (
+        <LoadingState label="Carregando análises" />
+      ) : query.error || !query.data ? (
+        <ErrorState message="Não foi possível carregar as análises." onRetry={() => void query.refetch()} />
+      ) : (
+        <div className={`space-y-4 transition-opacity ${query.isFetching ? "opacity-70" : ""}`}>
+          <p className="px-1 text-xs text-muted">
+            {query.data.period_label}
+            {filters.bot || filters.flow || filters.plan ? " · com filtros" : " · toda a operação"} · comparado ao período anterior de mesmo tamanho
+          </p>
+          <Kpis data={query.data} />
+          <RankingHighlights data={query.data} />
+          {/* Plan filter doesn't scope the per-step upsell funnel, so only bot/funnel flow into it. */}
+          <FlashFunnelPanel botId={filters.bot || undefined} flowId={filters.flow || undefined} period={period} />
+          <ConversionByType data={query.data} />
+          <WhenItSells data={query.data} />
+          <WhatSells data={query.data} />
+          <Customers data={query.data} />
+          <Gateways rows={query.data.gateways} />
+        </div>
+      )}
     </div>
   );
 }
 
-function FiltersBar({ data, filters, onChange }: { data: Full; filters: Filters; onChange: (next: Filters) => void }) {
+function FiltersBar({ filters, onChange, onPeriod, options, period }: {
+  filters: Filters;
+  onChange: (next: Filters) => void;
+  onPeriod: (next: MetricsPeriod) => void;
+  options?: Full["options"];
+  period: MetricsPeriod;
+}) {
   const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
   const active = Boolean(filters.bot || filters.flow || filters.plan);
   return (
-    <div className="dashboard-card rounded-2xl p-3 sm:p-4">
-      <div className="mb-2 flex items-center justify-between gap-2">
+    <div className="dashboard-card space-y-3 rounded-2xl p-3 sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
-          <Filter size={14} /> Filtros
+          <CalendarDays size={14} /> Período
         </span>
-        {active && (
-          <button
-            className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-muted hover:bg-well hover:text-fg"
-            onClick={() => onChange({ bot: "", flow: "", plan: "" })}
-            type="button"
-          >
-            <X size={13} /> Limpar
-          </button>
-        )}
+        <PeriodFilter onChange={onPeriod} value={period} />
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <select aria-label="Bot" className="field" onChange={(event) => set({ bot: event.target.value })} value={filters.bot}>
-          <option value="">Todos os bots</option>
-          {data.options.bots.map((item) => (
-            <option key={item.id} value={item.id}>{item.name}</option>
-          ))}
-        </select>
-        <select aria-label="Fluxo" className="field" onChange={(event) => set({ flow: event.target.value })} value={filters.flow}>
-          <option value="">Todos os fluxos</option>
-          {data.options.flows.map((item) => (
-            <option key={item.id} value={item.id}>{item.name}</option>
-          ))}
-        </select>
-        <select aria-label="Plano" className="field" onChange={(event) => set({ plan: event.target.value })} value={filters.plan}>
-          <option value="">Todos os planos</option>
-          {data.options.plans.map((name) => (
-            <option key={name} value={name}>{name}</option>
-          ))}
-        </select>
+      <div className="border-t border-line-soft pt-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
+            <Filter size={14} /> Filtros
+          </span>
+          {active && (
+            <button
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-muted hover:bg-well hover:text-fg"
+              onClick={() => onChange({ bot: "", flow: "", plan: "" })}
+              type="button"
+            >
+              <X size={13} /> Limpar
+            </button>
+          )}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <select aria-label="Bot" className="field" onChange={(event) => set({ bot: event.target.value })} value={filters.bot}>
+            <option value="">Todos os bots</option>
+            {(options?.bots ?? []).map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </select>
+          <select aria-label="Fluxo" className="field" onChange={(event) => set({ flow: event.target.value })} value={filters.flow}>
+            <option value="">Todos os fluxos</option>
+            {(options?.flows ?? []).map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </select>
+          <select aria-label="Plano" className="field" onChange={(event) => set({ plan: event.target.value })} value={filters.plan}>
+            <option value="">Todos os planos</option>
+            {(options?.plans ?? []).map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );
@@ -271,40 +304,115 @@ function Section({ icon, title, subtitle, children, right }: { icon: ReactNode; 
   );
 }
 
-function FunnelCard({ summary }: { summary: Summary }) {
-  const steps = [
-    { label: "Entraram (starts)", value: summary.leads },
-    { label: "Geraram Pix", value: summary.leads_with_pix },
-    { label: "Compraram", value: summary.buyers },
-  ];
-  const top = Math.max(1, steps[0].value, steps[1].value, steps[2].value);
+/** A compact top-5 list (bots by faturamento, funis by conversão) for the selected period. */
+function RankList({ title, icon, rows, metric, width, sub, empty }: {
+  title: string;
+  icon: ReactNode;
+  rows: Row[];
+  metric: (row: Row) => string;
+  width: (row: Row) => number;
+  sub?: (row: Row) => string;
+  empty: string;
+}) {
   return (
-    <Section icon={<Layers size={17} />} subtitle="Do start à compra" title="Funil de vendas">
-      <div className="space-y-2.5">
-        {steps.map((step, index) => {
-          const previous = index ? steps[index - 1].value : 0;
-          return (
-            <div key={step.label}>
-              <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
-                <span className="text-fg-2">{step.label}</span>
-                <span className="font-semibold text-fg">
-                  {formatNumber(step.value)}
-                  {index > 0 && (
-                    <span className="ml-1.5 text-xs font-medium text-muted">
-                      {previous ? formatPercent(Math.round((1000 * step.value) / previous) / 10) : "—"} da etapa anterior
-                    </span>
-                  )}
-                </span>
+    <div className="min-w-0">
+      <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted">
+        <span className="text-accent">{icon}</span>
+        {title}
+      </p>
+      {rows.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-line px-3 py-6 text-center text-xs text-muted">{empty}</p>
+      ) : (
+        <ol className="space-y-1.5">
+          {rows.map((row, index) => (
+            <li className="rounded-xl border border-line-soft bg-surface-inset p-2.5" key={row.id}>
+              <div className="flex items-center gap-2">
+                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-brand/15 text-[11px] font-bold text-accent">{index + 1}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{row.name}</span>
+                <span className="shrink-0 text-sm font-semibold text-fg tabular-nums">{metric(row)}</span>
               </div>
-              <div className="h-3 overflow-hidden rounded-full bg-well">
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${Math.max(step.value ? 3 : 0, (100 * step.value) / top)}%`, background: "var(--grad-a)", opacity: 1 - index * 0.2 }}
-                />
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-well">
+                <div className="h-full rounded-full bg-accent/70" style={{ width: `${Math.max(3, width(row))}%` }} />
+              </div>
+              {sub && <p className="mt-1 truncate text-[10px] text-muted">{sub(row)}</p>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function RankingHighlights({ data }: { data: Full }) {
+  const topBots = [...data.bots].sort((a, b) => b.revenue - a.revenue || b.sales - a.sales).filter((row) => row.revenue > 0 || row.sales > 0).slice(0, 5);
+  const topFlows = [...data.flows].sort((a, b) => b.conversion - a.conversion || b.revenue - a.revenue).filter((row) => row.leads > 0 || row.sales > 0).slice(0, 5);
+  if (!topBots.length && !topFlows.length) return null;
+  const botMax = Math.max(1, ...topBots.map((row) => row.revenue));
+  const flowMax = Math.max(1, ...topFlows.map((row) => row.conversion));
+  return (
+    <Section icon={<Trophy size={17} />} subtitle="No período selecionado" title="Ranking">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <RankList
+          empty="Nenhum bot faturou no período."
+          icon={<Bot size={13} />}
+          metric={(row) => money(row.revenue)}
+          rows={topBots}
+          sub={(row) => `${formatNumber(row.sales)} ${row.sales === 1 ? "venda" : "vendas"} · ${formatNumber(row.leads)} leads`}
+          title="Bots por faturamento"
+          width={(row) => (row.revenue / botMax) * 100}
+        />
+        <RankList
+          empty="Nenhum funil com leads no período."
+          icon={<Workflow size={13} />}
+          metric={(row) => formatPercent(row.conversion)}
+          rows={topFlows}
+          sub={(row) => `${formatNumber(row.sales)} ${row.sales === 1 ? "venda" : "vendas"} · ${money(row.revenue)}`}
+          title="Funis por conversão (lead → venda)"
+          width={(row) => (row.conversion / flowMax) * 100}
+        />
+      </div>
+    </Section>
+  );
+}
+
+/** One card per offer type (planos, remarketing, downsell, upsell): what converts and what doesn't. */
+function ConversionByType({ data }: { data: Full }) {
+  const byKind = new Map(data.offer_types.map((offer) => [offer.kind, offer]));
+  const bump = data.order_bump;
+  return (
+    <Section icon={<ShoppingCart size={17} />} subtitle="O que converte em cada oferta" title="Conversão por tipo">
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        {KIND_ORDER.map((kind) => {
+          const offer = byKind.get(kind) ?? { kind, generated: 0, sales: 0, revenue: 0, approval: 0 };
+          const Icon = KIND_ICON[kind];
+          const idle = offer.generated === 0 && offer.sales === 0;
+          return (
+            <div className={`rounded-2xl border p-3.5 ${idle ? "border-line bg-surface-inset" : "border-line-soft bg-surface"}`} key={kind}>
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-fg-2">
+                <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-brand/12 text-accent"><Icon size={13} /></span>
+                {KIND_LABEL[kind]}
+              </p>
+              <p className="mt-2 text-lg font-bold text-fg">{money(offer.revenue)}</p>
+              <p className="text-[11px] text-muted">
+                {formatNumber(offer.sales)} {offer.sales === 1 ? "venda" : "vendas"} · {formatNumber(offer.generated)} Pix
+              </p>
+              <div className="mt-2.5 flex items-center justify-between text-[11px]">
+                <span className="text-muted">Conversão do Pix</span>
+                <span className={`font-semibold ${offer.approval > 0 ? "text-success" : "text-muted"}`}>{formatPercent(offer.approval)}</span>
+              </div>
+              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-well">
+                <div className="h-full rounded-full bg-success/80" style={{ width: `${Math.min(100, offer.approval)}%` }} />
               </div>
             </div>
           );
         })}
+      </div>
+      <div className="mt-2.5 rounded-2xl border border-line-soft bg-surface-inset p-3.5">
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-fg-2"><Sparkles size={13} className="text-accent" /> Order bump</p>
+        <p className="mt-1 text-[11px] text-muted">
+          <span className="text-base font-bold text-fg">{formatPercent(bump.rate)}</span> aceitaram ·
+          {" "}{formatNumber(bump.sales)} vendas com adicional ({money(bump.revenue)} no total)
+        </p>
       </div>
     </Section>
   );
@@ -462,34 +570,6 @@ function WhatSells({ data }: { data: Full }) {
           ))}
         </ul>
       )}
-    </Section>
-  );
-}
-
-function Offers({ data }: { data: Full }) {
-  const bump = data.order_bump;
-  return (
-    <Section icon={<ShoppingCart size={17} />} subtitle="Planos, upsell, downsell, remarketing e order bump" title="Ofertas">
-      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
-        {data.offer_types.map((offer) => (
-          <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={offer.kind}>
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-fg-2">
-              {offer.kind === "remarketing" ? <Megaphone size={13} /> : <Package size={13} />} {KIND_LABEL[offer.kind]}
-            </p>
-            <p className="mt-1 text-lg font-bold text-fg">{money(offer.revenue)}</p>
-            <p className="text-[11px] text-muted">
-              {formatNumber(offer.sales)} vendas · {formatNumber(offer.generated)} Pix · {formatPercent(offer.approval)} aprov.
-            </p>
-          </div>
-        ))}
-        <div className="rounded-xl border border-line-soft bg-surface-inset p-3">
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-fg-2"><Sparkles size={13} /> Order bump</p>
-          <p className="mt-1 text-lg font-bold text-fg">{formatPercent(bump.rate)}</p>
-          <p className="text-[11px] text-muted">
-            aceitaram · {formatNumber(bump.sales)} vendas com adicional ({money(bump.revenue)} no total)
-          </p>
-        </div>
-      </div>
     </Section>
   );
 }

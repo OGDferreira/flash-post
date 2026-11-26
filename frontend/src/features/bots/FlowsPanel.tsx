@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download, GitBranch, KeyRound, Lock, Megaphone, Plus, Settings2, Trash2, Upload, Zap } from "lucide-react";
+import { Copy, Download, FlaskConical, GitBranch, KeyRound, Lock, Megaphone, Plus, Settings2, Trash2, Upload, Zap } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
@@ -12,6 +12,7 @@ import { useBotStats } from "./ConversionOverview";
 import { AdminHideToggle } from "./AdminHideToggle";
 import { FlowEditor } from "./FlowEditor";
 import { ImportFlowModal, downloadFlow } from "./FlowPortability";
+import { FrankensteinModal } from "./FrankensteinModal";
 import { brl, type Flow } from "./types";
 import { useChiefLabel } from "@/features/partners/api";
 
@@ -27,6 +28,7 @@ export function FlowsPanel({
   const chief = useChiefLabel();
   const stats = useBotStats(period);
   const [importOpen, setImportOpen] = useState(false);
+  const [frankOpen, setFrankOpen] = useState(false);
   const [code, setCode] = useState<{ name: string; code: string } | null>(null);
   const makeCode = useMutation({
     mutationFn: (flow: Flow) =>
@@ -73,6 +75,9 @@ export function FlowsPanel({
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setImportOpen(true)}>
             <Upload size={16} /> Importar funil
+          </Button>
+          <Button onClick={() => setFrankOpen(true)}>
+            <FlaskConical size={16} /> Funil Frankenstein
           </Button>
           <Button variant="primary" disabled={create.isPending} onClick={() => create.mutate()}>
             <Plus size={16} /> Novo fluxo
@@ -185,6 +190,15 @@ export function FlowsPanel({
         </div>
       )}
       <ImportFlowModal open={importOpen} onClose={() => setImportOpen(false)} onDone={refresh} />
+      <FrankensteinModal
+        onClose={() => setFrankOpen(false)}
+        onCreated={(flowId) => {
+          setFrankOpen(false);
+          refresh();
+          setEditing(flowId);
+        }}
+        open={frankOpen}
+      />
     </div>
   );
 }
