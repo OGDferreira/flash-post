@@ -842,8 +842,22 @@ export function PaymentSection({ draft, set }: SectionProps) {
         {payment.approved_enabled !== false ? (
           <>
             <RichTextEditor label="Mensagem de pagamento aprovado" rows={3} value={payment.approved_text} variables={vars} onChange={(approved_text) => setPayment({ approved_text })} />
+            <MediaGrid
+              kinds={["photo", "video"]}
+              max={3}
+              title="Imagem junto da mensagem (opcional)"
+              value={payment.approved_media_ids ?? []}
+              onChange={(approved_media_ids) => setPayment({ approved_media_ids })}
+            />
+            {(payment.approved_media_ids?.length ?? 0) > 0 && (
+              <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
+                <span>Borrar a mídia (spoiler)</span>
+                <Switch checked={!!payment.approved_spoiler} label="Borrar a mídia" onChange={(approved_spoiler) => setPayment({ approved_spoiler })} />
+              </label>
+            )}
             <p className="text-[11px] text-muted">
               Enviada assim que o Pix é pago; logo depois vem a entrega do plano (ou a entrega padrão).
+              {(payment.approved_media_ids?.length ?? 0) > 0 && " A imagem vai junto do texto, na mesma mensagem."}
             </p>
             {payment.approved_enabled == null && draft.upsells.length > 0 && (
               <p className="flex flex-wrap items-center gap-2 text-[11px] text-warning">

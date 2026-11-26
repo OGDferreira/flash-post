@@ -773,6 +773,26 @@ async def test_payment_intro_message_goes_before_the_pix(client, db_session, own
 
 
 @pytest.mark.anyio
+async def test_approved_message_can_carry_an_image(client, db_session, owner, apis, monkeypatch) -> None:
+    headers = await _login(client)
+    photo = await _media(client, headers, monkeypatch, "aprovado.jpg")
+    flow = _flow(welcome=[], payment={
+        "expiration_minutes": 15, "approved_text": "Pagamento aprovado! 🎉",
+        "approved_media_ids": [photo],
+    })
+    flow["plans"][0]["delivery"] = {"type": "default", "text": "VIP"}
+    bot, _ = await _setup(client, headers, flow)
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("plan:vip"))
+    order = await db_session.scalar(select(TgOrder))
+    apis.pix_amount = float(order.amount)
+    await _pay(client, db_session, order)
+    # The approved text rode on the image (caption in one message), not a plain text message.
+    assert any((p.get("caption") or "").startswith("Pagamento aprovado") for p in apis.methods("sendPhoto"))
+    assert not any(m["text"].startswith("Pagamento aprovado") for m in apis.methods("sendMessage"))
+
+
+@pytest.mark.anyio
 async def test_humanized_conversation_waits_for_lead_reply(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     # Block 2 only goes after the lead replies to block 1.

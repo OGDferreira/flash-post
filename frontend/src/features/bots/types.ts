@@ -153,6 +153,9 @@ export type FlowDefinition = {
     /** true: always send before the delivery; false: never; null/undefined: old rule
      *  (skipped when an upsell follows). */
     approved_enabled?: boolean | null;
+    /** Optional image sent with the "payment approved" message (media + caption, same message). */
+    approved_media_ids?: string[];
+    approved_spoiler?: boolean;
     expired_text: string;
     /** Legacy single choice; folded on load into qr_enabled/steps_enabled. */
     layout?: "qr" | "steps";

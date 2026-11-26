@@ -1895,7 +1895,15 @@ async def approve_order(
     )
     try:
         if send_approved:
-            await tg.send_message(lead.chat_id, render(approved_text, lead, order.offer_name, order.amount, bot))
+            approved_body = render(approved_text, lead, order.offer_name, order.amount, bot)
+            approved_media = flow.payment.approved_media_ids if flow else []
+            if approved_media:
+                # Image + text in the same message (caption); long text falls back to media then text.
+                await send_media_then_text(
+                    db, tg, bot, lead.chat_id, approved_media, flow.payment.approved_spoiler, approved_body, None,
+                )
+            else:
+                await tg.send_message(lead.chat_id, approved_body)
         if delivery and delivery.type != "upsell":
             await deliver(db, tg, bot, lead, order, plan, delivery)
             # Any purchase (plan, upsell or downsell) fires this delivery's post-purchase drip.
