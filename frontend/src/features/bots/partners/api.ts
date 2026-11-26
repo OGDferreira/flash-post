@@ -24,6 +24,8 @@ export type Partnership = {
   flows?: { id: string; name: string }[];
 };
 
+export type CommissionStatus = "pending" | "paid" | "denied";
+
 export type FinanceSale = {
   id: string;
   order_id: string;
@@ -35,6 +37,9 @@ export type FinanceSale = {
   partner_percent: number;
   partner_amount: number;
   owner_amount: number;
+  payout_status: CommissionStatus;
+  status_note: string | null;
+  status_changed_at: string | null;
 };
 
 export type FinancePayout = {
@@ -68,6 +73,7 @@ export type FinancePanel = {
     partner_balance: number;
     owner_balance: number;
   };
+  by_status?: Record<CommissionStatus, { count: number; partner_amount: number }>;
   sales?: FinanceSale[];
   payouts?: FinancePayout[];
 };
@@ -109,6 +115,13 @@ export function ownerFinance(botId: string, period: MetricsPeriod, partnershipId
 
 export function addPayout(id: string, body: { party: "owner" | "partner"; amount: string; note?: string; paid_at?: string }) {
   return apiRequest<FinancePayout>(`/api/bot-partners/${id}/payouts`, { method: "POST", body });
+}
+
+export function setCommissionStatus(saleId: string, body: { status: CommissionStatus; note?: string }) {
+  return apiRequest<{ id: string; payout_status: CommissionStatus; status_note: string | null; status_changed_at: string | null }>(
+    `/api/bot-partners/sales/${saleId}/status`,
+    { method: "PATCH", body },
+  );
 }
 
 // ---------------- partner side

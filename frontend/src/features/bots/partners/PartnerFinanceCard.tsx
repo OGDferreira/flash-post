@@ -4,7 +4,7 @@ import { CalendarDays, Coins, HandCoins, Plus } from "lucide-react";
 
 import { PeriodFilter, todayInput, type MetricsPeriod } from "@/features/analytics/period";
 import { ApiError } from "@/services/api";
-import { addPayout, brl, type FinancePanel } from "./api";
+import { addPayout, brl, setCommissionStatus, type CommissionStatus, type FinancePanel } from "./api";
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -15,6 +15,17 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
     </div>
   );
 }
+
+const STATUS_BADGE: Record<CommissionStatus, string> = {
+  pending: "bg-warning/15 text-warning",
+  paid: "bg-success-soft text-success",
+  denied: "bg-danger/15 text-danger",
+};
+const STATUS_LABEL: Record<CommissionStatus, string> = {
+  pending: "Pendente",
+  paid: "Paga",
+  denied: "Negada",
+};
 
 /**
  * Finance panel of one partnership: gateway fee, bot fee and the net split per sale, plus
@@ -51,8 +62,14 @@ export function PartnerFinanceCard({
     },
   });
 
+  const setStatus = useMutation({
+    mutationFn: ({ saleId, status }: { saleId: string; status: CommissionStatus }) => setCommissionStatus(saleId, { status }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey }),
+  });
+
   const data = panel.data;
   const totals = data?.totals;
+  const byStatus = data?.by_status;
 
   return (
     <div className="space-y-4">
@@ -90,13 +107,21 @@ export function PartnerFinanceCard({
             />
           </div>
 
+          {byStatus && (
+            <div className="grid grid-cols-3 gap-2">
+              <Stat label="Comissão pendente" value={brl(byStatus.pending.partner_amount)} hint={`${byStatus.pending.count} venda(s)`} />
+              <Stat label="Comissão paga" value={brl(byStatus.paid.partner_amount)} hint={`${byStatus.paid.count} venda(s)`} />
+              <Stat label="Comissão negada" value={brl(byStatus.denied.partner_amount)} hint={`${byStatus.denied.count} venda(s)`} />
+            </div>
+          )}
+
           {/* Per-sale ledger */}
           <div className="overflow-hidden rounded-2xl border border-line bg-surface">
             <div className="flex items-center gap-2 border-b border-line px-4 py-2.5 text-sm font-semibold text-fg">
               <Coins size={15} /> Vendas e divisão
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="text-left text-[11px] uppercase tracking-wide text-muted">
                     <th className="px-3 py-2">Data</th>
@@ -107,6 +132,7 @@ export function PartnerFinanceCard({
                     <th className="px-3 py-2 text-right">%</th>
                     <th className="px-3 py-2 text-right">Parceiro</th>
                     <th className="px-3 py-2 text-right">Dono</th>
+                    <th className="px-3 py-2 text-right">Comissão</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -120,10 +146,28 @@ export function PartnerFinanceCard({
                       <td className="px-3 py-2 text-right text-muted">{s.partner_percent}%</td>
                       <td className="px-3 py-2 text-right font-medium text-accent">{brl(s.partner_amount)}</td>
                       <td className="px-3 py-2 text-right font-medium">{brl(s.owner_amount)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {canLogPayout ? (
+                          <select
+                            className="field !min-h-8 !w-auto !py-1 !text-xs"
+                            value={s.payout_status}
+                            disabled={setStatus.isPending}
+                            onChange={(e) => setStatus.mutate({ saleId: s.id, status: e.target.value as CommissionStatus })}
+                          >
+                            <option value="pending">Pendente</option>
+                            <option value="paid">Paga</option>
+                            <option value="denied">Negada</option>
+                          </select>
+                        ) : (
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_BADGE[s.payout_status]}`}>
+                            {STATUS_LABEL[s.payout_status]}
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {(data.sales ?? []).length === 0 && (
-                    <tr><td className="px-3 py-6 text-center text-muted" colSpan={8}>Nenhuma venda no período.</td></tr>
+                    <tr><td className="px-3 py-6 text-center text-muted" colSpan={9}>Nenhuma venda no período.</td></tr>
                   )}
                 </tbody>
               </table>

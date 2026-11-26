@@ -282,9 +282,31 @@ async def finance_summary(
             "partner_percent": float(s.partner_percent),
             "partner_amount": float(s.partner_amount),
             "owner_amount": float(s.owner_amount),
+            "payout_status": s.payout_status,
+            "status_note": s.status_note,
+            "status_changed_at": s.status_changed_at.isoformat() if s.status_changed_at else None,
         }
         for s in rows
     ]
+
+    # Partner commission totalled by settlement status (over the whole period, not just the
+    # page shown above).
+    status_rows = (
+        await db.execute(
+            select(
+                BotPartnerSale.payout_status,
+                func.count(BotPartnerSale.id),
+                func.coalesce(func.sum(BotPartnerSale.partner_amount), 0),
+            )
+            .where(*conds)
+            .group_by(BotPartnerSale.payout_status)
+        )
+    ).all()
+    by_status = {
+        s: {"count": 0, "partner_amount": 0.0} for s in ("pending", "paid", "denied")
+    }
+    for status, cnt, amount in status_rows:
+        by_status[status] = {"count": int(cnt or 0), "partner_amount": float(amount)}
 
     # Withdrawals / payouts, filtered to the same period.
     pconds = [BotPartnerPayout.partnership_id == part.id]
@@ -325,9 +347,26 @@ async def finance_summary(
             "partner_balance": float(money(Decimal(str(partner_amount)) - withdrawn["partner"])),
             "owner_balance": float(money(Decimal(str(owner_amount)) - withdrawn["owner"])),
         },
+        "by_status": by_status,
         "sales": sales,
         "payouts": payouts,
     }
+
+
+async def set_sale_status(
+    db: AsyncSession,
+    sale: BotPartnerSale,
+    status: str,
+    *,
+    by_user_id: uuid.UUID,
+    note: str | None = None,
+) -> BotPartnerSale:
+    """Mark a recorded commission as paid/denied/pending. Caller commits."""
+    sale.payout_status = status
+    sale.status_note = (note or "").strip() or None
+    sale.status_changed_at = utc_now()
+    sale.status_by_user_id = by_user_id
+    return sale
 
 
 async def notify_partner_invite(db: AsyncSession, part: BotPartner, owner: User, bot: TgBot) -> None:
