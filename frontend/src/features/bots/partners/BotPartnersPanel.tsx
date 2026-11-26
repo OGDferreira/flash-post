@@ -61,6 +61,7 @@ function SplitByKindEditor({ part, onChanged }: { part: Partnership; onChanged: 
   );
 }
 import { PartnerFinanceCard } from "./PartnerFinanceCard";
+import { OwnerComparisonDashboard } from "./OwnerComparisonDashboard";
 
 const STATUS_LABEL: Record<Partnership["status"], string> = {
   PENDING: "Convite enviado", ACTIVE: "Ativo", PAUSED: "Pausado", DECLINED: "Recusado", REVOKED: "Removido",
@@ -283,6 +284,18 @@ export function BotPartnersPanel() {
               />
             </div>
           ))}
+        </section>
+      )}
+
+      {partners.some((p) => p.status === "ACTIVE" || p.status === "PAUSED") && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold text-fg">Comparativo dono vs parceiro</h2>
+          <OwnerComparisonDashboard
+            botId={botId}
+            partners={partners
+              .filter((p) => p.status === "ACTIVE" || p.status === "PAUSED")
+              .map((p) => ({ id: p.id, name: p.partner?.name || p.partner?.email || "Parceiro" }))}
+          />
         </section>
       )}
     </div>
