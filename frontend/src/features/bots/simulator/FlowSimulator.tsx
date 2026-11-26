@@ -52,17 +52,28 @@ function Media({ id, spoiler }: { id: string; spoiler?: boolean }) {
   const preview = useQuery({
     queryKey: [...api.mediaKey, "preview", id],
     queryFn: () => apiRequest<{ url: string }>(api.mediaPreviewUrl(id)),
-    enabled: Boolean(item) && item?.kind !== "audio",
+    enabled: Boolean(item),
     retry: false,
     staleTime: 50 * 60_000,
   });
   const url = preview.data?.url;
   const blur = spoiler ? "blur-xl" : "";
+  if (item?.kind === "audio") {
+    // Voice note bubble: a real player so the funnel test is audible.
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-black/30 px-2 py-1.5">
+        <span className="text-[13px]">🎤</span>
+        {url ? (
+          <audio className="h-8 w-44 max-w-full" controls preload="none" src={url} />
+        ) : (
+          <span className="text-[11px] text-white/60">carregando…</span>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="relative aspect-square overflow-hidden rounded-lg bg-black/30">
-      {item?.kind === "audio" ? (
-        <div className="grid size-full place-items-center text-[11px] text-white/70">🎤 áudio</div>
-      ) : url && item?.kind === "video" ? (
+      {url && item?.kind === "video" ? (
         // Autoplay muted + loop = a GIF-like animated preview; the frame itself is the thumbnail.
         <video autoPlay className={`size-full object-cover ${blur}`} loop muted playsInline preload="metadata" src={`${url}#t=0.1`} />
       ) : url ? (
