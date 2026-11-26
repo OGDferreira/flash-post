@@ -19,6 +19,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     String,
     Text,
@@ -81,6 +82,9 @@ class BotPartner(Base):
     access_level: Mapped[str] = mapped_column(
         String(16), nullable=False, default="operational", server_default="operational"
     )
+    # Optional per-offer-type override of the cut, e.g. {"plan": 50, "upsell": 30}. Any kind
+    # not listed falls back to ``partner_percent``.
+    split_by_kind: Mapped[dict | None] = mapped_column(JSON)
     invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
