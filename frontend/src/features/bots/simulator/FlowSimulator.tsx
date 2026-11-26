@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CreditCard, ExternalLink, Hourglass, Play, QrCode, RotateCcw, UserX, X } from "lucide-react";
 
 import { apiRequest } from "@/services/api";
+import { useBotApi } from "../editor/apiBase";
 import { useBotMedia } from "../editor/MediaGrid";
 import type { ButtonStyle, FlowDefinition } from "../types";
 import { simulate, type SimButton, type SimMessage } from "./simulate";
@@ -45,11 +46,12 @@ function safeHtml(html: string): string {
 }
 
 function Media({ id, spoiler }: { id: string; spoiler?: boolean }) {
+  const api = useBotApi();
   const library = useBotMedia();
   const item = library.data?.media.find((media) => media.id === id);
   const preview = useQuery({
-    queryKey: ["bots", "media", "preview", id],
-    queryFn: () => apiRequest<{ url: string }>(`/api/bots/media/${id}/preview`),
+    queryKey: [...api.mediaKey, "preview", id],
+    queryFn: () => apiRequest<{ url: string }>(api.mediaPreviewUrl(id)),
     enabled: Boolean(item) && item?.kind !== "audio",
     retry: false,
     staleTime: 50 * 60_000,

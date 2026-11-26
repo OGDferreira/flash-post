@@ -1858,6 +1858,16 @@ async def approve_order(
         base = order.net_amount - fee
         commission = (base * order.split_percent / Decimal(100)).quantize(Decimal("0.01"), ROUND_DOWN) if base > 0 else Decimal("0.00")
         order.split_amount, order.partner_net = commission, order.net_amount - commission - fee
+    try:
+        # A whole-bot partnership splits this sale's net on top (separate ledger); never let
+        # a split error undo a paid sale or its delivery.
+        from app.partners.bot_share_service import record_sale_split
+
+        if await record_sale_split(db, order) is not None:
+            await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Bot-partner split failed for order %s; the sale is unaffected.", order.id)
     bot = await db.get(TgBot, order.bot_id)
     lead = await db.get(TgLead, order.lead_id)
     if bot is None or lead is None:

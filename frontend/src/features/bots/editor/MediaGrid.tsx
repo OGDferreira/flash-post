@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, FileAudio, Film, Image as ImageIcon, Library
 import { Modal } from "@/components/ui/Modal";
 import { ApiError, apiRequest } from "@/services/api";
 import type { BotMedia } from "../types";
+import { useBotApi } from "./apiBase";
 
 const ACCEPT: Record<BotMedia["kind"], string> = {
   photo: "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp",
@@ -30,18 +31,20 @@ function normalizeUpload(file: File): File {
 }
 
 export function useBotMedia() {
+  const api = useBotApi();
   return useQuery({
-    queryKey: ["bots", "media"],
-    queryFn: () => apiRequest<{ media: BotMedia[] }>("/api/bots/media/list"),
+    queryKey: [...api.mediaKey],
+    queryFn: () => apiRequest<{ media: BotMedia[] }>(api.mediaListUrl),
     retry: false,
     staleTime: 60_000,
   });
 }
 
 function usePreview(id: string, enabled: boolean) {
+  const api = useBotApi();
   return useQuery({
-    queryKey: ["bots", "media", "preview", id],
-    queryFn: () => apiRequest<{ url: string }>(`/api/bots/media/${id}/preview`),
+    queryKey: [...api.mediaKey, "preview", id],
+    queryFn: () => apiRequest<{ url: string }>(api.mediaPreviewUrl(id)),
     enabled,
     retry: false,
     staleTime: 50 * 60_000, // signed URLs last about an hour
@@ -94,10 +97,11 @@ export function MediaGrid({
   const [library, setLibrary] = useState(false);
   // When set, picking a file / library item swaps the media at this position instead of adding.
   const [replaceAt, setReplaceAt] = useState<number | null>(null);
+  const api = useBotApi();
   const media = useBotMedia();
   const byId = new Map((media.data?.media ?? []).map((item) => [item.id, item]));
   const cacheCreated = (created: BotMedia[]) =>
-    queryClient.setQueryData<{ media: BotMedia[] }>(["bots", "media"], (old) => ({ media: [...created, ...(old?.media ?? [])] }));
+    queryClient.setQueryData<{ media: BotMedia[] }>([...api.mediaKey], (old) => ({ media: [...created, ...(old?.media ?? [])] }));
   const swapAt = (index: number, id: string) => onChange(value.map((other, i) => (i === index ? id : other)));
   const upload = useMutation({
     mutationFn: async (files: File[]) => {
@@ -105,7 +109,7 @@ export function MediaGrid({
       for (const original of files) {
         const file = normalizeUpload(original);
         created.push(
-          await apiRequest<BotMedia>(`/api/bots/media?filename=${encodeURIComponent(file.name)}`, { method: "POST", body: file }),
+          await apiRequest<BotMedia>(api.mediaUploadUrl(file.name), { method: "POST", body: file }),
         );
       }
       return created;
@@ -119,7 +123,7 @@ export function MediaGrid({
   const replace = useMutation({
     mutationFn: async ({ file }: { file: File; index: number }) => {
       const normalized = normalizeUpload(file);
-      return apiRequest<BotMedia>(`/api/bots/media?filename=${encodeURIComponent(normalized.name)}`, { method: "POST", body: normalized });
+      return apiRequest<BotMedia>(api.mediaUploadUrl(normalized.name), { method: "POST", body: normalized });
     },
     onSuccess: (created, { index }) => {
       cacheCreated([created]);
