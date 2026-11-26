@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   Sparkles,
   TrendingDown,
+  TrendingUp,
   Trophy,
   Users,
   Workflow,
@@ -169,6 +170,7 @@ export function AnalyticsPanel({ period, onPeriod }: { period: MetricsPeriod; on
           <WhenItSells data={query.data} />
           <WhatSells data={query.data} />
           <Customers data={query.data} />
+          <LtvPanel botId={filters.bot || undefined} flowId={filters.flow || undefined} period={period} />
           <Gateways rows={query.data.gateways} />
         </div>
       )}
@@ -626,6 +628,145 @@ function Gateways({ rows }: { rows: Full["gateways"] }) {
           </li>
         ))}
       </ul>
+    </Section>
+  );
+}
+
+type Ltv = {
+  period_label: string;
+  summary: {
+    cohort: number;
+    buyers: number;
+    conversion: number;
+    total_ltv: number;
+    avg_ltv: number;
+    avg_first_sale: number;
+    avg_ltv_per_lead: number;
+    uplift: number;
+    expansion_revenue: number;
+    orders: number;
+  };
+  by_kind: { kind: "plan" | "upsell" | "downsell" | "remarketing"; sales: number; revenue: number }[];
+  top_leads: { name: string; ltv: number; first_sale: number; first_at: string | null; orders: number; kinds: string[] }[];
+};
+
+/** LTV do lead: a safra de leads do período somada ao longo da vida inteira — além da 1ª venda,
+ *  quanto o lead ainda rende (upsell, remarketing, recompra). Usa os mesmos filtros de bot/funil. */
+function LtvPanel({ botId, flowId, period }: { botId?: string; flowId?: string; period: MetricsPeriod }) {
+  const params = useMemo(() => {
+    const out: Record<string, string> = { ...periodParams(period) };
+    if (botId) out.bot_id = botId;
+    if (flowId) out.flow_id = flowId;
+    return out;
+  }, [period, botId, flowId]);
+  const query = useQuery({
+    queryKey: ["bots", "analytics-ltv", params],
+    queryFn: () => apiRequest<Ltv>(`/api/bots/analytics/ltv?${new URLSearchParams(params)}`),
+    enabled: isPeriodReady(period),
+    placeholderData: keepPreviousData,
+  });
+
+  if (query.isLoading) {
+    return (
+      <Section icon={<TrendingUp size={17} />} subtitle="Quanto o lead rende na vida toda" title="LTV do lead">
+        <LoadingState label="Calculando LTV" />
+      </Section>
+    );
+  }
+  if (query.error || !query.data) {
+    return (
+      <Section icon={<TrendingUp size={17} />} subtitle="Quanto o lead rende na vida toda" title="LTV do lead">
+        <ErrorState message="Não foi possível calcular o LTV." onRetry={() => void query.refetch()} />
+      </Section>
+    );
+  }
+
+  const s = query.data.summary;
+  const byKind = query.data.by_kind;
+  const kindTotal = byKind.reduce((sum, row) => sum + row.revenue, 0) || 1;
+  const cards: { label: string; value: string; hint: string; strong?: boolean }[] = [
+    { label: "LTV médio", value: money(s.avg_ltv), hint: "por comprador, vida toda", strong: true },
+    { label: "1ª venda média", value: money(s.avg_first_sale), hint: "ticket de entrada" },
+    { label: "Multiplicador", value: s.uplift ? `${s.uplift.toLocaleString("pt-BR")}×` : "—", hint: "LTV ÷ 1ª venda" },
+    { label: "Expansão", value: money(s.expansion_revenue), hint: "receita após a 1ª venda" },
+    { label: "LTV por lead", value: money(s.avg_ltv_per_lead), hint: "inclui quem não comprou" },
+    { label: "Compradores", value: formatNumber(s.buyers), hint: `${formatPercent(s.conversion)} da safra` },
+  ];
+  return (
+    <Section
+      icon={<TrendingUp size={17} />}
+      right={<span className="text-[11px] text-muted">{formatNumber(s.cohort)} leads na safra · {money(s.total_ltv)} no total</span>}
+      subtitle="Quanto o lead rende na vida toda"
+      title="LTV do lead"
+    >
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+        {cards.map((card) => (
+          <div className="rounded-xl border border-line-soft bg-surface-inset p-3" key={card.label}>
+            <p className="text-[11px] text-muted">{card.label}</p>
+            <p className={`text-lg font-bold ${card.strong ? "text-success" : "text-fg"}`}>{card.value}</p>
+            <p className="truncate text-[10px] text-muted">{card.hint}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted">De onde vem o LTV</p>
+        <ul className="space-y-2.5">
+          {byKind.filter((row) => row.revenue > 0 || row.sales > 0).map((row) => (
+            <li key={row.kind}>
+              <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+                <span className="flex items-center gap-1.5 text-fg-2">
+                  {(() => {
+                    const Icon = KIND_ICON[row.kind];
+                    return <Icon size={13} className="text-muted" />;
+                  })()}
+                  {KIND_LABEL[row.kind]}
+                </span>
+                <span className="font-semibold text-fg">
+                  {money(row.revenue)} <span className="text-xs font-medium text-muted">· {formatNumber(row.sales)} vendas</span>
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-well">
+                <div className="h-full rounded-full bg-accent/70" style={{ width: `${(100 * row.revenue) / kindTotal}%` }} />
+              </div>
+            </li>
+          ))}
+          {byKind.every((row) => row.revenue === 0 && row.sales === 0) && (
+            <li className="text-sm text-muted">Nenhuma venda paga nessa safra ainda.</li>
+          )}
+        </ul>
+      </div>
+
+      {query.data.top_leads.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted">Leads que mais renderam</p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[460px] text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-[0.1em] text-muted">
+                  <th className="pb-2 pr-3 font-medium">Lead</th>
+                  <th className="pb-2 pr-3 text-right font-medium">1ª venda</th>
+                  <th className="pb-2 pr-3 text-right font-medium">LTV</th>
+                  <th className="pb-2 text-right font-medium">Compras</th>
+                </tr>
+              </thead>
+              <tbody>
+                {query.data.top_leads.map((lead, index) => (
+                  <tr className="border-t border-line-soft" key={`${lead.name}-${index}`}>
+                    <td className="py-2 pr-3">
+                      <span className="block truncate font-medium text-fg">{lead.name}</span>
+                      {lead.first_at && <span className="text-[10px] text-muted">desde {lead.first_at}</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-right text-muted">{money(lead.first_sale)}</td>
+                    <td className="py-2 pr-3 text-right font-semibold text-fg">{money(lead.ltv)}</td>
+                    <td className="py-2 text-right text-muted">{formatNumber(lead.orders)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </Section>
   );
 }

@@ -832,6 +832,27 @@ async def bot_analytics_full(
     return data
 
 
+@router.get("/analytics/ltv")
+async def bot_analytics_ltv(
+    access: OwnerAccess, db: DbSession, period: AnalyticsPeriod = "30d",
+    start_date: date | None = None, end_date: date | None = None,
+    bot_id: uuid.UUID | None = None, flow_id: uuid.UUID | None = None,
+) -> dict:
+    """LTV do lead: quanto a safra de leads do período rende ao longo da vida inteira
+    (plano + upsell + downsell + remarketing), além do valor da primeira venda."""
+    from app.bots.ltv import lead_ltv
+
+    zone = await user_time_zone(db, access.workspace.id, access.membership.user_id)
+    start, end = period_bounds(period, start_date, end_date, utc_now(), zone)
+    if start is None or end is None:
+        raise HTTPException(status_code=422, detail="Escolha um período limitado.")
+    data = await lead_ltv(
+        db, access.workspace.id, start, end, zone, bot_id=bot_id, flow_id=flow_id, hide=not admin_view(),
+    )
+    data["period_label"] = period_label(start, end, zone)
+    return data
+
+
 @router.get("/activity")
 async def bot_activity(access: OwnerAccess, db: DbSession, limit: int = Query(30, ge=1, le=100)) -> dict:
     """Live log of the operation: new leads, Pix generated and approved sales."""
