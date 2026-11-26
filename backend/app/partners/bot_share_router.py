@@ -113,12 +113,15 @@ async def bot_partners(bot_id: uuid.UUID, access: OwnerAccess, user: Authenticat
     for part in parts:
         partner = await db.get(User, part.partner_user_id)
         out.append(svc.partnership_out(part, owner_user, partner))
+    active_percent = await svc.active_percent_sum(db, bot.id)
     return {
         "bot": {"id": str(bot.id), "name": bot.name, "username": bot.username},
         "partners": out,
         "default_bot_fee": float(await svc.default_bot_fee(db, owner_user)),
         "can_zero_fee": _is_super_admin(user),
         "has_active": any(p["status"] == "ACTIVE" for p in out),
+        "active_percent": float(active_percent),
+        "active_percent_remaining": float(max(Decimal("0"), Decimal("100") - active_percent)),
     }
 
 
@@ -171,8 +174,23 @@ async def update_partnership(
     partnership_id: uuid.UUID, payload: PartnershipUpdate, access: OwnerAccess, user: AuthenticatedUser, db: DbSession
 ) -> dict:
     part = await _partnership_for_owner(db, await db.get(User, access.workspace.owner_id), partnership_id)
+    # The cut this partner would take once the change is applied (new percent if given).
+    new_percent = svc.money(payload.partner_percent) if payload.partner_percent is not None else part.partner_percent
+    # Whether this partner counts as active after the change.
+    will_be_active = (payload.status == "ACTIVE") or (payload.status is None and part.status == "ACTIVE")
+    if will_be_active:
+        others = await svc.active_percent_sum(db, part.bot_id, exclude=part.id)
+        if others + new_percent > Decimal("100"):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"A soma das porcentagens dos parceiros ativos passaria de 100% "
+                    f"(outros ativos: {others:.2f}% + este: {new_percent:.2f}%). "
+                    f"Reduza alguma porcentagem ou pause outro parceiro."
+                ),
+            )
     if payload.partner_percent is not None:
-        part.partner_percent = svc.money(payload.partner_percent)
+        part.partner_percent = new_percent
     if payload.bot_fee is not None:
         if not _is_super_admin(user):
             raise HTTPException(status_code=403, detail="Só o super admin pode alterar a taxa do bot.")
@@ -183,8 +201,6 @@ async def update_partnership(
         if payload.status == "ACTIVE":
             if part.status not in ("PAUSED", "PENDING", "ACTIVE"):
                 raise HTTPException(status_code=409, detail="A parceria não pode ser ativada neste estado.")
-            if await svc.active_partner_count(db, part.bot_id, exclude=part.id) > 0:
-                raise HTTPException(status_code=409, detail="Este bot já tem um parceiro ativo. Pause o atual antes.")
             if part.accepted_at is None:
                 raise HTTPException(status_code=409, detail="O parceiro ainda não aceitou o convite.")
         part.status = payload.status
@@ -206,13 +222,19 @@ async def remove_partnership(partnership_id: uuid.UUID, access: OwnerAccess, db:
 async def owner_finance(
     bot_id: uuid.UUID, access: OwnerAccess, user: AuthenticatedUser, db: DbSession,
     period: AnalyticsPeriod = "30d", start_date: date | None = None, end_date: date | None = None,
+    partnership_id: uuid.UUID | None = None,
 ) -> dict:
     bot = await _owned_bot_or_404(db, access.workspace.owner_id, bot_id)
-    part = await db.scalar(
-        select(BotPartner).where(
-            BotPartner.bot_id == bot.id, BotPartner.status.in_(("ACTIVE", "PAUSED"))
-        ).order_by(BotPartner.status)  # ACTIVE sorts before PAUSED
-    )
+    if partnership_id is not None:
+        part = await db.get(BotPartner, partnership_id)
+        if part is None or part.bot_id != bot.id or part.owner_user_id != access.workspace.owner_id:
+            raise HTTPException(status_code=404, detail="Parceria não encontrada.")
+    else:
+        part = await db.scalar(
+            select(BotPartner).where(
+                BotPartner.bot_id == bot.id, BotPartner.status.in_(("ACTIVE", "PAUSED"))
+            ).order_by(BotPartner.status)  # ACTIVE sorts before PAUSED
+        )
     if part is None:
         return {"has_partner": False}
     return await _finance_payload(db, part, access.workspace.id, user.id, period, start_date, end_date, as_owner=True)
@@ -267,9 +289,11 @@ async def accept_invite(partnership_id: uuid.UUID, user: AuthenticatedUser, db: 
         raise HTTPException(status_code=409, detail="Este convite não está mais disponível.")
     if part.accepted_at is None:
         part.accepted_at = utc_now()
-    # Activate on accept only if the bot has no other active partner.
+    # Activate on accept only if the active partners' percentages still fit within 100%;
+    # otherwise the partnership waits PAUSED until the owner frees up room.
     if part.status == "PENDING":
-        part.status = "ACTIVE" if await svc.active_partner_count(db, part.bot_id, exclude=part.id) == 0 else "PAUSED"
+        others = await svc.active_percent_sum(db, part.bot_id, exclude=part.id)
+        part.status = "ACTIVE" if others + part.partner_percent <= Decimal("100") else "PAUSED"
     bot = await db.get(TgBot, part.bot_id)
     owner = await db.get(User, part.owner_user_id)
     if bot is not None and owner is not None:

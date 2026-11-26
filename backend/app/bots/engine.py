@@ -1863,7 +1863,7 @@ async def approve_order(
         # a split error undo a paid sale or its delivery.
         from app.partners.bot_share_service import record_sale_split
 
-        if await record_sale_split(db, order) is not None:
+        if await record_sale_split(db, order):
             await db.commit()
     except Exception:
         await db.rollback()

@@ -1,9 +1,9 @@
 """Bot partnership rules: sharing a whole bot (and the funnel it runs) with an independent
 user, the per-sale split and the finance panel both sides read.
 
-A bot has at most one ACTIVE partner at a time (the split ledger keys one row per order).
-The owner may invite another while one is active, but it only becomes ACTIVE once the first
-is paused/revoked.
+A bot may have several ACTIVE partners at once, each with their own cut. The split ledger
+keys one row per (order, partnership), so a paid sale records one line per active partner.
+The sum of all active partners' percentages may not exceed 100%.
 """
 
 import uuid
@@ -118,6 +118,28 @@ async def active_partner_count(db: AsyncSession, bot_id: uuid.UUID, exclude: uui
     return int(await db.scalar(query) or 0)
 
 
+async def active_percent_sum(
+    db: AsyncSession, bot_id: uuid.UUID, exclude: uuid.UUID | None = None
+) -> Decimal:
+    """Sum of the cut of every ACTIVE partner of a bot (optionally excluding one partnership)."""
+    query = select(func.coalesce(func.sum(BotPartner.partner_percent), 0)).where(
+        BotPartner.bot_id == bot_id, BotPartner.status == "ACTIVE"
+    )
+    if exclude is not None:
+        query = query.where(BotPartner.id != exclude)
+    return Decimal(str(await db.scalar(query) or 0))
+
+
+async def active_partners_of_bot(db: AsyncSession, bot_id: uuid.UUID) -> list[BotPartner]:
+    return list(
+        await db.scalars(
+            select(BotPartner)
+            .where(BotPartner.bot_id == bot_id, BotPartner.status == "ACTIVE")
+            .order_by(BotPartner.created_at)
+        )
+    )
+
+
 async def partnerships_of_bot(db: AsyncSession, bot_id: uuid.UUID) -> list[BotPartner]:
     return list(
         await db.scalars(
@@ -172,46 +194,54 @@ async def partner_access(
     return PartnerAccess(partnership=part, bot=bot, owner_workspace=workspace)
 
 
-async def record_sale_split(db: AsyncSession, order: TgOrder) -> BotPartnerSale | None:
-    """On a paid order, record the partner split once. Caller commits.
+async def record_sale_split(db: AsyncSession, order: TgOrder) -> list[BotPartnerSale]:
+    """On a paid order, record the split for every active partner of the bot, once each.
 
-    net = order net after the gateway fee, minus the partnership's bot fee; the partner's
-    percent of that net is theirs, the owner keeps the rest. Returns None when the bot has
-    no active partner or the sale is already recorded.
+    One ledger row per (order, partnership). ``net`` is the order net after the gateway fee
+    minus that partnership's bot fee; the partner's percent of that net is theirs and the
+    owner keeps the rest (per row, relative to that partner). Idempotent: a partner already
+    recorded for this order is skipped. Returns the rows created (empty when the bot has no
+    active partner or everything was already recorded). Caller commits.
     """
-    part = await db.scalar(
-        select(BotPartner).where(BotPartner.bot_id == order.bot_id, BotPartner.status == "ACTIVE")
-    )
-    if part is None:
-        return None
-    if await db.scalar(select(BotPartnerSale.id).where(BotPartnerSale.order_id == order.id)):
-        return None
+    parts = await active_partners_of_bot(db, order.bot_id)
+    if not parts:
+        return []
     gross = money(order.amount)
     gateway_fee = money(order.gateway_fee) if order.gateway_fee is not None else Decimal("0.00")
     net_after_gateway = money(order.net_amount) if order.net_amount is not None else gross - gateway_fee
-    bot_fee = money(part.bot_fee)
-    net = net_after_gateway - bot_fee
-    if net < 0:
-        net = Decimal("0.00")
-    partner_amount = _floor(net * part.partner_percent / Decimal(100))
-    owner_amount = net - partner_amount
-    sale = BotPartnerSale(
-        partnership_id=part.id,
-        order_id=order.id,
-        bot_id=order.bot_id,
-        owner_user_id=part.owner_user_id,
-        partner_user_id=part.partner_user_id,
-        gross=gross,
-        gateway_fee=gateway_fee,
-        bot_fee=bot_fee,
-        net=net,
-        partner_percent=part.partner_percent,
-        partner_amount=partner_amount,
-        owner_amount=owner_amount,
-        paid_at=order.paid_at or utc_now(),
-    )
-    db.add(sale)
-    return sale
+    created: list[BotPartnerSale] = []
+    for part in parts:
+        already = await db.scalar(
+            select(BotPartnerSale.id).where(
+                BotPartnerSale.order_id == order.id, BotPartnerSale.partnership_id == part.id
+            )
+        )
+        if already:
+            continue
+        bot_fee = money(part.bot_fee)
+        net = net_after_gateway - bot_fee
+        if net < 0:
+            net = Decimal("0.00")
+        partner_amount = _floor(net * part.partner_percent / Decimal(100))
+        owner_amount = net - partner_amount
+        sale = BotPartnerSale(
+            partnership_id=part.id,
+            order_id=order.id,
+            bot_id=order.bot_id,
+            owner_user_id=part.owner_user_id,
+            partner_user_id=part.partner_user_id,
+            gross=gross,
+            gateway_fee=gateway_fee,
+            bot_fee=bot_fee,
+            net=net,
+            partner_percent=part.partner_percent,
+            partner_amount=partner_amount,
+            owner_amount=owner_amount,
+            paid_at=order.paid_at or utc_now(),
+        )
+        db.add(sale)
+        created.append(sale)
+    return created
 
 
 async def finance_summary(

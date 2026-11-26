@@ -129,6 +129,9 @@ export function BotPartnersPanel() {
 
   const partners = data.data?.partners ?? [];
   const canZeroFee = data.data?.can_zero_fee ?? false;
+  const activePercent = data.data?.active_percent ?? 0;
+  const remaining = data.data?.active_percent_remaining ?? 100;
+  const activePartners = partners.filter((p) => p.status === "ACTIVE");
 
   return (
     <div className="space-y-4">
@@ -139,6 +142,16 @@ export function BotPartnersPanel() {
         </select>
       </div>
 
+      {partners.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line bg-surface px-4 py-3 text-sm">
+          <span className="text-muted">
+            Parceiros ativos: <strong className="text-fg">{activePartners.length}</strong> · soma das porcentagens:{" "}
+            <strong className={activePercent > 100 ? "text-danger" : "text-fg"}>{activePercent.toFixed(2).replace(".", ",")}%</strong>
+          </span>
+          <span className="text-muted">Disponível para dividir: <strong className="text-fg">{remaining.toFixed(2).replace(".", ",")}%</strong></span>
+        </div>
+      )}
+
       <InviteForm botId={botId} canZeroFee={canZeroFee} defaultFee={data.data?.default_bot_fee ?? 0} onInvited={refresh} />
 
       <div className="space-y-3">
@@ -146,15 +159,24 @@ export function BotPartnersPanel() {
         {partners.length === 0 && <p className="text-sm text-muted">Nenhum parceiro neste bot ainda.</p>}
       </div>
 
-      {data.data?.has_active && (
+      {activePartners.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-fg">Financeiro da parceria</h2>
-          <PartnerFinanceCard
-            partnershipId={partners.find((p) => p.status === "ACTIVE")?.id}
-            canLogPayout
-            queryKey={["bot-partners", "finance", botId]}
-            fetchPanel={(period) => ownerFinance(botId, period)}
-          />
+          <h2 className="text-lg font-semibold text-fg">Financeiro das parcerias</h2>
+          {activePartners.map((part) => (
+            <div key={part.id} className="space-y-2">
+              {activePartners.length > 1 && (
+                <p className="text-sm font-medium text-fg-2">
+                  {part.partner?.name || part.partner?.email || "Parceiro"} · {Number(part.partner_percent).toFixed(2).replace(".", ",")}%
+                </p>
+              )}
+              <PartnerFinanceCard
+                partnershipId={part.id}
+                canLogPayout
+                queryKey={["bot-partners", "finance", botId, part.id]}
+                fetchPanel={(period) => ownerFinance(botId, period, part.id)}
+              />
+            </div>
+          ))}
         </section>
       )}
     </div>

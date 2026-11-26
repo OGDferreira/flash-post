@@ -95,7 +95,7 @@ class BotPartnerSale(Base):
 
     __tablename__ = "bot_partner_sales"
     __table_args__ = (
-        UniqueConstraint("order_id", name="uq_bot_partner_sales_order"),
+        UniqueConstraint("order_id", "partnership_id", name="uq_bot_partner_sales_order_part"),
         Index("ix_bot_partner_sales_partnership_paid", "partnership_id", "paid_at"),
         Index("ix_bot_partner_sales_partner_paid", "partner_user_id", "paid_at"),
         Index("ix_bot_partner_sales_owner_paid", "owner_user_id", "paid_at"),
