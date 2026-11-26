@@ -163,7 +163,7 @@ export function Conversation({ leadId, onBack, inModal }: { leadId: string; onBa
   const busy = sendText.isPending || sendMedia.isPending;
 
   return (
-    <div className={`glass-panel flex flex-col overflow-hidden p-0 ${inModal ? "h-full !rounded-none sm:!rounded-2xl" : "h-[72vh]"}`}>
+    <div className={`glass-panel flex flex-col overflow-hidden p-0 ${inModal ? "h-full" : "h-[72vh]"}`}>
       <header className="flex items-center gap-3 border-b border-line-soft p-3">
         <button
           type="button"
@@ -334,18 +334,17 @@ function Bubble({ leadId, message }: { leadId: string; message: ChatMessage }) {
   const outbound = message.direction === "out";
   const mediaUrl = `/api/bots/conversations/${leadId}/messages/${message.id}/media`;
   // Telegram scheme: received (lead) grey on the left, sent (bot/operator) purple on the right.
-  const align = outbound ? "ml-auto items-end" : "mr-auto items-start";
   const tint = outbound
     ? (message.from_operator ? "bg-brand text-white" : "bg-brand/85 text-white")
     : "bg-surface-inset text-fg";
   const metaCls = outbound ? "text-white/70" : "text-muted";
   const sender = outbound ? (message.from_operator ? "Você" : "Bot") : "";
   return (
-    <div className={`flex min-w-0 max-w-[82%] flex-col ${align}`}>
-      <div className={`min-w-0 rounded-2xl px-3 py-2 text-sm ${tint}`}>
+    <div className={`flex w-full ${outbound ? "justify-end" : "justify-start"}`}>
+      <div className={`min-w-0 max-w-[82%] rounded-2xl px-3 py-2 text-sm ${tint}`}>
         {message.has_media && message.kind !== "text" && <InboundMedia kind={message.kind} url={mediaUrl} />}
         {message.text && (
-          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{stripTags(message.text)}</p>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]">{stripTags(message.text)}</p>
         )}
         {!message.text && !message.has_media && message.kind === "text" && <p className="opacity-60">—</p>}
         {/* Time sits in the bottom-right corner of the bubble, Telegram-style. */}
