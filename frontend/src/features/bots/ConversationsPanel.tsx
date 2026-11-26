@@ -124,8 +124,15 @@ export function Conversation({ leadId, onBack, inModal }: { leadId: string; onBa
   }, []);
 
   const messages = convo.data?.messages ?? [];
+  // Stick to the bottom (newest message) whenever the conversation grows — and on
+  // first open, wait a frame so images/media have laid out before we jump down.
   useEffect(() => {
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
+    const el = scroller.current;
+    if (!el) return;
+    const jump = () => el.scrollTo({ top: el.scrollHeight });
+    jump();
+    const raf = requestAnimationFrame(jump);
+    return () => cancelAnimationFrame(raf);
   }, [messages.length]);
 
   const refresh = () => {
@@ -156,7 +163,7 @@ export function Conversation({ leadId, onBack, inModal }: { leadId: string; onBa
   const busy = sendText.isPending || sendMedia.isPending;
 
   return (
-    <div className={`glass-panel flex flex-col overflow-hidden p-0 ${inModal ? "h-full" : "h-[72vh]"}`}>
+    <div className={`glass-panel flex flex-col overflow-hidden p-0 ${inModal ? "h-full !rounded-none sm:!rounded-2xl" : "h-[72vh]"}`}>
       <header className="flex items-center gap-3 border-b border-line-soft p-3">
         <button
           type="button"
@@ -180,7 +187,7 @@ export function Conversation({ leadId, onBack, inModal }: { leadId: string; onBa
       <PixStrip orders={convo.data?.orders ?? []} />
 
 
-      <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-well/40 p-3">
+      <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden overscroll-contain bg-well/40 p-3">
         {messages.length === 0 && !convo.isLoading && (
           <p className="py-6 text-center text-sm text-muted">Sem mensagens nesta conversa ainda.</p>
         )}
@@ -326,20 +333,27 @@ function PixRow({ order }: { order: ConversationOrder }) {
 function Bubble({ leadId, message }: { leadId: string; message: ChatMessage }) {
   const outbound = message.direction === "out";
   const mediaUrl = `/api/bots/conversations/${leadId}/messages/${message.id}/media`;
+  // Telegram scheme: received (lead) grey on the left, sent (bot/operator) purple on the right.
   const align = outbound ? "ml-auto items-end" : "mr-auto items-start";
   const tint = outbound
-    ? (message.from_operator ? "bg-brand text-white" : "bg-surface-inset text-fg-2")
-    : "bg-surface text-fg";
+    ? (message.from_operator ? "bg-brand text-white" : "bg-brand/85 text-white")
+    : "bg-surface-inset text-fg";
+  const metaCls = outbound ? "text-white/70" : "text-muted";
+  const sender = outbound ? (message.from_operator ? "Você" : "Bot") : "";
   return (
-    <div className={`flex max-w-[82%] flex-col gap-1 ${align}`}>
-      <div className={`rounded-2xl px-3 py-2 text-sm ${tint}`}>
+    <div className={`flex min-w-0 max-w-[82%] flex-col ${align}`}>
+      <div className={`min-w-0 rounded-2xl px-3 py-2 text-sm ${tint}`}>
         {message.has_media && message.kind !== "text" && <InboundMedia kind={message.kind} url={mediaUrl} />}
-        {message.text && <p className="whitespace-pre-wrap break-words">{stripTags(message.text)}</p>}
+        {message.text && (
+          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{stripTags(message.text)}</p>
+        )}
         {!message.text && !message.has_media && message.kind === "text" && <p className="opacity-60">—</p>}
+        {/* Time sits in the bottom-right corner of the bubble, Telegram-style. */}
+        <span className={`mt-1 flex items-center justify-end gap-1 text-[10px] leading-none ${metaCls}`}>
+          {sender && <span className="font-medium">{sender}</span>}
+          <span>{timeLabel(message.created_at)}</span>
+        </span>
       </div>
-      <span className="px-1 text-[10px] text-muted">
-        {outbound ? (message.from_operator ? "Você" : "Bot") : ""} {timeLabel(message.created_at)}
-      </span>
     </div>
   );
 }
