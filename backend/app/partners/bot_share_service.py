@@ -8,7 +8,7 @@ The sum of all active partners' percentages may not exceed 100%.
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import ROUND_DOWN, Decimal
 
 from sqlalchemy import func, select
@@ -54,6 +54,16 @@ def user_brief(user: User | None) -> dict | None:
     }
 
 
+def invite_expired(part: BotPartner) -> bool:
+    """A PENDING, not-yet-accepted invite whose expiry has passed."""
+    if part.status != "PENDING" or part.accepted_at is not None or part.invite_expires_at is None:
+        return False
+    expires = part.invite_expires_at
+    if expires.tzinfo is None:  # SQLite returns naive datetimes; treat as UTC
+        expires = expires.replace(tzinfo=timezone.utc)
+    return expires < utc_now()
+
+
 def partnership_out(part: BotPartner, owner: User | None, partner: User | None, bot: TgBot | None = None) -> dict:
     data = {
         "id": str(part.id),
@@ -64,6 +74,9 @@ def partnership_out(part: BotPartner, owner: User | None, partner: User | None, 
         "bot_fee": float(part.bot_fee),
         "accepted_at": part.accepted_at.isoformat() if part.accepted_at else None,
         "created_at": part.created_at.isoformat(),
+        "invite_expiry_days": part.invite_expiry_days,
+        "invite_expires_at": part.invite_expires_at.isoformat() if part.invite_expires_at else None,
+        "expired": invite_expired(part),
         "owner": user_brief(owner),
         "partner": user_brief(partner),
     }

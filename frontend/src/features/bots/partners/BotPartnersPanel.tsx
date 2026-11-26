@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Handshake, Pause, Play, Plus, Trash2, UserPlus } from "lucide-react";
+import { Clock, Eye, Handshake, Pause, Play, Plus, RotateCcw, Trash2, UserPlus } from "lucide-react";
 
 import { apiRequest, ApiError } from "@/services/api";
 import type { Bot } from "../types";
-import { botPartners, invitePartner, ownerFinance, removePartnership, updatePartnership, type AccessLevel, type Partnership } from "./api";
+import { botPartners, invitePartner, ownerFinance, removePartnership, resendInvite, updatePartnership, type AccessLevel, type Partnership } from "./api";
 
 const ACCESS_LABEL: Record<AccessLevel, string> = { operational: "Operacional", read_only: "Somente leitura" };
 import { PartnerFinanceCard } from "./PartnerFinanceCard";
@@ -21,7 +21,12 @@ function PartnerRow({ part, canZeroFee, onChanged }: { part: Partnership; canZer
     onSuccess: onChanged,
   });
   const remove = useMutation({ mutationFn: () => removePartnership(part.id), onSuccess: onChanged });
+  const resend = useMutation({ mutationFn: () => resendInvite(part.id), onSuccess: onChanged });
   const name = part.partner?.name || part.partner?.email || "Parceiro";
+  const isExpired = Boolean(part.expired);
+  const pendingInfo = part.status === "PENDING" && !part.accepted_at && part.invite_expires_at && !isExpired
+    ? `Convite expira em ${new Date(part.invite_expires_at).toLocaleDateString("pt-BR")}`
+    : null;
 
   return (
     <div className="rounded-2xl border border-line bg-surface p-4">
@@ -34,11 +39,16 @@ function PartnerRow({ part, canZeroFee, onChanged }: { part: Partnership; canZer
           {part.access_level === "read_only" && (
             <span className="flex items-center gap-1 rounded-full bg-well px-2 py-1 text-[11px] font-medium text-fg-2"><Eye size={12} /> {ACCESS_LABEL.read_only}</span>
           )}
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${part.status === "ACTIVE" ? "bg-success-soft text-success" : part.status === "PAUSED" ? "bg-warning/15 text-warning" : "bg-well text-fg-2"}`}>
-            {STATUS_LABEL[part.status]}
-          </span>
+          {isExpired ? (
+            <span className="flex items-center gap-1 rounded-full bg-danger/15 px-2.5 py-1 text-[11px] font-medium text-danger"><Clock size={12} /> Expirado</span>
+          ) : (
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${part.status === "ACTIVE" ? "bg-success-soft text-success" : part.status === "PAUSED" ? "bg-warning/15 text-warning" : "bg-well text-fg-2"}`}>
+              {STATUS_LABEL[part.status]}
+            </span>
+          )}
         </div>
       </div>
+      {pendingInfo && <p className="mt-1 flex items-center gap-1 text-[11px] text-muted"><Clock size={11} /> {pendingInfo}</p>}
       <div className="mt-3 flex flex-wrap items-end gap-2">
         <label className="text-xs text-muted">
           % do parceiro
@@ -77,6 +87,11 @@ function PartnerRow({ part, canZeroFee, onChanged }: { part: Partnership; canZer
             <Play size={15} /> Ativar
           </button>
         ) : null}
+        {(isExpired || (part.status === "PENDING" && !part.accepted_at)) && (
+          <button className="btn-secondary !min-h-9" disabled={resend.isPending} onClick={() => resend.mutate()} type="button">
+            <RotateCcw size={15} /> Reenviar
+          </button>
+        )}
         <button className="btn-secondary !min-h-9 !text-danger" disabled={remove.isPending} onClick={() => remove.mutate()} type="button">
           <Trash2 size={15} /> Remover
         </button>
@@ -95,8 +110,9 @@ function InviteForm({ botId, onInvited, canZeroFee, defaultFee }: { botId: strin
   const [percent, setPercent] = useState("50");
   const [fee, setFee] = useState(String(defaultFee));
   const [access, setAccess] = useState<AccessLevel>("operational");
+  const [expiryDays, setExpiryDays] = useState(7);
   const invite = useMutation({
-    mutationFn: () => invitePartner(botId, { identifier: identifier.trim(), partner_percent: percent.replace(",", "."), access_level: access, ...(canZeroFee ? { bot_fee: fee.replace(",", ".") } : {}) }),
+    mutationFn: () => invitePartner(botId, { identifier: identifier.trim(), partner_percent: percent.replace(",", "."), access_level: access, invite_expiry_days: expiryDays, ...(canZeroFee ? { bot_fee: fee.replace(",", ".") } : {}) }),
     onSuccess: () => { setIdentifier(""); onInvited(); },
   });
   return (
@@ -117,6 +133,15 @@ function InviteForm({ botId, onInvited, canZeroFee, defaultFee }: { botId: strin
           <select className="field !min-h-9 !w-auto !text-sm" value={access} onChange={(e) => setAccess(e.target.value as AccessLevel)}>
             <option value="operational">Operacional (edita funil)</option>
             <option value="read_only">Somente leitura</option>
+          </select>
+        </label>
+        <label className="text-xs text-muted">
+          Convite válido por
+          <select className="field !min-h-9 !w-auto !text-sm" value={expiryDays} onChange={(e) => setExpiryDays(Number(e.target.value))}>
+            <option value={1}>1 dia</option>
+            <option value={3}>3 dias</option>
+            <option value={7}>7 dias</option>
+            <option value={30}>30 dias</option>
           </select>
         </label>
         {canZeroFee && (

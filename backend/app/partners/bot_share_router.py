@@ -11,7 +11,7 @@ rest of the owner's operation.
 
 import logging
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Annotated, Any
@@ -75,6 +75,14 @@ class InvitePayload(BaseModel):
     partner_percent: Annotated[Decimal, Field(ge=0, le=100)]
     bot_fee: Annotated[Decimal | None, Field(default=None, ge=0)] = None  # Super Admin only
     access_level: Annotated[str, Field(pattern="^(operational|read_only)$")] = "operational"
+    invite_expiry_days: Annotated[int, Field(default=7)] = 7
+
+
+INVITE_EXPIRY_CHOICES = (1, 3, 7, 30)
+
+
+def _expiry_days(days: int) -> int:
+    return days if days in INVITE_EXPIRY_CHOICES else 7
 
 
 class PartnershipUpdate(BaseModel):
@@ -147,7 +155,8 @@ async def invite_partner(
     existing = await db.scalar(
         select(BotPartner).where(BotPartner.bot_id == bot.id, BotPartner.partner_user_id == target.id)
     )
-    if existing is not None and existing.status in ("PENDING", "ACTIVE", "PAUSED"):
+    # An expired PENDING invite may be re-sent; an active/paused or still-valid PENDING one may not.
+    if existing is not None and existing.status in ("PENDING", "ACTIVE", "PAUSED") and not svc.invite_expired(existing):
         raise HTTPException(status_code=409, detail="Esse usuário já é parceiro (ou foi convidado) deste bot.")
 
     bot_fee = await svc.default_bot_fee(db, owner_user)
@@ -156,11 +165,15 @@ async def invite_partner(
             raise HTTPException(status_code=403, detail="Só o super admin pode alterar a taxa do bot.")
         bot_fee = svc.money(payload.bot_fee)
 
-    if existing is not None:  # re-invite a previously declined/revoked user
+    days = _expiry_days(payload.invite_expiry_days)
+    expires_at = utc_now() + timedelta(days=days)
+    if existing is not None:  # re-invite a previously declined/revoked/expired user
         existing.status = "PENDING"
         existing.partner_percent = svc.money(payload.partner_percent)
         existing.bot_fee = bot_fee
         existing.access_level = payload.access_level
+        existing.invite_expiry_days = days
+        existing.invite_expires_at = expires_at
         existing.invited_by_user_id = user.id
         existing.accepted_at = None
         part = existing
@@ -169,6 +182,7 @@ async def invite_partner(
             bot_id=bot.id, owner_user_id=owner_user.id, partner_user_id=target.id,
             partner_percent=svc.money(payload.partner_percent), bot_fee=bot_fee,
             access_level=payload.access_level,
+            invite_expiry_days=days, invite_expires_at=expires_at,
             status="PENDING", invited_by_user_id=user.id,
         )
         db.add(part)
@@ -228,6 +242,34 @@ async def remove_partnership(partnership_id: uuid.UUID, access: OwnerAccess, db:
     part = await _partnership_for_owner(db, await db.get(User, access.workspace.owner_id), partnership_id)
     part.status = "REVOKED"
     await db.commit()
+
+
+class ResendPayload(BaseModel):
+    invite_expiry_days: Annotated[int | None, Field(default=None)] = None
+
+
+@router.post("/{partnership_id}/resend", dependencies=csrf)
+async def resend_invite(
+    partnership_id: uuid.UUID, payload: ResendPayload, access: OwnerAccess, user: AuthenticatedUser, db: DbSession
+) -> dict:
+    """Re-send an invite (typically an expired one): reset it to PENDING with a fresh expiry."""
+    owner_user = await db.get(User, access.workspace.owner_id)
+    part = await _partnership_for_owner(db, owner_user, partnership_id)
+    if part.status in ("ACTIVE", "PAUSED") and part.accepted_at is not None:
+        raise HTTPException(status_code=409, detail="Este parceiro já aceitou; não há convite para reenviar.")
+    days = _expiry_days(payload.invite_expiry_days if payload.invite_expiry_days is not None else part.invite_expiry_days)
+    part.status = "PENDING"
+    part.accepted_at = None
+    part.invite_expiry_days = days
+    part.invite_expires_at = utc_now() + timedelta(days=days)
+    part.invited_by_user_id = user.id
+    bot = await db.get(TgBot, part.bot_id)
+    if bot is not None:
+        await svc.notify_partner_invite(db, part, owner_user, bot)
+    await db.commit()
+    await db.refresh(part)
+    partner = await db.get(User, part.partner_user_id)
+    return svc.partnership_out(part, owner_user, partner, bot)
 
 
 @router.get("/bots/{bot_id}/finance")
@@ -339,6 +381,8 @@ async def accept_invite(partnership_id: uuid.UUID, user: AuthenticatedUser, db: 
         raise HTTPException(status_code=404, detail="Convite não encontrado.")
     if part.status not in ("PENDING", "PAUSED", "ACTIVE"):
         raise HTTPException(status_code=409, detail="Este convite não está mais disponível.")
+    if svc.invite_expired(part):
+        raise HTTPException(status_code=409, detail="Este convite expirou. Peça ao dono para reenviar.")
     if part.accepted_at is None:
         part.accepted_at = utc_now()
     # Activate on accept only if the active partners' percentages still fit within 100%;

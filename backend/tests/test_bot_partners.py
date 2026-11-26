@@ -271,6 +271,52 @@ async def test_read_only_partner_cannot_edit_funnel(client, db_session, owner, a
 
 
 @pytest.mark.anyio
+async def test_invite_expiry_blocks_accept_and_resend_revives(client, db_session, owner, apis) -> None:
+    from datetime import timedelta
+
+    headers = await _login(client)
+    bot, _flow = await _setup(client, headers)
+    partner = await _partner_user(db_session)
+
+    invite = await client.post(
+        f"/api/bot-partners/bots/{bot['id']}/invite", headers=headers,
+        json={"identifier": "augusto@example.com", "partner_percent": "30", "invite_expiry_days": 3},
+    )
+    assert invite.status_code == 201, invite.text
+    part_id = invite.json()["id"]
+    assert invite.json()["invite_expiry_days"] == 3
+    assert invite.json()["expired"] is False
+
+    # Force the invite into the past.
+    part = await db_session.get(BotPartner, uuid.UUID(part_id))
+    part.invite_expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+    await db_session.commit()
+
+    # Partner can't accept an expired invite.
+    await client.post("/api/auth/login", headers={"X-CSRF-Token": await _csrf(client)},
+                      json={"email": "augusto@example.com", "password": "partner password 123"})
+    pheaders = {"X-CSRF-Token": await _csrf(client)}
+    nope = await client.post(f"/api/bot-partners/{part_id}/accept", headers=pheaders)
+    assert nope.status_code == 409
+    shared = await client.get("/api/bot-partners/shared", headers=pheaders)
+    assert any(s["id"] == part_id and s["expired"] for s in shared.json()["shared"])
+
+    # Owner resends → fresh expiry, accept works.
+    await client.post("/api/auth/login", headers={"X-CSRF-Token": await _csrf(client)},
+                      json={"email": "owner@example.com", "password": "correct horse battery staple"})
+    oheaders = {"X-CSRF-Token": await _csrf(client)}
+    resent = await client.post(f"/api/bot-partners/{part_id}/resend", headers=oheaders, json={"invite_expiry_days": 7})
+    assert resent.status_code == 200, resent.text
+    assert resent.json()["expired"] is False and resent.json()["invite_expiry_days"] == 7
+
+    await client.post("/api/auth/login", headers={"X-CSRF-Token": await _csrf(client)},
+                      json={"email": "augusto@example.com", "password": "partner password 123"})
+    pheaders = {"X-CSRF-Token": await _csrf(client)}
+    ok = await client.post(f"/api/bot-partners/{part_id}/accept", headers=pheaders)
+    assert ok.status_code == 200 and ok.json()["status"] == "ACTIVE"
+
+
+@pytest.mark.anyio
 async def test_no_split_without_active_partner(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, flow = await _setup(client, headers)
