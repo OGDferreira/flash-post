@@ -142,6 +142,40 @@ export function ownerFinance(botId: string, period: MetricsPeriod, partnershipId
   return apiRequest<FinancePanel>(`/api/bot-partners/bots/${botId}/finance?${params}`);
 }
 
+export type CompareTotals = {
+  sales: number;
+  gross: number;
+  gateway_fee: number;
+  bot_fee: number;
+  fees: number;
+  net: number;
+  owner_amount: number;
+  partner_amount: number;
+};
+
+export type DashboardRow = {
+  partnership_id: string;
+  status: string;
+  partner_percent: number;
+  partner: PartnerUser | null;
+  totals: CompareTotals;
+};
+
+export type OwnerDashboard = {
+  bot: { id: string; name: string; username: string };
+  owner: PartnerUser | null;
+  period_label: string;
+  partners: DashboardRow[];
+  totals: CompareTotals;
+  single: boolean;
+};
+
+export function ownerDashboard(botId: string, period: MetricsPeriod, partnershipId?: string) {
+  const params = new URLSearchParams(periodParams(period));
+  if (partnershipId) params.set("partnership_id", partnershipId);
+  return apiRequest<OwnerDashboard>(`/api/bot-partners/bots/${botId}/dashboard?${params}`);
+}
+
 export function addPayout(id: string, body: { party: "owner" | "partner"; amount: string; note?: string; paid_at?: string }) {
   return apiRequest<FinancePayout>(`/api/bot-partners/${id}/payouts`, { method: "POST", body });
 }

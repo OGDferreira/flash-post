@@ -325,6 +325,51 @@ async def owner_finance(
     return await _finance_payload(db, part, access.workspace.id, user.id, period, start_date, end_date, as_owner=True)
 
 
+@router.get("/bots/{bot_id}/dashboard")
+async def owner_dashboard(
+    bot_id: uuid.UUID, access: OwnerAccess, user: AuthenticatedUser, db: DbSession,
+    period: AnalyticsPeriod = "30d", start_date: date | None = None, end_date: date | None = None,
+    partnership_id: uuid.UUID | None = None,
+) -> dict:
+    """Side-by-side owner vs partner comparison for a bot's partnerships, by period and
+    optionally filtered to one partner: gross, fees (gateway + bot), net, owner and partner
+    shares."""
+    bot = await _owned_bot_or_404(db, access.workspace.owner_id, bot_id)
+    zone = await user_time_zone(db, access.workspace.id, user.id)
+    start, end = period_bounds(period, start_date, end_date, utc_now(), zone)
+    query = select(BotPartner).where(BotPartner.bot_id == bot.id, BotPartner.status != "DECLINED").order_by(BotPartner.created_at)
+    if partnership_id is not None:
+        query = query.where(BotPartner.id == partnership_id)
+    parts = list(await db.scalars(query))
+
+    owner_user = await db.get(User, access.workspace.owner_id)
+    rows = []
+    agg = {"gross": 0.0, "gateway_fee": 0.0, "bot_fee": 0.0, "fees": 0.0, "net": 0.0, "owner_amount": 0.0, "partner_amount": 0.0, "sales": 0}
+    for part in parts:
+        totals = await svc.compare_totals(db, part, start, end)
+        partner = await db.get(User, part.partner_user_id)
+        rows.append({
+            "partnership_id": str(part.id),
+            "status": part.status,
+            "partner_percent": float(part.partner_percent),
+            "partner": svc.user_brief(partner),
+            "totals": totals,
+        })
+        for key in agg:
+            agg[key] += totals[key]
+
+    return {
+        "bot": {"id": str(bot.id), "name": bot.name, "username": bot.username},
+        "owner": svc.user_brief(owner_user),
+        "period_label": period_label(start, end, zone) if start and end else "Todo o período",
+        "partners": rows,
+        # Grand total is meaningful only when a single partner is in view (otherwise each
+        # order's gross is counted once per partner); the UI shows it accordingly.
+        "totals": agg,
+        "single": partnership_id is not None or len(parts) <= 1,
+    }
+
+
 @router.post("/{partnership_id}/payouts", status_code=201, dependencies=csrf)
 async def add_payout(partnership_id: uuid.UUID, payload: PayoutPayload, access: OwnerAccess, user: AuthenticatedUser, db: DbSession) -> dict:
     part = await _partnership_for_owner(db, await db.get(User, access.workspace.owner_id), partnership_id)

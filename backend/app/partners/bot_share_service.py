@@ -415,6 +415,42 @@ async def set_sale_status(
     return sale
 
 
+async def compare_totals(
+    db: AsyncSession, part: BotPartner, start: datetime | None, end: datetime | None
+) -> dict:
+    """Aggregate totals for one partnership over a period: gross, fees, net and the owner's
+    vs the partner's share. Used by the owner's comparison dashboard."""
+    conds = [BotPartnerSale.partnership_id == part.id]
+    if start is not None:
+        conds.append(BotPartnerSale.paid_at >= start)
+    if end is not None:
+        conds.append(BotPartnerSale.paid_at < end)
+    row = (
+        await db.execute(
+            select(
+                func.count(BotPartnerSale.id),
+                func.coalesce(func.sum(BotPartnerSale.gross), 0),
+                func.coalesce(func.sum(BotPartnerSale.gateway_fee), 0),
+                func.coalesce(func.sum(BotPartnerSale.bot_fee), 0),
+                func.coalesce(func.sum(BotPartnerSale.net), 0),
+                func.coalesce(func.sum(BotPartnerSale.partner_amount), 0),
+                func.coalesce(func.sum(BotPartnerSale.owner_amount), 0),
+            ).where(*conds)
+        )
+    ).one()
+    count, gross, gateway_fee, bot_fee, net, partner_amount, owner_amount = row
+    return {
+        "sales": int(count or 0),
+        "gross": float(gross),
+        "gateway_fee": float(gateway_fee),
+        "bot_fee": float(bot_fee),
+        "fees": float(Decimal(str(gateway_fee)) + Decimal(str(bot_fee))),
+        "net": float(net),
+        "owner_amount": float(owner_amount),
+        "partner_amount": float(partner_amount),
+    }
+
+
 async def notify_partner_sales(db: AsyncSession, sales: list[BotPartnerSale]) -> None:
     """After a shared-bot sale is recorded, tell each partner their cut: in-app + web push
     (via notify_user) and, if they set one, an HTTP webhook. Best-effort; never raises."""

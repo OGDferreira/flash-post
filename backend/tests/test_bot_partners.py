@@ -370,6 +370,38 @@ async def test_split_by_kind_overrides_percent_per_offer(client, db_session, own
 
 
 @pytest.mark.anyio
+async def test_owner_comparison_dashboard(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, flow = await _setup(client, headers)
+    owner_user, workspace = owner
+    partner = await _partner_user(db_session)
+    part = BotPartner(
+        bot_id=uuid.UUID(bot["id"]), owner_user_id=owner_user.id, partner_user_id=partner.id,
+        partner_percent=Decimal("30.00"), bot_fee=Decimal("2.00"), status="ACTIVE",
+        accepted_at=datetime.now(timezone.utc),
+    )
+    db_session.add(part)
+    await db_session.commit()
+
+    order = await _paid_order(db_session, workspace.id, uuid.UUID(bot["id"]), uuid.UUID(flow["id"]))
+    await svc.record_sale_split(db_session, order)
+    await db_session.commit()
+
+    res = await client.get(f"/api/bot-partners/bots/{bot['id']}/dashboard?period=all", headers=headers)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert len(body["partners"]) == 1
+    t = body["partners"][0]["totals"]
+    # gross 100, gateway 5, bot 2 → fees 7, net 93, partner 27.90, owner 65.10
+    assert t["gross"] == 100.0 and t["fees"] == 7.0 and t["net"] == 93.0
+    assert t["partner_amount"] == 27.90 and t["owner_amount"] == 65.10
+
+    # Filter by partner.
+    one = await client.get(f"/api/bot-partners/bots/{bot['id']}/dashboard?period=all&partnership_id={part.id}", headers=headers)
+    assert one.status_code == 200 and one.json()["single"] is True and len(one.json()["partners"]) == 1
+
+
+@pytest.mark.anyio
 async def test_no_split_without_active_partner(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, flow = await _setup(client, headers)
