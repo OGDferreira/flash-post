@@ -35,6 +35,12 @@ class DiagnosticsEvent(Base):
     job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
     category: Mapped[str | None] = mapped_column(String(32))
     meta_code: Mapped[int | None] = mapped_column(Integer)
+    # Operational health status: "pending" (needs attention) or "resolved". Set resolved
+    # by the owner/Super Admin, or automatically when the account reconnects.
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="pending", default="pending"
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -16,6 +16,7 @@ from app.instagram.oauth import (
     instagram_api_error_detail,
     refresh_instagram_long_lived_token,
 )
+from app.diagnostics.service import build_event
 from app.instagram.account_state import isolate_inactive_account
 from app.instagram.publishing import (
     GRAPH_ENDPOINT,
@@ -51,6 +52,9 @@ FAILURE_RETENTION = timedelta(days=30)
 DIAGNOSTICS_RETENTION = timedelta(days=14)
 TOKEN_REFRESH_WINDOW = timedelta(days=10)
 TOKEN_REFRESH_RETRY_INTERVAL = timedelta(hours=12)
+# A loop whose oldest queued publication has been due for this long is "travado" (stuck):
+# the health panel flags it so the owner notices a backlog instead of silent non-posting.
+LOOP_STUCK_AFTER = timedelta(hours=2)
 
 
 def _utc_datetime(value: datetime) -> datetime:
@@ -225,7 +229,24 @@ async def _mark_account_as_error(
     # account): mark it "disconnected" like a manual removal so the owner just reconnects.
     # The specific cause stays in status_reason and classify_inactive_account still derives
     # the suspended/expired badge from it.
+    was_connected = account.status == "connected"
     await isolate_inactive_account(db, account, "disconnected", reason)
+    if was_connected:
+        # Record it in the account's health panel. Sending stays paused — the account has
+        # just been removed from its loops — until the owner reconnects.
+        db.add(
+            build_event(
+                workspace_id=account.workspace_id,
+                account_id=account.id,
+                category="account_disconnected",
+                level="error",
+                message=(
+                    f"Conta @{account.username} desconectada automaticamente: "
+                    f"{redact_secrets(reason)[:400]}"
+                ),
+                path="/workers/loop_scheduler",
+            )
+        )
 
 
 async def _update_account_health_after_failure(
@@ -855,6 +876,72 @@ async def prune_old_records(now: datetime | None = None) -> None:
         logger.exception("Could not prune old failures and diagnostics.")
 
 
+async def _flag_stuck_loops(now: datetime) -> int:
+    """Record a health warning for each loop whose oldest queued job is long overdue.
+
+    One warning per loop per ``LOOP_STUCK_AFTER`` window (deduped against the last
+    ``loop_stuck`` event) so a lingering backlog does not flood the panel.
+    """
+    allowed = workspaces_allowed_to_post()
+    threshold = now - LOOP_STUCK_AFTER
+    async with get_session_factory()() as db:
+        rows = (
+            await db.execute(
+                select(
+                    InstagramPublicationJob.loop_id,
+                    InstagramPublicationJob.workspace_id,
+                    func.min(InstagramPublicationJob.scheduled_for).label("oldest"),
+                    func.count().label("backlog"),
+                )
+                .where(
+                    InstagramPublicationJob.status == "queued",
+                    InstagramPublicationJob.scheduled_for < threshold,
+                    or_(
+                        InstagramPublicationJob.next_retry_at.is_(None),
+                        InstagramPublicationJob.next_retry_at <= now,
+                    ),
+                    InstagramPublicationJob.workspace_id.in_(allowed),
+                )
+                .group_by(
+                    InstagramPublicationJob.loop_id,
+                    InstagramPublicationJob.workspace_id,
+                )
+            )
+        ).all()
+        flagged = 0
+        for loop_id, workspace_id, oldest, backlog in rows:
+            last = await db.scalar(
+                select(DiagnosticsEvent.created_at)
+                .where(
+                    DiagnosticsEvent.loop_id == loop_id,
+                    DiagnosticsEvent.category == "loop_stuck",
+                )
+                .order_by(DiagnosticsEvent.created_at.desc())
+                .limit(1)
+            )
+            if last is not None and _utc_datetime(last) > threshold:
+                continue
+            loop = await db.get(InstagramLoop, loop_id)
+            late_minutes = int((now - _utc_datetime(oldest)).total_seconds() // 60)
+            db.add(
+                build_event(
+                    workspace_id=workspace_id,
+                    loop_id=loop_id,
+                    category="loop_stuck",
+                    level="warning",
+                    message=(
+                        f"Loop \"{loop.name if loop else loop_id}\" com publicação atrasada: "
+                        f"{backlog} na fila, a mais antiga há {late_minutes} min sem sair."
+                    ),
+                    path="/workers/loop_scheduler",
+                )
+            )
+            flagged += 1
+        if flagged:
+            await db.commit()
+        return flagged
+
+
 async def run_loop_scheduler_tick() -> int:
     logger.info("Starting Loop publication scheduler tick.")
     await _mark_expired_accounts(datetime.now(timezone.utc))
@@ -913,6 +1000,10 @@ async def run_loop_scheduler_tick() -> int:
             "Instagram publishing is disabled by INSTAGRAM_PUBLISHING_ENABLED=false; "
             "queued publications are not being sent."
         )
+    try:
+        await _flag_stuck_loops(datetime.now(timezone.utc))
+    except SQLAlchemyError:
+        logger.exception("Could not evaluate stuck loops for the health panel.")
     logger.info(
         "Loop scheduler prepared %s jobs, refreshed %s tokens, and processed %s publications.",
         created_jobs,

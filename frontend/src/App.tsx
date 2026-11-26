@@ -39,6 +39,7 @@ const LoopsPage = lazyPage(() => import("@/pages/LoopsPage"), "LoopsPage");
 const AutomationsPage = lazyPage(() => import("@/pages/AutomationsPage"), "AutomationsPage");
 const PublicationsPage = lazyPage(() => import("@/pages/PublicationsPage"), "PublicationsPage");
 const ErrorLogsPage = lazyPage(() => import("@/pages/ErrorLogsPage"), "ErrorLogsPage");
+const BotHealthPage = lazyPage(() => import("@/pages/BotHealthPage"), "BotHealthPage");
 const EmailsPage = lazyPage(() => import("@/pages/EmailsPage"), "EmailsPage");
 const IntegrationsPage = lazyPage(() => import("@/pages/IntegrationsPage"), "IntegrationsPage");
 const ProfilePage = lazyPage(() => import("@/pages/ProfilePage"), "ProfilePage");
@@ -109,6 +110,7 @@ export default function App() {
                     <Route path="/feature/profile-folders" element={<ProfileFoldersPage />} />
                     <Route path="/feature/automations" element={<AutomationsPage />} />
                     <Route path="/feature/publications" element={<PublicationsPage />} />
+                    <Route path="/feature/health" element={<BotHealthPage />} />
                     <Route
                       path="/feature/analytics"
                       element={
