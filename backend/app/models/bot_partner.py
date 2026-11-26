@@ -79,6 +79,8 @@ class BotPartner(Base):
     invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
+    # Optional webhook the partner sets to receive a sale ping (Telegram bot, Zapier, ...).
+    notify_webhook_url: Mapped[str | None] = mapped_column(String(500))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

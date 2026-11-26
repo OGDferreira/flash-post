@@ -1,13 +1,45 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, BarChart3, Check, CircleDollarSign, Pencil, Share2, X } from "lucide-react";
+import { ArrowLeft, BarChart3, Bell, Check, CircleDollarSign, Pencil, Share2, X } from "lucide-react";
 
 import { ApiError } from "@/services/api";
 import { FlowEditor } from "../FlowEditor";
 import { BotApiProvider, partnerBotApi } from "../editor/apiBase";
 import { PartnerFinanceCard } from "./PartnerFinanceCard";
 import { SharedBotAnalytics } from "./SharedBotAnalytics";
-import { acceptInvite, declineInvite, mySharedBots, partnerFinance, sharedBotDetail, type Partnership } from "./api";
+import { acceptInvite, declineInvite, mySharedBots, partnerFinance, setPartnerWebhook, sharedBotDetail, type Partnership } from "./api";
+
+function SaleNotifyCard({ botId, initialUrl }: { botId: string; initialUrl: string | null }) {
+  const queryClient = useQueryClient();
+  const [url, setUrl] = useState(initialUrl ?? "");
+  useEffect(() => { setUrl(initialUrl ?? ""); }, [initialUrl]);
+  const save = useMutation({
+    mutationFn: () => setPartnerWebhook(botId, url.trim() || null),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["bot-partners", "shared", botId] }),
+  });
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <p className="flex items-center gap-2 text-sm font-semibold text-fg"><Bell size={15} /> Aviso de venda</p>
+      <p className="mt-0.5 text-xs text-muted">
+        Você já recebe aviso no app e por notificação push a cada venda. Para também receber em um webhook
+        (bot do Telegram, Zapier, n8n…), cole a URL aqui.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <input
+          className="field !min-h-9 min-w-[16rem] flex-1 !text-sm"
+          placeholder="https://… (opcional)"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <button className="btn-secondary !min-h-9" disabled={save.isPending} onClick={() => save.mutate()} type="button">
+          Salvar
+        </button>
+      </div>
+      {save.isSuccess && <p className="mt-2 text-xs text-success">Webhook salvo.</p>}
+      {save.error && <p className="mt-2 text-sm text-danger">{save.error instanceof ApiError ? save.error.message : "Não foi possível salvar."}</p>}
+    </div>
+  );
+}
 
 type View =
   | { kind: "list" }
@@ -80,7 +112,10 @@ function SharedBotDetail({ botId, tab, onTab, onEdit, onBack }: {
       )}
       {tab === "analises" && <SharedBotAnalytics botId={botId} />}
       {tab === "financeiro" && (
-        <PartnerFinanceCard queryKey={["bot-partners", "partner-finance", botId]} fetchPanel={(period) => partnerFinance(botId, period)} />
+        <div className="space-y-4">
+          <SaleNotifyCard botId={botId} initialUrl={detail.data?.notify_webhook_url ?? null} />
+          <PartnerFinanceCard queryKey={["bot-partners", "partner-finance", botId]} fetchPanel={(period) => partnerFinance(botId, period)} />
+        </div>
       )}
     </div>
   );

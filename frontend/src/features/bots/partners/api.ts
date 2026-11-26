@@ -21,6 +21,7 @@ export type Partnership = {
   partner: PartnerUser | null;
   bot?: { id: string; name: string; username: string };
   can_edit?: boolean;
+  notify_webhook_url?: string | null;
   flows?: { id: string; name: string }[];
 };
 
@@ -144,6 +145,13 @@ export function sharedBotDetail(botId: string) {
 
 export function partnerFinance(botId: string, period: MetricsPeriod) {
   return apiRequest<FinancePanel>(`/api/bot-partners/shared/${botId}/finance?${new URLSearchParams(periodParams(period))}`);
+}
+
+export function setPartnerWebhook(botId: string, notifyWebhookUrl: string | null) {
+  return apiRequest<{ notify_webhook_url: string | null }>(`/api/bot-partners/shared/${botId}/notify`, {
+    method: "PATCH",
+    body: { notify_webhook_url: notifyWebhookUrl },
+  });
 }
 
 export const brl = (value: number | null | undefined) =>
