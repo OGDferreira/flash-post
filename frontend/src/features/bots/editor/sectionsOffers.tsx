@@ -732,6 +732,8 @@ export function PaymentSection({ draft, set }: SectionProps) {
     if (!qr && !steps) return; // keep at least one way to pay
     setPayment({ qr_enabled: qr, steps_enabled: steps, layout: qr ? "qr" : "steps" });
   };
+  // "Ambos" = QR Code + passo a passo + Pix copia e cola juntos.
+  const pixMode: "qr" | "steps" | "both" = qrOn && stepsOn ? "both" : stepsOn ? "steps" : "qr";
   return (
     <Panel icon={<CreditCard size={18} />} title="Pagamento Pix" description="Textos do Pix e quanto tempo o código vale.">
       <Field label="Validade do Pix (minutos)">
@@ -772,15 +774,37 @@ export function PaymentSection({ draft, set }: SectionProps) {
 
       <div className="space-y-2 rounded-xl border border-line-soft p-3">
         <p className="text-sm font-medium text-fg">Como mostrar o Pix</p>
-        <p className="text-xs text-muted">Pode ligar os dois ao mesmo tempo: o lead recebe o QR Code e o passo a passo.</p>
-        <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
-          <span>QR Code <span className="block text-xs text-muted">Imagem com o QR, o texto e o código Pix.</span></span>
-          <Switch checked={qrOn} label="QR Code" onChange={(on) => setModes(on, stepsOn)} />
-        </label>
-        <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
-          <span>Passo a passo <span className="block text-xs text-muted">Instruções, o código numa caixa “copy” e os botões.</span></span>
-          <Switch checked={stepsOn} label="Passo a passo" onChange={(on) => setModes(qrOn, on)} />
-        </label>
+        <p className="text-xs text-muted">Escolha como o lead recebe o Pix.</p>
+        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Como mostrar o Pix">
+          {([
+            { value: "qr", label: "QR Code", hint: "Imagem com o QR, o texto e o código Pix." },
+            { value: "steps", label: "Passo a passo", hint: "Instruções, o código numa caixa “copy” e os botões." },
+            { value: "both", label: "Ambos", hint: "Envia o QR Code, o passo a passo e o Pix copia e cola." },
+          ] as const).map((item) => {
+            const active = pixMode === item.value;
+            return (
+              <button
+                aria-checked={active}
+                className={`min-h-9 rounded-full border px-4 text-xs font-medium transition ${
+                  active ? "border-brand bg-brand text-white" : "border-line bg-well text-fg-2 hover:text-fg"
+                }`}
+                key={item.value}
+                onClick={() => setModes(item.value !== "steps", item.value !== "qr")}
+                role="radio"
+                type="button"
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-muted">
+          {pixMode === "both"
+            ? "Envia o QR Code, o passo a passo e o Pix copia e cola, tudo junto."
+            : pixMode === "qr"
+              ? "Imagem com o QR, o texto e o código Pix."
+              : "Instruções, o código numa caixa “copy” e os botões."}
+        </p>
       </div>
       {qrOn && (
         <RichTextEditor label="Mensagem do Pix (QR Code)" rows={3} value={payment.pix_text} variables={vars} onChange={(pix_text) => setPayment({ pix_text })} />
