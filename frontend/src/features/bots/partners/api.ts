@@ -81,6 +81,8 @@ export function botPartners(botId: string) {
     default_bot_fee: number;
     can_zero_fee: boolean;
     has_active: boolean;
+    active_percent: number;
+    active_percent_remaining: number;
   }>(`/api/bot-partners/bots/${botId}`);
 }
 
@@ -99,8 +101,10 @@ export function removePartnership(id: string) {
   return apiRequest<void>(`/api/bot-partners/${id}`, { method: "DELETE" });
 }
 
-export function ownerFinance(botId: string, period: MetricsPeriod) {
-  return apiRequest<FinancePanel>(`/api/bot-partners/bots/${botId}/finance?${new URLSearchParams(periodParams(period))}`);
+export function ownerFinance(botId: string, period: MetricsPeriod, partnershipId?: string) {
+  const params = new URLSearchParams(periodParams(period));
+  if (partnershipId) params.set("partnership_id", partnershipId);
+  return apiRequest<FinancePanel>(`/api/bot-partners/bots/${botId}/finance?${params}`);
 }
 
 export function addPayout(id: string, body: { party: "owner" | "partner"; amount: string; note?: string; paid_at?: string }) {

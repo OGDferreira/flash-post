@@ -69,16 +69,17 @@ async def test_split_deducts_gateway_and_bot_fee_then_divides_net(client, db_ses
     await db_session.commit()
 
     order = await _paid_order(db_session, workspace.id, uuid.UUID(bot["id"]), uuid.UUID(flow["id"]))
-    sale = await svc.record_sale_split(db_session, order)
+    created = await svc.record_sale_split(db_session, order)
     await db_session.commit()
-    assert sale is not None
+    assert len(created) == 1
+    sale = created[0]
     # gross 100 - gateway 5 = net_amount 95; - bot fee 2 = 93 distributable
     assert sale.net == Decimal("93.00")
     assert sale.partner_amount == Decimal("27.90")  # floor(93 * 30%)
     assert sale.owner_amount == Decimal("65.10")
 
     # Idempotent: a second call does not record the sale twice.
-    assert await svc.record_sale_split(db_session, order) is None
+    assert await svc.record_sale_split(db_session, order) == []
 
     summary = await svc.finance_summary(db_session, part, None, None)
     assert summary["totals"]["sales"] == 1
@@ -87,12 +88,73 @@ async def test_split_deducts_gateway_and_bot_fee_then_divides_net(client, db_ses
 
 
 @pytest.mark.anyio
+async def test_split_records_one_row_per_active_partner(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, flow = await _setup(client, headers)
+    owner_user, workspace = owner
+    p1 = await _partner_user(db_session, email="a@example.com", nickname="Parceiro A")
+    p2 = await _partner_user(db_session, email="b@example.com", nickname="Parceiro B")
+
+    for partner, pct in ((p1, "30.00"), (p2, "20.00")):
+        db_session.add(BotPartner(
+            bot_id=uuid.UUID(bot["id"]), owner_user_id=owner_user.id, partner_user_id=partner.id,
+            partner_percent=Decimal(pct), bot_fee=Decimal("0.00"), status="ACTIVE",
+            accepted_at=datetime.now(timezone.utc),
+        ))
+    await db_session.commit()
+
+    order = await _paid_order(db_session, workspace.id, uuid.UUID(bot["id"]), uuid.UUID(flow["id"]), gateway_fee="0.00")
+    created = await svc.record_sale_split(db_session, order)
+    await db_session.commit()
+    # net 100; partner A 30.00, partner B 20.00; one ledger row each.
+    assert len(created) == 2
+    amounts = sorted(s.partner_amount for s in created)
+    assert amounts == [Decimal("20.00"), Decimal("30.00")]
+    # Idempotent across both partners.
+    assert await svc.record_sale_split(db_session, order) == []
+
+
+@pytest.mark.anyio
+async def test_activating_over_100_percent_is_blocked(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _flow = await _setup(client, headers)
+    owner_user, _workspace = owner
+    p1 = await _partner_user(db_session, email="a@example.com", nickname="Parceiro A")
+    p2 = await _partner_user(db_session, email="b@example.com", nickname="Parceiro B")
+
+    active = BotPartner(
+        bot_id=uuid.UUID(bot["id"]), owner_user_id=owner_user.id, partner_user_id=p1.id,
+        partner_percent=Decimal("70.00"), bot_fee=Decimal("0.00"), status="ACTIVE",
+        accepted_at=datetime.now(timezone.utc),
+    )
+    paused = BotPartner(
+        bot_id=uuid.UUID(bot["id"]), owner_user_id=owner_user.id, partner_user_id=p2.id,
+        partner_percent=Decimal("40.00"), bot_fee=Decimal("0.00"), status="PAUSED",
+        accepted_at=datetime.now(timezone.utc),
+    )
+    db_session.add_all([active, paused])
+    await db_session.commit()
+
+    # 70 + 40 = 110 > 100 → activation refused with a clear message.
+    res = await client.patch(f"/api/bot-partners/{paused.id}", headers=headers, json={"status": "ACTIVE"})
+    assert res.status_code == 409
+    assert "100%" in res.json()["detail"]
+
+    # Dropping the active one to 50 leaves room (50 + 40 = 90).
+    ok = await client.patch(f"/api/bot-partners/{active.id}", headers=headers, json={"partner_percent": "50"})
+    assert ok.status_code == 200
+    ok2 = await client.patch(f"/api/bot-partners/{paused.id}", headers=headers, json={"status": "ACTIVE"})
+    assert ok2.status_code == 200, ok2.text
+    assert ok2.json()["status"] == "ACTIVE"
+
+
+@pytest.mark.anyio
 async def test_no_split_without_active_partner(client, db_session, owner, apis) -> None:
     headers = await _login(client)
     bot, flow = await _setup(client, headers)
     _owner_user, workspace = owner
     order = await _paid_order(db_session, workspace.id, uuid.UUID(bot["id"]), uuid.UUID(flow["id"]))
-    assert await svc.record_sale_split(db_session, order) is None
+    assert await svc.record_sale_split(db_session, order) == []
 
 
 @pytest.mark.anyio
