@@ -79,6 +79,9 @@ function bumpFor(flow: FlowDefinition, plan: Plan): OrderBump | null {
 const minutes = (value: number) =>
   value >= 60 && value % 60 === 0 ? `${value / 60} h` : `${value} min`;
 
+const seconds = (value: number) =>
+  value % 3600 === 0 ? `${value / 3600} h` : value % 60 === 0 ? `${value / 60} min` : `${value} s`;
+
 export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
   const messages: SimMessage[] = [];
   // One holder, so the inner helpers and the loop see the same state.
@@ -106,6 +109,12 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
       o.cta_enabled && flow.plans.length ? [[{ label: o.cta_label, style: o.cta_style, action: "plans" }]] : planButtons();
     if (flow.previews?.enabled && flow.previews.media_ids.length) {
       keyboard = [...keyboard, [{ label: flow.previews.label, style: flow.previews.style, action: "prev" }]];
+    }
+    if (flow.group_preview?.enabled && flow.group_preview.group_chat_id) {
+      keyboard = [...keyboard, [{ label: flow.group_preview.label, style: flow.group_preview.style, action: "gprev" }]];
+    }
+    if (flow.mimo?.enabled) {
+      keyboard = [...keyboard, [{ label: flow.mimo.label, style: flow.mimo.style, action: "mimo" }]];
     }
     keyboard = [...keyboard, ...o.redirect_buttons.map((b) => [{ label: b.label, url: b.url }]), ...support()];
     const text = fill(o.text);
@@ -276,6 +285,23 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
       if (pv) {
         bot({ media: pv.media_ids, spoiler: pv.spoiler, text: fill(pv.text, { "{tempo}": `${pv.delete_after_seconds}s` }) });
         note(`🗑️ As prévias somem sozinhas depois de ${pv.delete_after_seconds}s`);
+      }
+    } else if (action === "gprev") {
+      user(labelOf(action));
+      const gp = flow.group_preview;
+      if (gp) {
+        const tempo = seconds(gp.access_seconds);
+        bot({ text: fill(gp.grant_text, { "{tempo}": tempo }) || `Acesso liberado por ${tempo}.`, buttons: [[{ label: gp.join_label, url: "https://t.me/+convite-do-grupo" }]] });
+        note(`⏱ Depois de ${tempo} o bot remove o lead do grupo automaticamente`);
+        bot({ text: fill(gp.expired_text), buttons: planButtons() });
+      }
+    } else if (action === "mimo") {
+      user(labelOf(action));
+      const m = flow.mimo;
+      if (m) {
+        bot({ text: fill(m.prompt_text) });
+        note(`💬 o lead digita o valor (entre ${brl(money(m.min_amount))} e ${brl(money(m.max_amount))}) e recebe um Pix para pagar`);
+        bot({ text: fill(m.thanks_text, { "{valor}": brl(money(m.min_amount)) }) });
       }
     } else if (action.startsWith("plan:")) {
       user(labelOf(action));
