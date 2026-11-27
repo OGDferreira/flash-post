@@ -266,13 +266,14 @@ async def _run_chat_cleanup_with_database_lock() -> None:
 async def _run_subscriptions_sweep_with_database_lock() -> None:
     """Flip owners whose trial/paid window ended to past_due (so the paywall shows)
     and expire stale pending PIX charges."""
-    from app.subscriptions.service import mark_due_past
+    from app.subscriptions.service import expire_retention_coupons, mark_due_past
 
     engine = get_engine()
     try:
         if engine.dialect.name != "postgresql":
             async with get_session_factory()() as db:
                 await mark_due_past(db)
+                await expire_retention_coupons(db)
                 await db.commit()
             return
         async with engine.connect() as connection:
@@ -285,6 +286,7 @@ async def _run_subscriptions_sweep_with_database_lock() -> None:
             try:
                 async with get_session_factory()() as db:
                     changed = await mark_due_past(db)
+                    await expire_retention_coupons(db)
                     await db.commit()
                 if changed:
                     logger.info("Subscription sweep: %s subscription(s) moved to past_due.", changed)

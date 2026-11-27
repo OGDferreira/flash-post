@@ -33,6 +33,11 @@ class PlanOut(BaseModel):
     period_days: int
 
 
+class CouponOut(BaseModel):
+    percent: Decimal
+    expires_at: datetime | None
+
+
 class AccessOut(BaseModel):
     required: bool
     active: bool
@@ -40,6 +45,8 @@ class AccessOut(BaseModel):
     until: str | None
     in_trial: bool
     plans: list[PlanOut]
+    # Anti-churn: a retention coupon currently offered to this owner (null = none).
+    coupon: CouponOut | None = None
 
 
 class ChargeOut(BaseModel):
@@ -48,10 +55,17 @@ class ChargeOut(BaseModel):
     amount: Decimal
     pix_copy_paste: str | None
     due_at: datetime | None
+    discount_percent: Decimal | None = None
 
 
 def _plan_out(plan: PlatformPlan) -> PlanOut:
     return PlanOut(id=plan.id, code=plan.code, name=plan.name, price=plan.price, period_days=plan.period_days)
+
+
+def _coupon_out(coupon) -> CouponOut | None:
+    if coupon is None:
+        return None
+    return CouponOut(percent=coupon.percent, expires_at=coupon.expires_at)
 
 
 async def _active_plans(db: DbSession) -> list[PlatformPlan]:
@@ -67,7 +81,8 @@ async def my_subscription(user: AuthenticatedUser, db: DbSession) -> AccessOut:
     state = await service.access_state(db, user)
     await db.commit()  # get_or_create may have inserted the trial row
     plans = await _active_plans(db) if state["required"] else []
-    return AccessOut(**state, plans=[_plan_out(p) for p in plans])
+    coupon = await service.active_retention_coupon(db, user) if state["required"] else None
+    return AccessOut(**state, plans=[_plan_out(p) for p in plans], coupon=_coupon_out(coupon))
 
 
 class CheckoutRequest(BaseModel):
@@ -83,8 +98,9 @@ async def checkout(payload: CheckoutRequest, user: AuthenticatedUser, db: DbSess
     )
     if plan is None:
         raise HTTPException(status_code=404, detail="Plano indisponível.")
+    coupon = await service.active_retention_coupon(db, user)
     try:
-        charge = await service.start_charge(db, user, plan)
+        charge = await service.start_charge(db, user, plan, coupon=coupon)
     except smokepay.SmokepayError as exc:
         await db.rollback()
         logger.warning("Subscription PIX failed for user %s: %s", user.id, exc)
@@ -93,6 +109,7 @@ async def checkout(payload: CheckoutRequest, user: AuthenticatedUser, db: DbSess
     return ChargeOut(
         id=charge.id, status=charge.status, amount=charge.amount,
         pix_copy_paste=charge.pix_copy_paste, due_at=charge.due_at,
+        discount_percent=coupon.percent if coupon else None,
     )
 
 
@@ -128,6 +145,20 @@ async def redeem(payload: RedeemRequest, user: AuthenticatedUser, db: DbSession)
     state = await service.access_state(db, user)
     plans = await _active_plans(db)
     return AccessOut(**state, plans=[_plan_out(p) for p in plans])
+
+
+class CancelIntentOut(BaseModel):
+    offered: bool
+    coupon: CouponOut | None = None
+
+
+@router.post("/cancel-intent", response_model=CancelIntentOut, dependencies=[Depends(require_csrf)])
+async def cancel_intent(user: AuthenticatedUser, db: DbSession) -> CancelIntentOut:
+    """Owner signals they want to cancel / not renew. Before blocking access, offer the
+    anti-churn coupon (if the Super Admin turned it on). The coupon auto-applies at checkout."""
+    coupon = await service.offer_retention_coupon(db, user)
+    await db.commit()
+    return CancelIntentOut(offered=coupon is not None, coupon=_coupon_out(coupon))
 
 
 @router.post("/pay/smokepay", include_in_schema=False)
@@ -200,6 +231,33 @@ async def update_plan(plan_id: UUID, payload: PlanUpdateRequest, _admin: SuperAd
         plan.is_active = payload.is_active
     await db.commit()
     return {"ok": True}
+
+
+class AntiChurnOut(BaseModel):
+    enabled: bool
+    percent: Decimal
+    valid_days: int
+
+
+class AntiChurnUpdate(BaseModel):
+    enabled: bool
+    percent: Annotated[Decimal, Field(ge=1, le=90)]
+    valid_days: Annotated[int, Field(ge=1, le=90)]
+
+
+@admin_router.get("/anti-churn", response_model=AntiChurnOut)
+async def get_anti_churn(_admin: SuperAdminUser, db: DbSession) -> AntiChurnOut:
+    config = await service.anti_churn_config(db)
+    return AntiChurnOut(enabled=config["enabled"], percent=config["percent"], valid_days=config["valid_days"])
+
+
+@admin_router.put("/anti-churn", response_model=AntiChurnOut, dependencies=[Depends(require_csrf)])
+async def set_anti_churn(payload: AntiChurnUpdate, admin: SuperAdminUser, db: DbSession) -> AntiChurnOut:
+    saved = await service.set_anti_churn_config(
+        db, admin, enabled=payload.enabled, percent=payload.percent, valid_days=payload.valid_days,
+    )
+    await db.commit()
+    return AntiChurnOut(enabled=saved["enabled"], percent=saved["percent"], valid_days=saved["valid_days"])
 
 
 class CodeCreateRequest(BaseModel):

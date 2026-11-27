@@ -122,6 +122,9 @@ class PlatformSubscriptionCharge(Base):
     external_id: Mapped[str] = mapped_column(String(80), nullable=False)
     pix_copy_paste: Mapped[str | None] = mapped_column(Text)
     pix_txid: Mapped[str | None] = mapped_column(String(140))
+    # Anti-churn retention coupon applied to this charge (plain id, no FK to keep the
+    # SQLite migration additive); marked used when the charge is paid.
+    retention_coupon_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -152,3 +155,36 @@ class PlatformLiberationCode(Base):
     # Optional deadline for redeeming the code (null = never expires).
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+# Status values for an anti-churn retention coupon.
+COUPON_OFFERED = "offered"
+COUPON_USED = "used"
+COUPON_EXPIRED = "expired"
+
+
+class PlatformRetentionCoupon(Base):
+    """Anti-churn: a discount coupon offered to an owner who signals they want to cancel,
+    before access is blocked. The Super Admin sets the percent, validity and on/off switch
+    (in system_settings). When the owner pays a charge with the coupon, the discount is
+    applied and the coupon is marked used."""
+
+    __tablename__ = "platform_retention_coupons"
+    __table_args__ = (
+        CheckConstraint("percent > 0 AND percent <= 90", name="ck_platform_retention_percent"),
+        Index("ix_platform_retention_user", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Discount snapshot taken when offered, so later config changes don't move the goalposts.
+    percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=COUPON_OFFERED)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
