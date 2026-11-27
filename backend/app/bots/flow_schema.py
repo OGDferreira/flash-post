@@ -119,6 +119,8 @@ class Plan(_Model):
     delivery: Delivery | None = None  # None = flow's default_delivery
     # Own "payment approved" message for this plan; None = use the funnel's default (Payment.approved_text).
     approved_text: Text | None = None
+    approved_media_ids: MediaList3
+    approved_spoiler: bool = False
     # Order bump: "default" uses the flow's, "custom" uses order_bump, "off" skips it.
     bump_mode: Literal["default", "custom", "off"] = "default"
     order_bump: OrderBump | None = None
@@ -179,6 +181,8 @@ class UpsellStep(_Model):
     delivery: Delivery | None = None  # None = flow's default_delivery
     # Own "payment approved" message for this upsell; None = funnel default.
     approved_text: Text | None = None
+    approved_media_ids: MediaList3
+    approved_spoiler: bool = False
 
 
 class CustomOffer(_Model):
@@ -190,6 +194,8 @@ class CustomOffer(_Model):
     delivery: Delivery | None = None  # None = flow's default_delivery
     # Own "payment approved" message for this downsell offer; None = funnel default.
     approved_text: Text | None = None
+    approved_media_ids: MediaList3
+    approved_spoiler: bool = False
 
 
 class DownsellStep(_Model):
