@@ -284,6 +284,21 @@ export function RegisterPage() {
               {mutation.isPending && <LoaderCircle size={16} className="animate-spin" />}
               {mutation.isPending ? "Criando conta..." : "Criar conta"}
             </button>
+            <p className="mt-3 text-xs leading-5 text-muted">
+              Ao criar uma conta, você concorda com os{" "}
+              <a href="/termosdeuso" target="_blank" rel="noreferrer" className="text-accent hover:text-white">
+                Termos de Serviço
+              </a>
+              , a{" "}
+              <a href="/privacidade" target="_blank" rel="noreferrer" className="text-accent hover:text-white">
+                Política de Privacidade
+              </a>{" "}
+              e a{" "}
+              <a href="/cookies" target="_blank" rel="noreferrer" className="text-accent hover:text-white">
+                Política de Cookies
+              </a>
+              .
+            </p>
           </form>
           <p className="mt-4 border-t border-line-soft pt-4 sm:mt-6 sm:pt-5 text-sm text-muted">
             Já tem uma conta?{" "}
