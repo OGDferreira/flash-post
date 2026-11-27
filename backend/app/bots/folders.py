@@ -46,7 +46,8 @@ async def draw_folder_flow(db: AsyncSession, bot: TgBot, lead: TgLead) -> uuid.U
 
 
 def flow_id_for(bot: TgBot, lead: TgLead | None) -> uuid.UUID | None:
-    """The funnel this interaction runs: the lead's own (folder bot) or the bot's single funnel."""
-    if bot.folder_id is not None:
+    """The funnel this interaction runs: the lead's own (folder bot or A/B test) or the bot's
+    single funnel."""
+    if bot.folder_id is not None or bot.ab_test_id is not None:
         return lead.flow_id if lead is not None else None
     return bot.flow_id

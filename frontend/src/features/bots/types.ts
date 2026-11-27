@@ -134,6 +134,47 @@ export function emptyPreviews(): Previews {
   return { enabled: false, label: "👀 Ver prévias", style: "primary", text: "👀 Prévias liberadas! Elas somem em {tempo}.", media_ids: [], spoiler: false, delete_after_seconds: 60 };
 }
 
+export type GroupPreview = {
+  enabled: boolean;
+  label: string;
+  style: ButtonStyle;
+  group_chat_id: number | null;
+  /** Seconds the lead keeps access before the bot removes them (10 s to 24 h). */
+  access_seconds: number;
+  grant_text?: string | null;
+  join_label: string;
+  expired_text: string;
+};
+
+export function emptyGroupPreview(): GroupPreview {
+  return {
+    enabled: false, label: "🎁 Entrar grátis no grupo", style: "success", group_chat_id: null, access_seconds: 300,
+    grant_text: "✅ Liberado! Você tem {tempo} de acesso ao grupo. Entre agora 👇", join_label: "🔓 Entrar no grupo",
+    expired_text: "⏰ Seu acesso à prévia do grupo acabou!\n\nGaranta o acesso completo agora 👇",
+  };
+}
+
+export type Mimo = {
+  enabled: boolean;
+  label: string;
+  style: ButtonStyle;
+  prompt_text: string;
+  min_amount: string;
+  max_amount: string;
+  invalid_text: string;
+  thanks_text: string;
+};
+
+export function emptyMimo(): Mimo {
+  return {
+    enabled: false, label: "🎁 Mandar um mimo", style: "primary",
+    prompt_text: "Que carinho! 🥰 Digite o valor do seu mimo em reais (ex: 20):",
+    min_amount: "5.00", max_amount: "5000.00",
+    invalid_text: "Envie só o valor em reais, entre {min} e {max}. Ex: 20 ou 19,90.",
+    thanks_text: "Recebido! 🥰 Muito obrigada pelo mimo de {valor}. Você é especial 💖",
+  };
+}
+
 export type SmartThen = "none" | "plans" | "offer";
 
 export type SmartReplyRule = {
@@ -203,6 +244,8 @@ export type FlowDefinition = {
   order_bump?: OrderBump | null;
   upsells: UpsellStep[];
   previews?: Previews;
+  group_preview?: GroupPreview;
+  mimo?: Mimo;
   /** Legacy single sequence settings; the server folds them into the two lists below. */
   downsell_trigger?: "pix" | "start";
   downsell_audience?: ("no_pix" | "pix")[] | null;
@@ -240,6 +283,7 @@ export type Bot = {
   name: string;
   flow_id: string | null;
   folder_id: string | null;
+  ab_test_id?: string | null;
   is_active: boolean;
   status: string;
   last_error: string | null;
@@ -446,3 +490,27 @@ export function emptyCampaignDefinition(): CampaignDefinition {
     offer: { plans: [], discounted_plans: [], order_bump: null, redirect: null },
   };
 }
+
+export type AbVariantMetrics = {
+  flow_id: string;
+  leads: number;
+  pix: number;
+  sales: number;
+  buyers: number;
+  revenue: string;
+  conversion: number;
+};
+
+export type AbTest = {
+  id: string;
+  name: string;
+  bot_id: string;
+  bot_username: string | null;
+  status: "active" | "stopped";
+  weight_a: number;
+  flow_a: { id: string; name: string };
+  flow_b: { id: string; name: string };
+  created_at: string | null;
+  stopped_at: string | null;
+  results?: { a: AbVariantMetrics; b: AbVariantMetrics };
+};
