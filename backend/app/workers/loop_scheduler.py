@@ -18,6 +18,7 @@ from app.instagram.oauth import (
 )
 from app.diagnostics.service import build_event
 from app.instagram.account_state import isolate_inactive_account
+from app.notifications.account_alerts import notify_account_disconnected
 from app.instagram.publishing import (
     GRAPH_ENDPOINT,
     InstagramPublishingError,
@@ -247,6 +248,8 @@ async def _mark_account_as_error(
                 path="/workers/loop_scheduler",
             )
         )
+        # Tell the owner so they can reconnect (in-app + web push + Telegram if set up).
+        await notify_account_disconnected(db, account, redact_secrets(reason))
 
 
 async def _update_account_health_after_failure(

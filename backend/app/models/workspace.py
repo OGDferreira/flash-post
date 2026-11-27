@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -49,6 +50,12 @@ class Workspace(Base):
     daily_withdrawal_goal: Mapped[Decimal] = mapped_column(
         "smokepay_daily_goal",
         Numeric(12, 2), nullable=False, default=Decimal("0.00"), server_default="0"
+    )
+    # Optional Telegram alert channel: when a conta goes offline the owner gets a DM here
+    # (in addition to the in-app notice). bot = which connected bot sends; chat = where to.
+    alerts_telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    alerts_telegram_bot_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_bots.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

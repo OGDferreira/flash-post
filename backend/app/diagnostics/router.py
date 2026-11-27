@@ -10,13 +10,14 @@ from sqlalchemy import delete, select
 
 from app.auth.dependencies import (
     DbSession,
+    OwnerAccess,
     SuperAdminUser,
     WorkspaceMemberAccess,
     require_csrf,
 )
 from app.core.time import utc_now
 from app.diagnostics.service import resolve_account_diagnostics
-from app.models import DiagnosticsEvent, InstagramAccount, InstagramLoop, Workspace
+from app.models import DiagnosticsEvent, InstagramAccount, InstagramLoop, TgBot, Workspace
 
 # Window of history shown in the per-account health panel (matches DIAGNOSTICS_RETENTION).
 HEALTH_WINDOW_DAYS = 14
@@ -445,3 +446,111 @@ async def resolve_account(
     resolved = await resolve_account_diagnostics(db, account_id, categories=None)
     await db.commit()
     return {"resolved": resolved}
+
+
+# ----------------------------------------------------------------------------------
+# Telegram alert channel (owner): where to DM when a conta goes offline. Optional —
+# the owner always gets the in-app notice + web push; this adds a Telegram message.
+# ----------------------------------------------------------------------------------
+
+
+class AlertBotOption(BaseModel):
+    id: UUID
+    name: str
+    username: str
+
+
+class TelegramAlertConfig(BaseModel):
+    chat_id: int | None = None
+    bot_id: UUID | None = None
+    bots: list[AlertBotOption]
+
+
+class TelegramAlertUpdate(BaseModel):
+    chat_id: int | None = None
+    bot_id: UUID | None = None
+
+
+async def _alert_bot_options(db, workspace_id: UUID) -> list[AlertBotOption]:
+    rows = (
+        await db.scalars(
+            select(TgBot)
+            .where(TgBot.workspace_id == workspace_id, TgBot.is_active.is_(True))
+            .order_by(TgBot.created_at)
+        )
+    ).all()
+    return [AlertBotOption(id=b.id, name=b.name, username=b.username) for b in rows]
+
+
+@router.get("/alerts/telegram", response_model=TelegramAlertConfig)
+async def get_telegram_alert(access: OwnerAccess, db: DbSession) -> TelegramAlertConfig:
+    workspace = access.workspace
+    return TelegramAlertConfig(
+        chat_id=workspace.alerts_telegram_chat_id,
+        bot_id=workspace.alerts_telegram_bot_id,
+        bots=await _alert_bot_options(db, workspace.id),
+    )
+
+
+@router.put(
+    "/alerts/telegram",
+    response_model=TelegramAlertConfig,
+    dependencies=[Depends(require_csrf)],
+)
+async def set_telegram_alert(
+    payload: TelegramAlertUpdate, access: OwnerAccess, db: DbSession
+) -> TelegramAlertConfig:
+    workspace = await db.get(Workspace, access.workspace.id)
+    if payload.bot_id is not None:
+        bot = await db.get(TgBot, payload.bot_id)
+        if bot is None or bot.workspace_id != workspace.id:
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Bot não encontrado.")
+    workspace.alerts_telegram_chat_id = payload.chat_id
+    workspace.alerts_telegram_bot_id = payload.bot_id
+    await db.commit()
+    await db.refresh(workspace)
+    return TelegramAlertConfig(
+        chat_id=workspace.alerts_telegram_chat_id,
+        bot_id=workspace.alerts_telegram_bot_id,
+        bots=await _alert_bot_options(db, workspace.id),
+    )
+
+
+@router.post("/alerts/telegram/test", dependencies=[Depends(require_csrf)])
+async def test_telegram_alert(access: OwnerAccess, db: DbSession) -> dict:
+    from app.bots.telegram import TelegramClient, TelegramError, translate_target
+    from app.core.crypto import decrypt_value
+
+    workspace = access.workspace
+    if not workspace.alerts_telegram_chat_id:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Configure o chat primeiro.")
+    bot = None
+    if workspace.alerts_telegram_bot_id:
+        bot = await db.get(TgBot, workspace.alerts_telegram_bot_id)
+    if bot is None:
+        bot = await db.scalar(
+            select(TgBot)
+            .where(TgBot.workspace_id == workspace.id, TgBot.is_active.is_(True))
+            .order_by(TgBot.created_at)
+            .limit(1)
+        )
+    if bot is None:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Conecte um bot do Telegram primeiro.")
+    token_reset = translate_target.set(None)
+    try:
+        await TelegramClient(decrypt_value(bot.encrypted_token)).send_message(
+            int(workspace.alerts_telegram_chat_id),
+            "✅ Alertas de conta ligados. Você será avisado aqui quando uma conta sair do ar.",
+        )
+    except TelegramError as exc:
+        detail = (
+            "O bot não conseguiu enviar. Inicie uma conversa com o bot (/start) e confira o chat ID."
+            if exc.blocked
+            else "O Telegram recusou o envio. Confira o chat ID e o bot."
+        )
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Não foi possível enviar o teste.") from exc
+    finally:
+        translate_target.reset(token_reset)
+    return {"sent": True}
