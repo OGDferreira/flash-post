@@ -160,6 +160,22 @@ export function emptySmartReplies(): SmartReplies {
   };
 }
 
+export type FollowUpStep = {
+  delay_minutes: number;
+  text?: string | null;
+  media_ids: string[];
+  spoiler: boolean;
+};
+
+export type FollowUp = {
+  enabled: boolean;
+  steps: FollowUpStep[];
+};
+
+export function emptyFollowUp(): FollowUp {
+  return { enabled: false, steps: [] };
+}
+
 export type FlowDefinition = {
   version: 1;
   age_gate: { enabled: boolean; text: string; button: string };
@@ -170,6 +186,8 @@ export type FlowDefinition = {
   offer: Offer;
   /** Keyword replies + fallback for leads who type something off-script in the DM. */
   smart_replies?: SmartReplies;
+  /** Follow-ups automáticos quando o lead some no meio do funil (retomada de conversa). */
+  follow_up?: FollowUp;
   plans: Plan[];
   payment: {
     expiration_minutes: number;

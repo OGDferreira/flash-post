@@ -14,6 +14,7 @@ import {
   Hand,
   MessageSquare,
   PlayCircle,
+  RefreshCw,
   Save,
   Settings2,
   ShoppingCart,
@@ -36,6 +37,7 @@ import {
   PlansSection,
   PreviewsSection,
   SmartRepliesSection,
+  FollowUpSection,
   SettingsSection,
   UpsellSection,
 } from "./editor/sectionsOffers";
@@ -53,6 +55,7 @@ const allSections: Section[] = [
   { id: "bump", label: "Order bump", group: "Conversão", icon: ShoppingCart, component: BumpSection },
   { id: "previews", label: "Prévias", group: "Conversão", icon: Eye, component: PreviewsSection },
   { id: "smart_replies", label: "Respostas no DM", group: "Conversão", icon: MessageSquare, component: SmartRepliesSection },
+  { id: "follow_up", label: "Retomada de conversa", group: "Conversão", icon: RefreshCw, component: FollowUpSection },
   { id: "payment", label: "Pagamento", group: "Operação", icon: CreditCard, component: PaymentSection },
   { id: "settings", label: "Verificação +18", group: "Operação", icon: Settings2, component: SettingsSection },
 ];

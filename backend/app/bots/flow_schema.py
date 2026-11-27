@@ -273,6 +273,37 @@ class SmartReplies(_Model):
         return self
 
 
+class FollowUpStep(_Model):
+    """One retomada attempt: after ``delay_minutes`` of the lead going quiet, send this
+    message (text and/or media). Several steps = several attempts, each with its own wait."""
+
+    delay_minutes: Annotated[int, Field(ge=1, le=43200)] = 60  # up to 30 days
+    text: Caption | None = None
+    media_ids: MediaList3
+    spoiler: bool = False
+
+    @model_validator(mode="after")
+    def _check(self) -> "FollowUpStep":
+        if not ((self.text or "").strip() or self.media_ids):
+            raise ValueError("Cada tentativa de retomada precisa de texto ou mídia.")
+        return self
+
+
+class FollowUp(_Model):
+    """Retomada de conversa: if a lead abandons mid-funnel (goes quiet, no reply) the bot
+    sends automatic follow-ups. ``steps`` are the attempts, in order; the timer resets on any
+    lead action and the chain stops as soon as the lead pays. Off = no follow-ups, as before."""
+
+    enabled: bool = False
+    steps: Annotated[list[FollowUpStep], Field(max_length=10)] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check(self) -> "FollowUp":
+        if self.enabled and not self.steps:
+            raise ValueError("Adicione pelo menos uma tentativa de retomada.")
+        return self
+
+
 class Payment(_Model):
     expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 30
     pix_text: Text = (
@@ -376,6 +407,8 @@ class FlowDefinition(_Model):
     offer: Offer = Field(default_factory=Offer)
     # Keyword replies + fallback for leads who type something off-script in the DM.
     smart_replies: SmartReplies = Field(default_factory=SmartReplies)
+    # Automatic follow-ups when a lead goes quiet mid-funnel (retomada de conversa).
+    follow_up: FollowUp = Field(default_factory=FollowUp)
     plans: list[Plan] = Field(default_factory=list, max_length=10)
     payment: Payment = Field(default_factory=Payment)
     default_delivery: Delivery | None = None
@@ -437,6 +470,8 @@ class FlowDefinition(_Model):
         for block in self.welcome:
             found.update(block.media_ids)
         found.update(self.offer.media_ids)
+        for step in self.follow_up.steps:
+            found.update(step.media_ids)
         found.update(self.previews.media_ids)
         found.update(self.payment.intro_media_ids)
         found.update(self.payment.approved_media_ids)
