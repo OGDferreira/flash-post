@@ -86,6 +86,11 @@ class TgBot(Base):
     folder_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("tg_flow_folders.id", ondelete="SET NULL")
     )
+    # Active A/B test: when set, each new lead is drawn into variant A or B (by weight) and
+    # the bot runs the lead's own drawn funnel instead of ``flow_id``/``folder_id``.
+    ab_test_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_ab_tests.id", ondelete="SET NULL")
+    )
     tg_bot_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # Hidden by the Super Admin: keeps running, but the operation never sees it, its leads or its sales.
     hidden_by_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
@@ -519,6 +524,36 @@ class TgFlowShare(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class TgAbTest(Base):
+    """A/B test of two versions of a funnel. While active on a bot, each new lead is drawn into
+    variant A or B by ``weight_a`` (percent, 1-99) and keeps it. Both variants are ordinary
+    funnels, so every lead, order and sale is already keyed by ``flow_id`` — the results view just
+    splits those metrics by the test's two funnels."""
+
+    __tablename__ = "tg_ab_tests"
+    __table_args__ = (Index("ix_tg_ab_tests_workspace", "workspace_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = _workspace_fk()
+    bot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_bots.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    flow_a_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="CASCADE"), nullable=False
+    )
+    flow_b_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="CASCADE"), nullable=False
+    )
+    weight_a: Mapped[int] = mapped_column(Integer, nullable=False, default=50, server_default="50")
+    # active -> stopped. A stopped test keeps its rows for the results view.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", server_default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TgFlowFolder(Base):

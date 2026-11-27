@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download, FlaskConical, GitBranch, KeyRound, Lock, Megaphone, Plus, Settings2, Trash2, Upload, Zap } from "lucide-react";
+import { Copy, Download, FlaskConical, GitBranch, KeyRound, Lock, Megaphone, Plus, Settings2, SplitSquareHorizontal, Trash2, Upload, Zap } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/PageState";
 import { Badge } from "@/components/ui/Badge";
@@ -13,6 +13,7 @@ import { AdminHideToggle } from "./AdminHideToggle";
 import { FlowEditor } from "./FlowEditor";
 import { ImportFlowModal, downloadFlow } from "./FlowPortability";
 import { FrankensteinModal } from "./FrankensteinModal";
+import { AbTestsModal } from "./AbTestsModal";
 import { brl, type Flow } from "./types";
 import { useChiefLabel } from "@/features/partners/api";
 
@@ -29,6 +30,7 @@ export function FlowsPanel({
   const stats = useBotStats(period);
   const [importOpen, setImportOpen] = useState(false);
   const [frankOpen, setFrankOpen] = useState(false);
+  const [abOpen, setAbOpen] = useState(false);
   const [code, setCode] = useState<{ name: string; code: string } | null>(null);
   const makeCode = useMutation({
     mutationFn: (flow: Flow) =>
@@ -78,6 +80,9 @@ export function FlowsPanel({
           </Button>
           <Button onClick={() => setFrankOpen(true)}>
             <FlaskConical size={16} /> Funil Frankenstein
+          </Button>
+          <Button onClick={() => setAbOpen(true)}>
+            <SplitSquareHorizontal size={16} /> Teste A/B
           </Button>
           <Button variant="primary" disabled={create.isPending} onClick={() => create.mutate()}>
             <Plus size={16} /> Novo fluxo
@@ -199,6 +204,7 @@ export function FlowsPanel({
         }}
         open={frankOpen}
       />
+      <AbTestsModal flows={flows.data.flows} onClose={() => setAbOpen(false)} open={abOpen} />
     </div>
   );
 }

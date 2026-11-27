@@ -240,6 +240,7 @@ export type Bot = {
   name: string;
   flow_id: string | null;
   folder_id: string | null;
+  ab_test_id?: string | null;
   is_active: boolean;
   status: string;
   last_error: string | null;
@@ -446,3 +447,27 @@ export function emptyCampaignDefinition(): CampaignDefinition {
     offer: { plans: [], discounted_plans: [], order_bump: null, redirect: null },
   };
 }
+
+export type AbVariantMetrics = {
+  flow_id: string;
+  leads: number;
+  pix: number;
+  sales: number;
+  buyers: number;
+  revenue: string;
+  conversion: number;
+};
+
+export type AbTest = {
+  id: string;
+  name: string;
+  bot_id: string;
+  bot_username: string | null;
+  status: "active" | "stopped";
+  weight_a: number;
+  flow_a: { id: string; name: string };
+  flow_b: { id: string; name: string };
+  created_at: string | null;
+  stopped_at: string | null;
+  results?: { a: AbVariantMetrics; b: AbVariantMetrics };
+};

@@ -197,7 +197,8 @@ async def load_flow(db: AsyncSession, bot: TgBot, lead: TgLead | None = None) ->
     single-funnel bot it is the bot's funnel (``lead`` ignored)."""
     from app.bots.folders import flow_id_for
 
-    flow_id = flow_id_for(bot, lead) if bot.folder_id is not None else bot.flow_id
+    uses_lead_flow = bot.folder_id is not None or bot.ab_test_id is not None
+    flow_id = flow_id_for(bot, lead) if uses_lead_flow else bot.flow_id
     if flow_id is None:
         return None
     definition = await _flow_definition(db, flow_id)
@@ -930,6 +931,10 @@ async def upsert_lead(db: AsyncSession, bot: TgBot, user: dict, chat_id: int) ->
         from app.bots.folders import draw_folder_flow
 
         await draw_folder_flow(db, bot, lead)
+    elif bot.ab_test_id is not None:  # A/B test: draw (once) variant A or B, weighted
+        from app.bots.ab_tests import draw_ab_flow
+
+        await draw_ab_flow(db, bot, lead, force=created)
     if (created or lead.flow_id != before_flow) and lead.flow_id is not None:
         from app.partners.service import owner_takes_all
 
