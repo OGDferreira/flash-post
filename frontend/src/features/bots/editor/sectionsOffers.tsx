@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Copy, CreditCard, Eye, Gift, Plus, QrCode, ShieldCheck, ShoppingCart, Timer, Trash2, TrendingDown, TrendingUp, Truck } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
-import { brl, emptyBump, emptyDelivery, emptyPreviews, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type Plan, type UpsellStep } from "../types";
+import { brl, emptyBump, emptyDelivery, emptyMimo, emptyPreviews, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type Plan, type UpsellStep } from "../types";
 import { BumpEditor, DeliveryEditor } from "./DeliveryEditor";
 import { MediaGrid } from "./MediaGrid";
 import { FontMenu, toFancy } from "./fancyFonts";
@@ -692,6 +692,70 @@ export function PreviewsSection({ draft, set }: SectionProps) {
         </div>
       ) : (
         <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão “{previews.label}” junto dos planos.</p>
+      )}
+    </Panel>
+  );
+}
+
+export function MimoSection({ draft, set }: SectionProps) {
+  const mimo = draft.mimo ?? emptyMimo();
+  const setMimo = (patch: Partial<NonNullable<FlowDefinition["mimo"]>>) => set({ mimo: { ...mimo, ...patch } });
+  const minValue = mimo.min_amount == null ? "" : String(mimo.min_amount);
+  return (
+    <Panel
+      icon={<Gift size={18} />}
+      title="Mimo"
+      description="Um botão na boas-vindas para o lead te enviar uma gorjeta: ele digita o valor, o bot gera um Pix e, quando pagar, recebe o agradecimento. Não entrega nada e entra no seu histórico como venda avulsa."
+      aside={<Switch checked={mimo.enabled} label="Botão de mimo" onChange={(enabled) => setMimo({ enabled })} />}
+    >
+      {mimo.enabled ? (
+        <div className="grid gap-4">
+          <Field label="Texto do botão">
+            <input className="field" maxLength={64} value={mimo.label} onChange={(event) => setMimo({ label: event.target.value })} />
+          </Field>
+          <StylePicker value={mimo.style} onChange={(style) => setMimo({ style })} />
+          <RichTextEditor
+            label="Mensagem de convite"
+            hint="Enviada quando o lead toca no botão, pedindo o valor."
+            rows={2}
+            value={mimo.invite_text}
+            variables={BASE_VARIABLES}
+            onChange={(invite_text) => setMimo({ invite_text })}
+          />
+          <RichTextEditor
+            label="Mensagem antes do Pix"
+            hint="Enviada depois que o lead digita o valor, antes de gerar o Pix. Use {valor} para mostrar o valor."
+            rows={2}
+            value={mimo.prompt_text}
+            variables={[...BASE_VARIABLES, "{valor}"]}
+            onChange={(prompt_text) => setMimo({ prompt_text })}
+          />
+          <RichTextEditor
+            label="Mensagem de agradecimento"
+            hint="Enviada quando o pagamento é confirmado."
+            rows={2}
+            value={mimo.thanks_text}
+            variables={[...BASE_VARIABLES, "{valor}"]}
+            onChange={(thanks_text) => setMimo({ thanks_text })}
+          />
+          <Field label="Valor mínimo (opcional)" hint="Deixe em branco para o mínimo da plataforma (R$1,00).">
+            <input
+              className="field"
+              inputMode="decimal"
+              placeholder="1,00"
+              value={minValue}
+              onChange={(event) => {
+                const raw = event.target.value.replace(/[^\d.,]/g, "").replace(",", ".");
+                setMimo({ min_amount: raw === "" ? null : Number(raw) });
+              }}
+            />
+          </Field>
+          <Field label="Mensagem de valor inválido" hint="Enviada quando o lead digita algo que não é um valor.">
+            <input className="field" maxLength={300} value={mimo.invalid_text} onChange={(event) => setMimo({ invalid_text: event.target.value })} />
+          </Field>
+        </div>
+      ) : (
+        <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão “{mimo.label}” na boas-vindas.</p>
       )}
     </Panel>
   );

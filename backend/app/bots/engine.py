@@ -12,11 +12,12 @@ import base64
 import io
 import html
 import logging
+import re
 import secrets
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -573,6 +574,8 @@ def offer_keyboard(flow: FlowDefinition, previews: bool = True) -> dict | None:
         rows = plans_keyboard(flow)["inline_keyboard"]
     if previews and flow.previews.enabled and flow.previews.media_ids:
         rows.append([button(flow.previews.label, flow.previews.style, callback_data="prev")])
+    if flow.mimo.enabled:
+        rows.append([button(flow.mimo.label, flow.mimo.style, callback_data="mimo")])
     rows += _extra_rows(flow)
     return {"inline_keyboard": rows} if rows else None
 
@@ -600,6 +603,70 @@ async def send_plans(tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDef
     """Answer to the CTA button."""
     if flow.plans:
         await tg.send_message(lead.chat_id, render(flow.offer.plans_text, lead, bot=bot) or "👇", plans_keyboard(flow))
+
+
+# ---------------------------------------------------------------- mimo (voluntary tip)
+
+MIMO_MIN = Decimal("1.00")
+MIMO_MAX = Decimal("100000")
+
+
+def mimo_min(flow: FlowDefinition) -> Decimal:
+    return max(MIMO_MIN, flow.mimo.min_amount or MIMO_MIN)
+
+
+def parse_mimo_amount(text: str) -> Decimal | None:
+    """Read a BRL amount the lead typed free-hand: "20", "R$ 19,90", "50.00". None if unreadable."""
+    cleaned = re.sub(r"[^\d.,]", "", text or "")
+    if not cleaned:
+        return None
+    # Last separator is the decimal one; the rest are thousands separators.
+    if "," in cleaned and "." in cleaned:
+        decimal_sep = "," if cleaned.rfind(",") > cleaned.rfind(".") else "."
+        thousands_sep = "." if decimal_sep == "," else ","
+        cleaned = cleaned.replace(thousands_sep, "").replace(decimal_sep, ".")
+    else:
+        cleaned = cleaned.replace(",", ".")
+        if cleaned.count(".") > 1:  # e.g. "1.000" used as thousands
+            cleaned = cleaned.replace(".", "")
+    try:
+        value = Decimal(cleaned).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+    except (InvalidOperation, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+async def start_mimo(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
+    """Lead tapped the "mimo" button: ask for a value and wait for the next message."""
+    lead.awaiting_mimo = True
+    lead.welcome_wait = None  # a mimo takes over any paused welcome sequence
+    text = render(flow.mimo.invite_text, lead, bot=bot) or "Digite o valor do mimo que você quer enviar."
+    await tg.send_message(lead.chat_id, text)
+    log_message(db, bot, lead, "out", "text", text=text)
+
+
+async def handle_mimo_reply(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition, text: str) -> bool:
+    """Lead typed the mimo amount. Generate the Pix for it, or ask again. Returns True when a
+    Pix went out (so the caller runs the lead's due jobs)."""
+    tg = telegram(bot)
+    amount = parse_mimo_amount(text)
+    floor = mimo_min(flow)
+    if amount is None or amount < floor or amount > MIMO_MAX:
+        if amount is not None and amount < floor:
+            msg = f"O valor mínimo do mimo é {brl(floor)}. Digite um valor a partir de {brl(floor)}."
+        else:
+            msg = render(flow.mimo.invalid_text, lead, bot=bot) or "Não entendi o valor. Digite só o número, por exemplo: 20."
+        await tg.send_message(lead.chat_id, msg)
+        log_message(db, bot, lead, "out", "text", text=msg)
+        return False  # keep awaiting: the lead can try again
+    lead.awaiting_mimo = False
+    prompt = render(flow.mimo.prompt_text, lead, "Mimo", amount, bot)
+    if prompt:
+        await tg.send_message(lead.chat_id, prompt)
+        log_message(db, bot, lead, "out", "text", text=prompt)
+    plan = Plan(id="mimo", name="Mimo", price=amount, duration_days=None, delivery=None)
+    order = await create_order(db, tg, bot, lead, flow, plan, kind="mimo", offer_id="mimo")
+    return order is not None
 
 
 # ---------------------------------------------------------------- previews
@@ -984,6 +1051,14 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
             lead = await upsert_lead(db, bot, sender, chat["id"])
             kind, file_id, body = _inbound_content(message)
             log_message(db, bot, lead, "in", kind, text=body, tg_file_id=file_id)
+            if lead.awaiting_mimo and text:
+                flow = await load_flow(db, bot, lead)
+                if flow is not None and flow.mimo.enabled:
+                    _set_translate_target(flow, lead)
+                    if await handle_mimo_reply(db, bot, lead, flow, text):
+                        return lead.id
+                    return None
+                lead.awaiting_mimo = False  # mimo turned off since: drop the wait
             if lead.welcome_wait:
                 flow = await load_flow(db, bot, lead)
                 if flow is not None:
@@ -1062,6 +1137,12 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UU
     if data == "plans":
         await tg.answer_callback(query["id"])
         await send_plans(tg, bot, lead, flow)
+        return None
+    if data == "mimo":
+        await tg.answer_callback(query["id"])
+        if not flow.mimo.enabled:
+            return None
+        await start_mimo(db, tg, bot, lead, flow)
         return None
     if data == "prev":
         message = query.get("message") or {}
@@ -1370,8 +1451,9 @@ async def create_order(
         timings["gateway"] = time.perf_counter() - mark
         mark = time.perf_counter()
         await schedule(db, bot, "expire_order", order.expires_at, f"expire:{order.id}", lead, {"order_id": str(order.id)})
-        if first_pix:
+        if first_pix and kind != "mimo":
             # Generated a PIX: the "Pix não gerado" sequence stops, the "Pix gerado" one starts.
+            # A mimo is a voluntary tip, outside the plan funnel: it never touches the downsells.
             await cancel_lead_jobs(db, lead, ("send_downsell_np",))
             if kind in ("plan", "downsell") and flow.downsells:
                 await schedule_downsells(db, bot, lead, flow, "pix")
@@ -1873,6 +1955,26 @@ async def approve_order(
     bot = await db.get(TgBot, order.bot_id)
     lead = await db.get(TgLead, order.lead_id)
     if bot is None or lead is None:
+        return True
+    if order.kind == "mimo":
+        # A mimo is a voluntary tip: nothing is delivered and the plan funnel (downsells,
+        # upsells, stage) is left untouched. Just thank the lead and book the sale.
+        flow = await load_flow(db, bot, lead)
+        tg = telegram(bot)
+        thanks = render(
+            (flow.mimo.thanks_text if flow else None) or "Recebi seu mimo! 💝 Muito obrigado.",
+            lead, order.offer_name, order.amount, bot,
+        )
+        try:
+            await tg.send_message(lead.chat_id, thanks)
+            log_message(db, bot, lead, "out", "text", text=thanks)
+        except TelegramError as exc:
+            bot.last_error = str(exc)[:500]
+            logger.warning("Mimo thank-you for order %s failed: %s", order.id, exc)
+        order.delivered_at = utcnow()
+        await db.execute(update(TgJob).where(TgJob.idempotency_key == f"expire:{order.id}").values(status="cancelled"))
+        await db.commit()
+        await notify_sale(db, bot, order)
         return True
     lead.stage = "paid"
     await db.execute(update(TgJob).where(TgJob.idempotency_key == f"expire:{order.id}").values(status="cancelled"))

@@ -26,7 +26,7 @@ from app.bots.hidden import not_hidden_bot
 from app.core.time import as_utc
 from app.models import TgBot, TgFlow, TgLead, TgOrder, TgSubscription
 
-KINDS = ("plan", "upsell", "downsell", "remarketing")
+KINDS = ("plan", "upsell", "downsell", "remarketing", "mimo")
 WEEKDAYS = ("Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom")
 
 

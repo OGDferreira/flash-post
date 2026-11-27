@@ -806,3 +806,75 @@ async def test_welcome_disabled_sends_the_offer_directly(client, db_session, own
     await _send(client, db_session, bot["id"], _start())
     texts = [m["text"] for m in apis.methods("sendMessage")]
     assert "NAO ENVIAR" not in texts and any("Escolha" in t for t in texts)
+
+
+def _mimo_flow(**mimo) -> dict:
+    base = {"enabled": True, "label": "💝 Mimo", "invite_text": "Quanto você quer enviar?",
+            "prompt_text": "Gerando Pix de {valor} 💝", "thanks_text": "Recebi seu mimo, {nome}! 💝"}
+    base.update(mimo)
+    return _flow(mimo=base)
+
+
+@pytest.mark.anyio
+async def test_mimo_button_lets_the_lead_send_any_value_via_pix(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _mimo_flow())
+    await _send(client, db_session, bot["id"], _start())
+    # The mimo button shows on the welcome offer.
+    assert any(
+        btn.get("text") == "💝 Mimo"
+        for _, body in apis.calls
+        for row in (body.get("reply_markup") or {}).get("inline_keyboard", [])
+        for btn in row
+    )
+    # Tap it: the bot asks for a value and waits.
+    await _send(client, db_session, bot["id"], _tap("mimo"))
+    assert "Quanto você quer enviar?" in [m["text"] for m in apis.methods("sendMessage")]
+    lead = await db_session.scalar(select(TgLead))
+    await db_session.refresh(lead)
+    assert lead.awaiting_mimo is True
+
+    # Type a value: a mimo Pix is generated for exactly that amount.
+    await _send(client, db_session, bot["id"], _reply("25"))
+    assert "Gerando Pix de R$ 25,00 💝" in [m["text"] for m in apis.methods("sendMessage")]
+    order = await db_session.scalar(select(TgOrder).where(TgOrder.kind == "mimo"))
+    assert order is not None and order.amount == __import__("decimal").Decimal("25.00")
+    await db_session.refresh(lead)
+    assert lead.awaiting_mimo is False
+    assert pix_message(apis)  # the Pix code went out
+
+    # Pay it: the lead is thanked and nothing is delivered (no VIP invite link).
+    await _pay(client, db_session, order)
+    await db_session.refresh(order)
+    assert order.status == "paid"
+    assert any("Recebi seu mimo, Lucas! 💝" == t for t in [m["text"] for m in apis.methods("sendMessage")])
+    assert not apis.methods("createChatInviteLink")
+
+
+@pytest.mark.anyio
+async def test_mimo_rejects_a_non_numeric_value_and_keeps_waiting(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _mimo_flow(invalid_text="Valor inválido!"))
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("mimo"))
+    await _send(client, db_session, bot["id"], _reply("qualquer coisa"))
+    assert "Valor inválido!" in [m["text"] for m in apis.methods("sendMessage")]
+    assert await db_session.scalar(select(TgOrder).where(TgOrder.kind == "mimo")) is None
+    lead = await db_session.scalar(select(TgLead))
+    await db_session.refresh(lead)
+    assert lead.awaiting_mimo is True  # still waiting: the lead can try again
+
+
+@pytest.mark.anyio
+async def test_mimo_enforces_the_minimum_amount(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _mimo_flow(min_amount="50"))
+    await _send(client, db_session, bot["id"], _start())
+    await _send(client, db_session, bot["id"], _tap("mimo"))
+    await _send(client, db_session, bot["id"], _reply("20"))
+    assert any("mínimo" in t.lower() for t in [m["text"] for m in apis.methods("sendMessage")])
+    assert await db_session.scalar(select(TgOrder).where(TgOrder.kind == "mimo")) is None
+    # A value at or above the minimum goes through.
+    await _send(client, db_session, bot["id"], _reply("50"))
+    order = await db_session.scalar(select(TgOrder).where(TgOrder.kind == "mimo"))
+    assert order is not None and order.amount == __import__("decimal").Decimal("50.00")

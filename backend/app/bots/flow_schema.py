@@ -231,6 +231,26 @@ class Previews(_Model):
         return self
 
 
+class Mimo(_Model):
+    """Voluntary tip ("mimo"): a button the lead taps to send any amount via Pix.
+
+    When enabled, a button shows on the welcome screen. The lead taps it, the bot asks for a
+    value, the lead types it, and a Pix is generated for that exact amount. Nothing is
+    delivered — it is a free gift — and once paid it is recorded as a "mimo" sale in the
+    owner's history. ``min_amount`` None = the platform minimum (R$1,00).
+    """
+
+    enabled: bool = False
+    label: Label = "💝 Enviar um mimo"
+    style: ButtonStyle = "primary"
+    invite_text: Text = "Quer me mandar um mimo? 💝\nDigite abaixo o valor que você quer enviar (ex.: 20)."
+    # Sent after the lead types the value, right before the Pix goes out.
+    prompt_text: Text = "Gerando seu Pix de {valor}… 💝"
+    thanks_text: Text = "Recebi seu mimo! 💝 Muito obrigada, {nome}."
+    invalid_text: Annotated[str, Field(max_length=300)] = "Não entendi o valor. Digite só o número, por exemplo: 20 ou 19,90."
+    min_amount: Money | None = None  # None = platform minimum (R$1,00)
+
+
 class Payment(_Model):
     expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 30
     pix_text: Text = (
@@ -330,6 +350,7 @@ class FlowDefinition(_Model):
     offer: Offer = Field(default_factory=Offer)
     plans: list[Plan] = Field(default_factory=list, max_length=10)
     payment: Payment = Field(default_factory=Payment)
+    mimo: Mimo = Field(default_factory=Mimo)
     default_delivery: Delivery | None = None
     order_bump: OrderBump | None = None  # flow default, used by plans in "default" bump mode
     upsells: list[UpsellStep] = Field(default_factory=list, max_length=20)

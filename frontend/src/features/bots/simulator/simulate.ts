@@ -31,7 +31,7 @@ type Order = {
   amount: number;
   delivery: Delivery | null;
   bump: OrderBump | null;
-  kind: "plan" | "upsell" | "downsell";
+  kind: "plan" | "upsell" | "downsell" | "mimo";
   upsellIndex?: number;
 };
 
@@ -106,6 +106,9 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
       o.cta_enabled && flow.plans.length ? [[{ label: o.cta_label, style: o.cta_style, action: "plans" }]] : planButtons();
     if (flow.previews?.enabled && flow.previews.media_ids.length) {
       keyboard = [...keyboard, [{ label: flow.previews.label, style: flow.previews.style, action: "prev" }]];
+    }
+    if (flow.mimo?.enabled) {
+      keyboard = [...keyboard, [{ label: flow.mimo.label, style: flow.mimo.style, action: "mimo" }]];
     }
     keyboard = [...keyboard, ...o.redirect_buttons.map((b) => [{ label: b.label, url: b.url }]), ...support()];
     const text = fill(o.text);
@@ -198,6 +201,12 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
   const paid = (current: Order) => {
     st.stage = "paid";
     note("✅ Pagamento simulado aprovado");
+    if (current.kind === "mimo") {
+      // A mimo delivers nothing: just the thank-you, and the funnel does not continue.
+      if (flow.mimo?.thanks_text) bot({ text: fill(flow.mimo.thanks_text, { "{plano}": current.name, "{valor}": brl(current.amount) }) });
+      st.stage = "done";
+      return;
+    }
     const delivery = current.delivery ?? flow.default_delivery ?? null;
     if (current.kind === "upsell") {
       deliver(delivery, current.name, current.amount);
@@ -301,6 +310,15 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
         kind: "plan",
       });
       st.bumpPlan = null;
+    } else if (action === "mimo") {
+      user(labelOf(action));
+      const m = flow.mimo;
+      if (!m?.enabled) continue;
+      bot({ text: fill(m.invite_text) });
+      const sample = money(m.min_amount) > 0 ? money(m.min_amount) : 20;
+      user(brl(sample)); // the lead types a value (example in the preview)
+      if (m.prompt_text) bot({ text: fill(m.prompt_text, { "{valor}": brl(sample) }) });
+      pix({ name: "Mimo", amount: sample, delivery: null, bump: null, kind: "mimo" });
     } else if (action === "check") {
       user(labelOf(action));
       note(`Aviso do Telegram: “${flow.payment.pending_text}”`);

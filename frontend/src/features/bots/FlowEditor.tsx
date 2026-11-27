@@ -10,6 +10,7 @@ import {
   ChevronUp,
   CreditCard,
   Eye,
+  Gift,
   Globe,
   Hand,
   PlayCircle,
@@ -31,6 +32,7 @@ import { FlowSimulator } from "./simulator/FlowSimulator";
 import {
   BumpSection,
   DownsellSection,
+  MimoSection,
   PaymentSection,
   PlansSection,
   PreviewsSection,
@@ -50,6 +52,7 @@ const allSections: Section[] = [
   { id: "downsell", label: "Downsell", group: "Conversão", icon: TrendingDown, component: DownsellSection },
   { id: "bump", label: "Order bump", group: "Conversão", icon: ShoppingCart, component: BumpSection },
   { id: "previews", label: "Prévias", group: "Conversão", icon: Eye, component: PreviewsSection },
+  { id: "mimo", label: "Mimo", group: "Conversão", icon: Gift, component: MimoSection },
   { id: "payment", label: "Pagamento", group: "Operação", icon: CreditCard, component: PaymentSection },
   { id: "settings", label: "Verificação +18", group: "Operação", icon: Settings2, component: SettingsSection },
 ];

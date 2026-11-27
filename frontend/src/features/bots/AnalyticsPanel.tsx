@@ -10,6 +10,7 @@ import {
   Clock3,
   CreditCard,
   Filter,
+  Gift,
   Megaphone,
   Package,
   Radio,
@@ -63,7 +64,7 @@ type Full = {
   flows: Row[];
   plans: Row[];
   sources: Row[];
-  offer_types: { kind: "plan" | "upsell" | "downsell" | "remarketing"; generated: number; sales: number; revenue: number; approval: number }[];
+  offer_types: { kind: "plan" | "upsell" | "downsell" | "remarketing" | "mimo"; generated: number; sales: number; revenue: number; approval: number }[];
   order_bump: { sales: number; revenue: number; rate: number };
   customers: {
     buyers: number;
@@ -91,10 +92,10 @@ type RankTab = "plans" | "flows" | "bots" | "sources";
 type SortBy = "revenue" | "sales" | "approval" | "conversion";
 
 const money = (value: number) => moneyFormat.format(value || 0);
-const KIND_LABEL = { plan: "Planos", upsell: "Upsell", downsell: "Downsell", remarketing: "Remarketing" } as const;
-const KIND_ICON = { plan: Package, remarketing: Megaphone, downsell: TrendingDown, upsell: Repeat } as const;
+const KIND_LABEL = { plan: "Planos", upsell: "Upsell", downsell: "Downsell", remarketing: "Remarketing", mimo: "Mimo" } as const;
+const KIND_ICON = { plan: Package, remarketing: Megaphone, downsell: TrendingDown, upsell: Repeat, mimo: Gift } as const;
 /** The order Guilherme reads them in: entrada, resgate, oferta menor, oferta maior. */
-const KIND_ORDER = ["plan", "remarketing", "downsell", "upsell"] as const;
+const KIND_ORDER = ["plan", "remarketing", "downsell", "upsell", "mimo"] as const;
 const GATEWAY_LABEL: Record<string, string> = { smokepay: "SmokePay", snakepay: "SnakePay", atenaspay: "Athenas Pay" };
 const RANK_TABS: { id: RankTab; label: string; icon: typeof Bot }[] = [
   { id: "plans", label: "Planos", icon: Package },

@@ -134,6 +134,32 @@ export function emptyPreviews(): Previews {
   return { enabled: false, label: "👀 Ver prévias", style: "primary", text: "👀 Prévias liberadas! Elas somem em {tempo}.", media_ids: [], spoiler: false, delete_after_seconds: 60 };
 }
 
+export type Mimo = {
+  enabled: boolean;
+  label: string;
+  style: ButtonStyle;
+  invite_text: string;
+  /** Sent after the lead types the value, right before the Pix. */
+  prompt_text: string;
+  thanks_text: string;
+  invalid_text: string;
+  /** null/undefined = platform minimum (R$1,00). */
+  min_amount?: number | null;
+};
+
+export function emptyMimo(): Mimo {
+  return {
+    enabled: false,
+    label: "💝 Enviar um mimo",
+    style: "primary",
+    invite_text: "Quer me mandar um mimo? 💝\nDigite abaixo o valor que você quer enviar (ex.: 20).",
+    prompt_text: "Gerando seu Pix de {valor}… 💝",
+    thanks_text: "Recebi seu mimo! 💝 Muito obrigada, {nome}.",
+    invalid_text: "Não entendi o valor. Digite só o número, por exemplo: 20 ou 19,90.",
+    min_amount: null,
+  };
+}
+
 export type FlowDefinition = {
   version: 1;
   age_gate: { enabled: boolean; text: string; button: string };
@@ -168,6 +194,7 @@ export type FlowDefinition = {
     intro_media_ids?: string[];
     intro_spoiler?: boolean;
   };
+  mimo?: Mimo;
   default_delivery?: Delivery | null;
   order_bump?: OrderBump | null;
   upsells: UpsellStep[];
