@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Copy, CreditCard, Eye, Gift, Plus, QrCode, ShieldCheck, ShoppingCart, Timer, Trash2, TrendingDown, TrendingUp, Truck } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
-import { brl, emptyBump, emptyDelivery, emptyPreviews, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type Plan, type UpsellStep } from "../types";
-import { BumpEditor, DeliveryEditor } from "./DeliveryEditor";
+import { brl, emptyBump, emptyDelivery, emptyGroupPreview, emptyMimo, emptyPreviews, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type Plan, type UpsellStep } from "../types";
+import { BumpEditor, DeliveryEditor, useBotGroups } from "./DeliveryEditor";
 import { MediaGrid } from "./MediaGrid";
 import { FontMenu, toFancy } from "./fancyFonts";
 import { BASE_VARIABLES, RichTextEditor } from "./RichTextEditor";
@@ -616,6 +616,16 @@ const timeUnits = [
   { value: 3600, label: "horas" },
 ];
 
+const GROUP_PREVIEW_TIMES = [
+  [30, "30 segundos"],
+  [60, "1 minuto"],
+  [300, "5 minutos"],
+  [600, "10 minutos"],
+  [1800, "30 minutos"],
+  [3600, "1 hora"],
+  [86400, "24 horas"],
+] as const;
+
 export function PreviewsSection({ draft, set }: SectionProps) {
   const previews = draft.previews ?? emptyPreviews();
   const setPreviews = (patch: Partial<NonNullable<FlowDefinition["previews"]>>) => set({ previews: { ...previews, ...patch } });
@@ -692,6 +702,160 @@ export function PreviewsSection({ draft, set }: SectionProps) {
         </div>
       ) : (
         <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão “{previews.label}” junto dos planos.</p>
+      )}
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------------- Prévia de grupo
+
+export function GroupPreviewSection({ draft, set }: SectionProps) {
+  const gp = draft.group_preview ?? emptyGroupPreview();
+  const setGp = (patch: Partial<NonNullable<FlowDefinition["group_preview"]>>) => set({ group_preview: { ...gp, ...patch } });
+  const groups = useBotGroups().data?.groups ?? [];
+  const seconds = gp.access_seconds;
+  const unit = seconds % 3600 === 0 ? 3600 : seconds % 60 === 0 ? 60 : 1;
+  const clamp = (value: number) => Math.min(86400, Math.max(10, value));
+  return (
+    <Panel
+      icon={<Gift size={18} />}
+      title="Prévia de grupo"
+      description="Um botão na boas-vindas que dá acesso temporário ao seu grupo/canal. O lead entra por um convite de uso único e o bot o remove sozinho quando o tempo acaba."
+      aside={<Switch checked={gp.enabled} label="Prévia de grupo" onChange={(enabled) => setGp({ enabled })} />}
+    >
+      {gp.enabled ? (
+        <div className="grid gap-4">
+          <Field
+            label="Grupo ou canal"
+            hint="Aparecem os grupos onde um bot seu é administrador com permissão de convidar e de remover membros."
+          >
+            <select
+              className="field"
+              value={gp.group_chat_id ?? ""}
+              onChange={(event) => setGp({ group_chat_id: event.target.value ? Number(event.target.value) : null })}
+            >
+              <option value="">Escolha…</option>
+              {groups.map((group) => (
+                <option disabled={!group.can_invite} key={group.chat_id} value={group.chat_id}>
+                  {group.title} (@{group.bot}){group.can_invite ? "" : " — sem permissão de convidar"}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {!gp.group_chat_id && <p className="text-xs text-warning">Escolha o grupo para o botão aparecer.</p>}
+          <Field label="Tempo de acesso" hint="Depois desse tempo o bot remove o lead do grupo automaticamente.">
+            <div className="grid gap-2">
+              <div className="flex flex-wrap gap-2">
+                {GROUP_PREVIEW_TIMES.map(([value, label]) => (
+                  <button
+                    className={`min-h-9 rounded-full border px-3 text-xs ${seconds === value ? "border-brand bg-brand-soft text-accent" : "border-line text-muted"}`}
+                    key={value}
+                    onClick={() => setGp({ access_seconds: value })}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  aria-label="Tempo de acesso"
+                  className="field !w-24"
+                  min={1}
+                  type="number"
+                  value={Math.max(1, Math.round(seconds / unit))}
+                  onChange={(event) => setGp({ access_seconds: clamp((Number(event.target.value) || 1) * unit) })}
+                />
+                <select
+                  aria-label="Unidade"
+                  className="field !w-auto"
+                  value={unit}
+                  onChange={(event) => setGp({ access_seconds: clamp(Math.max(1, Math.round(seconds / unit)) * Number(event.target.value)) })}
+                >
+                  {timeUnits.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </Field>
+          <RichTextEditor
+            label="Mensagem ao liberar"
+            rows={2}
+            value={gp.grant_text ?? ""}
+            variables={[...BASE_VARIABLES, "{tempo}"]}
+            onChange={(grant_text) => setGp({ grant_text })}
+          />
+          <Field label="Texto do botão de entrada">
+            <input className="field" maxLength={64} value={gp.join_label} onChange={(event) => setGp({ join_label: event.target.value })} />
+          </Field>
+          <RichTextEditor
+            label="Mensagem quando o acesso expira"
+            rows={2}
+            value={gp.expired_text}
+            variables={BASE_VARIABLES}
+            onChange={(expired_text) => setGp({ expired_text })}
+          />
+          <Field label="Texto do botão">
+            <input className="field" maxLength={64} value={gp.label} onChange={(event) => setGp({ label: event.target.value })} />
+          </Field>
+          <StylePicker value={gp.style} onChange={(style) => setGp({ style })} />
+        </div>
+      ) : (
+        <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão “{gp.label}” junto dos planos.</p>
+      )}
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------------- Mimo (gorjeta)
+
+export function MimoSection({ draft, set }: SectionProps) {
+  const mimo = draft.mimo ?? emptyMimo();
+  const setMimo = (patch: Partial<NonNullable<FlowDefinition["mimo"]>>) => set({ mimo: { ...mimo, ...patch } });
+  return (
+    <Panel
+      icon={<Gift size={18} />}
+      title="Mimo"
+      description="Um botão na boas-vindas; o lead digita o valor que quiser e recebe um Pix para pagar. Não entrega conteúdo nem dispara upsell — é só um carinho em dinheiro."
+      aside={<Switch checked={mimo.enabled} label="Mimo" onChange={(enabled) => setMimo({ enabled })} />}
+    >
+      {mimo.enabled ? (
+        <div className="grid gap-4">
+          <RichTextEditor
+            label="Pergunta do valor"
+            rows={2}
+            value={mimo.prompt_text}
+            variables={BASE_VARIABLES}
+            onChange={(prompt_text) => setMimo({ prompt_text })}
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <MoneyInput label="Valor mínimo (R$)" value={mimo.min_amount} onChange={(min_amount) => setMimo({ min_amount })} />
+            <MoneyInput label="Valor máximo (R$)" value={mimo.max_amount} onChange={(max_amount) => setMimo({ max_amount })} />
+          </div>
+          <RichTextEditor
+            label="Mensagem de valor inválido"
+            rows={2}
+            value={mimo.invalid_text}
+            variables={[...BASE_VARIABLES, "{min}", "{max}"]}
+            onChange={(invalid_text) => setMimo({ invalid_text })}
+          />
+          <RichTextEditor
+            label="Agradecimento após o pagamento"
+            rows={2}
+            value={mimo.thanks_text}
+            variables={[...BASE_VARIABLES, "{valor}"]}
+            onChange={(thanks_text) => setMimo({ thanks_text })}
+          />
+          <Field label="Texto do botão">
+            <input className="field" maxLength={64} value={mimo.label} onChange={(event) => setMimo({ label: event.target.value })} />
+          </Field>
+          <StylePicker value={mimo.style} onChange={(style) => setMimo({ style })} />
+        </div>
+      ) : (
+        <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão “{mimo.label}” junto dos planos.</p>
       )}
     </Panel>
   );

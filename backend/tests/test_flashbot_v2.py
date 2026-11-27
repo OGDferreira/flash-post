@@ -806,3 +806,112 @@ async def test_welcome_disabled_sends_the_offer_directly(client, db_session, own
     await _send(client, db_session, bot["id"], _start())
     texts = [m["text"] for m in apis.methods("sendMessage")]
     assert "NAO ENVIAR" not in texts and any("Escolha" in t for t in texts)
+
+
+# ---------------------------------------------------------------- prévia de grupo
+
+
+@pytest.mark.anyio
+async def test_group_preview_grants_temporary_access_and_removes_the_lead(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(
+        welcome=[],
+        group_preview={"enabled": True, "group_chat_id": GROUP_ID, "access_seconds": 300, "label": "Entrar grátis"},
+    ))
+    await _send(client, db_session, bot["id"], _start())
+    rows = apis.methods("sendMessage")[-1]["reply_markup"]["inline_keyboard"]
+    assert [{"text": "Entrar grátis", "callback_data": "gprev", "style": "success"}] in rows
+
+    await _send(client, db_session, bot["id"], _tap("gprev"))
+    invites = apis.methods("createChatInviteLink")
+    assert len(invites) == 1 and invites[0]["member_limit"] == 1 and invites[0]["chat_id"] == GROUP_ID
+    grant = apis.methods("sendMessage")[-1]
+    assert "5 minutos" in grant["text"] and grant["reply_markup"]["inline_keyboard"][0][0]["url"] == "https://t.me/+invite123"
+    await db_session.commit()
+    job = await db_session.scalar(select(TgJob).where(TgJob.kind == "end_group_preview"))
+    assert job is not None and job.status == "pending" and job.payload["chat_id"] == GROUP_ID
+
+    # a second tap while the preview is still active does not open another one
+    await _send(client, db_session, bot["id"], _tap("gprev"))
+    assert len(apis.methods("createChatInviteLink")) == 1
+
+    await _run_jobs_now(db_session)
+    assert apis.methods("banChatMember")[-1]["user_id"] == 555
+    assert apis.methods("unbanChatMember")[-1]["only_if_banned"] is True
+    last = apis.methods("sendMessage")[-1]
+    assert "acabou" in last["text"]
+    assert last["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == "plan:vip"  # nudged back to the plans
+
+
+@pytest.mark.anyio
+async def test_group_preview_needs_a_group() -> None:
+    from pydantic import ValidationError
+
+    from app.bots.flow_schema import FlowDefinition
+
+    with pytest.raises(ValidationError):
+        FlowDefinition.model_validate(_flow(group_preview={"enabled": True}))
+
+
+# ---------------------------------------------------------------- mimo (gorjeta)
+
+
+@pytest.mark.anyio
+async def test_mimo_asks_for_a_value_charges_a_pix_and_thanks(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, _ = await _setup(client, headers, _flow(
+        welcome=[],
+        mimo={"enabled": True, "label": "Mandar mimo", "min_amount": "5.00", "max_amount": "500.00",
+              "thanks_text": "Valeu pelo mimo de {valor}!"},
+    ))
+    await _send(client, db_session, bot["id"], _start())
+    rows = apis.methods("sendMessage")[-1]["reply_markup"]["inline_keyboard"]
+    assert [{"text": "Mandar mimo", "callback_data": "mimo", "style": "primary"}] in rows
+
+    await _send(client, db_session, bot["id"], _tap("mimo"))
+    assert "valor do seu mimo" in apis.methods("sendMessage")[-1]["text"]
+    lead = await db_session.scalar(select(TgLead))
+    await db_session.refresh(lead)
+    assert lead.awaiting == "mimo"
+
+    # too low: rejected, still waiting for a value
+    await _send(client, db_session, bot["id"], _reply("2"))
+    assert not apis.methods("pix.create")
+    await db_session.refresh(lead)
+    assert lead.awaiting == "mimo"
+
+    # a valid value: a Pix for exactly that amount, no plan delivery
+    await _send(client, db_session, bot["id"], _reply("R$ 49,90"))
+    charge = apis.methods("pix.create")[-1]
+    assert float(charge["amount"]) == 49.90
+    order = await db_session.scalar(select(TgOrder).where(TgOrder.kind == "mimo"))
+    assert order is not None and order.amount == __import__("decimal").Decimal("49.90")
+    await db_session.refresh(lead)
+    assert lead.awaiting is None
+
+    await _pay(client, db_session, order)
+    texts = [m.get("text", "") for m in apis.methods("sendMessage")]
+    assert any("Valeu pelo mimo de R$ 49,90" in t for t in texts)
+    # a mimo delivers nothing: no group invite was created for it
+    assert not apis.methods("createChatInviteLink")
+
+
+@pytest.mark.anyio
+async def test_mimo_rejects_bad_minimum() -> None:
+    from pydantic import ValidationError
+
+    from app.bots.flow_schema import FlowDefinition
+
+    with pytest.raises(ValidationError):
+        FlowDefinition.model_validate(_flow(mimo={"enabled": True, "min_amount": "100.00", "max_amount": "10.00"}))
+
+
+def test_parse_money_reads_brazilian_amounts() -> None:
+    from decimal import Decimal
+
+    assert engine.parse_money("20") == Decimal("20.00")
+    assert engine.parse_money("19,90") == Decimal("19.90")
+    assert engine.parse_money("R$ 1.234,56") == Decimal("1234.56")
+    assert engine.parse_money("1.000") == Decimal("1000.00")
+    assert engine.parse_money("abc") is None
+    assert engine.parse_money("0") is None

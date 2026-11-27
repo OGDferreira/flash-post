@@ -220,6 +220,8 @@ class TgLead(Base):
     # Humanized conversation: when the welcome sequence is paused waiting for the lead to
     # reply, holds {"next": <index of the next welcome block>}; None when not paused.
     welcome_wait: Mapped[dict | None] = mapped_column(JSON)
+    # Esperando o lead digitar algo (ex.: "mimo" = o valor do mimo); None quando não há nada pendente.
+    awaiting: Mapped[str | None] = mapped_column(String(32))
     # Came in through a funnel whose owner takes 100% of the sales: never shown to the seller.
     seller_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(

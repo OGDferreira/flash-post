@@ -231,6 +231,53 @@ class Previews(_Model):
         return self
 
 
+class GroupPreview(_Model):
+    """Prévia de grupo: um botão na boas-vindas que dá acesso temporário a um grupo/canal.
+
+    Ao tocar, o bot cria um convite de uso único, o lead entra e, passado o tempo escolhido,
+    o bot o remove sozinho (ban+unban, para poder voltar depois comprando). Precisa do bot
+    como admin do grupo, com permissão de convidar e de restringir membros.
+    """
+
+    enabled: bool = False
+    label: Label = "🎁 Entrar grátis no grupo"
+    style: ButtonStyle = "success"
+    group_chat_id: int | None = None  # grupo/canal onde o bot é admin
+    # Segundos de acesso antes de o bot remover o lead.
+    access_seconds: Annotated[int, Field(ge=10, le=86400)] = 300
+    grant_text: Caption | None = "✅ Liberado! Você tem {tempo} de acesso ao grupo. Entre agora 👇"
+    join_label: Label = "🔓 Entrar no grupo"
+    expired_text: Text = "⏰ Seu acesso à prévia do grupo acabou!\n\nGaranta o acesso completo agora 👇"
+
+    @model_validator(mode="after")
+    def _check(self) -> "GroupPreview":
+        if self.enabled and self.group_chat_id is None:
+            raise ValueError("Escolha o grupo/canal da prévia.")
+        return self
+
+
+class Mimo(_Model):
+    """Mimo (gorjeta): um botão na boas-vindas; o lead digita um valor e recebe um Pix para pagar.
+
+    Não entrega conteúdo nem dispara upsell/downsell — é só um carinho em dinheiro para o dono.
+    """
+
+    enabled: bool = False
+    label: Label = "🎁 Mandar um mimo"
+    style: ButtonStyle = "primary"
+    prompt_text: Text = "Que carinho! 🥰 Digite o valor do seu mimo em reais (ex: 20):"
+    min_amount: Money = Decimal("5.00")
+    max_amount: Money = Decimal("5000.00")
+    invalid_text: Caption = "Envie só o valor em reais, entre {min} e {max}. Ex: 20 ou 19,90."
+    thanks_text: Text = "Recebido! 🥰 Muito obrigada pelo mimo de {valor}. Você é especial 💖"
+
+    @model_validator(mode="after")
+    def _check(self) -> "Mimo":
+        if self.min_amount > self.max_amount:
+            raise ValueError("O valor mínimo do mimo não pode ser maior que o máximo.")
+        return self
+
+
 class Payment(_Model):
     expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 30
     pix_text: Text = (
@@ -334,6 +381,9 @@ class FlowDefinition(_Model):
     order_bump: OrderBump | None = None  # flow default, used by plans in "default" bump mode
     upsells: list[UpsellStep] = Field(default_factory=list, max_length=20)
     previews: Previews = Field(default_factory=Previews)
+    # Prévia de grupo com acesso temporário e mimo (gorjeta) — botões opcionais na boas-vindas.
+    group_preview: GroupPreview = Field(default_factory=GroupPreview)
+    mimo: Mimo = Field(default_factory=Mimo)
     # Legacy: one sequence aimed at "no_pix" and/or "pix" leads. Folded on load into the
     # two separate sequences below and then dropped.
     downsell_trigger: Literal["pix", "start"] = "pix"
