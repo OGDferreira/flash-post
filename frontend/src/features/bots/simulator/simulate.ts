@@ -216,7 +216,12 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
     const upsellNext = flow.upsells.length > 0 && (!delivery || delivery.type === "upsell" || delivery.start_upsell);
     const approved = flow.payment.approved_enabled;
     const sendApproved = Boolean(flow.payment.approved_text) && (approved === true || (approved == null && !upsellNext));
-    if (sendApproved) bot({ text: fill(flow.payment.approved_text, { "{plano}": current.name, "{valor}": brl(current.amount) }) });
+    if (sendApproved)
+      bot({
+        text: fill(flow.payment.approved_text, { "{plano}": current.name, "{valor}": brl(current.amount) }),
+        media: flow.payment.approved_media_ids ?? [],
+        spoiler: flow.payment.approved_spoiler,
+      });
     deliver(delivery, current.planName ?? current.name, current.amount);
     if (current.bump) {
       const bumpDelivery = current.bump.delivery ?? flow.default_delivery ?? null;

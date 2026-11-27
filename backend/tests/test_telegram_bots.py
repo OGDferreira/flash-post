@@ -610,3 +610,44 @@ async def test_folder_bot_draws_a_funnel_per_lead_and_keeps_it(client, db_sessio
     assert lead.flow_id == chosen
     refreshed = (await client.get("/api/bots")).json()["bots"][0]
     assert refreshed["folder_id"] is None and refreshed["flow_id"] is None
+
+
+def _text_message(body: str, msg_id: int = 50) -> dict:
+    user = {"id": 555, "is_bot": False, "first_name": "Lucas", "username": "lucas"}
+    return {"message": {"message_id": msg_id, "from": user, "chat": {"id": 555, "type": "private"}, "text": body}}
+
+
+@pytest.mark.anyio
+async def test_smart_dm_replies_keyword_fallback_and_off(client, db_session, owner, apis) -> None:
+    definition = _flow(smart_replies={
+        "enabled": True,
+        "rules": [{"keywords": ["preço", "quanto"], "reply": "Custa {valor}... aqui: ", "then": "plans"}],
+        "fallback_enabled": True,
+        "fallback_text": "Não entendi, toque num botão.",
+    })
+    bot, _ = await _setup(client, headers := await _login(client), definition)
+    await _send(client, db_session, bot["id"], _start())  # lead enters the funnel
+    before = len(apis.methods("sendMessage"))
+
+    # Keyword hit (accent/case-insensitive): answers, then re-sends the plans.
+    await _send(client, db_session, bot["id"], _text_message("Qual o PRECO disso?"))
+    msgs = apis.methods("sendMessage")[before:]
+    assert any("Custa" in m["text"] for m in msgs)
+    assert any(m.get("reply_markup") for m in msgs), "plans buttons re-sent"
+
+    # No keyword: fallback answers.
+    mark = len(apis.methods("sendMessage"))
+    await _send(client, db_session, bot["id"], _text_message("blablabla", msg_id=51))
+    assert any("Não entendi" in m["text"] for m in apis.methods("sendMessage")[mark:])
+
+    # A lead reply is logged either way (live-chat inbox keeps working).
+    assert await db_session.scalar(select(TgLead)) is not None
+
+
+@pytest.mark.anyio
+async def test_smart_dm_replies_stay_silent_when_disabled(client, db_session, owner, apis) -> None:
+    bot, _ = await _setup(client, headers := await _login(client))  # smart_replies off by default
+    await _send(client, db_session, bot["id"], _start())
+    before = len(apis.methods("sendMessage"))
+    await _send(client, db_session, bot["id"], _text_message("tem desconto?"))
+    assert len(apis.methods("sendMessage")) == before  # nothing sent, as before

@@ -175,6 +175,32 @@ export function emptyMimo(): Mimo {
   };
 }
 
+export type SmartThen = "none" | "plans" | "offer";
+
+export type SmartReplyRule = {
+  keywords: string[];
+  reply: string;
+  then: SmartThen;
+};
+
+export type SmartReplies = {
+  enabled: boolean;
+  rules: SmartReplyRule[];
+  fallback_enabled: boolean;
+  fallback_text: string;
+  fallback_then: SmartThen;
+};
+
+export function emptySmartReplies(): SmartReplies {
+  return {
+    enabled: false,
+    rules: [],
+    fallback_enabled: false,
+    fallback_text: "Não entendi 😅 Toque em um dos botões acima para continuar, ou me diga o que você procura.",
+    fallback_then: "none",
+  };
+}
+
 export type FlowDefinition = {
   version: 1;
   age_gate: { enabled: boolean; text: string; button: string };
@@ -183,6 +209,8 @@ export type FlowDefinition = {
   welcome_enabled?: boolean;
   welcome: Block[];
   offer: Offer;
+  /** Keyword replies + fallback for leads who type something off-script in the DM. */
+  smart_replies?: SmartReplies;
   plans: Plan[];
   payment: {
     expiration_minutes: number;
@@ -194,6 +222,9 @@ export type FlowDefinition = {
     /** true: always send before the delivery; false: never; null/undefined: old rule
      *  (skipped when an upsell follows). */
     approved_enabled?: boolean | null;
+    /** Optional image sent with the "payment approved" message (media + caption, same message). */
+    approved_media_ids?: string[];
+    approved_spoiler?: boolean;
     expired_text: string;
     /** Legacy single choice; folded on load into qr_enabled/steps_enabled. */
     layout?: "qr" | "steps";

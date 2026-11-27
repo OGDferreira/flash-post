@@ -278,6 +278,48 @@ class Mimo(_Model):
         return self
 
 
+class SmartReplyRule(_Model):
+    """A keyword rule for a lead's free-text message: when any keyword is found in the
+    message, the bot answers with ``reply`` and then optionally nudges the funnel on."""
+
+    # Case/accent-insensitive "contains" match; a rule with no keywords never matches on its
+    # own (use the fallback for the catch-all). Spintax ``{a|b}`` is allowed in ``reply``.
+    keywords: Annotated[list[Annotated[str, Field(min_length=1, max_length=60)]], Field(max_length=20)] = Field(
+        default_factory=list
+    )
+    reply: Text
+    # After replying: "none" just answers; "plans" re-sends the plan buttons; "offer" re-sends
+    # the whole welcome offer (media + buttons). Keeps the funnel moving after an objection.
+    then: Literal["none", "plans", "offer"] = "none"
+
+    @model_validator(mode="after")
+    def _check(self) -> "SmartReplyRule":
+        if not (self.reply or "").strip():
+            raise ValueError("A resposta inteligente precisa de texto.")
+        return self
+
+
+class SmartReplies(_Model):
+    """Replies to a lead who types something off-script (a question, an objection) instead of
+    tapping a button. Keyword rules are tried in order; the first match answers. When none match
+    and ``fallback_enabled`` is on, ``fallback_text`` answers. Off = the bot stays silent as before."""
+
+    enabled: bool = False
+    rules: Annotated[list[SmartReplyRule], Field(max_length=30)] = Field(default_factory=list)
+    fallback_enabled: bool = False
+    fallback_text: Text = (
+        "Não entendi 😅 Toque em um dos botões acima para continuar, ou me diga o que você procura."
+    )
+    # What the fallback does after answering, like a rule's ``then``.
+    fallback_then: Literal["none", "plans", "offer"] = "none"
+
+    @model_validator(mode="after")
+    def _check(self) -> "SmartReplies":
+        if self.enabled and self.fallback_enabled and not (self.fallback_text or "").strip():
+            raise ValueError("Configure a mensagem de fallback das respostas no DM.")
+        return self
+
+
 class Payment(_Model):
     expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 30
     pix_text: Text = (
@@ -292,6 +334,10 @@ class Payment(_Model):
     # (the delivery goes straight away); None (funnels saved before the switch): as before,
     # skipped when an upsell follows right after the payment.
     approved_enabled: bool | None = None
+    # Optional image sent together with the "payment approved" message (media + caption in the
+    # same Telegram message; falls back to media then text when the caption is too long).
+    approved_media_ids: MediaList3
+    approved_spoiler: bool = False
     expired_text: Text = "Seu Pix expirou. Toque abaixo para gerar um novo."
     # Legacy single choice of how the Pix was shown: "qr" = QR code + text + code in one
     # message; "steps" = instructions, the code in a copy box, then the buttons. Kept so
@@ -375,6 +421,8 @@ class FlowDefinition(_Model):
     welcome_enabled: bool = True
     welcome: list[Block] = Field(default_factory=list, max_length=30)  # optional pre-offer sequence
     offer: Offer = Field(default_factory=Offer)
+    # Keyword replies + fallback for leads who type something off-script in the DM.
+    smart_replies: SmartReplies = Field(default_factory=SmartReplies)
     plans: list[Plan] = Field(default_factory=list, max_length=10)
     payment: Payment = Field(default_factory=Payment)
     default_delivery: Delivery | None = None
@@ -441,6 +489,7 @@ class FlowDefinition(_Model):
         found.update(self.offer.media_ids)
         found.update(self.previews.media_ids)
         found.update(self.payment.intro_media_ids)
+        found.update(self.payment.approved_media_ids)
         bumps = [self.order_bump] + [plan.order_bump for plan in self.plans]
         deliveries = [p.delivery for p in self.plans] + [self.default_delivery]
         for bump in bumps:

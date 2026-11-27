@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, FileAudio, Film, Image as ImageIcon, Library, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileAudio, Film, Image as ImageIcon, Library, Pause, Play, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 
 import { Modal } from "@/components/ui/Modal";
 import { ApiError, apiRequest } from "@/services/api";
@@ -57,9 +57,56 @@ function KindIcon({ kind, size = 16 }: { kind?: BotMedia["kind"]; size?: number 
   return <ImageIcon size={size} />;
 }
 
+function AudioThumb({ media }: { media: BotMedia }) {
+  // Signed URL for the voice note, so the owner can listen before publishing.
+  const preview = usePreview(media.id, true);
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  // A new signed URL means a different clip: reset the player.
+  useEffect(() => {
+    setPlaying(false);
+    audio.current?.pause();
+  }, [preview.data?.url]);
+
+  const toggle = () => {
+    const el = audio.current;
+    if (!el) return;
+    if (el.paused) void el.play();
+    else el.pause();
+  };
+
+  return (
+    <span className="grid place-items-center gap-1 px-2 text-center text-muted">
+      <button
+        aria-label={playing ? "Pausar áudio" : "Ouvir áudio"}
+        className="grid size-9 place-items-center rounded-full bg-fg-2/15 text-fg hover:bg-fg-2/25 disabled:opacity-40"
+        disabled={!preview.data?.url}
+        onClick={toggle}
+        title={playing ? "Pausar" : "Ouvir"}
+        type="button"
+      >
+        {playing ? <Pause size={18} /> : <Play size={18} />}
+      </button>
+      <span className="line-clamp-2 break-all text-[10px]">{media.file_name}</span>
+      {preview.data?.url && (
+        <audio
+          onEnded={() => setPlaying(false)}
+          onPause={() => setPlaying(false)}
+          onPlay={() => setPlaying(true)}
+          preload="none"
+          ref={audio}
+          src={preview.data.url}
+        />
+      )}
+    </span>
+  );
+}
+
 function Thumb({ media }: { media?: BotMedia }) {
   const preview = usePreview(media?.id ?? "", Boolean(media) && media?.kind !== "audio");
   if (!media) return <span className="text-xs text-danger">Mídia removida</span>;
+  if (media.kind === "audio") return <AudioThumb media={media} />;
   if (media.kind === "photo" && preview.data) {
     return <img alt={media.file_name} className="absolute inset-0 size-full object-cover" loading="lazy" src={preview.data.url} />;
   }

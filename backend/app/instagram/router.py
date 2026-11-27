@@ -40,6 +40,7 @@ from app.instagram.oauth import (
     instagram_api_error_detail,
     revoke_instagram_permissions,
 )
+from app.diagnostics.service import resolve_account_diagnostics
 from app.instagram.account_state import isolate_inactive_account
 from app.partners.permissions import require_partner_feature
 from app.models import (
@@ -975,6 +976,7 @@ async def _instagram_callback(
         account.connected_at = datetime.now(timezone.utc)
         account.status_reason = None
         account.error_at = None
+        await resolve_account_diagnostics(db, account.id)
     await db.flush()
     connected_id = account.id
     await db.commit()
@@ -1071,6 +1073,7 @@ async def _complete_unified_callback(
             account.connected_at = datetime.now(timezone.utc)
             account.status_reason = None
             account.error_at = None
+            await resolve_account_diagnostics(db, account.id)
         await db.flush()
         if first_account_id is None:
             first_account_id = account.id
