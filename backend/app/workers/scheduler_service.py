@@ -122,9 +122,10 @@ async def _run_goals_tick_with_database_lock() -> None:
 async def _run_bots_once() -> None:
     global _bot_ticks
     from app.bots.campaigns import run_campaigns
-    from app.bots.engine import reconcile_pending_orders, run_due_jobs
+    from app.bots.engine import reconcile_pending_orders, refresh_send_rate, run_due_jobs
 
     async with get_session_factory()() as db:
+        await refresh_send_rate(db)  # keep the per-bot send rate in sync with the panel setting
         await run_due_jobs(db)
     async with get_session_factory()() as db:
         await run_campaigns(db)
