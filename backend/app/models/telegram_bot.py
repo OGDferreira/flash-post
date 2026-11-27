@@ -116,6 +116,13 @@ class TgBot(Base):
         String(16), nullable=False, default="online", server_default="online"
     )
     last_error: Mapped[str | None] = mapped_column(String(500))
+    # Funnel scheduling: hold the bot inactive until scheduled_activate_at, then auto-turn
+    # off at scheduled_deactivate_at or once auto_deactivate_after_sales paid sales land
+    # (counted from schedule_activated_at). All optional; empty = behaves as before.
+    scheduled_activate_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scheduled_deactivate_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    auto_deactivate_after_sales: Mapped[int | None] = mapped_column(Integer)
+    schedule_activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -266,6 +266,11 @@ export type FlowDefinition = {
     approved_media_ids?: string[];
     approved_spoiler?: boolean;
     expired_text: string;
+    /** Auto-reactivation: regenerate and resend a new Pix when one expires, no tap from the lead.
+     *  reactivation_limit = how many times (0 = unlimited). */
+    reactivation_enabled?: boolean;
+    reactivation_limit?: number;
+    reactivation_text?: string;
     /** Legacy single choice; folded on load into qr_enabled/steps_enabled. */
     layout?: "qr" | "steps";
     /** Both can be on at the same time. null/undefined on both = derive from layout. */
@@ -335,6 +340,10 @@ export type Bot = {
   revenue: string;
   delivery_group_chat_id?: number | null;
   cache_chat_id?: number | null;
+  scheduled_activate_at?: string | null;
+  scheduled_deactivate_at?: string | null;
+  auto_deactivate_after_sales?: number | null;
+  schedule_activated_at?: string | null;
 };
 
 export type SharedFlowOption = { id: string; name: string; shared_from_chief: true };

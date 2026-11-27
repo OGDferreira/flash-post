@@ -3,7 +3,7 @@
 Additive only. Both columns are optional; when unset, the owner still gets the in-app
 notice and web push, just not a Telegram message.
 
-Revision ID: 20261127_97
+Revision ID: 20261126_100
 Revises: 20261126_96
 Create Date: 2026-11-27 00:30:00
 """
@@ -13,8 +13,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "20261126_99"
-down_revision: Union[str, None] = "20261126_98"
+revision: str = "20261126_100"
+down_revision: Union[str, None] = "20261126_99"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
