@@ -388,6 +388,30 @@ class Payment(_Model):
         return self.steps_enabled is None and self.layout == "steps" or bool(self.steps_enabled)
 
 
+class PaymentRecovery(_Model):
+    """Behavioural trigger: a lead generated a Pix (tapped a plan) but did not pay. After
+    ``delay_minutes`` the bot sends one recovery message — a reminder, a common objection answered,
+    or a fresh payment link — on its own, no manual action from the owner. Configured per funnel."""
+
+    enabled: bool = False
+    delay_minutes: Annotated[int, Field(ge=1, le=1440)] = 15
+    text: Text = (
+        "Vi que você gerou o Pix mas ainda não finalizou 👀\n"
+        "Qualquer dúvida é só me chamar. Quer que eu gere um novo Pix pra você?"
+    )
+    media_ids: MediaList3
+    spoiler: bool = False
+    # Add a button that generates a fresh Pix for the lead's last offer.
+    new_pix_button: bool = True
+    button_label: Label = "💠 Gerar um novo Pix"
+
+    @model_validator(mode="after")
+    def _check(self) -> "PaymentRecovery":
+        if self.enabled and not (self.text or self.media_ids):
+            raise ValueError("Configure a mensagem (texto ou mídia) da recuperação de pagamento.")
+        return self
+
+
 class International(_Model):
     """Cartão (Stripe) para vender também em moeda estrangeira, configurado por funil.
 
@@ -425,6 +449,7 @@ class FlowDefinition(_Model):
     smart_replies: SmartReplies = Field(default_factory=SmartReplies)
     plans: list[Plan] = Field(default_factory=list, max_length=10)
     payment: Payment = Field(default_factory=Payment)
+    payment_recovery: PaymentRecovery = Field(default_factory=PaymentRecovery)
     default_delivery: Delivery | None = None
     order_bump: OrderBump | None = None  # flow default, used by plans in "default" bump mode
     upsells: list[UpsellStep] = Field(default_factory=list, max_length=20)
@@ -489,6 +514,7 @@ class FlowDefinition(_Model):
         found.update(self.offer.media_ids)
         found.update(self.previews.media_ids)
         found.update(self.payment.intro_media_ids)
+        found.update(self.payment_recovery.media_ids)
         found.update(self.payment.approved_media_ids)
         bumps = [self.order_bump] + [plan.order_bump for plan in self.plans]
         deliveries = [p.delivery for p in self.plans] + [self.default_delivery]

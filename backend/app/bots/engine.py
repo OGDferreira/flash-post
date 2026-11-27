@@ -851,6 +851,27 @@ async def send_downsell(
     lead.stage = "downsell"
 
 
+async def send_payment_recovery(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
+    """The lead generated a Pix and did not pay within the configured window: send one recovery
+    message, optionally with a button that regenerates the Pix for their last offer."""
+    recovery = flow.payment_recovery
+    if not recovery.enabled or await _has_paid(db, lead):
+        return
+    markup = None
+    if recovery.new_pix_button:
+        order = await db.scalar(
+            select(TgOrder).where(TgOrder.lead_id == lead.id).order_by(TgOrder.created_at.desc())
+        )
+        retry = (order.offer_snapshot or {}).get("retry") if order else None
+        retry = retry or (f"plan:{order.offer_id}" if order else None)
+        if retry:
+            markup = {"inline_keyboard": [[button(recovery.button_label, "success", callback_data=retry[:64])]]}
+    text = render(recovery.text, lead, bot=bot)
+    await send_media_then_text(db, tg, bot, lead.chat_id, recovery.media_ids, recovery.spoiler, text, markup)
+    media = await _first_media(db, bot, recovery.media_ids)
+    log_message(db, bot, lead, "out", _log_kind(media), text=text, media_id=media.id if media else None)
+
+
 def upsell_plan(index: int, step: UpsellStep) -> Plan:
     return Plan(id=f"up{index}", name=step.name, price=step.price, duration_days=step.duration_days,
                 delivery=step.delivery, approved_text=step.approved_text)
@@ -939,6 +960,10 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
             return
         plan, options = resolved
         await create_order(db, tg, bot, lead, flow, plan, **options)
+    elif job.kind == "payment_recovery":
+        flow = await load_flow(db, bot, lead)
+        if flow is not None and lead is not None:
+            await send_payment_recovery(db, tg, bot, lead, flow)
     elif job.kind == "expire_order":
         await expire_order(db, tg, bot, uuid.UUID(job.payload["order_id"]))
     elif job.kind == "end_subscription":
@@ -1577,6 +1602,13 @@ async def create_order(
             await cancel_lead_jobs(db, lead, ("send_downsell_np",))
             if kind in ("plan", "downsell") and flow.downsells:
                 await schedule_downsells(db, bot, lead, flow, "pix")
+            # Behavioural trigger: generated a Pix but did not pay -> one recovery nudge.
+            if flow.payment_recovery.enabled:
+                await schedule(
+                    db, bot, "payment_recovery",
+                    now + timedelta(minutes=flow.payment_recovery.delay_minutes),
+                    f"payrec:{lead.id}", lead,
+                )
         await db.commit()
         timings["save"] = time.perf_counter() - mark
         mark = time.perf_counter()
