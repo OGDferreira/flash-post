@@ -19,13 +19,13 @@ from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
-from app.bots import atenaspay, engine, portable, smokepay, stripe_gateway
+from app.bots import ab_tests, atenaspay, engine, portable, smokepay, stripe_gateway
 from app.bots.flow_schema import FlowDefinition, Offer, UpsellStep, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
-from app.models import TgBot, TgCampaign, TgFlow, TgFlowFolder, TgFlowFolderItem, TgGroup, TgJob, TgLead, TgMedia, TgMessage, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
+from app.models import TgAbTest, TgBot, TgCampaign, TgFlow, TgFlowFolder, TgFlowFolderItem, TgGroup, TgJob, TgLead, TgMedia, TgMessage, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, billing_route, flow_offered_to, notify_user, owner_workspace, partner_link, shared_funnel_access
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
@@ -85,6 +85,7 @@ def _bot_out(bot: TgBot, stats: dict | None = None) -> dict:
         "name": bot.name,
         "flow_id": str(bot.flow_id) if bot.flow_id else None,
         "folder_id": str(bot.folder_id) if bot.folder_id else None,
+        "ab_test_id": str(bot.ab_test_id) if bot.ab_test_id else None,
         "delivery_group_chat_id": bot.delivery_group_chat_id,
         "cache_chat_id": bot.cache_chat_id,
         "is_active": bot.is_active,
@@ -388,12 +389,14 @@ async def update_bot(bot_id: uuid.UUID, payload: BotUpdate, access: OwnerAccess,
         await _usable_flow(db, payload.flow_id, access)
         bot.flow_id = payload.flow_id
         bot.folder_id = None
+        bot.ab_test_id = None  # a single funnel replaces any running A/B test
     if payload.clear_folder:
         bot.folder_id = None
     elif payload.folder_id:
         await _owned_folder(db, payload.folder_id, access)
         bot.folder_id = payload.folder_id
         bot.flow_id = None
+        bot.ab_test_id = None  # a folder replaces any running A/B test
     if payload.clear_delivery_group:
         bot.delivery_group_chat_id = None
     elif payload.delivery_group_chat_id is not None:
@@ -757,6 +760,110 @@ async def create_frankenstein(payload: FrankensteinCreate, access: OwnerAccess, 
     await db.commit()
     await db.refresh(flow)
     return _flow_out(flow)
+
+
+# ---------------------------------------------------------------- A/B tests
+
+
+class AbTestCreate(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=120)]
+    bot_id: uuid.UUID
+    flow_a_id: uuid.UUID
+    flow_b_id: uuid.UUID
+    weight_a: Annotated[int, Field(ge=1, le=99)] = 50
+
+
+class AbTestUpdate(BaseModel):
+    weight_a: Annotated[int, Field(ge=1, le=99)]
+
+
+async def _ab_out(db, test: TgAbTest, *, with_results: bool = True) -> dict:
+    flow_a = await db.get(TgFlow, test.flow_a_id)
+    flow_b = await db.get(TgFlow, test.flow_b_id)
+    bot = await db.get(TgBot, test.bot_id)
+    out = {
+        "id": str(test.id),
+        "name": test.name,
+        "bot_id": str(test.bot_id),
+        "bot_username": bot.username if bot else None,
+        "status": test.status,
+        "weight_a": test.weight_a,
+        "flow_a": {"id": str(test.flow_a_id), "name": flow_a.name if flow_a else "—"},
+        "flow_b": {"id": str(test.flow_b_id), "name": flow_b.name if flow_b else "—"},
+        "created_at": test.created_at.isoformat() if test.created_at else None,
+        "stopped_at": test.stopped_at.isoformat() if test.stopped_at else None,
+    }
+    if with_results and bot is not None:
+        out["results"] = await ab_tests.results(db, bot, test)
+    return out
+
+
+@router.get("/ab-tests")
+async def list_ab_tests(access: OwnerAccess, db: DbSession) -> dict:
+    """Every A/B test of this operation (active and stopped), newest first, with live metrics."""
+    rows = await db.scalars(
+        select(TgAbTest).where(TgAbTest.workspace_id == access.workspace.id).order_by(TgAbTest.created_at.desc())
+    )
+    tests = [await _ab_out(db, test) for test in rows]
+    return {"tests": tests}
+
+
+@router.post("/ab-tests", status_code=201, dependencies=csrf)
+async def create_ab_test(payload: AbTestCreate, access: OwnerAccess, db: DbSession) -> dict:
+    if payload.flow_a_id == payload.flow_b_id:
+        raise HTTPException(status_code=422, detail="As duas versões precisam ser funis diferentes.")
+    bot = await _owned(db, TgBot, payload.bot_id, access)
+    # Both variants must be this operation's own funnels (their media live in this workspace).
+    flow_a = await _owned(db, TgFlow, payload.flow_a_id, access)
+    flow_b = await _owned(db, TgFlow, payload.flow_b_id, access)
+    test = TgAbTest(
+        workspace_id=access.workspace.id, bot_id=bot.id, name=payload.name.strip(),
+        flow_a_id=flow_a.id, flow_b_id=flow_b.id, weight_a=payload.weight_a,
+    )
+    db.add(test)
+    await db.flush()
+    # The A/B test takes over how the bot picks a funnel; a folder would collide with it.
+    bot.folder_id = None
+    bot.ab_test_id = test.id
+    await db.commit()
+    await db.refresh(test)
+    return await _ab_out(db, test)
+
+
+@router.get("/ab-tests/{test_id}")
+async def get_ab_test(test_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
+    test = await _owned(db, TgAbTest, test_id, access)
+    return await _ab_out(db, test)
+
+
+@router.patch("/ab-tests/{test_id}", dependencies=csrf)
+async def update_ab_test(test_id: uuid.UUID, payload: AbTestUpdate, access: OwnerAccess, db: DbSession) -> dict:
+    test = await _owned(db, TgAbTest, test_id, access)
+    test.weight_a = payload.weight_a  # applies to leads drawn from now on
+    await db.commit()
+    await db.refresh(test)
+    return await _ab_out(db, test)
+
+
+@router.post("/ab-tests/{test_id}/stop", dependencies=csrf)
+async def stop_ab_test(test_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
+    test = await _owned(db, TgAbTest, test_id, access)
+    if test.status == "active":
+        test.status = "stopped"
+        test.stopped_at = engine.utcnow()
+    # The bot falls back to its single funnel (``flow_id``); leads keep the variant they were given.
+    await db.execute(update(TgBot).where(TgBot.ab_test_id == test.id).values(ab_test_id=None))
+    await db.commit()
+    await db.refresh(test)
+    return await _ab_out(db, test)
+
+
+@router.delete("/ab-tests/{test_id}", status_code=204, dependencies=csrf)
+async def delete_ab_test(test_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> None:
+    test = await _owned(db, TgAbTest, test_id, access)
+    await db.execute(update(TgBot).where(TgBot.ab_test_id == test.id).values(ab_test_id=None))
+    await db.delete(test)
+    await db.commit()
 
 
 @router.get("/stats")

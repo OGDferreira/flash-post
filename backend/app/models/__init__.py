@@ -65,6 +65,7 @@ from app.models.platform_subscription import (
 )
 from app.models.telegram_bot import (
     AuditEvent,
+    TgAbTest,
     TgBot,
     TgCampaign,
     TgCampaignRun,
@@ -93,6 +94,7 @@ __all__ = [
     "TgGatewaySetting",
     "AdminAuditLog",
     "AppNotification",
+    "TgAbTest",
     "TgBot",
     "TgCampaign",
     "TgCampaignRun",
