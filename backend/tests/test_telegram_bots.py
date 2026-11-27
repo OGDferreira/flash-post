@@ -651,3 +651,41 @@ async def test_smart_dm_replies_stay_silent_when_disabled(client, db_session, ow
     before = len(apis.methods("sendMessage"))
     await _send(client, db_session, bot["id"], _text_message("tem desconto?"))
     assert len(apis.methods("sendMessage")) == before  # nothing sent, as before
+
+
+@pytest.mark.anyio
+async def test_followup_fires_chains_and_resets_on_activity(client, db_session, owner, apis) -> None:
+    definition = _flow(follow_up={
+        "enabled": True,
+        "steps": [
+            {"delay_minutes": 30, "text": "Oi {nome}, ainda tá aí? 👀"},
+            {"delay_minutes": 60, "text": "Última chance, {nome}!"},
+        ],
+    })
+    bot, _ = await _setup(client, await _login(client), definition)
+    await _send(client, db_session, bot["id"], _start())
+
+    # Entering the funnel arms the first attempt (pending, in the future).
+    jobs = list(await db_session.scalars(select(TgJob).where(TgJob.kind == "followup", TgJob.status == "pending")))
+    assert len(jobs) == 1 and jobs[0].payload["index"] == 0
+
+    # Time passes: make it due and run the worker. Step 0 goes out and step 1 is queued.
+    await db_session.execute(update(TgJob).where(TgJob.kind == "followup").values(run_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
+    await db_session.commit()
+    before = len(apis.methods("sendMessage"))
+    await engine.run_due_jobs(db_session)
+    assert any("ainda tá aí" in m["text"] for m in apis.methods("sendMessage")[before:])
+    pending = list(await db_session.scalars(select(TgJob).where(TgJob.kind == "followup", TgJob.status == "pending")))
+    assert len(pending) == 1 and pending[0].payload["index"] == 1
+
+    # The lead replies: the chain resets to attempt 0 (old pending one is cancelled).
+    await _send(client, db_session, bot["id"], _text_message("oi", msg_id=70))
+    pending = list(await db_session.scalars(select(TgJob).where(TgJob.kind == "followup", TgJob.status == "pending")))
+    assert len(pending) == 1 and pending[0].payload["index"] == 0
+
+
+@pytest.mark.anyio
+async def test_followup_disabled_schedules_nothing(client, db_session, owner, apis) -> None:
+    bot, _ = await _setup(client, await _login(client))  # follow_up off by default
+    await _send(client, db_session, bot["id"], _start())
+    assert not list(await db_session.scalars(select(TgJob).where(TgJob.kind == "followup")))
