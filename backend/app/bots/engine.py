@@ -25,7 +25,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bots import atenaspay, smokepay, stripe_gateway
-from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, OrderBump, Plan, SmartReplies, SmartReplyRule, UpsellStep
+from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, FollowUp, FollowUpStep, OrderBump, Plan, SmartReplies, SmartReplyRule, UpsellStep
 from app.bots.richtext import sanitize
 from app.bots.telegram import InputFile, TelegramClient, TelegramError, translate_target
 from app.partners.service import billing_route
@@ -475,6 +475,38 @@ async def cancel_lead_jobs(db: AsyncSession, lead: TgLead, kinds: tuple[str, ...
     )
 
 
+async def arm_followups(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
+    """(Re)start the retomada chain: cancel any pending follow-up and queue the first attempt.
+    Called whenever the lead acts, so a follow-up only fires after real silence; skipped once
+    the lead has paid or if the funnel has no follow-ups configured."""
+    await cancel_lead_jobs(db, lead, ("followup",))
+    steps = flow.follow_up.steps
+    if not flow.follow_up.enabled or not steps or lead.blocked_bot:
+        return
+    if await _has_paid(db, lead):
+        return
+    nonce = secrets.token_hex(4)
+    run_at = utcnow() + timedelta(minutes=steps[0].delay_minutes)
+    await schedule(db, bot, "followup", run_at, f"followup:{lead.id}:{nonce}:0", lead, {"index": 0, "nonce": nonce})
+
+
+async def send_followup_step(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, step: FollowUpStep) -> None:
+    caption = render(step.text, lead, bot=bot)
+    medias = await _media_rows(db, bot, step.media_ids)
+    if not medias:
+        await tg.send_chat_action(lead.chat_id, "typing")
+        await tg.send_message(lead.chat_id, caption)
+        log_message(db, bot, lead, "out", "text", text=caption)
+        return
+    if len(medias) > 1:
+        await send_album(db, tg, bot, lead.chat_id, medias, caption or None, spoiler=step.spoiler)
+        log_message(db, bot, lead, "out", "photo", text=caption, media_id=medias[0].id)
+    else:
+        kind = _cache_kind(medias[0])
+        await send_media_message(db, tg, bot, lead.chat_id, kind, medias[0], caption or None, spoiler=step.spoiler)
+        log_message(db, bot, lead, "out", _log_kind(medias[0]), text=caption, media_id=medias[0].id)
+
+
 async def start_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
     """Send the welcome right away; blocks after a delay (and what follows them)
     are queued as jobs with their delays. When the "conversa humanizada" sequence uses
@@ -512,6 +544,7 @@ async def start_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDe
             await schedule(db, bot, "send_offer", run, f"offer:{lead.id}:{nonce}", lead)
     if flow.downsells_no_pix:
         await schedule_downsells(db, bot, lead, flow, "no_pix")
+    await arm_followups(db, bot, lead, flow)
 
 
 async def _continue_welcome(db: AsyncSession, bot: TgBot, lead: TgLead, flow: FlowDefinition, index: int) -> None:
@@ -932,6 +965,23 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
             await send_downsell(db, tg, bot, lead, flow, index, "no_pix")
         else:
             await send_upsell(db, tg, bot, lead, flow, index, str(job.payload.get("chain", "")))
+    elif job.kind == "followup":
+        flow = await load_flow(db, bot, lead)
+        if flow is None or lead is None:
+            return
+        fu = flow.follow_up
+        index = int(job.payload.get("index", -1))
+        if not fu.enabled or not 0 <= index < len(fu.steps):
+            return
+        if await _has_paid(db, lead):  # bought in the meantime: stop the chain
+            return
+        _set_translate_target(flow, lead)
+        await send_followup_step(db, tg, bot, lead, fu.steps[index])
+        nxt = index + 1
+        if nxt < len(fu.steps):
+            nonce = str(job.payload.get("nonce") or secrets.token_hex(4))
+            run_at = utcnow() + timedelta(minutes=fu.steps[nxt].delay_minutes)
+            await schedule(db, bot, "followup", run_at, f"followup:{lead.id}:{nonce}:{nxt}", lead, {"index": nxt, "nonce": nonce})
     elif job.kind == "create_pix":
         flow = await load_flow(db, bot, lead)
         resolved = resolve_offer(flow, str(job.payload.get("data", ""))) if flow and lead else "gone"
@@ -1165,6 +1215,8 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
             if flow is None:
                 return None
             _set_translate_target(flow, lead)
+            # The lead is active again: push back the retomada timer.
+            await arm_followups(db, bot, lead, flow)
             if lead.awaiting == "mimo" and text:
                 if flow.mimo.enabled:
                     await handle_mimo_amount(db, telegram(bot), bot, lead, flow, text)
@@ -1238,6 +1290,9 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UU
         await tg.answer_callback(query["id"])
         return None
     _set_translate_target(flow, lead)
+    # The lead tapped a button: they are active, so reset the retomada timer. When a PIX is
+    # generated the chain is cancelled further down (create_order), so no overlap with downsells.
+    await arm_followups(db, bot, lead, flow)
     if data == "age:ok":
         await tg.answer_callback(query["id"])
         if lead.age_confirmed_at is None:
@@ -1574,7 +1629,8 @@ async def create_order(
         await schedule(db, bot, "expire_order", order.expires_at, f"expire:{order.id}", lead, {"order_id": str(order.id)})
         if first_pix:
             # Generated a PIX: the "Pix não gerado" sequence stops, the "Pix gerado" one starts.
-            await cancel_lead_jobs(db, lead, ("send_downsell_np",))
+            # Follow-ups stop too — the downsell sequences now own re-engaging this lead.
+            await cancel_lead_jobs(db, lead, ("send_downsell_np", "followup"))
             if kind in ("plan", "downsell") and flow.downsells:
                 await schedule_downsells(db, bot, lead, flow, "pix")
         await db.commit()
@@ -2093,7 +2149,7 @@ async def approve_order(
         return True
     lead.stage = "paid"
     await db.execute(update(TgJob).where(TgJob.idempotency_key == f"expire:{order.id}").values(status="cancelled"))
-    await cancel_lead_jobs(db, lead, ("send_downsell", "send_downsell_np"))
+    await cancel_lead_jobs(db, lead, ("send_downsell", "send_downsell_np", "followup"))
     tg = telegram(bot)
     flow = await load_flow(db, bot, lead)
     plan, bump, info = order_parts(order)

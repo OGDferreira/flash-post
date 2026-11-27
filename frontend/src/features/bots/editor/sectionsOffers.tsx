@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Copy, CreditCard, Eye, Gift, MessageSquare, Plus, QrCode, ShieldCheck, ShoppingCart, Timer, Trash2, TrendingDown, TrendingUp, Truck } from "lucide-react";
+import { Copy, CreditCard, Eye, Gift, MessageSquare, Plus, QrCode, RefreshCw, ShieldCheck, ShoppingCart, Timer, Trash2, TrendingDown, TrendingUp, Truck } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
-import { brl, emptyBump, emptyDelivery, emptyGroupPreview, emptyMimo, emptyPreviews, emptySmartReplies, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type Plan, type SmartReplyRule, type SmartThen, type UpsellStep } from "../types";
+import { brl, emptyBump, emptyDelivery, emptyFollowUp, emptyGroupPreview, emptyMimo, emptyPreviews, emptySmartReplies, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type FollowUpStep, type Plan, type SmartReplyRule, type SmartThen, type UpsellStep } from "../types";
 import { BumpEditor, DeliveryEditor, useBotGroups } from "./DeliveryEditor";
 import { MediaGrid } from "./MediaGrid";
 import { FontMenu, toFancy } from "./fancyFonts";
@@ -966,6 +966,66 @@ export function SmartRepliesSection({ draft, set }: SectionProps) {
         </div>
       ) : (
         <p className="text-sm text-muted">Desligado. Ligue para o bot responder quando o lead digitar algo em vez de tocar nos botões.</p>
+      )}
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------------- Retomada de conversa
+
+export function FollowUpSection({ draft, set }: SectionProps) {
+  const fu = draft.follow_up ?? emptyFollowUp();
+  const setFu = (patch: Partial<NonNullable<FlowDefinition["follow_up"]>>) => set({ follow_up: { ...fu, ...patch } });
+  const setStep = (index: number, patch: Partial<FollowUpStep>) =>
+    setFu({ steps: fu.steps.map((step, i) => (i === index ? { ...step, ...patch } : step)) });
+  const addStep = () => setFu({ steps: [...fu.steps, { delay_minutes: fu.steps.length ? 1440 : 60, text: "", media_ids: [], spoiler: false }] });
+  const removeStep = (index: number) => setFu({ steps: fu.steps.filter((_, i) => i !== index) });
+
+  return (
+    <Panel
+      icon={<RefreshCw size={18} />}
+      title="Retomada de conversa"
+      description="Se o lead some no meio do funil (sem responder), o bot manda um follow-up automático para trazer de volta. Cada tentativa tem seu próprio tempo de espera e mensagem. O tempo reinicia a cada ação do lead e a sequência para quando ele paga ou gera o Pix."
+      aside={<Switch checked={fu.enabled} label="Retomada" onChange={(enabled) => setFu({ enabled })} />}
+    >
+      {fu.enabled ? (
+        <div className="grid gap-4">
+          {fu.steps.length === 0 && <p className="text-xs text-warning">Adicione pelo menos uma tentativa de retomada.</p>}
+          <div className="grid gap-3">
+            {fu.steps.map((step, index) => (
+              <div className="grid gap-3 rounded-xl border border-line-soft p-3" key={index}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-fg">Tentativa {index + 1}</span>
+                  <button aria-label="Remover tentativa" className="text-muted hover:text-danger" onClick={() => removeStep(index)} type="button">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+                <Field label="Esperar" hint={index === 0 ? "Tempo sem resposta do lead antes deste follow-up." : "Tempo após a tentativa anterior."}>
+                  <DelayInput value={step.delay_minutes} allowZero={false} onChange={(delay_minutes) => setStep(index, { delay_minutes })} />
+                </Field>
+                <RichTextEditor
+                  label="Mensagem"
+                  rows={3}
+                  value={step.text ?? ""}
+                  variables={BASE_VARIABLES}
+                  onChange={(text) => setStep(index, { text })}
+                />
+                <MediaGrid max={3} title="Mídia (opcional)" value={step.media_ids} onChange={(media_ids) => setStep(index, { media_ids })} />
+                {step.media_ids.length > 0 && (
+                  <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
+                    <span>Borrar mídia (spoiler)</span>
+                    <Switch checked={step.spoiler} label="Spoiler" onChange={(spoiler) => setStep(index, { spoiler })} />
+                  </label>
+                )}
+              </div>
+            ))}
+            <Button disabled={fu.steps.length >= 10} size="sm" onClick={addStep}>
+              <Plus size={16} /> Adicionar tentativa
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-muted">Desligado. Ligue para o bot reengajar leads que pararam de responder no meio do funil.</p>
       )}
     </Panel>
   );
