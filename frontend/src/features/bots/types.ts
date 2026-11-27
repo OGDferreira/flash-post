@@ -335,6 +335,10 @@ export type Bot = {
   revenue: string;
   delivery_group_chat_id?: number | null;
   cache_chat_id?: number | null;
+  scheduled_activate_at?: string | null;
+  scheduled_deactivate_at?: string | null;
+  auto_deactivate_after_sales?: number | null;
+  schedule_activated_at?: string | null;
 };
 
 export type SharedFlowOption = { id: string; name: string; shared_from_chief: true };

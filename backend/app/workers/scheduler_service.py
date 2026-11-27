@@ -123,7 +123,10 @@ async def _run_bots_once() -> None:
     global _bot_ticks
     from app.bots.campaigns import run_campaigns
     from app.bots.engine import reconcile_pending_orders, run_due_jobs
+    from app.bots.scheduling import apply_bot_schedules
 
+    async with get_session_factory()() as db:
+        await apply_bot_schedules(db)
     async with get_session_factory()() as db:
         await run_due_jobs(db)
     async with get_session_factory()() as db:
