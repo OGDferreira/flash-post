@@ -370,6 +370,12 @@ class Payment(_Model):
     approved_media_ids: MediaList3
     approved_spoiler: bool = False
     expired_text: Text = "Seu Pix expirou. Toque abaixo para gerar um novo."
+    # Auto-reactivation: when a Pix expires, the bot generates and sends a new one by itself,
+    # no tap from the lead. ``reactivation_limit`` is how many times (0 = unlimited); once it is
+    # reached the lead gets ``expired_text`` with the manual "generate a new Pix" button instead.
+    reactivation_enabled: bool = False
+    reactivation_limit: Annotated[int, Field(ge=0, le=20)] = 1
+    reactivation_text: Text = "Seu Pix venceu, mas já gerei um novo pra você 👇 É só pagar com o código abaixo."
     # Legacy single choice of how the Pix was shown: "qr" = QR code + text + code in one
     # message; "steps" = instructions, the code in a copy box, then the buttons. Kept so
     # funnels saved before the switch keep validating; folded on load into the two toggles

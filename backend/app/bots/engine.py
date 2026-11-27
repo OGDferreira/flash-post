@@ -2354,12 +2354,31 @@ async def expire_order(db: AsyncSession, tg: TelegramClient, bot: TgBot, order_i
     order.status = "expired"
     lead = await db.get(TgLead, order.lead_id)
     flow = await load_flow(db, bot, lead)
-    if lead and flow:
-        retry = (order.offer_snapshot or {}).get("retry") or f"plan:{order.offer_id}"
-        await tg.send_message(
-            lead.chat_id, render(flow.payment.expired_text, lead, order.offer_name, order.amount, bot),
-            {"inline_keyboard": [[button(f"🔁 Gerar novo Pix · {order.offer_name}"[:64], callback_data=retry[:64])]]},
+    if not (lead and flow):
+        return
+    payment = flow.payment
+    retry = (order.offer_snapshot or {}).get("retry") or f"plan:{order.offer_id}"
+    # Auto-reactivation: generate and send a new Pix by itself, up to the configured number of
+    # times. Count the earlier expiries of this same offer for this lead (this order excluded, so
+    # it does not matter whether its status change has flushed yet).
+    if payment.reactivation_enabled and not await _has_paid(db, lead):
+        already = await db.scalar(
+            select(func.count(TgOrder.id)).where(
+                TgOrder.lead_id == lead.id, TgOrder.offer_id == order.offer_id,
+                TgOrder.status == "expired", TgOrder.id != order.id,
+            )
         )
+        within_limit = payment.reactivation_limit == 0 or int(already or 0) < payment.reactivation_limit
+        resolved = resolve_offer(flow, retry) if within_limit else "limit"
+        if not isinstance(resolved, str):
+            plan, options = resolved
+            await tg.send_message(lead.chat_id, render(payment.reactivation_text, lead, order.offer_name, order.amount, bot))
+            await create_order(db, tg, bot, lead, flow, plan, **options)
+            return
+    await tg.send_message(
+        lead.chat_id, render(payment.expired_text, lead, order.offer_name, order.amount, bot),
+        {"inline_keyboard": [[button(f"🔁 Gerar novo Pix · {order.offer_name}"[:64], callback_data=retry[:64])]]},
+    )
 
 
 async def end_subscription(db: AsyncSession, tg: TelegramClient, bot: TgBot, subscription_id: uuid.UUID) -> None:

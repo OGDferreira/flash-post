@@ -1207,6 +1207,39 @@ export function PaymentSection({ draft, set }: SectionProps) {
         )}
       </div>
       <RichTextEditor label="Pix expirado" rows={2} value={payment.expired_text} variables={vars} onChange={(expired_text) => setPayment({ expired_text })} />
+      <div className="space-y-2 rounded-xl border border-line-soft p-3">
+        <Switch
+          checked={!!payment.reactivation_enabled}
+          label="Reativação automática do Pix"
+          onChange={(reactivation_enabled) => setPayment({ reactivation_enabled })}
+        />
+        <p className="text-xs text-muted">
+          Quando o Pix vence, o bot gera e manda um novo sozinho, sem o lead precisar tocar em nada.
+        </p>
+        {payment.reactivation_enabled && (
+          <div className="grid gap-3">
+            <Field label="Quantas vezes reativar">
+              <select
+                className="field"
+                value={payment.reactivation_limit ?? 1}
+                onChange={(event) => setPayment({ reactivation_limit: Number(event.target.value) })}
+              >
+                <option value={1}>1 vez</option>
+                <option value={2}>2 vezes</option>
+                <option value={0}>Ilimitado</option>
+              </select>
+            </Field>
+            <RichTextEditor
+              label="Mensagem ao gerar o novo Pix"
+              rows={2}
+              value={payment.reactivation_text ?? "Seu Pix venceu, mas já gerei um novo pra você 👇 É só pagar com o código abaixo."}
+              variables={vars}
+              onChange={(reactivation_text) => setPayment({ reactivation_text })}
+            />
+            <p className="text-[11px] text-muted">Atingido o limite, o lead recebe a mensagem de “Pix expirado” acima com o botão manual.</p>
+          </div>
+        )}
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Botão copiar">
           <input className="field" maxLength={64} value={payment.copy_button} onChange={(event) => setPayment({ copy_button: event.target.value })} />

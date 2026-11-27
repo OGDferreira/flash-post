@@ -266,6 +266,11 @@ export type FlowDefinition = {
     approved_media_ids?: string[];
     approved_spoiler?: boolean;
     expired_text: string;
+    /** Auto-reactivation: regenerate and resend a new Pix when one expires, no tap from the lead.
+     *  reactivation_limit = how many times (0 = unlimited). */
+    reactivation_enabled?: boolean;
+    reactivation_limit?: number;
+    reactivation_text?: string;
     /** Legacy single choice; folded on load into qr_enabled/steps_enabled. */
     layout?: "qr" | "steps";
     /** Both can be on at the same time. null/undefined on both = derive from layout. */
