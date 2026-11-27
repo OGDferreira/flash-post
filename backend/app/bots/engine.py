@@ -13,6 +13,7 @@ import io
 import html
 import re
 import logging
+import re
 import secrets
 import time
 import uuid
@@ -576,6 +577,10 @@ def offer_keyboard(flow: FlowDefinition, previews: bool = True) -> dict | None:
         rows = plans_keyboard(flow)["inline_keyboard"]
     if previews and flow.previews.enabled and flow.previews.media_ids:
         rows.append([button(flow.previews.label, flow.previews.style, callback_data="prev")])
+    if flow.group_preview.enabled and flow.group_preview.group_chat_id:
+        rows.append([button(flow.group_preview.label, flow.group_preview.style, callback_data="gprev")])
+    if flow.mimo.enabled:
+        rows.append([button(flow.mimo.label, flow.mimo.style, callback_data="mimo")])
     rows += _extra_rows(flow)
     return {"inline_keyboard": rows} if rows else None
 
@@ -628,11 +633,45 @@ async def previews_seen(db: AsyncSession, lead: TgLead) -> bool:
 
 
 def _without_previews(markup: dict | None) -> dict:
+    return _drop_button(markup, "prev")
+
+
+def _drop_button(markup: dict | None, data: str) -> dict:
+    """The keyboard without any row that carries a button with this callback_data."""
     rows = [
         row for row in (markup or {}).get("inline_keyboard", [])
-        if not any(isinstance(item, dict) and item.get("callback_data") == "prev" for item in row)
+        if not any(isinstance(item, dict) and item.get("callback_data") == data for item in row)
     ]
     return {"inline_keyboard": rows}
+
+
+async def group_preview_active(db: AsyncSession, lead: TgLead) -> bool:
+    """True while a group-preview removal is still pending for this lead (one preview at a time)."""
+    return bool(await db.scalar(
+        select(TgJob.id).where(
+            TgJob.lead_id == lead.id, TgJob.kind == "end_group_preview", TgJob.status == "pending"
+        ).limit(1)
+    ))
+
+
+def parse_money(raw: str) -> Decimal | None:
+    """Read a BRL amount the lead typed ("20", "19,90", "R$ 1.234,56") or None if it isn't one."""
+    cleaned = re.sub(r"[^0-9,.]", "", raw or "")
+    if not cleaned:
+        return None
+    if "," in cleaned:  # Brazilian format: "." is the thousands sep, "," the decimal
+        cleaned = cleaned.replace(".", "").replace(",", ".")
+    else:
+        groups = cleaned.split(".")
+        # "1.000" / "1.234.567": every part after the first is a 3-digit thousands group.
+        # "19.90" / "1.5": a normal decimal point, left as is.
+        if len(groups) > 1 and all(len(part) == 3 for part in groups[1:]):
+            cleaned = "".join(groups)
+    try:
+        value = Decimal(cleaned).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    except (ArithmeticError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 async def send_previews(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition) -> None:
@@ -663,7 +702,74 @@ async def send_previews(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: 
         )
 
 
-# ---------------------------------------------------------------- order bump, downsell, upsell
+# ---------------------------------------------------------------- group preview, mimo
+
+
+# The join invite stays valid at least this long so the lead has time to tap and enter.
+GROUP_PREVIEW_MIN_INVITE = 600
+
+
+async def _start_group_preview(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, callback_id: str) -> None:
+    """Give the lead a single-use invite to the group and schedule their automatic removal."""
+    gp = flow.group_preview
+    if not (gp.enabled and gp.group_chat_id):
+        await tg.answer_callback(callback_id, "A prévia não está disponível agora.")
+        return
+    if await group_preview_active(db, lead):
+        await tg.answer_callback(callback_id, "Você já está na prévia, aproveite! ⏳")
+        return
+    await tg.answer_callback(callback_id)
+    now = utcnow()
+    chat_id = int(gp.group_chat_id)
+    invite_until = now + timedelta(seconds=max(gp.access_seconds, GROUP_PREVIEW_MIN_INVITE))
+    try:
+        link = await tg.create_invite_link(chat_id, f"prev {lead.id.hex[:8]}", int(invite_until.timestamp()))
+    except TelegramError as exc:
+        logger.warning("Group preview invite failed for lead %s: %s", lead.id, exc)
+        await tg.send_message(lead.chat_id, "Não consegui liberar a prévia agora. Tente de novo em instantes.")
+        return
+    tempo = duration_text(gp.access_seconds)
+    grant = render(gp.grant_text, lead, bot=bot, extra={"{tempo}": tempo}) or f"Acesso liberado por {tempo}."
+    await tg.send_message(lead.chat_id, grant, {"inline_keyboard": [[{"text": gp.join_label, "url": link}]]})
+    log_message(db, bot, lead, "out", "text", text=grant)
+    await schedule(
+        db, bot, "end_group_preview", now + timedelta(seconds=gp.access_seconds),
+        f"gprevend:{lead.id}:{int(now.timestamp())}", lead, {"chat_id": chat_id},
+    )
+
+
+async def _end_group_preview(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead | None, job: TgJob) -> None:
+    """Remove the lead from the preview group and nudge them to buy the full access."""
+    if lead is None:
+        return
+    chat_id = int(job.payload["chat_id"])
+    try:
+        await tg.remove_member(chat_id, lead.tg_user_id)
+    except TelegramError as exc:
+        logger.info("Could not remove preview member %s: %s", lead.tg_user_id, exc)
+    flow = await load_flow(db, bot, lead)
+    if flow is None:
+        return
+    _set_translate_target(flow, lead)
+    text = render(flow.group_preview.expired_text, lead, bot=bot)
+    keyboard = plans_keyboard(flow) if flow.plans else None
+    await tg.send_message(lead.chat_id, text, keyboard)
+    log_message(db, bot, lead, "out", "text", text=text)
+
+
+async def handle_mimo_amount(db: AsyncSession, tg: TelegramClient, bot: TgBot, lead: TgLead, flow: FlowDefinition, raw: str) -> None:
+    """The lead typed a value for their mimo: validate it and charge a Pix for that amount."""
+    mimo = flow.mimo
+    amount = parse_money(raw)
+    if amount is None or amount < mimo.min_amount or amount > mimo.max_amount:
+        invalid = render(mimo.invalid_text, lead, bot=bot, extra={"{min}": brl(mimo.min_amount), "{max}": brl(mimo.max_amount)})
+        await tg.send_message(lead.chat_id, invalid)
+        log_message(db, bot, lead, "out", "text", text=invalid)
+        return  # keep awaiting so the next message is read as the value too
+    lead.awaiting = None
+    plan = Plan(id="mimo", name="Mimo", price=amount, duration_days=None)
+    await tg.send_chat_action(lead.chat_id, "upload_photo")
+    await create_order(db, tg, bot, lead, flow, plan, kind="mimo", offer_id="mimo", retry="mimo")
 
 
 async def send_bump_question(
@@ -841,6 +947,8 @@ async def run_job(db: AsyncSession, job: TgJob) -> None:
         await warm_cache(db, tg, bot)
     elif job.kind == "delete_messages":
         await tg.delete_messages(int(job.payload["chat_id"]), [int(i) for i in job.payload.get("message_ids") or []])
+    elif job.kind == "end_group_preview":
+        await _end_group_preview(db, tg, bot, lead, job)
 
 
 async def run_due_jobs(db: AsyncSession, limit: int = 50, lead_id: uuid.UUID | None = None) -> int:
@@ -1057,6 +1165,11 @@ async def handle_update(db: AsyncSession, bot: TgBot, update_data: dict) -> uuid
             if flow is None:
                 return None
             _set_translate_target(flow, lead)
+            if lead.awaiting == "mimo" and text:
+                if flow.mimo.enabled:
+                    await handle_mimo_amount(db, telegram(bot), bot, lead, flow, text)
+                    return lead.id
+                lead.awaiting = None  # funil mudou e não tem mais mimo: segue o fluxo normal
             if lead.welcome_wait and await resume_welcome(db, bot, lead, flow):
                 return lead.id
             # Off-script free text (a question, an objection): answer with a keyword rule or the
@@ -1150,6 +1263,22 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UU
         await tg.answer_callback(query["id"])
         await send_previews(db, tg, bot, lead, flow)
         return lead.id
+    if data == "gprev":
+        message = query.get("message") or {}
+        if message.get("message_id"):
+            await tg.edit_reply_markup(chat_id, int(message["message_id"]), _drop_button(message.get("reply_markup"), "gprev"))
+        await _start_group_preview(db, tg, bot, lead, flow, query["id"])
+        return lead.id
+    if data == "mimo":
+        await tg.answer_callback(query["id"])
+        if not flow.mimo.enabled:
+            await tg.send_message(lead.chat_id, "Isto não está disponível agora.")
+            return None
+        lead.awaiting = "mimo"
+        prompt = render(flow.mimo.prompt_text, lead, bot=bot)
+        await tg.send_message(lead.chat_id, prompt)
+        log_message(db, bot, lead, "out", "text", text=prompt)
+        return None
     if data.startswith(("rmk:", "rmkb:")):
         from app.bots.campaigns import handle_campaign_tap
 
@@ -1946,6 +2075,21 @@ async def approve_order(
     bot = await db.get(TgBot, order.bot_id)
     lead = await db.get(TgLead, order.lead_id)
     if bot is None or lead is None:
+        return True
+    if order.kind == "mimo":
+        # A mimo is a tip: no delivery, no upsell, and the lead stays wherever they were in
+        # the funnel (their downsell/upsell jobs keep running). Just thank them.
+        await db.execute(update(TgJob).where(TgJob.idempotency_key == f"expire:{order.id}").values(status="cancelled"))
+        tg = telegram(bot)
+        flow = await load_flow(db, bot, lead)
+        if flow and flow.mimo.thanks_text:
+            _set_translate_target(flow, lead)
+            thanks = render(flow.mimo.thanks_text, lead, order.offer_name, order.amount, bot)
+            await tg.send_message(lead.chat_id, thanks)
+            log_message(db, bot, lead, "out", "text", text=thanks)
+        order.delivered_at = utcnow()
+        await db.commit()
+        await notify_sale(db, bot, order)
         return True
     lead.stage = "paid"
     await db.execute(update(TgJob).where(TgJob.idempotency_key == f"expire:{order.id}").values(status="cancelled"))
