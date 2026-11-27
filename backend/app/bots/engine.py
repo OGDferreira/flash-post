@@ -27,12 +27,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bots import atenaspay, smokepay, stripe_gateway
 from app.bots.flow_schema import Block, CustomOffer, Delivery, DownsellStep, FlowDefinition, FollowUp, FollowUpStep, OrderBump, Plan, SmartReplies, SmartReplyRule, UpsellStep
 from app.bots.richtext import sanitize
-from app.bots.telegram import InputFile, TelegramClient, TelegramError, translate_target
+from app.bots.telegram import InputFile, TelegramClient, TelegramError, set_send_rate, translate_target
 from app.partners.service import billing_route
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value
 from app.core.time import BRAZIL_TIME_ZONE
 from app.models import (
+    SystemSetting,
     TgBot,
     TgFlow,
     TgGroup,
@@ -133,6 +134,28 @@ def log_message(
 
 def telegram(bot: TgBot) -> TelegramClient:
     return TelegramClient(decrypt_value(bot.encrypted_token))
+
+
+BOT_SEND_RATE_KEY = "bot_send_rate"
+
+
+async def get_send_rate_setting(db: AsyncSession) -> float:
+    """The live per-bot send rate (msgs/sec): the Super Admin's override if set, else the
+    configured default. 0 = unlimited (throttling off)."""
+    row = await db.get(SystemSetting, BOT_SEND_RATE_KEY)
+    if row is not None and isinstance(row.value, dict) and "rate" in row.value:
+        try:
+            return max(0.0, float(row.value["rate"]))
+        except (TypeError, ValueError):
+            pass
+    return max(0.0, float(get_settings().bot_send_rate))
+
+
+async def refresh_send_rate(db: AsyncSession) -> float:
+    """Push the current send rate into the Telegram client (called each bot tick)."""
+    rate = await get_send_rate_setting(db)
+    set_send_rate(rate)
+    return rate
 
 
 async def send_manual_message(

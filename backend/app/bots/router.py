@@ -18,14 +18,14 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
+from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, SuperAdminUser, require_csrf
 from app.bots import ab_tests, atenaspay, engine, portable, smokepay, stripe_gateway
 from app.bots.flow_schema import FlowDefinition, Offer, UpsellStep, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
-from app.models import TgAbTest, TgBot, TgCampaign, TgFlow, TgFlowFolder, TgFlowFolderItem, TgGroup, TgJob, TgLead, TgMedia, TgMessage, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
+from app.models import SystemSetting, TgAbTest, TgBot, TgCampaign, TgFlow, TgFlowFolder, TgFlowFolderItem, TgGroup, TgJob, TgLead, TgMedia, TgMessage, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, billing_route, flow_offered_to, notify_user, owner_workspace, partner_link, shared_funnel_access
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
@@ -263,6 +263,31 @@ async def bots_config(access: OwnerAccess) -> dict:
         "smokepay_webhook_configured": settings.smokepay_webhook_secret is not None,
         "payment_webhook_url": engine.payment_webhook_url(),
     }
+
+
+class SendRatePayload(BaseModel):
+    # Messages/second per bot; 0 = sem limite (desligado). Capped at Telegram's ~30/s ceiling.
+    rate: Annotated[float, Field(ge=0, le=30)]
+
+
+@router.get("/send-rate")
+async def get_send_rate(_admin: SuperAdminUser, db: DbSession) -> dict:
+    """Current per-bot send rate (fila/rate limit) and the configured default."""
+    return {"rate": await engine.get_send_rate_setting(db), "default": float(get_settings().bot_send_rate)}
+
+
+@router.put("/send-rate", dependencies=csrf)
+async def set_send_rate(payload: SendRatePayload, admin: SuperAdminUser, db: DbSession) -> dict:
+    """Super Admin sets the per-bot send rate live; applied to running bots at once."""
+    value = {"rate": float(payload.rate)}
+    row = await db.get(SystemSetting, engine.BOT_SEND_RATE_KEY)
+    if row is None:
+        db.add(SystemSetting(key=engine.BOT_SEND_RATE_KEY, value=value, updated_by_user_id=admin.id))
+    else:
+        row.value, row.updated_by_user_id = value, admin.id
+    await db.commit()
+    rate = await engine.refresh_send_rate(db)
+    return {"rate": rate}
 
 
 # ---------------------------------------------------------------- bots

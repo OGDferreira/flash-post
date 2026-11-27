@@ -689,3 +689,34 @@ async def test_followup_disabled_schedules_nothing(client, db_session, owner, ap
     bot, _ = await _setup(client, await _login(client))  # follow_up off by default
     await _send(client, db_session, bot["id"], _start())
     assert not list(await db_session.scalars(select(TgJob).where(TgJob.kind == "followup")))
+
+
+async def _login_as(client: AsyncClient, email: str, password: str) -> dict:
+    token = await _csrf(client)
+    resp = await client.post("/api/auth/login", headers={"X-CSRF-Token": token}, json={"email": email, "password": password})
+    assert resp.status_code == 200, resp.text
+    return {"X-CSRF-Token": await _csrf(client)}
+
+
+@pytest.mark.anyio
+async def test_send_rate_setting_is_super_admin_only_and_applies(client, db_session, owner, super_admin, apis) -> None:
+    from app.bots import telegram
+
+    # An ordinary owner cannot read or change it.
+    owner_headers = await _login(client)
+    assert (await client.get("/api/bots/send-rate", headers=owner_headers)).status_code in (401, 403)
+
+    admin_headers = await _login_as(client, "superadmin@example.com", "super admin password")
+    got = await client.get("/api/bots/send-rate", headers=admin_headers)
+    assert got.status_code == 200, got.text
+    assert got.json()["default"] == 25.0  # config default
+
+    # Super Admin sets a new rate: stored and pushed into the live Telegram client.
+    put = await client.put("/api/bots/send-rate", headers=admin_headers, json={"rate": 8})
+    assert put.status_code == 200, put.text
+    assert put.json()["rate"] == 8.0
+    assert telegram.get_send_rate() == 8.0
+
+    # Out-of-range is rejected.
+    assert (await client.put("/api/bots/send-rate", headers=admin_headers, json={"rate": 999})).status_code == 422
+    telegram.set_send_rate(0.0)  # leave throttling off for other tests

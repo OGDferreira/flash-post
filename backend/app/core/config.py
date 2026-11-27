@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # the fixed pool (10) and the Supabase pooler's 15-client cap bound the *connections*, not
     # this number. Raise it to lift publishing throughput (each worker ≈ 90 Reels/hour).
     publication_workers: Annotated[int, Field(ge=1, le=32)] = 16
+    # Default per-bot outbound send rate (messages/second) for the Telegram sales bots, smoothing
+    # bursts to avoid a mass-send ban. 0 = unlimited (off). The Super Admin can override it live in
+    # the panel (system_settings key "bot_send_rate"); this is only the fallback/default.
+    bot_send_rate: Annotated[float, Field(ge=0, le=30)] = 25.0
     # Instagram automations (comment keyword -> reply + DM). Until Meta App Review
     # approves the messaging/comment scopes, this stays off: rules are still saved and
     # webhooks still match them, but the engine only logs what it *would* send
