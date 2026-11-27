@@ -1,6 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import hashlib
 import logging
 import re
+import secrets
 import unicodedata
 import uuid
 from urllib.parse import urlencode
@@ -20,6 +22,7 @@ from app.auth.dependencies import (
 )
 from app.core.config import get_settings
 from app.core.cpf import format_cpf
+from app.core.email import EmailNotConfigured, send_verification_email, send_password_reset_email
 from app.core.nickname import nickname_key, normalize_nickname
 from app.core.rate_limit import LoginRateLimiter
 from app.notifications.signups import notify_new_signup
@@ -28,9 +31,10 @@ from app.instagram.storage import SupabaseStorage, SupabaseStorageError
 from app.partners.service import partner_link
 from app.affiliates.router import find_chief, may_invite_partners, read_invite_terms
 from app.core.time import utc_now
-from app.models import Affiliation, User, Workspace, WorkspaceMember
+from app.models import Affiliation, AuthToken, User, Workspace, WorkspaceMember
 from app.schemas.auth import (
     AuthResponse,
+    ForgotPasswordRequest,
     LoginRequest,
     MessageResponse,
     NicknameAvailabilityResponse,
@@ -38,14 +42,64 @@ from app.schemas.auth import (
     ProfileCompleteRequest,
     ProfileUpdateRequest,
     RegisterRequest,
+    ResendVerificationRequest,
+    ResetPasswordRequest,
     UserResponse,
     PreferencesUpdateRequest,
+    VerifyEmailRequest,
     WorkspaceResponse,
 )
 
 router = APIRouter(prefix="/api", tags=["authentication"])
 logger = logging.getLogger(__name__)
 MAX_PROFILE_AVATAR_BYTES = 5 * 1024 * 1024
+
+_TOKEN_EMAIL_VERIFICATION = "email_verification"
+_TOKEN_PASSWORD_RESET = "password_reset"
+
+
+def _token_hash(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+async def _create_auth_token(db, user_id, token_type: str, ttl_seconds: int) -> str:
+    raw = secrets.token_urlsafe(32)
+    # Invalidate any unused tokens of the same type for this user
+    existing = await db.scalars(
+        select(AuthToken).where(
+            AuthToken.user_id == user_id,
+            AuthToken.token_type == token_type,
+            AuthToken.used_at.is_(None),
+        )
+    )
+    for tok in existing:
+        await db.delete(tok)
+    token = AuthToken(
+        user_id=user_id,
+        token_type=token_type,
+        token_hash=_token_hash(raw),
+        expires_at=utc_now() + timedelta(seconds=ttl_seconds),
+    )
+    db.add(token)
+    await db.flush()
+    return raw
+
+
+async def _consume_auth_token(db, raw: str, token_type: str) -> AuthToken | None:
+    h = _token_hash(raw)
+    token = await db.scalar(
+        select(AuthToken).where(
+            AuthToken.token_hash == h,
+            AuthToken.token_type == token_type,
+            AuthToken.used_at.is_(None),
+        )
+    )
+    if token is None:
+        return None
+    if token.expires_at < utc_now():
+        return None
+    token.used_at = utc_now()
+    return token
 PROFILE_AVATAR_TYPES = {
     "image/jpeg": (".jpg", lambda content: content.startswith(b"\xff\xd8\xff")),
     "image/png": (".png", lambda content: content.startswith(b"\x89PNG\r\n\x1a\n")),
@@ -252,6 +306,16 @@ async def register(
     csrf_token = csrf_token_for(request)
     response = AuthResponse(user=_user_response(user, membership), csrf_token=csrf_token)
     await notify_new_signup(db, user, "conta nova")
+    # Send email verification (best-effort: failure doesn't break registration)
+    settings = get_settings()
+    try:
+        raw_token = await _create_auth_token(
+            db, user.id, _TOKEN_EMAIL_VERIFICATION, settings.email_token_ttl_seconds
+        )
+        await db.commit()
+        await send_verification_email(user.email, user.full_name, raw_token)
+    except Exception:
+        logger.exception("Failed to send verification email to %s", user.email)
     return response
 
 
@@ -284,6 +348,12 @@ async def login(payload: LoginRequest, request: Request, db: DbSession) -> AuthR
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Seu acesso foi bloqueado pelo administrador.",
+        )
+    if not user.is_verified:
+        await limiter.record_failure(rate_key)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="EMAIL_NOT_VERIFIED",
         )
     if not user.is_approved:
         await limiter.record_failure(rate_key)
@@ -647,3 +717,86 @@ async def current_workspace(
         role=access.membership.role,
         created_at=access.workspace.created_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# Email verification
+# ---------------------------------------------------------------------------
+
+@router.post("/auth/verify-email", response_model=MessageResponse)
+async def verify_email(payload: VerifyEmailRequest, db: DbSession) -> MessageResponse:
+    token = await _consume_auth_token(db, payload.token, _TOKEN_EMAIL_VERIFICATION)
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Link inválido ou expirado. Solicite um novo e-mail de verificação.",
+        )
+    user = await db.get(User, token.user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conta não encontrada.")
+    user.is_verified = True
+    await db.commit()
+    return MessageResponse(message="E-mail confirmado com sucesso.")
+
+
+@router.post("/auth/resend-verification", response_model=MessageResponse)
+async def resend_verification(payload: ResendVerificationRequest, db: DbSession) -> MessageResponse:
+    """Always returns 200 to avoid user enumeration."""
+    settings = get_settings()
+    user = await db.scalar(
+        select(User).where(func.lower(User.email) == str(payload.email).lower())
+    )
+    if user is not None and user.is_active and not user.is_verified:
+        try:
+            raw_token = await _create_auth_token(
+                db, user.id, _TOKEN_EMAIL_VERIFICATION, settings.email_token_ttl_seconds
+            )
+            await db.commit()
+            await send_verification_email(user.email, user.full_name, raw_token)
+        except Exception:
+            logger.exception("Failed to resend verification email to %s", user.email)
+    return MessageResponse(message="Se o e-mail estiver cadastrado e não verificado, você receberá o link em breve.")
+
+
+# ---------------------------------------------------------------------------
+# Forgot / reset password
+# ---------------------------------------------------------------------------
+
+@router.post("/auth/forgot-password", response_model=MessageResponse)
+async def forgot_password(payload: ForgotPasswordRequest, db: DbSession) -> MessageResponse:
+    """Always returns 200 to avoid user enumeration."""
+    settings = get_settings()
+    user = await db.scalar(
+        select(User).where(func.lower(User.email) == str(payload.email).lower())
+    )
+    if user is not None and user.is_active and user.is_verified:
+        try:
+            raw_token = await _create_auth_token(
+                db, user.id, _TOKEN_PASSWORD_RESET, settings.password_reset_ttl_seconds
+            )
+            await db.commit()
+            await send_password_reset_email(user.email, user.full_name, raw_token)
+        except Exception:
+            logger.exception("Failed to send password reset email to %s", user.email)
+    return MessageResponse(message="Se o e-mail estiver cadastrado, você receberá o link de redefinição em breve.")
+
+
+@router.post("/auth/reset-password", response_model=MessageResponse)
+async def reset_password(payload: ResetPasswordRequest, db: DbSession) -> MessageResponse:
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="As senhas não coincidem.",
+        )
+    token = await _consume_auth_token(db, payload.token, _TOKEN_PASSWORD_RESET)
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Link inválido ou expirado. Solicite um novo link de redefinição.",
+        )
+    user = await db.get(User, token.user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conta não encontrada.")
+    user.password_hash = hash_password(payload.new_password)
+    await db.commit()
+    return MessageResponse(message="Senha redefinida com sucesso.")

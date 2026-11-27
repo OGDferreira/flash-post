@@ -12,6 +12,8 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { ApiError, apiRequest, type User } from "@/services/api";
 import { claimCache } from "@/lib/queryCache";
 
+const EMAIL_NOT_VERIFIED = "EMAIL_NOT_VERIFIED";
+
 const loginSchema = z.object({
   // The full e-mail or just the text before the @ (unique per account).
   email: z.string().trim().min(1, "Informe seu e-mail ou usuário."),
@@ -23,6 +25,7 @@ type LoginResponse = { user: User; csrf_token: string };
 export function LoginPage() {
   const { user, isLoading } = useAuth();
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [resentVerification, setResentVerification] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const registrationPending =
@@ -64,6 +67,17 @@ export function LoginPage() {
 
   const apiError =
     mutation.error instanceof ApiError ? mutation.error.message : null;
+  const emailNotVerified = apiError === EMAIL_NOT_VERIFIED;
+  const emailForResend = form.watch("email").trim();
+
+  const resendMutation = useMutation({
+    mutationFn: () =>
+      apiRequest<{ message: string }>("/api/auth/resend-verification", {
+        method: "POST",
+        body: { email: emailForResend },
+      }),
+    onSuccess: () => setResentVerification(true),
+  });
 
   return (
     <AuthShell mode="login">
@@ -81,7 +95,7 @@ export function LoginPage() {
                 className="mt-4 rounded-lg border border-line bg-brand-soft px-3.5 py-3 text-sm text-[#c8c8ff]"
                 role="status"
               >
-                Cadastro recebido. Seu acesso será liberado após aprovação do administrador.
+                Conta criada! Verifique seu e-mail para confirmar o cadastro antes de entrar.
               </p>
             )}
           </div>
@@ -144,14 +158,32 @@ export function LoginPage() {
               )}
             </div>
 
-            {apiError && (
+            {emailNotVerified ? (
+              <div className="rounded-lg border border-line bg-brand-soft px-3.5 py-3 text-sm text-[#c8c8ff]" role="alert">
+                {resentVerification ? (
+                  "Novo link enviado. Verifique sua caixa de entrada (e o spam)."
+                ) : (
+                  <>
+                    Confirme seu e-mail antes de entrar. Não recebeu?{" "}
+                    <button
+                      type="button"
+                      onClick={() => resendMutation.mutate()}
+                      disabled={resendMutation.isPending}
+                      className="underline hover:no-underline disabled:opacity-60"
+                    >
+                      {resendMutation.isPending ? "Enviando..." : "Reenviar e-mail"}
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : apiError ? (
               <div
                 className="rounded-lg border border-danger/30 bg-danger-soft px-3.5 py-3 text-sm text-danger"
                 role="alert"
               >
                 {apiError}
               </div>
-            )}
+            ) : null}
 
             <button
               type="submit"
@@ -161,6 +193,11 @@ export function LoginPage() {
               {mutation.isPending && <LoaderCircle size={16} className="animate-spin" />}
               {mutation.isPending ? "Entrando..." : "Entrar"}
             </button>
+            <p className="text-right text-xs text-muted">
+              <Link to="/esqueci-senha" className="text-accent hover:text-white">
+                Esqueci minha senha
+              </Link>
+            </p>
           </form>
           <p className="mt-4 border-t border-line-soft pt-4 sm:mt-6 sm:pt-5 text-xs leading-5 text-muted">
             Ainda não tem uma conta?{" "}
