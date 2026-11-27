@@ -102,3 +102,51 @@ async def test_reconnect_helper_closes_token_events_only(
     await db_session.refresh(send_event)
     assert token_event.status == "resolved"
     assert send_event.status == "pending"  # a send failure is not cleared by reconnecting
+
+
+@pytest.mark.anyio
+async def test_disconnect_notifies_owner_in_app(
+    db_session: AsyncSession, owner
+) -> None:
+    from app.models import AppNotification
+    from app.notifications.account_alerts import notify_account_disconnected
+    from sqlalchemy import select as _select
+
+    _user, workspace = owner
+    account = _active_account(workspace.id, "offline_conta")
+    account.status = "disconnected"
+    db_session.add(account)
+    await db_session.commit()
+
+    await notify_account_disconnected(db_session, account, "token expirado")
+    await db_session.commit()
+
+    notices = list(
+        await db_session.scalars(
+            _select(AppNotification).where(AppNotification.user_id == workspace.owner_id)
+        )
+    )
+    assert any(n.kind == "account_disconnected" for n in notices)
+    notice = next(n for n in notices if n.kind == "account_disconnected")
+    assert "offline_conta" in notice.body
+    assert str(account.id) in (notice.url or "")
+
+
+@pytest.mark.anyio
+async def test_owner_configures_telegram_alert_channel(
+    client: AsyncClient, db_session: AsyncSession, owner
+) -> None:
+    await _login_owner(client)
+    token = await _csrf(client)
+
+    saved = await client.put(
+        "/api/diagnostics/alerts/telegram",
+        headers={"X-CSRF-Token": token},
+        json={"chat_id": 123456789, "bot_id": None},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["chat_id"] == 123456789
+
+    current = await client.get("/api/diagnostics/alerts/telegram")
+    assert current.status_code == 200
+    assert current.json()["chat_id"] == 123456789

@@ -9,6 +9,7 @@ import {
   Link2,
   RefreshCw,
   RotateCcw,
+  Send,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -85,6 +86,155 @@ function categoryLabel(category: string | null): string {
   return categoryLabels[category] ?? category;
 }
 
+type AlertBot = { id: string; name: string; username: string };
+type TelegramAlert = { chat_id: number | null; bot_id: string | null; bots: AlertBot[] };
+
+function TelegramAlertCard() {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [chatId, setChatId] = useState("");
+  const [botId, setBotId] = useState("");
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  const config = useQuery({
+    queryKey: ["diagnostics", "telegram-alert"],
+    queryFn: () => apiRequest<TelegramAlert>("/api/diagnostics/alerts/telegram"),
+    retry: false,
+  });
+
+  if (config.data && !dirty) {
+    const nextChat = config.data.chat_id ? String(config.data.chat_id) : "";
+    const nextBot = config.data.bot_id ?? "";
+    if (nextChat !== chatId) setChatId(nextChat);
+    if (nextBot !== botId) setBotId(nextBot);
+  }
+
+  const save = useMutation({
+    mutationFn: () =>
+      apiRequest<TelegramAlert>("/api/diagnostics/alerts/telegram", {
+        method: "PUT",
+        body: {
+          chat_id: chatId.trim() ? Number(chatId.trim()) : null,
+          bot_id: botId || null,
+        },
+      }),
+    onSuccess: () => {
+      setDirty(false);
+      setFeedback({ ok: true, text: "Salvo." });
+      queryClient.invalidateQueries({ queryKey: ["diagnostics", "telegram-alert"] });
+    },
+    onError: () => setFeedback({ ok: false, text: "Não foi possível salvar." }),
+  });
+
+  const test = useMutation({
+    mutationFn: () =>
+      apiRequest<{ sent: boolean }>("/api/diagnostics/alerts/telegram/test", {
+        method: "POST",
+        body: {},
+      }),
+    onSuccess: () => setFeedback({ ok: true, text: "Mensagem de teste enviada." }),
+    onError: (err: unknown) =>
+      setFeedback({
+        ok: false,
+        text: err instanceof Error ? err.message : "Falha ao enviar o teste.",
+      }),
+  });
+
+  const bots = config.data?.bots ?? [];
+
+  return (
+    <section className="rounded-xl border border-line bg-surface">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 p-4 text-left"
+      >
+        {open ? (
+          <ChevronDown className="size-4 text-muted" />
+        ) : (
+          <ChevronRight className="size-4 text-muted" />
+        )}
+        <Send className="size-4 text-muted" />
+        <div className="flex-1">
+          <p className="font-medium text-fg-1">Avisos no Telegram</p>
+          <p className="text-xs text-muted">
+            Receba uma mensagem quando uma conta sair do ar.
+            {config.data?.chat_id ? " Ligado." : " Opcional."}
+          </p>
+        </div>
+      </button>
+      {open && (
+        <div className="space-y-3 border-t border-line px-4 pb-4 pt-3 text-sm">
+          <p className="text-xs text-muted">
+            Inicie uma conversa com o bot no Telegram e descubra seu chat ID (ex.: envie
+            /start para @userinfobot). Cole o número abaixo.
+          </p>
+          <label className="block">
+            <span className="text-xs text-fg-2">Chat ID</span>
+            <input
+              value={chatId}
+              onChange={(e) => {
+                setChatId(e.target.value.replace(/[^0-9-]/g, ""));
+                setDirty(true);
+                setFeedback(null);
+              }}
+              inputMode="numeric"
+              placeholder="123456789"
+              className="mt-1 w-full rounded-lg border border-line bg-surface-raised px-3 py-2 text-fg-1 outline-none focus:border-brand"
+            />
+          </label>
+          {bots.length > 0 && (
+            <label className="block">
+              <span className="text-xs text-fg-2">Bot que envia</span>
+              <select
+                value={botId}
+                onChange={(e) => {
+                  setBotId(e.target.value);
+                  setDirty(true);
+                  setFeedback(null);
+                }}
+                className="mt-1 w-full rounded-lg border border-line bg-surface-raised px-3 py-2 text-fg-1 outline-none focus:border-brand"
+              >
+                <option value="">Automático (primeiro bot ativo)</option>
+                {bots.map((bot) => (
+                  <option key={bot.id} value={bot.id}>
+                    {bot.name} (@{bot.username})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => save.mutate()}
+              disabled={save.isPending}
+              className="rounded-lg border border-brand px-3 py-1.5 text-xs text-white hover:bg-well disabled:opacity-60"
+            >
+              Salvar
+            </button>
+            <button
+              type="button"
+              onClick={() => test.mutate()}
+              disabled={test.isPending || !config.data?.chat_id || dirty}
+              className="flex items-center gap-1 rounded-lg border border-line px-3 py-1.5 text-xs text-fg-2 hover:text-white disabled:opacity-50"
+              title={dirty ? "Salve antes de testar" : undefined}
+            >
+              <Send className="size-3" /> Enviar teste
+            </button>
+            {feedback && (
+              <span className={`text-xs ${feedback.ok ? "text-success" : "text-danger"}`}>
+                {feedback.text}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function BotHealthPage() {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -151,6 +301,8 @@ export function BotHealthPage() {
           </button>
         </div>
       </header>
+
+      <TelegramAlertCard />
 
       {data.loops.length > 0 && (
         <section className="space-y-2">
