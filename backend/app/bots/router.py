@@ -91,6 +91,10 @@ def _bot_out(bot: TgBot, stats: dict | None = None) -> dict:
         "is_active": bot.is_active,
         "status": bot.status,
         "last_error": bot.last_error,
+        "scheduled_activate_at": bot.scheduled_activate_at.isoformat() if bot.scheduled_activate_at else None,
+        "scheduled_deactivate_at": bot.scheduled_deactivate_at.isoformat() if bot.scheduled_deactivate_at else None,
+        "auto_deactivate_after_sales": bot.auto_deactivate_after_sales,
+        "schedule_activated_at": bot.schedule_activated_at.isoformat() if bot.schedule_activated_at else None,
         "created_at": bot.created_at.isoformat() if bot.created_at else None,
         "hidden_by_admin": bool(bot.hidden_by_admin),
         # Taken over by the Super Admin from this user's operation (only the Super Admin sees it).
@@ -417,6 +421,54 @@ async def update_bot(bot_id: uuid.UUID, payload: BotUpdate, access: OwnerAccess,
         bot.is_active = payload.is_active
     if warm or (bot.cache_chat_id and (payload.flow_id or payload.clear_flow)):
         await _schedule_cache_warm(db, bot)
+    await db.commit()
+    return _bot_out(bot)
+
+
+class BotScheduleUpdate(BaseModel):
+    # Hold the funnel "aguardando" until this time, then auto-activate. None = no scheduled start.
+    activate_at: datetime | None = None
+    # Auto turn off at this time. None = no scheduled stop.
+    deactivate_at: datetime | None = None
+    # Auto turn off once this many paid sales land after activation. None = no sales cap.
+    deactivate_after_sales: int | None = Field(default=None, ge=1, le=1_000_000)
+
+
+@router.put("/{bot_id}/schedule", dependencies=csrf)
+async def set_bot_schedule(
+    bot_id: uuid.UUID, payload: BotScheduleUpdate, access: OwnerAccess, db: DbSession
+) -> dict:
+    """Schedule a funnel launch: hold it until a time, then auto-activate; auto turn it off
+    at a time or after N sales. Passing all-empty clears the schedule."""
+    bot = await _owned(db, TgBot, bot_id, access)
+    now = utc_now()
+
+    def _as_utc(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    activate_at = _as_utc(payload.activate_at)
+    deactivate_at = _as_utc(payload.deactivate_at)
+    if activate_at and deactivate_at and deactivate_at <= activate_at:
+        raise HTTPException(status_code=422, detail="O horário de desativar deve ser depois do de ativar.")
+    if deactivate_at and deactivate_at <= now and payload.deactivate_after_sales is None and not activate_at:
+        raise HTTPException(status_code=422, detail="O horário de desativar já passou.")
+
+    if activate_at and activate_at > now:
+        # Future launch: hold the bot inactive ("aguardando") until then.
+        bot.scheduled_activate_at = activate_at
+        bot.is_active = False
+        bot.schedule_activated_at = None
+    else:
+        # No future start: clear any pending start. If a stop/target is set on an already
+        # running bot, mark the activation moment now so the sales count starts here.
+        bot.scheduled_activate_at = None
+        if (deactivate_at or payload.deactivate_after_sales) and bot.is_active:
+            bot.schedule_activated_at = now
+
+    bot.scheduled_deactivate_at = deactivate_at
+    bot.auto_deactivate_after_sales = payload.deactivate_after_sales
     await db.commit()
     return _bot_out(bot)
 
