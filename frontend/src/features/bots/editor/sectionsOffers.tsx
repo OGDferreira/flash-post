@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Copy, CreditCard, Eye, Gift, MessageSquare, Plus, QrCode, RefreshCw, ShieldCheck, ShoppingCart, Timer, Trash2, TrendingDown, TrendingUp, Truck } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
-import { brl, emptyBump, emptyDelivery, emptyFollowUp, emptyGroupPreview, emptyMimo, emptyPreviews, emptySmartReplies, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type FollowUpStep, type Plan, type SmartReplyRule, type SmartThen, type UpsellStep } from "../types";
+import { brl, emptyBump, emptyDelivery, emptyFollowUp, emptyGroupPreview, emptyMimo, emptyPaymentRecovery, emptyPreviews, emptySmartReplies, type CustomOffer, type Delivery, type DownsellStep, type FlowDefinition, type FollowUpStep, type PaymentRecovery, type Plan, type SmartReplyRule, type SmartThen, type UpsellStep } from "../types";
 import { BumpEditor, DeliveryEditor, useBotGroups } from "./DeliveryEditor";
 import { MediaGrid } from "./MediaGrid";
 import { FontMenu, toFancy } from "./fancyFonts";
@@ -1218,7 +1218,64 @@ export function PaymentSection({ draft, set }: SectionProps) {
       <Field label="Resposta ao “Já paguei” sem pagamento">
         <input className="field" maxLength={200} value={payment.pending_text} onChange={(event) => setPayment({ pending_text: event.target.value })} />
       </Field>
+      <PaymentRecoveryBlock draft={draft} set={set} vars={vars} />
     </Panel>
+  );
+}
+
+/** Behavioural trigger: generated a Pix but did not pay within X minutes -> one recovery message
+ *  (reminder / objection answered / fresh Pix link), sent automatically. */
+function PaymentRecoveryBlock({ draft, set, vars }: Pick<SectionProps, "draft" | "set"> & { vars: string[] }) {
+  const recovery: PaymentRecovery = draft.payment_recovery ?? emptyPaymentRecovery();
+  const setRecovery = (patch: Partial<PaymentRecovery>) => set({ payment_recovery: { ...recovery, ...patch } });
+  return (
+    <div className="space-y-2 rounded-xl border border-line-soft p-3">
+      <Switch
+        checked={!!recovery.enabled}
+        label="Recuperação automática (gerou Pix e não pagou)"
+        onChange={(enabled) => set({ payment_recovery: { ...emptyPaymentRecovery(), ...recovery, enabled } })}
+      />
+      <p className="text-xs text-muted">
+        Se o lead gera o Pix e não paga, o bot manda sozinho uma mensagem de recuperação depois do tempo abaixo — um lembrete, uma objeção respondida ou um novo link de pagamento.
+      </p>
+      {recovery.enabled && (
+        <div className="space-y-2">
+          <Field label="Esperar quantos minutos após gerar o Pix">
+            <input
+              className="field"
+              type="number"
+              min={1}
+              max={1440}
+              value={recovery.delay_minutes}
+              onChange={(event) => setRecovery({ delay_minutes: Math.min(1440, Math.max(1, Number(event.target.value) || 15)) })}
+            />
+          </Field>
+          <MediaGrid
+            kinds={["photo", "video"]}
+            max={3}
+            title="Mídia da mensagem (opcional)"
+            value={recovery.media_ids ?? []}
+            onChange={(media_ids) => setRecovery({ media_ids })}
+          />
+          {(recovery.media_ids?.length ?? 0) > 0 && (
+            <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
+              <span>Borrar a mídia (spoiler)</span>
+              <Switch checked={!!recovery.spoiler} label="Borrar a mídia" onChange={(spoiler) => setRecovery({ spoiler })} />
+            </label>
+          )}
+          <RichTextEditor label="Mensagem de recuperação" rows={3} value={recovery.text} variables={vars} onChange={(text) => setRecovery({ text })} />
+          <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
+            <span>Botão “gerar novo Pix”</span>
+            <Switch checked={!!recovery.new_pix_button} label="Botão gerar novo Pix" onChange={(new_pix_button) => setRecovery({ new_pix_button })} />
+          </label>
+          {recovery.new_pix_button && (
+            <Field label="Texto do botão">
+              <input className="field" maxLength={64} value={recovery.button_label} onChange={(event) => setRecovery({ button_label: event.target.value })} />
+            </Field>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

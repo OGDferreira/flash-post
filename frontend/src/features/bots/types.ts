@@ -175,6 +175,28 @@ export function emptyMimo(): Mimo {
   };
 }
 
+export type PaymentRecovery = {
+  enabled: boolean;
+  delay_minutes: number;
+  text: string;
+  media_ids: string[];
+  spoiler: boolean;
+  new_pix_button: boolean;
+  button_label: string;
+};
+
+export function emptyPaymentRecovery(): PaymentRecovery {
+  return {
+    enabled: false,
+    delay_minutes: 15,
+    text: "Vi que você gerou o Pix mas ainda não finalizou 👀\nQualquer dúvida é só me chamar. Quer que eu gere um novo Pix pra você?",
+    media_ids: [],
+    spoiler: false,
+    new_pix_button: true,
+    button_label: "💠 Gerar um novo Pix",
+  };
+}
+
 export type SmartThen = "none" | "plans" | "offer";
 
 export type SmartReplyRule = {
@@ -258,6 +280,8 @@ export type FlowDefinition = {
     intro_media_ids?: string[];
     intro_spoiler?: boolean;
   };
+  /** Behavioural trigger: generated a Pix but did not pay within delay_minutes -> recovery nudge. */
+  payment_recovery?: PaymentRecovery;
   default_delivery?: Delivery | null;
   order_bump?: OrderBump | null;
   upsells: UpsellStep[];
