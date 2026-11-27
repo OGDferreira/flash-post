@@ -83,6 +83,10 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             MilestoneNotification,
             AccountFollowerMilestone,
             SharkEvent,
+            PlatformLiberationCode,
+            PlatformRetentionCoupon,
+            PlatformSubscription,
+            PlatformSubscriptionCharge,
             SmokepayOperation,
             SystemSetting,
             TgBot,
@@ -130,6 +134,10 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await connection.execute(delete(InstagramAccount))
         await connection.execute(delete(InstagramProfileFolder))
         await connection.execute(delete(InstagramAppCredential))
+        await connection.execute(delete(PlatformSubscriptionCharge))
+        await connection.execute(delete(PlatformRetentionCoupon))
+        await connection.execute(delete(PlatformSubscription))
+        await connection.execute(delete(PlatformLiberationCode))
         await connection.execute(delete(WorkspaceMember))
         await connection.execute(delete(SystemSetting))
         await connection.execute(delete(Workspace))

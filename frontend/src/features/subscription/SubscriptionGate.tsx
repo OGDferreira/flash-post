@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, LoaderCircle } from "lucide-react";
+import { Copy, LoaderCircle, TicketPercent } from "lucide-react";
 
 import { Modal } from "@/components/ui/Modal";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ApiError, apiRequest } from "@/services/api";
 
 type Plan = { id: string; code: string; name: string; price: string; period_days: number };
+type Coupon = { percent: string; expires_at: string | null };
 type Access = {
   required: boolean;
   active: boolean;
@@ -14,10 +15,22 @@ type Access = {
   until: string | null;
   in_trial: boolean;
   plans: Plan[];
+  coupon: Coupon | null;
 };
-type Charge = { id: string; status: string; amount: string; pix_copy_paste: string | null; due_at: string | null };
+type Charge = {
+  id: string; status: string; amount: string; pix_copy_paste: string | null; due_at: string | null;
+  discount_percent?: string | null;
+};
+type CancelIntent = { offered: boolean; coupon: Coupon | null };
 
-const brl = (value: string) => Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const brl = (value: string | number) => Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+/** Plan price with the retention coupon applied (floor of R$ 1,00), for display only. */
+function discounted(price: string, percent: string): number {
+  const base = Number(price);
+  const off = (base * Number(percent)) / 100;
+  return Math.max(1, Math.round((base - off) * 100) / 100);
+}
 
 /** Paywall for operation owners whose trial/paid window has ended. Blocking: the
  *  app isn't usable until a plan is paid (PIX) or a liberation code is redeemed.
@@ -52,6 +65,19 @@ export function SubscriptionGate() {
     },
   });
 
+  // Anti-churn: the owner signals they want to cancel; the API offers a retention coupon
+  // (when the Super Admin turned it on) that auto-applies at checkout.
+  const cancelIntent = useMutation({
+    mutationFn: () => apiRequest<CancelIntent>("/api/subscription/cancel-intent", { method: "POST" }),
+    onSuccess: (data) => {
+      if (data.coupon) {
+        cache.setQueryData(["subscription", "me"], (prev: Access | undefined) =>
+          prev ? { ...prev, coupon: data.coupon } : prev,
+        );
+      }
+    },
+  });
+
   // Poll the charge while it's pending; when it clears, drop the paywall.
   const pending = charge && charge.status === "pending";
   const poll = useQuery({
@@ -72,6 +98,10 @@ export function SubscriptionGate() {
 
   const redeemError = redeem.error instanceof ApiError ? redeem.error.message : null;
   const checkoutError = checkout.error instanceof ApiError ? checkout.error.message : null;
+  const coupon = access.data.coupon;
+  const couponUntil = coupon?.expires_at
+    ? new Date(coupon.expires_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
+    : null;
 
   return (
     <Modal
@@ -84,8 +114,9 @@ export function SubscriptionGate() {
       {charge?.pix_copy_paste ? (
         <div className="space-y-3">
           <p className="text-sm text-fg-2">
-            Pague o PIX de <strong className="text-fg">{brl(charge.amount)}</strong> abaixo. A liberação é automática
-            assim que o pagamento cair.
+            Pague o PIX de <strong className="text-fg">{brl(charge.amount)}</strong>
+            {charge.discount_percent ? ` (com ${Math.round(Number(charge.discount_percent))}% de desconto)` : ""} abaixo.
+            A liberação é automática assim que o pagamento cair.
           </p>
           <div className="rounded-lg border border-line bg-surface-inset p-3">
             <p className="break-all font-mono text-xs text-fg-2">{charge.pix_copy_paste}</p>
@@ -106,6 +137,19 @@ export function SubscriptionGate() {
         </div>
       ) : (
         <div className="space-y-3">
+          {coupon && (
+            <div className="flex items-start gap-2.5 rounded-lg border border-brand/40 bg-brand/10 px-4 py-3">
+              <TicketPercent size={18} className="mt-0.5 shrink-0 text-brand" />
+              <div>
+                <p className="text-sm font-semibold text-fg">
+                  Desconto de {Math.round(Number(coupon.percent))}% pra você continuar
+                </p>
+                <p className="text-xs text-muted">
+                  Já aplicado no PIX de qualquer plano abaixo{couponUntil ? ` · válido até ${couponUntil}` : ""}.
+                </p>
+              </div>
+            </div>
+          )}
           <div className="grid gap-2">
             {access.data.plans.map((plan) => (
               <button
@@ -119,13 +163,32 @@ export function SubscriptionGate() {
                   <span className="block text-sm font-semibold text-fg">{plan.name}</span>
                   <span className="block text-xs text-muted">a cada {plan.period_days} dias</span>
                 </span>
-                <span className="text-sm font-semibold text-brand">{brl(plan.price)}</span>
+                {coupon ? (
+                  <span className="text-right">
+                    <span className="block text-xs text-muted line-through">{brl(plan.price)}</span>
+                    <span className="block text-sm font-semibold text-brand">
+                      {brl(discounted(plan.price, coupon.percent))}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-sm font-semibold text-brand">{brl(plan.price)}</span>
+                )}
               </button>
             ))}
             {access.data.plans.length === 0 && (
               <p className="text-sm text-muted">Nenhum plano disponível no momento. Fale com o suporte.</p>
             )}
           </div>
+          {!coupon && (
+            <button
+              type="button"
+              disabled={cancelIntent.isPending}
+              onClick={() => cancelIntent.mutate()}
+              className="w-full text-xs text-muted underline-offset-2 hover:text-fg-2 hover:underline disabled:opacity-60"
+            >
+              {cancelIntent.isPending ? "..." : "Pensando em não continuar? Veja uma oferta antes de sair"}
+            </button>
+          )}
           {checkoutError && <p className="text-xs text-danger" role="alert">{checkoutError}</p>}
 
           <div className="border-t border-line-soft pt-3">

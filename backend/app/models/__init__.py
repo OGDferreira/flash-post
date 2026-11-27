@@ -60,6 +60,7 @@ from app.models.bot_partner import BotPartner, BotPartnerSale, BotPartnerPayout
 from app.models.platform_subscription import (
     PlatformLiberationCode,
     PlatformPlan,
+    PlatformRetentionCoupon,
     PlatformSubscription,
     PlatformSubscriptionCharge,
 )
@@ -118,6 +119,7 @@ __all__ = [
     "PlatformSubscription",
     "PlatformSubscriptionCharge",
     "PlatformLiberationCode",
+    "PlatformRetentionCoupon",
     "InstagramAccountDailyViews",
     "SharkAccount",
     "SupportTicket",
