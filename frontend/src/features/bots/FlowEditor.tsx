@@ -149,7 +149,7 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   const [bottomPicker, setBottomPicker] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const top = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
