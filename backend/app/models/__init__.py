@@ -36,6 +36,7 @@ from app.models.instagram_loop import (
     InstagramPublicationJob,
     SharkEvent,
 )
+from app.models.auth_token import AuthToken
 from app.models.user import User
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.affiliation import Affiliation
@@ -94,6 +95,7 @@ __all__ = [
     "TgFlowImportCode",
     "TgFlowShare",
     "TgGatewaySetting",
+    "AuthToken",
     "AdminAuditLog",
     "AppNotification",
     "TgAbTest",

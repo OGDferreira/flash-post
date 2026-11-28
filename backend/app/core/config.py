@@ -84,6 +84,16 @@ class Settings(BaseSettings):
     registration_window_seconds: Annotated[int, Field(ge=60, le=86400)] = 3600
     nickname_check_max_attempts: Annotated[int, Field(ge=10, le=200)] = 60
     nickname_check_window_seconds: Annotated[int, Field(ge=60, le=3600)] = 900
+    # Transactional email (Hostinger SMTP noreply@flashpost.tech).
+    # SMTP_HOST defaults to Hostinger's standard; override via env if needed.
+    smtp_host: str = "smtp.hostinger.com"
+    smtp_port: int = 465
+    smtp_user: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from_name: str = "FlashPost"
+    # Token expiry for email verification and password reset links (seconds).
+    email_token_ttl_seconds: int = 86400  # 24h for verification
+    password_reset_ttl_seconds: int = 3600  # 1h for reset
 
     model_config = SettingsConfigDict(
         case_sensitive=False,
@@ -105,6 +115,7 @@ class Settings(BaseSettings):
         "atenaspay_webhook_secret",
         "stripe_secret_key",
         "stripe_webhook_secret",
+        "smtp_password",
         mode="before",
     )
     @classmethod

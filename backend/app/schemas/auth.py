@@ -176,3 +176,21 @@ class PasswordChangeRequest(BaseModel):
     current_password: Annotated[str, Field(min_length=1, max_length=256)]
     new_password: Annotated[str, Field(min_length=8, max_length=256)]
     confirm_password: Annotated[str, Field(min_length=8, max_length=256)]
+
+
+class VerifyEmailRequest(BaseModel):
+    token: Annotated[str, Field(min_length=1, max_length=200)]
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: Annotated[str, Field(min_length=1, max_length=200)]
+    new_password: Annotated[str, Field(min_length=8, max_length=256)]
+    confirm_password: Annotated[str, Field(min_length=8, max_length=256)]

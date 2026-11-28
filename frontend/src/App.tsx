@@ -23,6 +23,9 @@ import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { welcomeLabel } from "@/features/auth/welcomeName";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
+import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
+import { ResetPasswordPage } from "@/features/auth/ResetPasswordPage";
+import { VerifyEmailPage } from "@/features/auth/VerifyEmailPage";
 import { usePartnerMe } from "@/features/partners/api";
 import { AppShell } from "@/layouts/AppShell";
 import { FeaturePlaceholderPage } from "@/pages/FeaturePlaceholderPage";
@@ -88,6 +91,9 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/esqueci-senha" element={<ForgotPasswordPage />} />
+          <Route path="/redefinir-senha" element={<ResetPasswordPage />} />
+          <Route path="/verificar-email" element={<VerifyEmailPage />} />
           <Route path="/convite/:token" element={<CollaboratorInvitePage />} />
           <Route element={<RequireAuth />}>
             <Route element={<RequireWorkspaceUser />}>
