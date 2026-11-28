@@ -1270,9 +1270,22 @@ export function PaymentSection({ draft, set }: SectionProps) {
           <input className="field" maxLength={64} value={payment.check_button} onChange={(event) => setPayment({ check_button: event.target.value })} />
         </Field>
       </div>
-      <Field label="Resposta ao “Já paguei” sem pagamento">
-        <input className="field" maxLength={200} value={payment.pending_text} onChange={(event) => setPayment({ pending_text: event.target.value })} />
+      <Field label=”Resposta ao “Já paguei” sem pagamento”>
+        <input className=”field” maxLength={200} value={payment.pending_text} onChange={(event) => setPayment({ pending_text: event.target.value })} />
       </Field>
+      <MediaGrid
+        kinds={[“photo”, “video”]}
+        max={3}
+        title=”Imagem ao clicar em “Já paguei” (opcional)”
+        value={payment.pending_media_ids ?? []}
+        onChange={(pending_media_ids) => setPayment({ pending_media_ids })}
+      />
+      {(payment.pending_media_ids?.length ?? 0) > 0 && (
+        <label className=”flex items-center justify-between gap-3 text-sm text-fg-2”>
+          <span>Borrar a mídia (spoiler)</span>
+          <Switch checked={!!payment.pending_spoiler} label=”Borrar a mídia” onChange={(pending_spoiler) => setPayment({ pending_spoiler })} />
+        </label>
+      )}
       <PaymentRecoveryBlock draft={draft} set={set} vars={vars} />
     </Panel>
   );
