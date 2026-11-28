@@ -171,7 +171,7 @@ function IgExtensionTab() {
 
   const saveConfig = useMutation({
     mutationFn: () => apiRequest<IgExtensionConfig>("/api/ig-extension", { method: "PUT", body: { ...(data ?? {}), ...form } }),
-    onSuccess: (d) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["ig-extension"] });
       setForm({});
       setConfigSuccess(true);
@@ -209,7 +209,7 @@ function IgExtensionTab() {
   if (cfg.error) return <ErrorState message={errorText(cfg.error)} onRetry={() => void cfg.refetch()} />;
 
   const sx = (k: "sticker_x" | "sticker_y") => ((k in form ? form[k] : data?.[k]) as number | null) ?? 0.5;
-  const ss = ((("sticker_size" in form ? form.sticker_size : data?.sticker_size) as number | null) ?? 0.4);
+  const ss = (((("sticker_size" in form ? form.sticker_size : data?.sticker_size) as number | null) ?? 0.4));
 
   return (
     <div className="space-y-6">
@@ -345,7 +345,7 @@ function IgExtensionTab() {
                   transition: "all 0.2s",
                 }}
               >
-                {(("sticker_text" in form ? form.sticker_text : data?.sticker_text) as string | null) ?? "Link"}
+                {((("sticker_text" in form ? form.sticker_text : data?.sticker_text) as string | null) ?? "Link")}
               </div>
             </div>
           </fieldset>

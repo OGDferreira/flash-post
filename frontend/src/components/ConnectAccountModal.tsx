@@ -68,9 +68,9 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
   const appList = apps.data?.apps ?? [];
   const platform = apps.data?.platform;
   const platformReady = Boolean(platform?.available && !platform.blocked);
-  // With nothing to pick (platform app and no own apps) go straight to the Instagram (one tap).
-  // When there are own apps too, we show the picker so the user chooses which app to use.
-  const direct = platformReady && appList.length === 0;
+  // With platform preferred OR no own apps, go straight to Instagram (one tap).
+  const platformPreferred = (() => { try { return localStorage.getItem('flashpost_platform_preferred') === 'true'; } catch { return false; } })();
+  const direct = platformReady && (platformPreferred || appList.length === 0);
   const started = useRef(false);
   useEffect(() => {
     if (!direct || started.current) return;
@@ -259,9 +259,9 @@ export function useConnectInstagram(returnTo: ConnectAppsPanelProps["returnTo"],
     onError: openPicker, // the picker shows the error and the other ways to connect
   });
   const platform = apps.data?.platform;
-  // One-tap only when the platform app is the single option; with own apps too, open the picker
-  // so the user chooses between the FlashPost app and their own.
-  const direct = Boolean(platform?.available && !platform.blocked) && (apps.data?.apps.length ?? 0) === 0;
+  // Direct when platform preferred (localStorage) or no own apps registered.
+  const platformPreferred = (() => { try { return localStorage.getItem('flashpost_platform_preferred') === 'true'; } catch { return false; } })();
+  const direct = Boolean(platform?.available && !platform.blocked) && (platformPreferred || (apps.data?.apps.length ?? 0) === 0);
   return {
     start: () => (direct ? connect.mutate() : openPicker()),
     // Stays busy while the browser leaves for the Instagram.
