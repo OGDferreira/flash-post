@@ -182,7 +182,7 @@ function IgExtensionTab() {
   });
 
   const savePassword = useMutation({
-    mutationFn: () => apiRequest<IgExtensionConfig>("/api/ig-extension/password", { method: "POST", body: { password } }),
+    mutationFn: () => apiRequest<IgExtensionConfig>("/api/ig-extension/password", { method: "POST", body: { pin: password } }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["ig-extension"] });
       setPassword("");
@@ -193,7 +193,7 @@ function IgExtensionTab() {
 
   const submitPwd = (e: FormEvent) => {
     e.preventDefault();
-    if (password.length < 6) return setPwdError("A senha deve ter pelo menos 6 caracteres.");
+    if (!/^\d{4}$/.test(password)) return setPwdError("O PIN deve ter exatamente 4 dígitos numéricos.");
     setPwdError(null);
     savePassword.mutate();
   };
@@ -213,36 +213,38 @@ function IgExtensionTab() {
 
   return (
     <div className="space-y-6">
-      {/* Password section */}
+      {/* PIN section */}
       <section className="glass-panel space-y-3 p-4">
         <h3 className="flex items-center gap-2 font-medium text-fg">
           <KeyRound size={16} className="text-accent" />
-          {data?.has_password ? "Alterar senha da extensão" : "Criar senha da extensão"}
+          {data?.has_password ? "Alterar PIN da extensão" : "Criar PIN da extensão"}
         </h3>
         <p className="text-sm text-muted">
           {data?.has_password
-            ? "Digite uma nova senha para substituir a atual."
-            : "Crie uma senha para liberar o uso da extensão FlashPost no navegador."}
+            ? "Digite um novo PIN de 4 dígitos para substituir o atual."
+            : "Crie um PIN de 4 dígitos para liberar o uso da extensão FlashPost no navegador."}
         </p>
         <form className="flex flex-wrap items-end gap-3" onSubmit={submitPwd}>
           <label className="block text-sm">
-            <span className="mb-1 block text-fg-2">Nova senha (mín. 6 caracteres)</span>
+            <span className="mb-1 block text-fg-2">PIN (4 dígitos)</span>
             <input
-              className="field w-56"
-              maxLength={128}
-              minLength={6}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              className="field w-32 text-center tracking-widest text-lg"
+              inputMode="numeric"
+              maxLength={4}
+              minLength={4}
+              onChange={(e) => setPassword(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              pattern="\d{4}"
+              placeholder="••••"
               type="password"
               value={password}
             />
           </label>
           <button className="btn-primary" disabled={savePassword.isPending} type="submit">
-            {savePassword.isPending ? "Salvando…" : data?.has_password ? "Alterar senha" : "Criar senha"}
+            {savePassword.isPending ? "Salvando…" : data?.has_password ? "Alterar PIN" : "Criar PIN"}
           </button>
         </form>
         {pwdError && <p className="text-xs text-danger" role="alert">{pwdError}</p>}
-        {savePassword.isSuccess && <p className="text-xs text-green-400">Senha atualizada. Um novo token foi gerado para a extensão.</p>}
+        {savePassword.isSuccess && <p className="text-xs text-green-400">PIN atualizado. Um novo token foi gerado para a extensão.</p>}
       </section>
 
       {/* Download section */}
@@ -251,9 +253,18 @@ function IgExtensionTab() {
         <p className="text-sm text-muted">
           Instale no Chrome: baixe o ZIP, descompacte e carregue em <strong>chrome://extensions</strong> com o modo desenvolvedor ativado.
         </p>
-        <a className="btn-primary inline-flex items-center gap-2" download href="/api/ig-extension/download">
-          <Download size={15} /> Baixar FlashPost IG (.zip)
-        </a>
+        <div className="flex flex-col gap-2">
+          <a className="btn-primary inline-flex items-center gap-2 justify-center" download href="/api/ig-extension/download-with-token">
+            <Download size={15} /> Baixar com credencial <span className="text-xs opacity-70">(sem PIN)</span>
+          </a>
+          <a className="btn-secondary inline-flex items-center gap-2 justify-center text-sm" download href="/api/ig-extension/download">
+            <Download size={14} /> Baixar sem credencial <span className="text-xs opacity-60">(pede PIN ao abrir)</span>
+          </a>
+        </div>
+        <p className="text-xs text-muted">
+          <strong>Com credencial</strong>: abre direto, sem PIN. Ideal para uso pessoal.
+          &nbsp;·&nbsp;<strong>Sem credencial</strong>: genérico, pede o PIN de 4 dígitos na primeira abertura.
+        </p>
       </section>
 
       {/* Config section */}

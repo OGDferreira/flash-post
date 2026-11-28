@@ -1,20 +1,22 @@
-"""IG Extension — per-workspace password auth and profile config for the FlashPost Chrome extension."""
+"""IG Extension — per-workspace PIN auth and profile config for the FlashPost Chrome extension."""
 
+import io
 import secrets
 import uuid
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
-from sqlalchemy import func as sa_func, select
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import DbSession, OwnerAccess, require_csrf
 from app.core.database import get_db
 from app.core.security import hash_password, verify_password
-from app.models import IgExtensionConfig, User, WorkspaceMember
+from app.models import IgExtensionConfig
 
 _EXTENSION_ZIP = Path(__file__).parent.parent.parent.parent / "extensions" / "flashpost-ig-extension.zip"
 
@@ -23,8 +25,15 @@ router = APIRouter(prefix="/api/ig-extension", tags=["IG Extension"])
 # ─── Schemas ───────────────────────────────────────────────────────────────────
 
 
-class PasswordPayload(BaseModel):
-    password: str = Field(min_length=6, max_length=128)
+class PinPayload(BaseModel):
+    pin: str = Field(min_length=4, max_length=4)
+
+    @field_validator("pin")
+    @classmethod
+    def digits_only(cls, v: str) -> str:
+        if not v.isdigit():
+            raise ValueError("PIN deve conter apenas dígitos.")
+        return v
 
 
 class ConfigPayload(BaseModel):
@@ -60,8 +69,14 @@ class ConfigResponse(BaseModel):
 
 
 class AuthPayload(BaseModel):
-    email: str = Field(max_length=320)
-    password: str = Field(max_length=128)
+    pin: str = Field(min_length=4, max_length=4)
+
+    @field_validator("pin")
+    @classmethod
+    def digits_only(cls, v: str) -> str:
+        if not v.isdigit():
+            raise ValueError("PIN deve conter apenas dígitos.")
+        return v
 
 
 class AuthResponse(BaseModel):
@@ -143,10 +158,10 @@ async def put_config_platform(
     dependencies=[Depends(require_csrf)],
 )
 async def set_extension_password(
-    payload: PasswordPayload, access: OwnerAccess, db: DbSession
+    payload: PinPayload, access: OwnerAccess, db: DbSession
 ) -> ConfigResponse:
     item = await _get_or_create(db, access.workspace.id)
-    item.password_hash = hash_password(payload.password)
+    item.password_hash = hash_password(payload.pin)
     item.config_token = secrets.token_urlsafe(32)
     await db.commit()
     await db.refresh(item)
@@ -164,48 +179,75 @@ async def download_extension(access: OwnerAccess) -> FileResponse:
     )
 
 
+@router.get("/download-with-token")
+async def download_extension_with_token(access: OwnerAccess, db: DbSession) -> StreamingResponse:
+    if not _EXTENSION_ZIP.is_file():
+        raise HTTPException(status_code=404, detail="Arquivo de extensão não encontrado.")
+
+    item = await _get_or_create(db, access.workspace.id)
+    await db.commit()
+
+    if not item.config_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Configure um PIN primeiro para gerar a extensão com credencial.",
+        )
+
+    token = item.config_token
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(_EXTENSION_ZIP, "r") as src_zip, zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as dst_zip:
+        for info in src_zip.infolist():
+            data = src_zip.read(info.filename)
+            if info.filename == "popup.js":
+                inject = f'const FLASHPOST_EMBEDDED_TOKEN = "{token}";\n'
+                # Replace the placeholder line; if not present, prepend
+                text = data.decode("utf-8")
+                if "const FLASHPOST_EMBEDDED_TOKEN" in text:
+                    lines = text.splitlines(keepends=True)
+                    lines = [inject if "const FLASHPOST_EMBEDDED_TOKEN" in l else l for l in lines]
+                    data = "".join(lines).encode("utf-8")
+                else:
+                    data = (inject + text).encode("utf-8")
+            dst_zip.writestr(info, data)
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="flashpost-ig-extension.zip"'},
+    )
+
+
 # ─── Extension-facing routes (public → token) ──────────────────────────────────
 
 
 @router.post("/auth", response_model=AuthResponse)
 async def auth_extension(payload: AuthPayload, db: DbSession) -> AuthResponse:
-    user = await db.scalar(
-        select(User).where(sa_func.lower(User.email) == payload.email.strip().lower())
+    """Find the workspace config whose PIN hash matches, return its token."""
+    result = await db.execute(
+        select(IgExtensionConfig).where(IgExtensionConfig.password_hash.is_not(None))
     )
-    if user is None:
-        verify_password(payload.password, None)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email ou senha inválidos.")
+    configs = result.scalars().all()
 
-    membership = await db.scalar(
-        select(WorkspaceMember).where(
-            WorkspaceMember.user_id == user.id,
-            WorkspaceMember.role == "OWNER",
-        )
-    )
-    if membership is None:
-        verify_password(payload.password, None)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email ou senha inválidos.")
+    matched: IgExtensionConfig | None = None
+    for cfg in configs:
+        if verify_password(payload.pin, cfg.password_hash):
+            matched = cfg
+            break
 
-    item = await db.scalar(
-        select(IgExtensionConfig).where(IgExtensionConfig.workspace_id == membership.workspace_id)
-    )
-
-    if item is None or item.password_hash is None:
-        verify_password(payload.password, None)
+    if matched is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Senha de extensão não configurada. Acesse a plataforma FlashPost para criar sua senha.",
+            detail="PIN inválido ou extensão não configurada.",
         )
 
-    if not verify_password(payload.password, item.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email ou senha inválidos.")
-
-    if not item.config_token:
-        item.config_token = secrets.token_urlsafe(32)
+    if not matched.config_token:
+        matched.config_token = secrets.token_urlsafe(32)
         await db.commit()
-        await db.refresh(item)
+        await db.refresh(matched)
 
-    return AuthResponse(token=item.config_token)
+    return AuthResponse(token=matched.config_token)
 
 
 @router.get("/config", response_model=ConfigResponse)
