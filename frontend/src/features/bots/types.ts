@@ -264,6 +264,9 @@ export type FlowDefinition = {
     copy_button: string;
     check_button: string;
     pending_text: string;
+    /** Optional media sent to the chat when lead taps "Já paguei" but payment not found yet. */
+    pending_media_ids?: string[];
+    pending_spoiler?: boolean;
     approved_text: string;
     /** true: always send before the delivery; false: never; null/undefined: old rule
      *  (skipped when an upsell follows). */
