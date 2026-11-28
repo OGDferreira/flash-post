@@ -43,6 +43,14 @@ export function MetaAppsPage() {
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editAppSecret, setEditAppSecret] = useState("");
   const [setupOpen, setSetupOpen] = useState(false);
+  const [platformPreferred, setPlatformPreferred] = useState(() => {
+    try { return localStorage.getItem('flashpost_platform_preferred') === 'true'; } catch { return false; }
+  });
+  const togglePlatformPreferred = () => {
+    const next = !platformPreferred;
+    try { if (next) localStorage.setItem('flashpost_platform_preferred', 'true'); else localStorage.removeItem('flashpost_platform_preferred'); } catch {}
+    setPlatformPreferred(next);
+  };
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<{ can_manage: boolean }>("/api/instagram/accounts"),
@@ -169,19 +177,46 @@ export function MetaAppsPage() {
             value={metaApps.data.callback_url}
           />
         )}
-        {metaApps.data?.platform && (
-          <div
-            className={`rounded-xl border px-4 py-3 text-sm ${
-              metaApps.data.platform.available ? "border-success/30 bg-success-soft text-success" : "border-warning/30 bg-warning-soft text-warning"
-            }`}
-            role="status"
-          >
-            {!metaApps.data.platform.available
-              ? "App da plataforma não configurado: defina IG_APP_ID e IG_APP_SECRET no servidor. Até lá, cada workspace usa o próprio app."
-              : metaApps.data.platform.app_id
-                ? `App da plataforma ativo (App ID ${metaApps.data.platform.app_id}): todos conectam por ele ou pelo próprio app, exceto quem você bloquear em Usuários.`
-                : "Ao conectar uma conta você pode usar o app do FlashPost (em um toque) ou cadastrar aqui o seu próprio app Meta."}
+        {metaApps.data?.platform && !metaApps.data.platform.available && (
+          <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning" role="status">
+            App da plataforma não configurado: defina IG_APP_ID e IG_APP_SECRET no servidor. Até lá, cada workspace usa o próprio app.
           </div>
+        )}
+        {metaApps.data?.platform?.available && metaApps.data.platform.app_id && (
+          <div className="rounded-xl border border-success/30 bg-success-soft px-4 py-3 text-sm text-success" role="status">
+            {`App da plataforma ativo (App ID ${metaApps.data.platform.app_id}): todos conectam por ele ou pelo próprio app, exceto quem você bloquear em Usuários.`}
+          </div>
+        )}
+        {metaApps.data?.platform?.available && !metaApps.data.platform.blocked && (
+          <button
+            className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition ${
+              platformPreferred ? "border-brand bg-brand-soft" : "border-line bg-surface-inset hover:bg-surface-raised"
+            }`}
+            onClick={togglePlatformPreferred}
+            type="button"
+          >
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-brand/40 bg-brand/15 text-sm font-semibold text-accent">FP</span>
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-fg">Usar apenas o app da plataforma</span>
+                {platformPreferred && (
+                  <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-accent">Selecionado</span>
+                )}
+              </span>
+              <span className="mt-1 block text-sm text-muted">
+                {platformPreferred
+                  ? "Ativado — ao conectar uma conta você vai direto ao Instagram pelo app do FlashPost, sem picker. Clique para desativar."
+                  : "Ativar para ir direto ao Instagram ao conectar uma conta, sem escolher o app a cada vez."}
+              </span>
+            </span>
+            <span className={`relative ml-2 h-5 w-9 shrink-0 rounded-full border transition-colors ${
+              platformPreferred ? "border-brand bg-brand" : "border-line bg-surface"
+            }`}>
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                platformPreferred ? "left-4" : "left-0.5"
+              }`} />
+            </span>
+          </button>
         )}
         <MetaSetupModal callbackUrl={metaApps.data?.callback_url} onClose={() => setSetupOpen(false)} open={setupOpen} />
         {mutationMessage && <ErrorState message={mutationMessage} />}
