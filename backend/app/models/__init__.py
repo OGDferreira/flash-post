@@ -42,6 +42,7 @@ from app.models.affiliation import Affiliation
 from app.models.app_notification import AppNotification
 from app.models.shark_account import SharkAccount
 from app.models.extension import Extension
+from app.models.ig_extension import IgExtensionConfig
 from app.models.support import SupportTicket
 from app.models.global_chat import GlobalChatMessage
 from app.models.daily_views import InstagramAccountDailyViews
@@ -111,6 +112,7 @@ __all__ = [
     "Affiliation",
     "Base",
     "Extension",
+    "IgExtensionConfig",
     "FeeChangeLog",
     "BotPartner",
     "BotPartnerSale",

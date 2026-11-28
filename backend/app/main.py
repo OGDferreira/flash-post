@@ -58,6 +58,7 @@ from app.partners.chief_routes import router as chief_partners_router
 from app.partners.bot_share_router import router as bot_partners_router
 from app.wallet.router import admin_router as partner_wallets_router, router as wallet_router
 from app.extensions.router import router as extensions_router
+from app.ig_extension.router import router as ig_extension_router
 from app.support.router import router as support_router
 from app.ranking.router import router as ranking_router
 from app.analytics.flash_funnel import router as flash_funnel_router
@@ -212,6 +213,7 @@ def create_app(static_assets_dir: Path | None = None) -> FastAPI:
     application.include_router(wallet_router)
     application.include_router(partner_wallets_router)
     application.include_router(extensions_router)
+    application.include_router(ig_extension_router)
     application.include_router(support_router)
     application.include_router(global_chat_router)
     application.include_router(ranking_router)
