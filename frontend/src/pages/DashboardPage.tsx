@@ -31,7 +31,7 @@ const periodOptions: { value: AnalyticsPeriod; label: string }[] = [
   { value: "7d", label: "7 dias" },
   { value: "30d", label: "30 dias" },
   { value: "all", label: "Total" },
-  { value: "custom", label: "Personalizado" },
+  { value: "custom", label: "Datas" },
 ];
 
 function formatCount(value: number | null | undefined): string {
