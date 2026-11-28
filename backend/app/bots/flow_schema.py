@@ -366,6 +366,9 @@ class Payment(_Model):
     copy_button: Label = "📋 Copiar código Pix"
     check_button: Label = "✅ Já paguei"
     pending_text: Annotated[str, Field(max_length=200)] = "Ainda não identificamos seu pagamento. Aguarde alguns segundos."
+    # Optional media sent to the chat when the lead taps "Já paguei" but payment not found yet.
+    pending_media_ids: MediaList3
+    pending_spoiler: bool = False
     approved_text: Text = "Pagamento aprovado! 🎉 Obrigado, {nome}."
     # The "payment approved" message, sent before the delivery. True: always; False: never
     # (the delivery goes straight away); None (funnels saved before the switch): as before,

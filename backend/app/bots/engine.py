@@ -1454,6 +1454,8 @@ async def _handle_callback(db: AsyncSession, bot: TgBot, query: dict) -> uuid.UU
             await tg.answer_callback(query["id"], "Pagamento confirmado! ✅")
         else:
             await tg.answer_callback(query["id"], flow.payment.pending_text, alert=True)
+            if flow.payment.pending_media_ids:
+                await send_medias(db, tg, bot, lead.chat_id, flow.payment.pending_media_ids, flow.payment.pending_spoiler, None, None)
         return None
     await tg.answer_callback(query["id"])
     return None
@@ -2209,10 +2211,12 @@ async def approve_order(
     flow = await load_flow(db, bot, lead)
     plan, bump, info = order_parts(order)
     delivery = plan.delivery or (flow.default_delivery if flow else None)
+    _bump_delivery = (bump.delivery or (flow.default_delivery if flow else None)) if bump else None
     # When an upsell follows, there is no "payment approved" message: the next offer goes
     # out at once, so the buyer feels no pause.
     upsell_next = bool(flow and flow.upsells) and (
         info.get("kind") == "upsell" or delivery is None or delivery.type == "upsell" or delivery.start_upsell
+        or (_bump_delivery is not None and (_bump_delivery.type == "upsell" or _bump_delivery.start_upsell))
     )
     approved = flow.payment.approved_enabled if flow else None
     # The offer (plan/upsell/downsell) can carry its own "payment approved" message;
@@ -2237,15 +2241,14 @@ async def approve_order(
             await deliver(db, tg, bot, lead, order, plan, delivery)
             # Any purchase (plan, upsell or downsell) fires this delivery's post-purchase drip.
             await schedule_after_purchase(db, bot, lead, delivery, order, 0)
-        if bump:
+        if bump and _bump_delivery is not None:
             # The bump's own delivery, or the funnel's default one (not sent twice when the
-            # plan already delivered that same default).
-            bump_delivery = bump.delivery or (flow.default_delivery if flow else None)
-            if bump_delivery is not None and bump_delivery.type != "upsell" and not (
-                bump.delivery is None and bump_delivery is delivery
+            # plan already delivered that same default). "upsell" type is handled via upsell_next.
+            if _bump_delivery.type != "upsell" and not _bump_delivery.start_upsell and not (
+                bump.delivery is None and _bump_delivery is delivery
             ):
-                await deliver(db, tg, bot, lead, order, plan.model_copy(update={"name": bump.name}), bump_delivery)
-                await schedule_after_purchase(db, bot, lead, bump_delivery, order, 1)
+                await deliver(db, tg, bot, lead, order, plan.model_copy(update={"name": bump.name}), _bump_delivery)
+                await schedule_after_purchase(db, bot, lead, _bump_delivery, order, 1)
         order.delivered_at = utcnow()
     except TelegramError as exc:
         bot.last_error = str(exc)[:500]

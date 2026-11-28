@@ -303,7 +303,7 @@ export function BumpEditor({
           </select>
         )}
         {value.delivery ? (
-          <DeliveryEditor allowUpsell={false} value={value.delivery} onChange={(delivery) => set({ delivery })} />
+          <DeliveryEditor value={value.delivery} onChange={(delivery) => set({ delivery })} />
         ) : allowDefault ? (
           <p className="text-xs text-muted">Quem comprar o adicional recebe a entrega padrão do funil (em Entrega padrão).</p>
         ) : (
