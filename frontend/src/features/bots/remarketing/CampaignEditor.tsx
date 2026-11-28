@@ -152,6 +152,8 @@ export function CampaignEditor({
   const [variant, setVariant] = useState(0);
   const [stats, setStats] = useState(false);
   const [initial] = useState(() => JSON.stringify([name, flowId, definition]));
+  // Tracks the saved campaign id for new campaigns created via step autosave.
+  const [savedCampaignId, setSavedCampaignId] = useState<string | null>(campaign?.id ?? null);
   const dirty = JSON.stringify([name, flowId, definition]) !== initial;
   const flow = flows.find((item) => item.id === flowId);
 
@@ -180,15 +182,31 @@ export function CampaignEditor({
 
   const save = useMutation({
     mutationFn: async (andSend: boolean) => {
+      const id = campaign?.id ?? savedCampaignId;
       const body = { name: name.trim(), flow_id: flowId, definition: payload(definition) };
-      const saved = campaign
-        ? await apiRequest<Campaign>(`/api/bots/campaigns/${campaign.id}`, { method: "PUT", body })
+      const saved = id
+        ? await apiRequest<Campaign>(`/api/bots/campaigns/${id}`, { method: "PUT", body })
         : await apiRequest<Campaign>("/api/bots/campaigns", { method: "POST", body });
       return andSend ? apiRequest<Campaign>(`/api/bots/campaigns/${saved.id}/send`, { method: "POST" }) : saved;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["bots", "campaigns"] });
       onClose();
+    },
+  });
+
+  // Autosave on step advance: saves a draft without closing, tracks the new id.
+  const stepSave = useMutation({
+    mutationFn: async () => {
+      const id = campaign?.id ?? savedCampaignId;
+      const body = { name: name.trim() || "Nova campanha", flow_id: flowId, definition: payload(definition) };
+      return id
+        ? apiRequest<Campaign>(`/api/bots/campaigns/${id}`, { method: "PUT", body })
+        : apiRequest<Campaign>("/api/bots/campaigns", { method: "POST", body });
+    },
+    onSuccess: (saved) => {
+      setSavedCampaignId(saved.id);
+      void queryClient.invalidateQueries({ queryKey: ["bots", "campaigns"] });
     },
   });
 
@@ -256,7 +274,9 @@ export function CampaignEditor({
             Remarketing <span className="text-muted">· {current + 1}/{STEPS.length}</span>
           </p>
           <p className="truncate font-semibold text-fg">{name.trim() || "Nova campanha"}</p>
-          <p className="hidden truncate text-xs text-muted sm:block">Revise as configurações da campanha sem perder o contexto.</p>
+          <p className="hidden truncate text-xs text-muted sm:block">
+            {stepSave.isPending ? "Salvando rascunho…" : stepSave.isSuccess ? "Rascunho salvo" : "Revise as configurações da campanha sem perder o contexto."}
+          </p>
         </div>
         {campaign && (
           <button aria-label="Ver estatísticas" className="btn-secondary !min-h-10 !px-3" onClick={() => setStats(true)} type="button">
@@ -778,8 +798,17 @@ export function CampaignEditor({
             <p className="hidden flex-1 text-center text-xs text-muted md:block">{step.description}</p>
             <span className="flex-1 md:hidden" />
             {current < STEPS.length - 1 ? (
-              <button className="btn-primary !min-h-11" onClick={() => setCurrent(current + 1)} type="button">
-                {NEXT_LABELS[current]} <ChevronRight size={16} />
+              <button
+                className="btn-primary !min-h-11"
+                disabled={stepSave.isPending}
+                onClick={async () => {
+                  // Save a draft when advancing if there's data worth keeping.
+                  if (name.trim() && flowId) await stepSave.mutateAsync();
+                  setCurrent(current + 1);
+                }}
+                type="button"
+              >
+                {stepSave.isPending ? "Salvando…" : NEXT_LABELS[current]} <ChevronRight size={16} />
               </button>
             ) : (
               <span className="flex gap-2">
