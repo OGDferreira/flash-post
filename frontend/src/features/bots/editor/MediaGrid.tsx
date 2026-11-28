@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, FileAudio, Film, Image as ImageIcon, Library, Plus, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileAudio, Film, Image as ImageIcon, Library, Pause, Play, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 
 import { Modal } from "@/components/ui/Modal";
 import { ApiError, apiRequest } from "@/services/api";
 import type { BotMedia } from "../types";
+import { useBotApi } from "./apiBase";
 
 const ACCEPT: Record<BotMedia["kind"], string> = {
   photo: "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp",
@@ -30,18 +31,20 @@ function normalizeUpload(file: File): File {
 }
 
 export function useBotMedia() {
+  const api = useBotApi();
   return useQuery({
-    queryKey: ["bots", "media"],
-    queryFn: () => apiRequest<{ media: BotMedia[] }>("/api/bots/media/list"),
+    queryKey: [...api.mediaKey],
+    queryFn: () => apiRequest<{ media: BotMedia[] }>(api.mediaListUrl),
     retry: false,
     staleTime: 60_000,
   });
 }
 
 function usePreview(id: string, enabled: boolean) {
+  const api = useBotApi();
   return useQuery({
-    queryKey: ["bots", "media", "preview", id],
-    queryFn: () => apiRequest<{ url: string }>(`/api/bots/media/${id}/preview`),
+    queryKey: [...api.mediaKey, "preview", id],
+    queryFn: () => apiRequest<{ url: string }>(api.mediaPreviewUrl(id)),
     enabled,
     retry: false,
     staleTime: 50 * 60_000, // signed URLs last about an hour
@@ -54,14 +57,61 @@ function KindIcon({ kind, size = 16 }: { kind?: BotMedia["kind"]; size?: number 
   return <ImageIcon size={size} />;
 }
 
+function AudioThumb({ media }: { media: BotMedia }) {
+  // Signed URL for the voice note, so the owner can listen before publishing.
+  const preview = usePreview(media.id, true);
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  // A new signed URL means a different clip: reset the player.
+  useEffect(() => {
+    setPlaying(false);
+    audio.current?.pause();
+  }, [preview.data?.url]);
+
+  const toggle = () => {
+    const el = audio.current;
+    if (!el) return;
+    if (el.paused) void el.play();
+    else el.pause();
+  };
+
+  return (
+    <span className="grid place-items-center gap-1 px-2 text-center text-muted">
+      <button
+        aria-label={playing ? "Pausar áudio" : "Ouvir áudio"}
+        className="grid size-9 place-items-center rounded-full bg-fg-2/15 text-fg hover:bg-fg-2/25 disabled:opacity-40"
+        disabled={!preview.data?.url}
+        onClick={toggle}
+        title={playing ? "Pausar" : "Ouvir"}
+        type="button"
+      >
+        {playing ? <Pause size={18} /> : <Play size={18} />}
+      </button>
+      <span className="line-clamp-2 break-all text-[10px]">{media.file_name}</span>
+      {preview.data?.url && (
+        <audio
+          onEnded={() => setPlaying(false)}
+          onPause={() => setPlaying(false)}
+          onPlay={() => setPlaying(true)}
+          preload="none"
+          ref={audio}
+          src={preview.data.url}
+        />
+      )}
+    </span>
+  );
+}
+
 function Thumb({ media }: { media?: BotMedia }) {
   const preview = usePreview(media?.id ?? "", Boolean(media) && media?.kind !== "audio");
   if (!media) return <span className="text-xs text-danger">Mídia removida</span>;
+  if (media.kind === "audio") return <AudioThumb media={media} />;
   if (media.kind === "photo" && preview.data) {
     return <img alt={media.file_name} className="absolute inset-0 size-full object-cover" loading="lazy" src={preview.data.url} />;
   }
   if (media.kind === "video" && preview.data) {
-    return <video className="absolute inset-0 size-full object-cover" muted playsInline preload="metadata" src={`${preview.data.url}#t=0.5`} />;
+    return <video autoPlay className="absolute inset-0 size-full object-cover" loop muted playsInline preload="metadata" src={`${preview.data.url}#t=0.1`} />;
   }
   return (
     <span className="grid place-items-center gap-1 px-2 text-center text-muted">
@@ -90,23 +140,42 @@ export function MediaGrid({
 }) {
   const queryClient = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
+  const replaceInput = useRef<HTMLInputElement>(null);
   const [library, setLibrary] = useState(false);
+  // When set, picking a file / library item swaps the media at this position instead of adding.
+  const [replaceAt, setReplaceAt] = useState<number | null>(null);
+  const api = useBotApi();
   const media = useBotMedia();
   const byId = new Map((media.data?.media ?? []).map((item) => [item.id, item]));
+  const cacheCreated = (created: BotMedia[]) =>
+    queryClient.setQueryData<{ media: BotMedia[] }>([...api.mediaKey], (old) => ({ media: [...created, ...(old?.media ?? [])] }));
+  const swapAt = (index: number, id: string) => onChange(value.map((other, i) => (i === index ? id : other)));
   const upload = useMutation({
     mutationFn: async (files: File[]) => {
       const created: BotMedia[] = [];
       for (const original of files) {
         const file = normalizeUpload(original);
         created.push(
-          await apiRequest<BotMedia>(`/api/bots/media?filename=${encodeURIComponent(file.name)}`, { method: "POST", body: file }),
+          await apiRequest<BotMedia>(api.mediaUploadUrl(file.name), { method: "POST", body: file }),
         );
       }
       return created;
     },
     onSuccess: (created) => {
-      queryClient.setQueryData<{ media: BotMedia[] }>(["bots", "media"], (old) => ({ media: [...created, ...(old?.media ?? [])] }));
+      cacheCreated(created);
       onChange([...value, ...created.map((item) => item.id)].slice(0, max));
+    },
+  });
+  // "Alterar mídia": upload a new file into one existing slot (order/links/settings kept).
+  const replace = useMutation({
+    mutationFn: async ({ file }: { file: File; index: number }) => {
+      const normalized = normalizeUpload(file);
+      return apiRequest<BotMedia>(api.mediaUploadUrl(normalized.name), { method: "POST", body: normalized });
+    },
+    onSuccess: (created, { index }) => {
+      cacheCreated([created]);
+      swapAt(index, created.id);
+      setReplaceAt(null);
     },
   });
   const move = (index: number, delta: number) => {
@@ -141,6 +210,19 @@ export function MediaGrid({
                 <KindIcon kind={item?.kind} size={12} />
               </span>
               <div className="absolute right-1.5 top-1.5 flex gap-1">
+                <button
+                  aria-label="Alterar mídia"
+                  className="grid size-7 place-items-center rounded-md bg-black/60 text-white"
+                  disabled={replace.isPending}
+                  onClick={() => {
+                    setReplaceAt(index);
+                    replaceInput.current?.click();
+                  }}
+                  title="Alterar mídia (troca só o arquivo)"
+                  type="button"
+                >
+                  <RefreshCw size={13} />
+                </button>
                 <button
                   aria-label="Remover mídia"
                   className="grid size-7 place-items-center rounded-md bg-danger/90 text-white"
@@ -195,11 +277,27 @@ export function MediaGrid({
         ref={input}
         type="file"
       />
-      {upload.error && (
-        <p className="text-xs text-danger" role="alert">
-          {upload.error instanceof ApiError ? upload.error.message : "Falha no envio do arquivo."}
-        </p>
-      )}
+      <input
+        accept={kinds.map((kind) => ACCEPT[kind]).join(",")}
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file && replaceAt !== null) replace.mutate({ file, index: replaceAt });
+          else setReplaceAt(null);
+        }}
+        ref={replaceInput}
+        type="file"
+      />
+      {(() => {
+        const err = upload.error ?? replace.error;
+        return err ? (
+          <p className="text-xs text-danger" role="alert">
+            {err instanceof ApiError ? err.message : "Falha no envio do arquivo."}
+          </p>
+        ) : null;
+      })()}
+      {replace.isPending && <p className="text-xs text-muted">Trocando a mídia…</p>}
       <Modal open={library} title="Escolher da biblioteca" onClose={() => setLibrary(false)}>
         {available.length === 0 ? (
           <p className="text-sm text-muted">Nenhum arquivo disponível. Use “Enviar” para subir do seu aparelho.</p>

@@ -6,6 +6,7 @@ import { Link, useParams } from "react-router-dom";
 import { BrandLockup } from "@/components/BrandLogo";
 import { ApiError, apiRequest } from "@/services/api";
 import { isValidPublicNickname } from "@/features/auth/nickname";
+import { isValidCpf, maskCpf } from "@/features/auth/cpf";
 
 type InviteInfo = { workspace_name: string; expires_at: string };
 
@@ -17,7 +18,7 @@ export function CollaboratorInvitePage() {
     queryFn: () => apiRequest<InviteInfo>(`/api/auth/collaborator-invites/${encodeURIComponent(token)}`),
     retry: false,
   });
-  const [values, setValues] = useState({ full_name: "", email: "", nickname: "", password: "", confirm_password: "" });
+  const [values, setValues] = useState({ full_name: "", cpf: "", email: "", nickname: "", password: "", confirm_password: "" });
   const [localError, setLocalError] = useState<string | null>(null);
   const signup = useMutation({
     mutationFn: () =>
@@ -31,6 +32,7 @@ export function CollaboratorInvitePage() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (!isValidCpf(values.cpf)) return setLocalError("Informe um CPF válido.");
     if (!isValidPublicNickname(values.nickname)) return setLocalError("Use um apelido entre 2 e 40 caracteres.");
     if (values.password.length < 8) return setLocalError("Use pelo menos 8 caracteres na senha.");
     if (values.password !== values.confirm_password) return setLocalError("As senhas não coincidem.");
@@ -76,6 +78,7 @@ export function CollaboratorInvitePage() {
               </p>
             </div>
             <input aria-label="Nome completo" autoComplete="name" className="field" onChange={set("full_name")} placeholder="Nome completo" required value={values.full_name} />
+            <input aria-label="CPF" className="field" inputMode="numeric" maxLength={14} onChange={(event) => setValues((current) => ({ ...current, cpf: maskCpf(event.target.value) }))} placeholder="CPF (000.000.000-00)" required value={values.cpf} />
             <input aria-label="E-mail" autoComplete="email" className="field" onChange={set("email")} placeholder="E-mail" required type="email" value={values.email} />
             <input aria-label="Apelido" className="field" onChange={set("nickname")} placeholder="Apelido" required value={values.nickname} />
             <input aria-label="Senha" autoComplete="new-password" className="field" onChange={set("password")} placeholder="Senha (mínimo 8 caracteres)" required type="password" value={values.password} />

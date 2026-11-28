@@ -251,14 +251,14 @@ async def recent_activity(db: AsyncSession, workspace_id: uuid.UUID, limit: int 
     shown = (not_hidden_bot(TgOrder.bot_id),) if hide else ()
     leads = (
         await db.execute(
-            select(TgLead.first_name, TgLead.username, TgLead.created_at, TgBot.username)
+            select(TgLead.id, TgLead.first_name, TgLead.username, TgLead.created_at, TgBot.username)
             .join(TgBot, TgBot.id == TgLead.bot_id)
             .where(TgLead.workspace_id == workspace_id, *lead_shown)
             .order_by(TgLead.created_at.desc())
             .limit(limit)
         )
     ).all()
-    order_cols = (TgLead.first_name, TgLead.username, TgOrder.amount, TgBot.username)
+    order_cols = (TgLead.id, TgLead.first_name, TgLead.username, TgOrder.amount, TgBot.username)
     pix = (
         await db.execute(
             select(*order_cols, TgOrder.created_at)
@@ -282,13 +282,13 @@ async def recent_activity(db: AsyncSession, workspace_id: uuid.UUID, limit: int 
         return (first_name or "").strip() or (f"@{username}" if username else "Lead")
 
     events = [
-        {"kind": "lead", "lead": who(first, user), "bot": bot, "amount": None, "at": at}
-        for first, user, at, bot in leads
+        {"kind": "lead", "lead": who(first, user), "lead_id": str(lead_id), "bot": bot, "amount": None, "at": at}
+        for lead_id, first, user, at, bot in leads
     ]
     events += [
-        {"kind": kind, "lead": who(first, user), "bot": bot, "amount": _f(amount), "at": at}
+        {"kind": kind, "lead": who(first, user), "lead_id": str(lead_id), "bot": bot, "amount": _f(amount), "at": at}
         for kind, rows in (("pix", pix), ("sale", paid))
-        for first, user, amount, bot, at in rows
+        for lead_id, first, user, amount, bot, at in rows
     ]
     events.sort(key=lambda event: event["at"], reverse=True)
     return [{**event, "at": event["at"].isoformat()} for event in events[:limit]]

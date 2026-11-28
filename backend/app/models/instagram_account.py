@@ -55,6 +55,18 @@ class InstagramAccount(Base):
         ForeignKey("instagram_meta_apps.id", ondelete="SET NULL"),
     )
     instagram_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Which Meta login the account was connected through. Decides the Graph host and
+    # token semantics: "instagram_login" -> graph.instagram.com + Instagram User token;
+    # "unified_login" -> graph.facebook.com + Business Integration System User token.
+    login_kind: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="instagram_login",
+        server_default=text("'instagram_login'"),
+    )
+    # Unified Login only: the client's business ID, kept for the Business Integration
+    # System User token management API. Null for Instagram Login accounts.
+    client_business_id: Mapped[str | None] = mapped_column(String(64))
     username: Mapped[str] = mapped_column(String(100), nullable=False)
     profile_picture_url: Mapped[str | None] = mapped_column(String(2048))
     follower_count: Mapped[int | None] = mapped_column()

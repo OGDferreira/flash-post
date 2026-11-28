@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CreditCard, ExternalLink, Hourglass, Play, QrCode, RotateCcw, UserX, X } from "lucide-react";
 
 import { apiRequest } from "@/services/api";
+import { useBotApi } from "../editor/apiBase";
 import { useBotMedia } from "../editor/MediaGrid";
 import type { ButtonStyle, FlowDefinition } from "../types";
 import { simulate, type SimButton, type SimMessage } from "./simulate";
@@ -45,23 +46,36 @@ function safeHtml(html: string): string {
 }
 
 function Media({ id, spoiler }: { id: string; spoiler?: boolean }) {
+  const api = useBotApi();
   const library = useBotMedia();
   const item = library.data?.media.find((media) => media.id === id);
   const preview = useQuery({
-    queryKey: ["bots", "media", "preview", id],
-    queryFn: () => apiRequest<{ url: string }>(`/api/bots/media/${id}/preview`),
-    enabled: Boolean(item) && item?.kind !== "audio",
+    queryKey: [...api.mediaKey, "preview", id],
+    queryFn: () => apiRequest<{ url: string }>(api.mediaPreviewUrl(id)),
+    enabled: Boolean(item),
     retry: false,
     staleTime: 50 * 60_000,
   });
   const url = preview.data?.url;
   const blur = spoiler ? "blur-xl" : "";
+  if (item?.kind === "audio") {
+    // Voice note bubble: a real player so the funnel test is audible.
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-black/30 px-2 py-1.5">
+        <span className="text-[13px]">🎤</span>
+        {url ? (
+          <audio className="h-8 w-44 max-w-full" controls preload="none" src={url} />
+        ) : (
+          <span className="text-[11px] text-white/60">carregando…</span>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="relative aspect-square overflow-hidden rounded-lg bg-black/30">
-      {item?.kind === "audio" ? (
-        <div className="grid size-full place-items-center text-[11px] text-white/70">🎤 áudio</div>
-      ) : url && item?.kind === "video" ? (
-        <video className={`size-full object-cover ${blur}`} muted playsInline preload="metadata" src={`${url}#t=0.5`} />
+      {url && item?.kind === "video" ? (
+        // Autoplay muted + loop = a GIF-like animated preview; the frame itself is the thumbnail.
+        <video autoPlay className={`size-full object-cover ${blur}`} loop muted playsInline preload="metadata" src={`${url}#t=0.1`} />
       ) : url ? (
         <img alt="" className={`size-full object-cover ${blur}`} loading="lazy" src={url} />
       ) : (
@@ -165,13 +179,25 @@ export function FlowSimulator({ flow, onClose }: { flow: FlowDefinition; onClose
   }, [toast]);
 
   const { controls } = result;
+  const handle = (flow.bot_handle ?? "").replace(/^@/, "");
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-line bg-[#0e1621] shadow-2xl">
       <header className="flex items-center gap-2 border-b border-white/10 bg-[#17212b] px-3 py-2.5 text-white">
         <span className="grid size-9 place-items-center rounded-full bg-[#3390ec] text-sm font-bold">B</span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">Teste do funil</p>
-          <p className="text-[11px] text-white/60">simulação · nada é cobrado nem enviado</p>
+          {handle ? (
+            <a
+              className="inline-flex items-center gap-1 text-[11px] text-[#6ab2f2] hover:underline"
+              href={`https://t.me/${handle}`}
+              rel="noreferrer"
+              target="_blank"
+            >
+              @{handle} <ExternalLink size={10} />
+            </a>
+          ) : (
+            <p className="text-[11px] text-white/60">simulação · nada é cobrado nem enviado</p>
+          )}
         </div>
         <button
           aria-label="Reiniciar o teste"

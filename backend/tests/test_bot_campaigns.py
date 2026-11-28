@@ -172,3 +172,35 @@ async def test_overlapping_campaigns_are_flagged_as_conflicts(client, db_session
     await client.post(f"/api/bots/campaigns/{first['id']}/schedule", headers=headers, json={"recurrence": {"kind": "daily", "time": "08:00"}})
     listed = {c["id"]: c for c in (await client.get(f"/api/bots/campaigns?flow_id={flow['id']}", headers=headers)).json()["campaigns"]}
     assert [c["id"] for c in listed[second["id"]]["conflicts"]] == [first["id"]]
+
+
+@pytest.mark.anyio
+async def test_campaign_offers_existing_plan_at_a_discount(client, db_session, owner, apis) -> None:
+    headers = await _login(client)
+    bot, flow = await _setup(client, headers, _flow(welcome=[]))  # funnel plan "vip" = R$ 19,90, group delivery
+    await _send(client, db_session, bot["id"], _start())
+    body = {
+        "name": "Desconto de volta", "flow_id": flow["id"],
+        "definition": {
+            "audience": {"target": "not_bought"},
+            "messages": [{"text": "Oi {nome}"}],
+            "offer": {"plans": [], "discounted_plans": [
+                {"plan_id": "vip", "discount_type": "percent", "discount_value": "50"},
+            ]},
+        },
+    }
+    created = await client.post("/api/bots/campaigns", headers=headers, json=body)
+    assert created.status_code == 201, created.text
+    campaign = created.json()
+    hex_id = campaign["id"].replace("-", "")
+    await client.post(f"/api/bots/campaigns/{campaign['id']}/send", headers=headers)
+    await campaigns.run_campaigns(db_session)
+
+    rows = apis.methods("sendMessage")[-1]["reply_markup"]["inline_keyboard"]
+    assert rows[0][0]["callback_data"] == f"rmk:{hex_id}:e0"
+    assert "R$ 9,95" in rows[0][0]["text"] and "antes R$ 19,90" in rows[0][0]["text"]
+
+    await _send(client, db_session, bot["id"], _tap(f"rmk:{hex_id}:e0"))
+    await db_session.commit()
+    order = await db_session.scalar(select(TgOrder))
+    assert order.kind == "remarketing" and order.amount == campaigns.Decimal("9.95")

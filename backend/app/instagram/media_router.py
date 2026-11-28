@@ -191,7 +191,10 @@ async def upload_media(
 
     storage = _storage_or_http_error()
     media_id = uuid.uuid4()
-    storage_path = f"{access.workspace.id}/{media_id}/{safe_filename}"
+    # A chave do Storage precisa ser ASCII-safe (Supabase rejeita "#" etc. com
+    # 400); o nome original com hashtags fica só no campo filename pra exibição.
+    storage_name = SupabaseStorage.safe_object_name(safe_filename)
+    storage_path = f"{access.workspace.id}/{media_id}/{storage_name}"
     try:
         await storage.upload(storage_path, content, content_type)
     except (SupabaseStorageError, httpx.HTTPError) as exc:

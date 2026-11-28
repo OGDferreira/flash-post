@@ -27,13 +27,20 @@ from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.security import WorkspaceRole
 from app.instagram.oauth import (
+    LOGIN_KIND_INSTAGRAM,
+    LOGIN_KIND_UNIFIED,
+    UNIFIED_CREDENTIAL_KIND,
     InstagramOAuthError,
-    fetch_instagram_profile_metrics,
-    instagram_api_error_detail,
     build_authorization_url,
+    build_unified_authorization_url,
     exchange_instagram_authorization_code,
+    exchange_unified_authorization_code,
+    fetch_instagram_profile_metrics,
+    graph_base_for,
+    instagram_api_error_detail,
     revoke_instagram_permissions,
 )
+from app.diagnostics.service import resolve_account_diagnostics
 from app.instagram.account_state import isolate_inactive_account
 from app.partners.permissions import require_partner_feature
 from app.models import (
@@ -109,16 +116,9 @@ def _platform_app() -> tuple[str, str] | None:
 
 
 async def _ensure_own_apps_allowed(access, db) -> None:
-    """With the platform app on, workspace apps are only for the Super Admin and for users
-    the Super Admin removed from the platform app (they go back to their own apps)."""
-    if _platform_app() is None:
-        return
-    user = await db.get(User, access.membership.user_id)
-    if user is None or not (user.platform_role == "SUPER_ADMIN" or user.platform_app_blocked):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="As contas agora são conectadas pelo app da plataforma; não é preciso cadastrar app próprio.",
-        )
+    """Every workspace OWNER manages their own Meta apps. The platform app stays available
+    as a one-tap option for the Super Admin, but no longer takes the page away from anyone."""
+    return
 
 
 def _redirect_uri() -> str:
@@ -278,7 +278,15 @@ async def get_account_feed(
     follows_count = None
     try:
         followers_count, follows_count, media_count = (
-            await fetch_instagram_profile_metrics(access_token)
+            await fetch_instagram_profile_metrics(
+                access_token,
+                node=(
+                    account.instagram_user_id
+                    if account.login_kind == LOGIN_KIND_UNIFIED
+                    else "me"
+                ),
+                graph_base=graph_base_for(account.login_kind),
+            )
         )
         if followers_count is not None:
             account.follower_count = followers_count
@@ -415,6 +423,7 @@ def _meta_app_response(
         meta_app_name=app.meta_app_name,
         app_id=app.app_id,
         credential_kind=app.credential_kind,
+        config_id=app.config_id,
         category=app.category,
         app_link=app.app_link,
         is_selected=app.is_selected,
@@ -466,17 +475,10 @@ async def list_meta_apps(
     platform = _platform_app()
     user = await db.get(User, access.membership.user_id)
     is_super_admin = user is not None and user.platform_role == "SUPER_ADMIN"
-    blocked = bool(user and user.platform_app_blocked) and not is_super_admin
-    if platform is not None and not is_super_admin and not blocked:
-        # Everyone connects through the platform app; their own Meta apps stay hidden.
-        return InstagramMetaAppsResponse(
-            can_manage=False,
-            callback_url=_redirect_uri(),
-            selected_app_id=None,
-            apps=[],
-            platform=InstagramPlatformApp(available=True),
-        )
-    # Users removed from the platform app go back to their workspace apps.
+    # The platform (FlashPost) app is offered to every owner as one option next to their own
+    # Meta apps, so they can connect with the tool's app or pick their own. The Super Admin can
+    # still block it per user; only the Super Admin sees the raw platform app id.
+    platform_blocked = user is not None and user.platform_app_blocked and not is_super_admin
     return InstagramMetaAppsResponse(
         can_manage=access.membership.role == WorkspaceRole.OWNER.value,
         callback_url=_redirect_uri(),
@@ -485,7 +487,8 @@ async def list_meta_apps(
             _meta_app_response(app, connected_counts.get(app.id, 0)) for app in apps
         ],
         platform=InstagramPlatformApp(
-            available=platform is not None and not blocked,
+            available=platform is not None,
+            blocked=platform_blocked,
             app_id=platform[0] if platform is not None and is_super_admin else None,
         ),
     )
@@ -541,7 +544,8 @@ async def create_meta_app(
         display_name=payload.display_name,
         meta_app_name=payload.display_name,
         app_id=payload.app_id,
-        credential_kind="instagram_business_login",
+        credential_kind=payload.credential_kind,
+        config_id=payload.config_id,
         category=None,
         app_link=None,
         encrypted_app_secret=encrypted_secret,
@@ -601,6 +605,9 @@ async def update_meta_app(
 
     if payload.display_name is not None:
         app.display_name = payload.display_name
+    if payload.config_id is not None:
+        app.config_id = payload.config_id
+        app.revision = uuid.uuid4()
     if payload.app_secret is not None:
         if get_settings().master_encryption_key is None:
             raise HTTPException(
@@ -674,19 +681,20 @@ async def connect_account(
     access: WorkspaceMemberAccess,
     db: DbSession,
     app_id: uuid.UUID | None = Query(default=None),
+    use_platform: bool = Query(default=False),
     return_to: Literal["/dashboard", "/feature/accounts"] = "/feature/accounts",
 ) -> InstagramConnectResponse:
     settings = get_settings()
     platform = _platform_app()
-    # The platform app connects everyone (no app to pick). An explicit app_id is only sent by
-    # the Super Admin's own Apps Meta page, which still works with workspace apps.
-    if platform is not None and app_id is None:
-        user = await db.get(User, access.membership.user_id)
-        if user is None or (user.platform_app_blocked and user.platform_role != "SUPER_ADMIN"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="A conexão de contas não está liberada para o seu usuário. Fale com o suporte.",
-            )
+    # The platform (FlashPost) app is one explicit choice in the picker, offered to every owner
+    # next to their own apps; the Super Admin can block it per user. Picked with use_platform.
+    user_for_platform = await db.get(User, access.membership.user_id) if use_platform and platform is not None else None
+    platform_blocked = (
+        user_for_platform is not None
+        and user_for_platform.platform_app_blocked
+        and user_for_platform.platform_role != "SUPER_ADMIN"
+    )
+    if use_platform and platform is not None and not platform_blocked:
         if settings.master_encryption_key is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -701,6 +709,11 @@ async def connect_account(
             "return_to": return_to,
         })
         return InstagramConnectResponse(authorization_url=build_authorization_url(platform[0], _redirect_uri(), state))
+    if use_platform:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="O app do FlashPost não está liberado para a sua conta.",
+        )
 
     credential_query = select(InstagramAppCredential).where(
         InstagramAppCredential.workspace_id == access.workspace.id,
@@ -745,13 +758,23 @@ async def connect_account(
         "created_at": int(time.time()),
         "return_to": return_to,
     })
-    return InstagramConnectResponse(
-        authorization_url=build_authorization_url(
-            credential.app_id,
-            _redirect_uri(),
-            state,
+    if credential.credential_kind == UNIFIED_CREDENTIAL_KIND:
+        if not credential.config_id:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "O app de Login Unificado está sem o ID da configuração (config_id). "
+                    "Edite o app e informe o config_id."
+                ),
+            )
+        authorization_url = build_unified_authorization_url(
+            credential.app_id, _redirect_uri(), state, credential.config_id
         )
-    )
+    else:
+        authorization_url = build_authorization_url(
+            credential.app_id, _redirect_uri(), state
+        )
+    return InstagramConnectResponse(authorization_url=authorization_url)
 
 
 @router.get("/callback", name="instagram_callback")
@@ -862,6 +885,19 @@ async def _instagram_callback(
     # Release the database connection while Meta answers (several HTTP calls): the pool is
     # small and busy, and holding it here made other requests (and this one) time out.
     await db.commit()
+    if credential is not None and credential.credential_kind == UNIFIED_CREDENTIAL_KIND:
+        # Unified Login: one system-user token covers every account the client shared.
+        return await _complete_unified_callback(
+            db,
+            credential,
+            meta_app_client_id,
+            app_secret,
+            code,
+            workspace_id,
+            user,
+            membership,
+            return_to,
+        )
     try:
         (
             instagram_user_id,
@@ -940,11 +976,112 @@ async def _instagram_callback(
         account.connected_at = datetime.now(timezone.utc)
         account.status_reason = None
         account.error_at = None
+        await resolve_account_diagnostics(db, account.id)
     await db.flush()
     connected_id = account.id
     await db.commit()
     return RedirectResponse(
         _connection_result_page(return_to, "connected", username, connected_id), status_code=303
+    )
+
+
+async def _complete_unified_callback(
+    db,
+    credential: InstagramAppCredential,
+    meta_app_id: str,
+    app_secret: str,
+    code: str,
+    workspace_id: uuid.UUID,
+    user: User,
+    membership: WorkspaceMember,
+    return_to: str,
+) -> Response:
+    """Finish a Unified Login connection: exchange the code once and connect every
+    Instagram account the client shared, all sharing the one system-user token."""
+    try:
+        access_token, expires_at, client_business_id, accounts = (
+            await exchange_unified_authorization_code(
+                code, _redirect_uri(), meta_app_id, app_secret
+            )
+        )
+    except InstagramOAuthError as exc:
+        logger.warning("Instagram Unified OAuth validation failed: %s", exc)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "Instagram Unified token exchange was rejected by Meta (HTTP %s).",
+            exc.response.status_code,
+        )
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
+    except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+        logger.warning("Instagram Unified callback failed (%s).", type(exc).__name__)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
+
+    try:
+        encrypted_token = encrypt_value(access_token)
+    except RuntimeError as exc:
+        logger.error("Instagram token encryption failed (%s).", type(exc).__name__)
+        return RedirectResponse(_connection_result_page(return_to, "error"), status_code=303)
+
+    first_account_id: uuid.UUID | None = None
+    first_username: str | None = None
+    for entry in accounts:
+        instagram_user_id = str(entry["instagram_user_id"])
+        username = str(entry["username"])
+        account = await db.scalar(
+            select(InstagramAccount).where(
+                InstagramAccount.workspace_id == workspace_id,
+                InstagramAccount.instagram_user_id == instagram_user_id,
+            )
+        )
+        if account is None:
+            account = InstagramAccount(
+                workspace_id=workspace_id,
+                app_credential_id=credential.id,
+                instagram_user_id=instagram_user_id,
+                username=username,
+                profile_picture_url=entry["profile_picture_url"],
+                follower_count=entry["follower_count"],
+                media_count=entry["media_count"],
+                encrypted_access_token=encrypted_token,
+                token_expires_at=expires_at,
+                status="connected",
+                login_kind=LOGIN_KIND_UNIFIED,
+                client_business_id=client_business_id,
+                connected_by_user_id=user.id,
+                first_connected_at=datetime.now(timezone.utc),
+                collaborator_rate_at_connection=(
+                    membership.rate_per_connection
+                    if membership.role == WorkspaceRole.COLLABORATOR.value
+                    else None
+                ),
+            )
+            db.add(account)
+            await db.flush()
+            await automate_account(db, account, datetime.now(timezone.utc))
+        else:
+            account.app_credential_id = credential.id
+            account.username = username
+            account.profile_picture_url = entry["profile_picture_url"]
+            account.follower_count = entry["follower_count"]
+            account.media_count = entry["media_count"]
+            account.encrypted_access_token = encrypted_token
+            account.token_expires_at = expires_at
+            account.status = "connected"
+            account.login_kind = LOGIN_KIND_UNIFIED
+            account.client_business_id = client_business_id
+            account.connected_at = datetime.now(timezone.utc)
+            account.status_reason = None
+            account.error_at = None
+            await resolve_account_diagnostics(db, account.id)
+        await db.flush()
+        if first_account_id is None:
+            first_account_id = account.id
+            first_username = username
+    await db.commit()
+    return RedirectResponse(
+        _connection_result_page(return_to, "connected", first_username, first_account_id),
+        status_code=303,
     )
 
 
@@ -997,6 +1134,7 @@ async def disconnect_account(
     except (RuntimeError, ValueError) as exc:
         logger.warning("Instagram token could not be decrypted for revocation (%s).", type(exc).__name__)
         access_token = None
+    login_kind = account.login_kind
     account.encrypted_access_token = None
     account.app_credential_id = None
     await isolate_inactive_account(
@@ -1007,7 +1145,9 @@ async def disconnect_account(
     meta_revoked = False
     if access_token is not None:
         try:
-            meta_revoked = await revoke_instagram_permissions(access_token)
+            meta_revoked = await revoke_instagram_permissions(
+                access_token, login_kind=login_kind
+            )
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning("Instagram permission revocation failed (%s).", type(exc).__name__)
     if not meta_revoked:
@@ -1047,13 +1187,16 @@ async def remove_error_account(
     except (RuntimeError, ValueError) as exc:
         logger.warning("Instagram token could not be decrypted for revocation (%s).", type(exc).__name__)
         access_token = None
+    login_kind = account.login_kind
     await db.delete(account)
     await db.commit()
 
     meta_revoked = False
     if access_token is not None:
         try:
-            meta_revoked = await revoke_instagram_permissions(access_token)
+            meta_revoked = await revoke_instagram_permissions(
+                access_token, login_kind=login_kind
+            )
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning("Instagram permission revocation failed (%s).", type(exc).__name__)
     if not meta_revoked:
@@ -1079,20 +1222,20 @@ async def remove_broken_accounts(
             )
         )
     )
-    tokens: list[str] = []
+    tokens: list[tuple[str, str]] = []
     for account in accounts:
         if account.encrypted_access_token is not None:
             try:
-                tokens.append(decrypt_value(account.encrypted_access_token))
+                tokens.append((decrypt_value(account.encrypted_access_token), account.login_kind))
             except (RuntimeError, ValueError) as exc:
                 logger.warning("Instagram token could not be decrypted for revocation (%s).", type(exc).__name__)
         await db.delete(account)
     await db.commit()
 
     meta_revoked = 0
-    for token in tokens:
+    for token, login_kind in tokens:
         try:
-            if await revoke_instagram_permissions(token):
+            if await revoke_instagram_permissions(token, login_kind=login_kind):
                 meta_revoked += 1
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning("Instagram permission revocation failed (%s).", type(exc).__name__)

@@ -24,8 +24,8 @@ export type InstagramMetaAppsResponse = {
 /** Whether this user can start a connection right now (platform app or a workspace app). */
 export function canConnect(data: InstagramMetaAppsResponse | undefined): boolean {
   if (!data) return false;
-  if (data.platform?.available) return !data.platform.blocked;
-  return data.apps.length > 0;
+  const platformReady = Boolean(data.platform?.available && !data.platform.blocked);
+  return platformReady || data.apps.length > 0;
 }
 
 export const metaAppsQueryKey = ["instagram", "apps"] as const;
@@ -55,10 +55,10 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
     retry: false,
   });
   const connect = useMutation({
-    // appId "" = the platform app (no app to pick)
+    // appId "" = the platform (FlashPost) app; otherwise one of the workspace's own apps
     mutationFn: (appId: string) =>
       apiRequest<{ authorization_url: string }>(
-        `/api/instagram/connect?${new URLSearchParams(appId ? { app_id: appId, return_to: returnTo } : { return_to: returnTo })}`,
+        `/api/instagram/connect?${new URLSearchParams(appId ? { app_id: appId, return_to: returnTo } : { use_platform: "true", return_to: returnTo })}`,
         { method: "POST" },
       ),
     onMutate: (appId) => setPendingAppId(appId),
@@ -67,10 +67,10 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
   });
   const appList = apps.data?.apps ?? [];
   const platform = apps.data?.platform;
-  // With the platform app there is nothing to pick: go straight to the Instagram (one tap).
-  // Everyone with the platform app goes straight to the Instagram (the Super Admin manages
-  // workspace apps in Apps Meta).
-  const direct = Boolean(platform?.available && !platform.blocked);
+  const platformReady = Boolean(platform?.available && !platform.blocked);
+  // With platform preferred OR no own apps, go straight to Instagram (one tap).
+  const platformPreferred = (() => { try { return localStorage.getItem('flashpost_platform_preferred') === 'true'; } catch { return false; } })();
+  const direct = platformReady && (platformPreferred || appList.length === 0);
   const started = useRef(false);
   useEffect(() => {
     if (!direct || started.current) return;
@@ -82,11 +82,11 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
     <section aria-label="Conectar conta do Instagram" className="glass-panel p-4 sm:p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-fg">{platform?.available ? "Conectar conta do Instagram" : "Escolha o aplicativo"}</h3>
+          <h3 className="text-base font-semibold text-fg">{direct ? "Conectar conta do Instagram" : "Escolha o aplicativo"}</h3>
           <p className="mt-1 text-xs leading-5 text-muted">
-            {platform?.available
+            {direct
               ? "Você será levado ao Instagram para autorizar a conta profissional. Depois volta para cá."
-              : "A nova conta será vinculada ao aplicativo escolhido. As contas já conectadas não mudam."}
+              : "Use o app do FlashPost ou o seu próprio app Meta. A nova conta fica vinculada ao app escolhido; as já conectadas não mudam."}
           </p>
         </div>
         <button
@@ -119,25 +119,48 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
         </div>
       )}
 
-      {platform?.available && (
-        platform.blocked ? (
-          <p className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning" role="status">
-            A conexão de contas não está liberada para o seu usuário. Fale com o suporte.
-          </p>
-        ) : (
-          <button
-            className="btn-primary w-full justify-center"
-            disabled={connect.isPending || (pendingAppId === "" && !connect.error)}
-            onClick={() => connect.mutate("")}
-            type="button"
-          >
-            {connect.isPending || (pendingAppId === "" && !connect.error) ? <LoaderCircle className="animate-spin" size={16} /> : <ArrowUpRight size={16} />}
-            {connect.error ? "Tentar novamente" : "Abrindo o Instagram…"}
-          </button>
-        )
+      {platform?.blocked && (
+        <p className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning" role="status">
+          O app do FlashPost não está liberado para a sua conta. Conecte com o seu próprio app Meta ou fale com o suporte.
+        </p>
       )}
 
-      {apps.data && !platform?.available && appList.length === 0 && (
+      {direct && (
+        <button
+          className="btn-primary w-full justify-center"
+          disabled={connect.isPending || (pendingAppId === "" && !connect.error)}
+          onClick={() => connect.mutate("")}
+          type="button"
+        >
+          {connect.isPending || (pendingAppId === "" && !connect.error) ? <LoaderCircle className="animate-spin" size={16} /> : <ArrowUpRight size={16} />}
+          {connect.error ? "Tentar novamente" : "Abrindo o Instagram…"}
+        </button>
+      )}
+
+      {platformReady && !direct && (
+        <button
+          className="group mb-3 flex w-full items-center gap-3 rounded-2xl border border-brand/40 bg-brand-soft/50 p-4 text-left transition-shadow hover:text-accent active:shadow-none disabled:cursor-wait disabled:opacity-60"
+          disabled={connect.isPending}
+          onClick={() => connect.mutate("")}
+          type="button"
+        >
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-brand/40 bg-brand/15 text-sm font-semibold text-accent">FP</span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="truncate font-medium text-fg">App do FlashPost</span>
+              <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-accent">Recomendado</span>
+            </span>
+            <span className="mt-1 block text-xs text-muted">Conecte em um toque, sem criar um app Meta.</span>
+          </span>
+          {pendingAppId === "" && connect.isPending ? (
+            <LoaderCircle className="shrink-0 animate-spin text-accent" size={18} />
+          ) : (
+            <ArrowUpRight className="shrink-0 text-muted transition group-hover:text-accent" size={18} />
+          )}
+        </button>
+      )}
+
+      {apps.data && !platformReady && appList.length === 0 && (
         <div className="rounded-xl border border-dashed border-line px-4 py-5 text-center">
           <Smartphone className="mx-auto text-accent" size={22} />
           <p className="mt-3 text-sm text-fg-2">Nenhum aplicativo Meta configurado.</p>
@@ -149,6 +172,10 @@ export function ConnectAppsPanel({ onClose, returnTo }: ConnectAppsPanelProps) {
             <p className="mt-1 text-xs text-muted">Peça ao responsável do workspace para configurar.</p>
           )}
         </div>
+      )}
+
+      {appList.length > 0 && platformReady && !direct && (
+        <p className="mb-2 text-xs font-medium uppercase tracking-[0.08em] text-muted">Ou use o seu próprio app</p>
       )}
 
       {appList.length > 0 && (
@@ -225,14 +252,16 @@ export function useConnectInstagram(returnTo: ConnectAppsPanelProps["returnTo"],
   });
   const connect = useMutation({
     mutationFn: () =>
-      apiRequest<{ authorization_url: string }>(`/api/instagram/connect?${new URLSearchParams({ return_to: returnTo })}`, {
+      apiRequest<{ authorization_url: string }>(`/api/instagram/connect?${new URLSearchParams({ use_platform: "true", return_to: returnTo })}`, {
         method: "POST",
       }),
     onSuccess: ({ authorization_url }) => window.location.assign(authorization_url),
     onError: openPicker, // the picker shows the error and the other ways to connect
   });
   const platform = apps.data?.platform;
-  const direct = Boolean(platform?.available && !platform.blocked);
+  // Direct when platform preferred (localStorage) or no own apps registered.
+  const platformPreferred = (() => { try { return localStorage.getItem('flashpost_platform_preferred') === 'true'; } catch { return false; } })();
+  const direct = Boolean(platform?.available && !platform.blocked) && (platformPreferred || (apps.data?.apps.length ?? 0) === 0);
   return {
     start: () => (direct ? connect.mutate() : openPicker()),
     // Stays busy while the browser leaves for the Instagram.

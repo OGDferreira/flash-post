@@ -8,7 +8,9 @@ transient failure (429/5xx, retried here with Telegram's ``retry_after``).
 import asyncio
 import json
 import logging
+from contextvars import ContextVar
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 
 import httpx
@@ -19,6 +21,84 @@ logger = logging.getLogger(__name__)
 API_BASE = "https://api.telegram.org"
 MAX_ATTEMPTS = 3
 _background: set[asyncio.Task] = set()  # keeps fire-and-forget calls alive until they finish
+
+# --- outbound rate limit (fila automática por bot) -------------------------------------------
+# A token bucket per bot token smooths bursts of outgoing messages so a funnel firing many
+# downsells/follow-ups (or a remarketing broadcast) does not slam Telegram at once and risk a
+# ban. ``_send_rate`` is messages/second per bot; 0 = unlimited (off, the behaviour before this).
+# The live value is pushed in from the panel setting (see engine.refresh_send_rate).
+_send_rate: float = 0.0
+_buckets: dict[str, "_TokenBucket"] = {}
+# Only methods that actually deliver a message to a chat are throttled (not getMe, webhook setup,
+# getFile, chat actions, callback answers, edits).
+_RATE_LIMITED = frozenset({
+    "sendMessage", "sendPhoto", "sendVideo", "sendVoice", "sendAudio", "sendVideoNote",
+    "sendAnimation", "sendDocument", "sendMediaGroup", "forwardMessage", "copyMessage",
+})
+
+
+def set_send_rate(rate: float) -> None:
+    """Set the per-bot send rate (messages/second). 0 or less disables throttling."""
+    global _send_rate
+    try:
+        _send_rate = max(0.0, float(rate))
+    except (TypeError, ValueError):
+        _send_rate = 0.0
+
+
+def get_send_rate() -> float:
+    return _send_rate
+
+
+class _TokenBucket:
+    """Classic token bucket: up to one second of burst, refilled at ``rate`` tokens/second.
+    ``acquire`` serializes callers for the same bot (FIFO queue) and waits for a token."""
+
+    def __init__(self) -> None:
+        self._tokens = 0.0
+        self._updated = monotonic()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self, rate: float) -> None:
+        if rate <= 0:
+            return
+        capacity = max(rate, 1.0)
+        async with self._lock:
+            while True:
+                now = monotonic()
+                self._tokens = min(capacity, self._tokens + (now - self._updated) * rate)
+                self._updated = now
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return
+                await asyncio.sleep((1.0 - self._tokens) / rate)
+
+
+async def _throttle(method: str, token: str) -> None:
+    rate = _send_rate
+    if rate <= 0 or method not in _RATE_LIMITED:
+        return
+    bucket = _buckets.get(token)
+    if bucket is None:
+        bucket = _buckets[token] = _TokenBucket()
+    await bucket.acquire(rate)
+
+# Target language for outgoing copy while handling one lead's update (set per task by the
+# engine when the funnel's auto-translation is on). None = send the owner's copy as written.
+translate_target: ContextVar[str | None] = ContextVar("translate_target", default=None)
+
+
+async def _translate_out(text: str | None) -> str | None:
+    """Translate outgoing copy to the lead's language, if one is set for this task. A message that
+    carries a Pix code or a payment link is never touched — translating it could corrupt the code."""
+    target = translate_target.get()
+    if not text or not target:
+        return text
+    if "<code" in text or "<pre" in text or "http://" in text or "https://" in text:
+        return text
+    from app.bots import translate
+
+    return await translate.translate(text, target)
 
 
 @dataclass
@@ -49,6 +129,7 @@ class TelegramClient:
     async def call(self, method: str, params: dict[str, Any] | None = None, files: dict[str, InputFile] | None = None) -> Any:
         url = f"{API_BASE}/bot{self._token}/{method}"
         params = {k: v for k, v in (params or {}).items() if v is not None}
+        await _throttle(method, self._token)  # fila/rate limit: wait for a send token for this bot
         last: TelegramError | None = None
         for attempt in range(MAX_ATTEMPTS):
             try:
@@ -102,6 +183,7 @@ class TelegramClient:
 
     # --- messages ---
     async def send_message(self, chat_id: int, text: str, reply_markup: dict | None = None, protect: bool = False) -> dict:
+        text = await _translate_out(text) or text
         return await self.call(
             "sendMessage",
             {
@@ -126,6 +208,7 @@ class TelegramClient:
         protect: bool = False,
         silent: bool = False,
     ) -> dict:
+        caption = await _translate_out(caption)
         params: dict[str, Any] = {
             "chat_id": chat_id,
             "disable_notification": silent or None,
@@ -180,6 +263,20 @@ class TelegramClient:
             await self.call("answerCallbackQuery", {"callback_query_id": callback_id, "text": text, "show_alert": alert or None})
         except TelegramError:
             pass
+
+    # --- files (inbound media preview for the live chat) ---
+    async def get_file(self, file_id: str) -> dict:
+        return await self.call("getFile", {"file_id": file_id})
+
+    async def download_file(self, file_path: str) -> bytes:
+        """Fetch the bytes of a file already resolved by ``get_file``. The URL carries the
+        bot token, so it is built here and never logged."""
+        url = f"{API_BASE}/file/bot{self._token}/{file_path}"
+        async with http.client(60.0) as session:
+            response = await session.get(url)
+        if response.status_code != 200:
+            raise TelegramError("download_file", response.status_code, "download failed")
+        return response.content
 
     # --- groups ---
     async def get_chat(self, chat_id: int | str) -> dict:

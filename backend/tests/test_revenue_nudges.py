@@ -33,7 +33,7 @@ async def test_revenue_nudges_once_each_in_their_window(db_session, owner) -> No
     async def keys():
         return object()
 
-    async def views(*_args):
+    async def views(*_args, **_kwargs):
         return None
 
     async def tick(when: datetime) -> list[dict]:

@@ -7,16 +7,67 @@ from datetime import datetime, timezone
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.auth.dependencies import DbSession, SuperAdminUser, require_csrf
 from app.core.security import WorkspaceRole
-from app.models import InstagramAccount, PushSubscription, SystemSetting, WorkspaceMember
+from app.models import AppNotification, InstagramAccount, PushSubscription, SystemSetting, User, WorkspaceMember
 from app.notifications import milestones as ms
 from app.notifications.goals import local_day_window, resolve_time_zone
 from app.notifications.webpush import WebPushError, get_vapid_keys
 
 router = APIRouter(prefix="/api/admin/notifications", tags=["platform administration"])
+
+
+class BroadcastRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=500)
+    url: str | None = Field(default=None, max_length=255)
+
+
+@router.get("/broadcast/audience")
+async def broadcast_audience(_admin: SuperAdminUser, db: DbSession) -> dict:
+    """How many users a comunicado would reach, and how many have push on."""
+    users = await db.scalar(select(func.count()).select_from(User))
+    devices = await db.scalar(select(func.count(func.distinct(PushSubscription.user_id))))
+    return {"users": int(users or 0), "push_users": int(devices or 0)}
+
+
+@router.post("/broadcast", dependencies=[Depends(require_csrf)])
+async def broadcast(payload: BroadcastRequest, admin: SuperAdminUser, db: DbSession) -> dict:
+    """Send one in-app notice to every user, plus a best-effort web push.
+
+    The caller (a Super Admin pressing the button) is the only trigger; this
+    reaches all real users at once and cannot be undone.
+    """
+    user_ids = list(await db.scalars(select(User.id)))
+    if not user_ids:
+        return {"users": 0, "delivered": 0, "devices": 0}
+    db.add_all(
+        AppNotification(user_id=uid, kind="comunicado", title=payload.title[:120], body=payload.body[:500], url=payload.url)
+        for uid in user_ids
+    )
+    await db.flush()
+
+    subscriptions = list(await db.scalars(select(PushSubscription)))
+    delivered = 0
+    if subscriptions:
+        try:
+            keys = await get_vapid_keys(db)
+        except (WebPushError, RuntimeError, ValueError):
+            keys = None
+        if keys is not None:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+                delivered, _transient = await ms.push_to(
+                    db,
+                    subscriptions,
+                    {"title": payload.title, "body": payload.body, "url": payload.url or "/", "tag": "comunicado"},
+                    keys,
+                    client,
+                    "comunicado",
+                )
+    await db.commit()
+    return {"users": len(user_ids), "delivered": delivered, "devices": len(subscriptions)}
 
 
 class Template(BaseModel):

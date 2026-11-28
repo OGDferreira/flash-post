@@ -86,6 +86,11 @@ class TgBot(Base):
     folder_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("tg_flow_folders.id", ondelete="SET NULL")
     )
+    # Active A/B test: when set, each new lead is drawn into variant A or B (by weight) and
+    # the bot runs the lead's own drawn funnel instead of ``flow_id``/``folder_id``.
+    ab_test_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_ab_tests.id", ondelete="SET NULL")
+    )
     tg_bot_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # Hidden by the Super Admin: keeps running, but the operation never sees it, its leads or its sales.
     hidden_by_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
@@ -111,6 +116,39 @@ class TgBot(Base):
         String(16), nullable=False, default="online", server_default="online"
     )
     last_error: Mapped[str | None] = mapped_column(String(500))
+    # Funnel scheduling: hold the bot inactive until scheduled_activate_at, then auto-turn
+    # off at scheduled_deactivate_at or once auto_deactivate_after_sales paid sales land
+    # (counted from schedule_activated_at). All optional; empty = behaves as before.
+    scheduled_activate_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scheduled_deactivate_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    auto_deactivate_after_sales: Mapped[int | None] = mapped_column(Integer)
+    schedule_activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class TgFlowImportCode(Base):
+    """Short, expiring code (e.g. ``FBF-ABC-XYZ``) that copies a funnel to another user.
+
+    Replaces the old long signed token: the code here is random and the mapping to the
+    funnel is stored, so the code stays short. Legacy long codes still import via the
+    signed-token fallback until they expire.
+    """
+
+    __tablename__ = "tg_flow_import_codes"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_tg_flow_import_codes_code"),
+        Index("ix_tg_flow_import_codes_flow", "flow_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = _workspace_fk()
+    flow_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="CASCADE"), nullable=False
+    )
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -182,6 +220,8 @@ class TgLead(Base):
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(255))
     username: Mapped[str | None] = mapped_column(String(64))
+    # Telegram UI language of the lead (e.g. "en", "es"); drives per-funnel auto-translation.
+    language_code: Mapped[str | None] = mapped_column(String(16))
     # Payload of /start (tracking code per Instagram account or campaign).
     source: Mapped[str | None] = mapped_column(String(64))
     age_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -189,12 +229,53 @@ class TgLead(Base):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     stage: Mapped[str] = mapped_column(String(32), nullable=False, default="new", server_default="new")
+    # Humanized conversation: when the welcome sequence is paused waiting for the lead to
+    # reply, holds {"next": <index of the next welcome block>}; None when not paused.
+    welcome_wait: Mapped[dict | None] = mapped_column(JSON)
+    # Esperando o lead digitar algo (ex.: "mimo" = o valor do mimo); None quando não há nada pendente.
+    awaiting: Mapped[str | None] = mapped_column(String(32))
     # Came in through a funnel whose owner takes 100% of the sales: never shown to the seller.
     seller_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # Unread inbound messages the operator has not opened yet (live chat).
+    unread_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+class TgMessage(Base):
+    """One message in a lead's conversation with the bot: what the lead sent ("in"),
+    what the funnel sent automatically, or an operator's manual reply ("out"). Powers
+    the live-chat inbox; it is a log, never read by the funnel engine."""
+
+    __tablename__ = "tg_messages"
+    __table_args__ = (Index("ix_tg_messages_lead_created", "lead_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = _workspace_fk()
+    bot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_bots.id", ondelete="CASCADE"), nullable=False
+    )
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_leads.id", ondelete="CASCADE"), nullable=False
+    )
+    direction: Mapped[str] = mapped_column(String(3), nullable=False)  # in | out
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # text|photo|video|audio|voice|video_note|document|sticker|other
+    text: Mapped[str | None] = mapped_column(Text)
+    # Inbound media: the Telegram file_id (fetched on demand for preview).
+    tg_file_id: Mapped[str | None] = mapped_column(String(256))
+    # Outbound manual media: the panel file it was sent from.
+    media_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_media.id", ondelete="SET NULL")
+    )
+    # Set when a human sent it from the panel (null = the lead or the automated funnel).
+    sent_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
@@ -420,7 +501,7 @@ class TgFlowShare(Base):
         CheckConstraint("seller_percent > 0 AND seller_percent <= 100", name="ck_tg_flow_shares_seller_percent"),
         CheckConstraint("owner_percent + seller_percent = 100", name="ck_tg_flow_shares_total"),
         CheckConstraint("status IN ('ACTIVE', 'REVOKED')", name="ck_tg_flow_shares_status"),
-        CheckConstraint("gateway IN ('smokepay', 'snakepay', 'atenaspay')", name="ck_tg_flow_shares_gateway"),
+        CheckConstraint("gateway IN ('smokepay', 'snakepay', 'atenaspay', 'stripe')", name="ck_tg_flow_shares_gateway"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -452,6 +533,36 @@ class TgFlowShare(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class TgAbTest(Base):
+    """A/B test of two versions of a funnel. While active on a bot, each new lead is drawn into
+    variant A or B by ``weight_a`` (percent, 1-99) and keeps it. Both variants are ordinary
+    funnels, so every lead, order and sale is already keyed by ``flow_id`` — the results view just
+    splits those metrics by the test's two funnels."""
+
+    __tablename__ = "tg_ab_tests"
+    __table_args__ = (Index("ix_tg_ab_tests_workspace", "workspace_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = _workspace_fk()
+    bot_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_bots.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    flow_a_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="CASCADE"), nullable=False
+    )
+    flow_b_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tg_flows.id", ondelete="CASCADE"), nullable=False
+    )
+    weight_a: Mapped[int] = mapped_column(Integer, nullable=False, default=50, server_default="50")
+    # active -> stopped. A stopped test keeps its rows for the results view.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", server_default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TgFlowFolder(Base):
@@ -492,7 +603,7 @@ class TgGatewaySetting(Base):
     __tablename__ = "tg_gateway_settings"
     __table_args__ = (
         UniqueConstraint("workspace_id", "gateway", name="uq_tg_gateway_settings_workspace_gateway"),
-        CheckConstraint("gateway IN ('smokepay', 'snakepay', 'atenaspay')", name="ck_tg_gateway_settings_gateway"),
+        CheckConstraint("gateway IN ('smokepay', 'snakepay', 'atenaspay', 'stripe')", name="ck_tg_gateway_settings_gateway"),
         CheckConstraint("priority >= 1", name="ck_tg_gateway_settings_priority"),
     )
 

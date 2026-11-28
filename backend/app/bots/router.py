@@ -15,17 +15,17 @@ from typing import Annotated, Any
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, require_csrf
-from app.bots import atenaspay, engine, portable, smokepay
-from app.bots.flow_schema import FlowDefinition, default_flow
+from app.auth.dependencies import AuthenticatedUser, DbSession, OwnerAccess, SuperAdminUser, require_csrf
+from app.bots import ab_tests, atenaspay, engine, portable, smokepay, stripe_gateway
+from app.bots.flow_schema import FlowDefinition, Offer, UpsellStep, default_flow
 from app.bots.telegram import TelegramClient, TelegramError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_value, encrypt_value
 from app.core.database import get_session_factory
-from app.models import TgBot, TgCampaign, TgFlow, TgFlowFolder, TgFlowFolderItem, TgGroup, TgJob, TgLead, TgMedia, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
+from app.models import SystemSetting, TgAbTest, TgBot, TgCampaign, TgFlow, TgFlowFolder, TgFlowFolderItem, TgGroup, TgJob, TgLead, TgMedia, TgMessage, TgOrder, TgSubscription, TgUpdateSeen, User, Workspace
 from app.partners.service import accepted, billing_route, flow_offered_to, notify_user, owner_workspace, partner_link, shared_funnel_access
 from app.analytics.periods import AnalyticsPeriod, period_bounds, period_label, user_time_zone
 from app.bots.stats import conversion_stats, partners_ranking_of, recent_activity
@@ -85,11 +85,16 @@ def _bot_out(bot: TgBot, stats: dict | None = None) -> dict:
         "name": bot.name,
         "flow_id": str(bot.flow_id) if bot.flow_id else None,
         "folder_id": str(bot.folder_id) if bot.folder_id else None,
+        "ab_test_id": str(bot.ab_test_id) if bot.ab_test_id else None,
         "delivery_group_chat_id": bot.delivery_group_chat_id,
         "cache_chat_id": bot.cache_chat_id,
         "is_active": bot.is_active,
         "status": bot.status,
         "last_error": bot.last_error,
+        "scheduled_activate_at": bot.scheduled_activate_at.isoformat() if bot.scheduled_activate_at else None,
+        "scheduled_deactivate_at": bot.scheduled_deactivate_at.isoformat() if bot.scheduled_deactivate_at else None,
+        "auto_deactivate_after_sales": bot.auto_deactivate_after_sales,
+        "schedule_activated_at": bot.schedule_activated_at.isoformat() if bot.schedule_activated_at else None,
         "created_at": bot.created_at.isoformat() if bot.created_at else None,
         "hidden_by_admin": bool(bot.hidden_by_admin),
         # Taken over by the Super Admin from this user's operation (only the Super Admin sees it).
@@ -260,6 +265,31 @@ async def bots_config(access: OwnerAccess) -> dict:
     }
 
 
+class SendRatePayload(BaseModel):
+    # Messages/second per bot; 0 = sem limite (desligado). Capped at Telegram's ~30/s ceiling.
+    rate: Annotated[float, Field(ge=0, le=30)]
+
+
+@router.get("/send-rate")
+async def get_send_rate(_admin: SuperAdminUser, db: DbSession) -> dict:
+    """Current per-bot send rate (fila/rate limit) and the configured default."""
+    return {"rate": await engine.get_send_rate_setting(db), "default": float(get_settings().bot_send_rate)}
+
+
+@router.put("/send-rate", dependencies=csrf)
+async def set_send_rate(payload: SendRatePayload, admin: SuperAdminUser, db: DbSession) -> dict:
+    """Super Admin sets the per-bot send rate live; applied to running bots at once."""
+    value = {"rate": float(payload.rate)}
+    row = await db.get(SystemSetting, engine.BOT_SEND_RATE_KEY)
+    if row is None:
+        db.add(SystemSetting(key=engine.BOT_SEND_RATE_KEY, value=value, updated_by_user_id=admin.id))
+    else:
+        row.value, row.updated_by_user_id = value, admin.id
+    await db.commit()
+    rate = await engine.refresh_send_rate(db)
+    return {"rate": rate}
+
+
 # ---------------------------------------------------------------- bots
 
 
@@ -328,6 +358,11 @@ async def connect_bot(payload: BotCreate, access: OwnerAccess, db: DbSession) ->
         await tg.set_webhook(_telegram_webhook_url(bot), bot.webhook_secret)
     except TelegramError as exc:
         bot.status, bot.last_error = "error", str(exc)[:500]
+    from app.partners import service as partner_service
+
+    await partner_service.notify_admins_partner_activity(
+        db, access.membership.user_id, f"cadastrou o bot @{bot.username}", "/bot/robos"
+    )
     await db.commit()
     return _bot_out(bot)
 
@@ -383,12 +418,14 @@ async def update_bot(bot_id: uuid.UUID, payload: BotUpdate, access: OwnerAccess,
         await _usable_flow(db, payload.flow_id, access)
         bot.flow_id = payload.flow_id
         bot.folder_id = None
+        bot.ab_test_id = None  # a single funnel replaces any running A/B test
     if payload.clear_folder:
         bot.folder_id = None
     elif payload.folder_id:
         await _owned_folder(db, payload.folder_id, access)
         bot.folder_id = payload.folder_id
         bot.flow_id = None
+        bot.ab_test_id = None  # a folder replaces any running A/B test
     if payload.clear_delivery_group:
         bot.delivery_group_chat_id = None
     elif payload.delivery_group_chat_id is not None:
@@ -409,6 +446,54 @@ async def update_bot(bot_id: uuid.UUID, payload: BotUpdate, access: OwnerAccess,
         bot.is_active = payload.is_active
     if warm or (bot.cache_chat_id and (payload.flow_id or payload.clear_flow)):
         await _schedule_cache_warm(db, bot)
+    await db.commit()
+    return _bot_out(bot)
+
+
+class BotScheduleUpdate(BaseModel):
+    # Hold the funnel "aguardando" until this time, then auto-activate. None = no scheduled start.
+    activate_at: datetime | None = None
+    # Auto turn off at this time. None = no scheduled stop.
+    deactivate_at: datetime | None = None
+    # Auto turn off once this many paid sales land after activation. None = no sales cap.
+    deactivate_after_sales: int | None = Field(default=None, ge=1, le=1_000_000)
+
+
+@router.put("/{bot_id}/schedule", dependencies=csrf)
+async def set_bot_schedule(
+    bot_id: uuid.UUID, payload: BotScheduleUpdate, access: OwnerAccess, db: DbSession
+) -> dict:
+    """Schedule a funnel launch: hold it until a time, then auto-activate; auto turn it off
+    at a time or after N sales. Passing all-empty clears the schedule."""
+    bot = await _owned(db, TgBot, bot_id, access)
+    now = utc_now()
+
+    def _as_utc(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    activate_at = _as_utc(payload.activate_at)
+    deactivate_at = _as_utc(payload.deactivate_at)
+    if activate_at and deactivate_at and deactivate_at <= activate_at:
+        raise HTTPException(status_code=422, detail="O horário de desativar deve ser depois do de ativar.")
+    if deactivate_at and deactivate_at <= now and payload.deactivate_after_sales is None and not activate_at:
+        raise HTTPException(status_code=422, detail="O horário de desativar já passou.")
+
+    if activate_at and activate_at > now:
+        # Future launch: hold the bot inactive ("aguardando") until then.
+        bot.scheduled_activate_at = activate_at
+        bot.is_active = False
+        bot.schedule_activated_at = None
+    else:
+        # No future start: clear any pending start. If a stop/target is set on an already
+        # running bot, mark the activation moment now so the sales count starts here.
+        bot.scheduled_activate_at = None
+        if (deactivate_at or payload.deactivate_after_sales) and bot.is_active:
+            bot.schedule_activated_at = now
+
+    bot.scheduled_deactivate_at = deactivate_at
+    bot.auto_deactivate_after_sales = payload.deactivate_after_sales
     await db.commit()
     return _bot_out(bot)
 
@@ -586,7 +671,9 @@ async def export_flow(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) ->
 @router.post("/flows/{flow_id}/import-code", dependencies=csrf)
 async def flow_import_code(flow_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
     flow = await _exportable(db, flow_id, access)
-    return {"code": portable.make_code(flow.id), "valid_days": portable.CODE_TTL_SECONDS // 86400}
+    code = await portable.make_code(db, flow)
+    await db.commit()
+    return {"code": code, "valid_days": portable.CODE_TTL_SECONDS // 86400}
 
 
 @router.post("/flows/import", status_code=201, dependencies=csrf)
@@ -607,6 +694,253 @@ async def import_flow_code(payload: ImportCode, access: OwnerAccess, db: DbSessi
     await db.commit()
     await db.refresh(flow)
     return _flow_out(flow)
+
+
+# ------------------------------------------------ Funil Frankenstein
+# Pick the upsell steps that sell the most across every funnel and assemble a new funnel
+# from them. Each chosen step is copied whole (price, media, copy, delivery) and made
+# self-contained, so the new funnel is a normal, editable draft.
+
+
+class FrankensteinStep(BaseModel):
+    flow_id: uuid.UUID
+    index: Annotated[int, Field(ge=0, le=19)]
+
+
+class FrankensteinCreate(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=120)] = "Funil Frankenstein"
+    steps: Annotated[list[FrankensteinStep], Field(min_length=1, max_length=20)]
+
+
+def _upsell_offer_index(offer_id: str | None) -> int | None:
+    """Upsell orders carry ``offer_id = f"up{index}"`` (0-based position in ``upsells``)."""
+    if offer_id and offer_id.startswith("up") and offer_id[2:].isdigit():
+        return int(offer_id[2:])
+    return None
+
+
+@router.get("/flows/frankenstein/steps")
+async def frankenstein_steps(
+    access: OwnerAccess, db: DbSession, period: AnalyticsPeriod = "30d",
+    start_date: date | None = None, end_date: date | None = None,
+) -> dict:
+    """Every upsell step of the operation's own funnels, ranked by what it sold in the
+    period, so the owner can build a new funnel from the best-converting steps."""
+    start, end = period_bounds(period, start_date, end_date, utc_now())
+    hide = not admin_view()
+
+    query = select(TgFlow).where(TgFlow.workspace_id == access.workspace.id)
+    if hide:
+        query = query.where(TgFlow.hidden_by_admin.is_(False))
+    # Only the operation's own funnels (never a copy received from a chief).
+    flows = [f for f in await db.scalars(query.order_by(TgFlow.created_at)) if f.template_flow_id is None]
+
+    def window(column):
+        return [c for c in ((column >= start) if start else None, (column < end) if end else None) if c is not None]
+
+    metrics: dict[tuple[uuid.UUID, int], dict] = {}
+
+    def bucket(flow_id, index) -> dict:
+        return metrics.setdefault((flow_id, index), {"pix": 0, "paid": 0, "revenue": Decimal("0.00")})
+
+    for flow_id, offer_id, total in await db.execute(
+        select(TgOrder.flow_id, TgOrder.offer_id, func.count(TgOrder.id))
+        .where(TgOrder.workspace_id == access.workspace.id, TgOrder.kind == "upsell", *window(TgOrder.created_at))
+        .group_by(TgOrder.flow_id, TgOrder.offer_id)
+    ):
+        index = _upsell_offer_index(offer_id)
+        if flow_id is not None and index is not None:
+            bucket(flow_id, index)["pix"] += total
+    for flow_id, offer_id, total, amount in await db.execute(
+        select(TgOrder.flow_id, TgOrder.offer_id, func.count(TgOrder.id), func.coalesce(func.sum(TgOrder.amount), 0))
+        .where(TgOrder.workspace_id == access.workspace.id, TgOrder.kind == "upsell", TgOrder.status == "paid", *window(TgOrder.paid_at))
+        .group_by(TgOrder.flow_id, TgOrder.offer_id)
+    ):
+        index = _upsell_offer_index(offer_id)
+        if flow_id is not None and index is not None:
+            item = bucket(flow_id, index)
+            item["paid"] += total
+            item["revenue"] += Decimal(str(amount or 0))
+
+    steps = []
+    for flow in flows:
+        try:
+            definition = FlowDefinition.model_validate(flow.definition)
+        except ValidationError:
+            continue
+        for index, step in enumerate(definition.upsells):
+            data = metrics.get((flow.id, index), {"pix": 0, "paid": 0, "revenue": Decimal("0.00")})
+            steps.append({
+                "flow_id": str(flow.id),
+                "flow_name": flow.name,
+                "index": index,
+                "name": step.name,
+                "price": str(step.price),
+                "pix": data["pix"],
+                "paid": data["paid"],
+                "revenue": float(data["revenue"]),
+                "conversion": round(data["paid"] / data["pix"] * 100, 1) if data["pix"] else None,
+                "has_media": bool(step.media_ids),
+            })
+    # Best sellers first: revenue, then paid sales, then Pix generated.
+    steps.sort(key=lambda s: (s["revenue"], s["paid"], s["pix"]), reverse=True)
+    return {"period_label": period_label(start, end), "steps": steps}
+
+
+@router.post("/flows/frankenstein", status_code=201, dependencies=csrf)
+async def create_frankenstein(payload: FrankensteinCreate, access: OwnerAccess, db: DbSession) -> dict:
+    wanted = {step.flow_id for step in payload.steps}
+    flows = {
+        flow.id: flow
+        for flow in await db.scalars(
+            select(TgFlow).where(TgFlow.id.in_(wanted), TgFlow.workspace_id == access.workspace.id)
+        )
+    }
+    definitions: dict[uuid.UUID, FlowDefinition] = {}
+    chosen: list[UpsellStep] = []
+    for ref in payload.steps:
+        flow = flows.get(ref.flow_id)
+        if flow is None:
+            raise HTTPException(status_code=404, detail="Um dos funis escolhidos não existe mais.")
+        definition = definitions.get(ref.flow_id)
+        if definition is None:
+            try:
+                definition = FlowDefinition.model_validate(flow.definition)
+            except ValidationError:
+                raise HTTPException(status_code=422, detail=f'O funil "{flow.name}" está inválido e não pode ser reaproveitado.') from None
+            definitions[ref.flow_id] = definition
+        if ref.index >= len(definition.upsells):
+            raise HTTPException(status_code=422, detail=f'Uma etapa escolhida do funil "{flow.name}" não existe mais.')
+        step = definition.upsells[ref.index].model_copy(deep=True)
+        # Self-contained: bake in the source funnel's default delivery when the step relied on it,
+        # so the new funnel doesn't need that funnel's default delivery to be valid.
+        if step.delivery is None and definition.default_delivery is not None:
+            step.delivery = definition.default_delivery.model_copy(deep=True)
+        chosen.append(step)
+
+    definition = default_flow()
+    definition.upsells = chosen
+    try:
+        definition = FlowDefinition.model_validate(definition.model_dump(mode="json"))
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        raise HTTPException(status_code=422, detail=f"Não foi possível montar o funil: {first.get('msg')}") from None
+
+    flow = TgFlow(workspace_id=access.workspace.id, name=payload.name.strip(), definition=definition.model_dump(mode="json"))
+    db.add(flow)
+    await db.flush()
+    from app.partners import service as partner_service
+
+    await partner_service.notify_admins_partner_activity(
+        db, access.membership.user_id, f'montou o funil Frankenstein "{flow.name}"', "/bot/funis"
+    )
+    await db.commit()
+    await db.refresh(flow)
+    return _flow_out(flow)
+
+
+# ---------------------------------------------------------------- A/B tests
+
+
+class AbTestCreate(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=120)]
+    bot_id: uuid.UUID
+    flow_a_id: uuid.UUID
+    flow_b_id: uuid.UUID
+    weight_a: Annotated[int, Field(ge=1, le=99)] = 50
+
+
+class AbTestUpdate(BaseModel):
+    weight_a: Annotated[int, Field(ge=1, le=99)]
+
+
+async def _ab_out(db, test: TgAbTest, *, with_results: bool = True) -> dict:
+    flow_a = await db.get(TgFlow, test.flow_a_id)
+    flow_b = await db.get(TgFlow, test.flow_b_id)
+    bot = await db.get(TgBot, test.bot_id)
+    out = {
+        "id": str(test.id),
+        "name": test.name,
+        "bot_id": str(test.bot_id),
+        "bot_username": bot.username if bot else None,
+        "status": test.status,
+        "weight_a": test.weight_a,
+        "flow_a": {"id": str(test.flow_a_id), "name": flow_a.name if flow_a else "—"},
+        "flow_b": {"id": str(test.flow_b_id), "name": flow_b.name if flow_b else "—"},
+        "created_at": test.created_at.isoformat() if test.created_at else None,
+        "stopped_at": test.stopped_at.isoformat() if test.stopped_at else None,
+    }
+    if with_results and bot is not None:
+        out["results"] = await ab_tests.results(db, bot, test)
+    return out
+
+
+@router.get("/ab-tests")
+async def list_ab_tests(access: OwnerAccess, db: DbSession) -> dict:
+    """Every A/B test of this operation (active and stopped), newest first, with live metrics."""
+    rows = await db.scalars(
+        select(TgAbTest).where(TgAbTest.workspace_id == access.workspace.id).order_by(TgAbTest.created_at.desc())
+    )
+    tests = [await _ab_out(db, test) for test in rows]
+    return {"tests": tests}
+
+
+@router.post("/ab-tests", status_code=201, dependencies=csrf)
+async def create_ab_test(payload: AbTestCreate, access: OwnerAccess, db: DbSession) -> dict:
+    if payload.flow_a_id == payload.flow_b_id:
+        raise HTTPException(status_code=422, detail="As duas versões precisam ser funis diferentes.")
+    bot = await _owned(db, TgBot, payload.bot_id, access)
+    # Both variants must be this operation's own funnels (their media live in this workspace).
+    flow_a = await _owned(db, TgFlow, payload.flow_a_id, access)
+    flow_b = await _owned(db, TgFlow, payload.flow_b_id, access)
+    test = TgAbTest(
+        workspace_id=access.workspace.id, bot_id=bot.id, name=payload.name.strip(),
+        flow_a_id=flow_a.id, flow_b_id=flow_b.id, weight_a=payload.weight_a,
+    )
+    db.add(test)
+    await db.flush()
+    # The A/B test takes over how the bot picks a funnel; a folder would collide with it.
+    bot.folder_id = None
+    bot.ab_test_id = test.id
+    await db.commit()
+    await db.refresh(test)
+    return await _ab_out(db, test)
+
+
+@router.get("/ab-tests/{test_id}")
+async def get_ab_test(test_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
+    test = await _owned(db, TgAbTest, test_id, access)
+    return await _ab_out(db, test)
+
+
+@router.patch("/ab-tests/{test_id}", dependencies=csrf)
+async def update_ab_test(test_id: uuid.UUID, payload: AbTestUpdate, access: OwnerAccess, db: DbSession) -> dict:
+    test = await _owned(db, TgAbTest, test_id, access)
+    test.weight_a = payload.weight_a  # applies to leads drawn from now on
+    await db.commit()
+    await db.refresh(test)
+    return await _ab_out(db, test)
+
+
+@router.post("/ab-tests/{test_id}/stop", dependencies=csrf)
+async def stop_ab_test(test_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
+    test = await _owned(db, TgAbTest, test_id, access)
+    if test.status == "active":
+        test.status = "stopped"
+        test.stopped_at = engine.utcnow()
+    # The bot falls back to its single funnel (``flow_id``); leads keep the variant they were given.
+    await db.execute(update(TgBot).where(TgBot.ab_test_id == test.id).values(ab_test_id=None))
+    await db.commit()
+    await db.refresh(test)
+    return await _ab_out(db, test)
+
+
+@router.delete("/ab-tests/{test_id}", status_code=204, dependencies=csrf)
+async def delete_ab_test(test_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> None:
+    test = await _owned(db, TgAbTest, test_id, access)
+    await db.execute(update(TgBot).where(TgBot.ab_test_id == test.id).values(ab_test_id=None))
+    await db.delete(test)
+    await db.commit()
 
 
 @router.get("/stats")
@@ -682,6 +1016,27 @@ async def bot_analytics_full(
     return data
 
 
+@router.get("/analytics/ltv")
+async def bot_analytics_ltv(
+    access: OwnerAccess, db: DbSession, period: AnalyticsPeriod = "30d",
+    start_date: date | None = None, end_date: date | None = None,
+    bot_id: uuid.UUID | None = None, flow_id: uuid.UUID | None = None,
+) -> dict:
+    """LTV do lead: quanto a safra de leads do período rende ao longo da vida inteira
+    (plano + upsell + downsell + remarketing), além do valor da primeira venda."""
+    from app.bots.ltv import lead_ltv
+
+    zone = await user_time_zone(db, access.workspace.id, access.membership.user_id)
+    start, end = period_bounds(period, start_date, end_date, utc_now(), zone)
+    if start is None or end is None:
+        raise HTTPException(status_code=422, detail="Escolha um período limitado.")
+    data = await lead_ltv(
+        db, access.workspace.id, start, end, zone, bot_id=bot_id, flow_id=flow_id, hide=not admin_view(),
+    )
+    data["period_label"] = period_label(start, end, zone)
+    return data
+
+
 @router.get("/activity")
 async def bot_activity(access: OwnerAccess, db: DbSession, limit: int = Query(30, ge=1, le=100)) -> dict:
     """Live log of the operation: new leads, Pix generated and approved sales."""
@@ -709,6 +1064,12 @@ async def create_flow(payload: FlowCreate, access: OwnerAccess, db: DbSession) -
     definition = _validate_definition(payload.definition) if payload.definition else default_flow()
     flow = TgFlow(workspace_id=access.workspace.id, name=payload.name.strip(), definition=definition.model_dump(mode="json"))
     db.add(flow)
+    await db.flush()
+    from app.partners import service as partner_service
+
+    await partner_service.notify_admins_partner_activity(
+        db, access.membership.user_id, f'criou o funil "{flow.name}"', "/bot/funis"
+    )
     await db.commit()
     return _flow_out(flow)
 
@@ -753,6 +1114,7 @@ async def save_flow(flow_id: uuid.UUID, payload: FlowUpdate, access: OwnerAccess
         for bot in await db.scalars(select(TgBot).where(TgBot.flow_id == flow.id, TgBot.cache_chat_id.is_not(None))):
             await _schedule_cache_warm(db, bot)
     await db.commit()
+    engine.invalidate_flow(flow.id)  # the hot path caches definitions in-process; show edits at once
     await db.refresh(flow)  # updated_at is set by the database (onupdate)
     return _flow_out(flow)
 
@@ -873,7 +1235,9 @@ async def upload_media(
         raise HTTPException(status_code=415, detail="O conteúdo do arquivo não corresponde ao tipo.")
     safe = PurePosixPath(filename.replace("\\", "/")).name.strip()[:200] or "arquivo"
     media_id = uuid.uuid4()
-    path = f"{access.workspace.id}/bots/{media_id}/{safe}"
+    # Chave do Storage sem "#"/espaços (Supabase rejeita com 400); o nome
+    # original fica em file_name só pra exibição.
+    path = f"{access.workspace.id}/bots/{media_id}/{SupabaseStorage.safe_object_name(safe)}"
     try:
         await SupabaseStorage.from_settings().upload(path, content, content_type)
     except (RuntimeError, SupabaseStorageError, httpx.HTTPError) as exc:
@@ -898,6 +1262,218 @@ async def delete_media(media_id: uuid.UUID, access: OwnerAccess, db: DbSession) 
     await db.commit()
 
 
+# ---------------------------------------------------------------- live chat (conversations)
+
+# Telegram file_path extension -> content type for previewing a lead's incoming media.
+_INBOUND_TYPES = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp", "gif": "image/gif",
+    "mp4": "video/mp4", "mov": "video/mp4", "webm": "video/webm",
+    "oga": "audio/ogg", "ogg": "audio/ogg", "opus": "audio/ogg", "mp3": "audio/mpeg", "m4a": "audio/mp4",
+}
+_KIND_LABEL = {
+    "photo": "🖼 Imagem", "video": "🎞 Vídeo", "voice": "🎤 Áudio", "audio": "🎵 Áudio",
+    "video_note": "🎥 Vídeo", "document": "📎 Arquivo", "sticker": "🌟 Figurinha", "other": "📎 Mídia",
+}
+
+
+class ReplyPayload(BaseModel):
+    text: Annotated[str | None, Field(default=None, max_length=4000)] = None
+    media_id: uuid.UUID | None = None
+
+
+async def _owned_lead(db, lead_id: uuid.UUID, access) -> TgLead:
+    lead = await db.get(TgLead, lead_id)
+    if lead is None or lead.workspace_id != access.workspace.id:
+        raise HTTPException(status_code=404, detail="Lead não encontrado.")
+    if lead.seller_hidden and not admin_view():
+        raise HTTPException(status_code=404, detail="Lead não encontrado.")
+    return lead
+
+
+def _msg_preview(msg: TgMessage | None) -> str:
+    if msg is None:
+        return ""
+    if msg.kind == "text":
+        return (msg.text or "")[:120]
+    tag = _KIND_LABEL.get(msg.kind, "📎 Mídia")
+    return f"{tag} · {msg.text[:80]}" if msg.text else tag
+
+
+def _message_out(msg: TgMessage) -> dict:
+    return {
+        "id": str(msg.id),
+        "direction": msg.direction,
+        "kind": msg.kind,
+        "text": msg.text,
+        "from_operator": msg.sent_by_user_id is not None,
+        "has_media": bool(msg.tg_file_id or msg.media_id),
+        "media_id": str(msg.media_id) if msg.media_id else None,  # outbound panel media (preview via /media/{id}/preview)
+        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+    }
+
+
+@router.get("/conversations")
+async def list_conversations(
+    access: OwnerAccess, db: DbSession,
+    q: str = Query("", max_length=64),
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """Leads with a conversation, most recently active first."""
+    seller = () if admin_view() else (TgLead.seller_hidden.is_(False),)
+    latest = (
+        select(TgMessage.lead_id, func.max(TgMessage.created_at).label("ts"))
+        .where(TgMessage.workspace_id == access.workspace.id)
+        .group_by(TgMessage.lead_id)
+        .subquery()
+    )
+    query = (
+        select(TgLead, TgBot.username, latest.c.ts)
+        .join(latest, latest.c.lead_id == TgLead.id)
+        .join(TgBot, TgBot.id == TgLead.bot_id)
+        .where(TgLead.workspace_id == access.workspace.id, *seller)
+    )
+    if not admin_view():
+        query = query.where(TgBot.hidden_by_admin.is_(False))
+    if q.strip():
+        like = f"%{q.strip()}%"
+        query = query.where(or_(TgLead.first_name.ilike(like), TgLead.username.ilike(like)))
+    rows = (await db.execute(query.order_by(latest.c.ts.desc()).limit(limit).offset(offset))).all()
+    conversations = []
+    for lead, username, ts in rows:
+        last = await db.scalar(
+            select(TgMessage).where(TgMessage.lead_id == lead.id).order_by(TgMessage.created_at.desc()).limit(1)
+        )
+        conversations.append({
+            "lead_id": str(lead.id),
+            "name": lead.first_name or "Lead",
+            "username": lead.username,
+            "bot": username,
+            "unread": lead.unread_count or 0,
+            "blocked": lead.blocked_bot,
+            "last_at": ts.isoformat() if ts else None,
+            "last_preview": _msg_preview(last),
+        })
+    return {"conversations": conversations}
+
+
+@router.get("/conversations/{lead_id}")
+async def get_conversation(
+    lead_id: uuid.UUID, access: OwnerAccess, db: DbSession, limit: int = Query(200, ge=1, le=500),
+) -> dict:
+    lead = await _owned_lead(db, lead_id, access)
+    bot = await db.get(TgBot, lead.bot_id)
+    rows = list(await db.scalars(
+        select(TgMessage).where(TgMessage.lead_id == lead.id).order_by(TgMessage.created_at.desc(), TgMessage.id.desc()).limit(limit)
+    ))
+    rows.reverse()  # oldest first for display
+    orders = list(await db.scalars(
+        select(TgOrder).where(TgOrder.lead_id == lead.id).order_by(TgOrder.created_at.desc()).limit(20)
+    ))
+    pix_count = sum(1 for o in orders if o.pix_copy_paste or o.status != "pending" or o.gateway_transaction_id)
+    paid_count = sum(1 for o in orders if o.status == "paid")
+    return {
+        "lead": {
+            "id": str(lead.id),
+            "name": lead.first_name or "Lead",
+            "username": lead.username,
+            "bot": bot.username if bot else None,
+            "blocked": lead.blocked_bot,
+            "stage": lead.stage,
+        },
+        "orders": [
+            {
+                "id": str(o.id),
+                "kind": o.kind,
+                "name": o.offer_name,
+                "amount": str(o.amount),
+                "status": o.status,
+                # The PIX copy-and-paste is only useful while it can still be paid.
+                "pix": o.pix_copy_paste if o.status == "pending" else None,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
+                "paid_at": o.paid_at.isoformat() if o.paid_at else None,
+            }
+            for o in orders
+        ],
+        "pix_generated": pix_count,
+        "pix_paid": paid_count,
+        "messages": [_message_out(m) for m in rows],
+    }
+
+
+@router.post("/conversations/{lead_id}/read", dependencies=csrf)
+async def mark_conversation_read(lead_id: uuid.UUID, access: OwnerAccess, db: DbSession) -> dict:
+    lead = await _owned_lead(db, lead_id, access)
+    lead.unread_count = 0
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/conversations/{lead_id}/reply", dependencies=csrf)
+async def reply_conversation(
+    lead_id: uuid.UUID, payload: ReplyPayload, access: OwnerAccess, user: AuthenticatedUser, db: DbSession,
+) -> dict:
+    lead = await _owned_lead(db, lead_id, access)
+    if lead.blocked_bot:
+        raise HTTPException(status_code=409, detail="Este lead bloqueou o bot.")
+    text = (payload.text or "").strip() or None
+    media = None
+    if payload.media_id is not None:
+        media = await _owned(db, TgMedia, payload.media_id, access)
+        if media.locked:
+            raise HTTPException(status_code=403, detail="Mídia protegida do seu sócio.")
+    if text is None and media is None:
+        raise HTTPException(status_code=422, detail="Escreva uma mensagem ou anexe uma mídia.")
+    bot = await db.get(TgBot, lead.bot_id)
+    if bot is None or not bot.is_active:
+        raise HTTPException(status_code=409, detail="Bot inativo.")
+    try:
+        await engine.send_manual_message(db, bot, lead, text=text, media=media, user_id=user.id)
+    except TelegramError as exc:
+        if exc.blocked:
+            lead.blocked_bot = True
+            await db.commit()
+            raise HTTPException(status_code=409, detail="Este lead bloqueou o bot.") from None
+        raise HTTPException(status_code=502, detail="Telegram indisponível, tente de novo.") from None
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/conversations/{lead_id}/messages/{message_id}/media")
+async def conversation_media(
+    lead_id: uuid.UUID, message_id: uuid.UUID, access: OwnerAccess, db: DbSession,
+) -> Response:
+    lead = await _owned_lead(db, lead_id, access)
+    msg = await db.get(TgMessage, message_id)
+    if msg is None or msg.lead_id != lead.id:
+        raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+    cache = {"Cache-Control": "private, max-age=3600"}
+    # Inbound (what the lead sent): fetched from Telegram by file id.
+    if msg.tg_file_id:
+        bot = await db.get(TgBot, lead.bot_id)
+        if bot is None:
+            raise HTTPException(status_code=404, detail="Bot não encontrado.")
+        try:
+            data, path = await engine.inbound_media_bytes(bot, msg.tg_file_id)
+        except TelegramError:
+            raise HTTPException(status_code=502, detail="Mídia indisponível.") from None
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        return Response(data, media_type=_INBOUND_TYPES.get(ext, "application/octet-stream"), headers=cache)
+    # Outbound funnel media (what the bot showed the lead): stored in our own storage.
+    if msg.media_id:
+        media = await db.get(TgMedia, msg.media_id)
+        if media is None:
+            raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+        if getattr(media, "locked", False) and not admin_view():
+            raise HTTPException(status_code=403, detail="Mídia protegida do seu sócio.")
+        try:
+            data = await engine.load_media_bytes(media)
+        except Exception:
+            raise HTTPException(status_code=502, detail="Mídia indisponível.") from None
+        return Response(data, media_type=media.content_type or "application/octet-stream", headers=cache)
+    raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+
+
 # ---------------------------------------------------------------- hidden by the Super Admin
 
 
@@ -911,7 +1487,7 @@ def _require_admin_view() -> None:
 
 
 # Rows that follow a bot when it changes operation (its orders stay where they were charged).
-BOT_ROWS = (TgLead, TgGroup, TgSubscription, TgJob)
+BOT_ROWS = (TgLead, TgGroup, TgSubscription, TgJob, TgMessage)
 
 
 async def _move_bot(db, bot: TgBot, workspace_id: uuid.UUID) -> None:
@@ -989,10 +1565,70 @@ async def list_orders(access: OwnerAccess, db: DbSession, limit: int = Query(50,
                 "id": str(o.id), "status": o.status, "plan": o.offer_name, "amount": f"{o.amount:.2f}",
                 "net_amount": f"{o.net_amount:.2f}" if o.net_amount is not None else None,
                 "bot": username, "lead": lead.first_name, "lead_username": lead.username,
+                "lead_id": str(lead.id),
                 "source": lead.source, "created_at": o.created_at.isoformat() if o.created_at else None,
                 "paid_at": o.paid_at.isoformat() if o.paid_at else None,
             }
             for o, lead, username in rows.all()
+        ]
+    }
+
+
+@router.get("/leads")
+async def list_leads(
+    access: OwnerAccess, db: DbSession,
+    audience: str = Query("all"),
+    q: str = Query("", max_length=64),
+    limit: int = Query(100, ge=1, le=300),
+) -> dict:
+    """Leads with their PIX status, filterable by audience, each openable in the chat.
+
+    audience: all | paid (pagantes) | pix_unpaid (gerou e não pagou) | no_pix (não gerou)."""
+    ws = access.workspace.id
+    seller = () if admin_view() else (TgLead.seller_hidden.is_(False),)
+    agg = (
+        select(
+            TgOrder.lead_id.label("lead_id"),
+            func.count().label("orders"),
+            func.coalesce(func.sum(case((TgOrder.status == "paid", 1), else_=0)), 0).label("paid"),
+            func.max(TgOrder.created_at).label("last_order"),
+        )
+        .where(TgOrder.workspace_id == ws, TgOrder.status != "failed")
+        .group_by(TgOrder.lead_id)
+        .subquery()
+    )
+    query = (
+        select(TgLead, TgBot.username, agg.c.orders, agg.c.paid)
+        .join(TgBot, TgBot.id == TgLead.bot_id)
+        .outerjoin(agg, agg.c.lead_id == TgLead.id)
+        .where(TgLead.workspace_id == ws, *seller)
+    )
+    if not admin_view():
+        query = query.where(TgBot.hidden_by_admin.is_(False))
+    if audience == "paid":
+        query = query.where(agg.c.paid > 0)
+    elif audience == "pix_unpaid":
+        query = query.where(agg.c.orders > 0, func.coalesce(agg.c.paid, 0) == 0)
+    elif audience == "no_pix":
+        query = query.where(agg.c.orders.is_(None))
+    if q.strip():
+        like = f"%{q.strip()}%"
+        query = query.where(or_(TgLead.first_name.ilike(like), TgLead.username.ilike(like)))
+    rows = (await db.execute(query.order_by(TgLead.created_at.desc()).limit(limit))).all()
+    return {
+        "leads": [
+            {
+                "id": str(lead.id),
+                "name": lead.first_name or "Lead",
+                "username": lead.username,
+                "bot": username,
+                "has_pix": bool(orders),
+                "paid": bool(paid),
+                "blocked": lead.blocked_bot,
+                "stage": lead.stage,
+                "created_at": lead.created_at.isoformat() if lead.created_at else None,
+            }
+            for lead, username, orders, paid in rows
         ]
     }
 
@@ -1187,4 +1823,41 @@ async def smokepay_webhook(request: Request, db: DbSession) -> dict:
     except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(status_code=500, detail="Retry.") from None  # 5xx: SmokePay retries
+    return {"ok": True}
+
+
+@router.post("/pay/stripe", include_in_schema=False)
+async def stripe_webhook(request: Request, db: DbSession) -> dict:
+    raw = await request.body()
+    if not stripe_gateway.verify_signature(raw, request.headers.get("stripe-signature")):
+        raise HTTPException(status_code=401, detail="Invalid signature.")  # 4xx stops retries
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return {"ok": True}
+    if not isinstance(event, dict):
+        return {"ok": True}
+    if event.get("type") not in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+        return {"ok": True}
+    stripe_session = (event.get("data") or {}).get("object") or {}
+    if stripe_session.get("payment_status") not in ("paid", "no_payment_required"):
+        return {"ok": True}  # e.g. an unpaid expired session
+    metadata = stripe_session.get("metadata") or {}
+    external_id = str(metadata.get("external_id") or stripe_session.get("client_reference_id") or "")
+    if not external_id.startswith(engine.ORDER_PREFIX):
+        return {"ok": True}
+    try:
+        order_id = uuid.UUID(external_id[len(engine.ORDER_PREFIX):])
+    except ValueError:
+        return {"ok": True}
+    order = await db.scalar(select(TgOrder).where(TgOrder.id == order_id, TgOrder.gateway == "stripe"))
+    if order is None:
+        return {"ok": True}  # charged by another gateway (failover) or unknown: only Stripe pays it
+    amount_total = stripe_session.get("amount_total")
+    amount = Decimal(str(amount_total)) / Decimal(100) if amount_total is not None else order.amount
+    try:
+        await engine.approve_order(db, order.id, amount)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Retry.") from None  # 5xx: Stripe retries
     return {"ok": True}

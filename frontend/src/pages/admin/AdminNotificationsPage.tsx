@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellRing, Plus, RotateCcw, Save, Send, Trash2 } from "lucide-react";
+import { BellRing, Megaphone, Plus, RotateCcw, Save, Send, Trash2 } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/PageState";
 import { ApiError, apiRequest } from "@/services/api";
@@ -24,6 +24,105 @@ type TestResponse = {
 };
 
 const fmt = (value: number) => value.toLocaleString("pt-BR");
+
+type Audience = { users: number; push_users: number };
+type BroadcastResult = { users: number; delivered: number; devices: number };
+
+const COMUNICADO_PADRAO = {
+  title: "A FlashPost agora é flashpost.tech",
+  body: "Mudamos de domínio. Suas contas, bots e dados continuam salvos. Toque para ver o que mudou e como reinstalar o app.",
+  url: "/novidades",
+};
+
+/** Dispara um aviso único para TODOS os usuários (in-app + push). Ação irreversível. */
+function BroadcastCard() {
+  const [title, setTitle] = useState(COMUNICADO_PADRAO.title);
+  const [body, setBody] = useState(COMUNICADO_PADRAO.body);
+  const [url, setUrl] = useState(COMUNICADO_PADRAO.url);
+  const [armed, setArmed] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const audience = useQuery({
+    queryKey: ["admin", "notifications", "audience"],
+    queryFn: () => apiRequest<Audience>("/api/admin/notifications/broadcast/audience"),
+  });
+
+  const send = useMutation({
+    mutationFn: () =>
+      apiRequest<BroadcastResult>("/api/admin/notifications/broadcast", {
+        method: "POST",
+        body: { title: title.trim(), body: body.trim(), url: url.trim() || null },
+      }),
+    onSuccess: (r) => {
+      setArmed(false);
+      setNotice(`Comunicado enviado para ${fmt(r.users)} usuário(s). Push entregue a ${fmt(r.delivered)} de ${fmt(r.devices)} dispositivo(s).`);
+    },
+    onError: (error) => {
+      setArmed(false);
+      setNotice(error instanceof ApiError ? error.message : "Não foi possível enviar o comunicado.");
+    },
+  });
+
+  const valid = title.trim().length > 0 && body.trim().length > 0;
+  const total = audience.data?.users ?? 0;
+
+  return (
+    <section className="dashboard-card space-y-3 rounded-2xl border border-brand/40 p-4">
+      <div className="flex items-center gap-2">
+        <Megaphone className="text-accent" size={18} />
+        <h3 className="text-sm font-semibold text-fg">Comunicado para todos</h3>
+      </div>
+      <p className="text-xs leading-5 text-muted">
+        Envia um aviso único para <strong className="text-fg-2">{audience.isLoading ? "…" : fmt(total)}</strong> usuário(s)
+        — na central de Avisos e por push. É irreversível e vai para todo mundo de uma vez.
+      </p>
+      <input
+        aria-label="Título do comunicado"
+        className="h-10 w-full rounded-lg border border-line bg-surface-inset px-3 text-sm text-fg"
+        maxLength={120}
+        onChange={(e) => { setTitle(e.target.value); setArmed(false); }}
+        value={title}
+      />
+      <textarea
+        aria-label="Texto do comunicado"
+        className="min-h-[72px] w-full rounded-lg border border-line bg-surface-inset px-3 py-2 text-sm text-fg"
+        maxLength={500}
+        onChange={(e) => { setBody(e.target.value); setArmed(false); }}
+        value={body}
+      />
+      <input
+        aria-label="Link ao tocar (interno, ex: /novidades)"
+        className="h-10 w-full rounded-lg border border-line bg-surface-inset px-3 text-sm text-fg"
+        maxLength={255}
+        onChange={(e) => { setUrl(e.target.value); setArmed(false); }}
+        placeholder="/novidades"
+        value={url}
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        {!armed ? (
+          <button
+            className="btn-primary text-xs"
+            disabled={!valid || send.isPending}
+            onClick={() => setArmed(true)}
+            type="button"
+          >
+            <Megaphone size={14} /> Disparar comunicado
+          </button>
+        ) : (
+          <>
+            <button className="btn-secondary btn-danger text-xs" disabled={send.isPending} onClick={() => send.mutate()} type="button">
+              <Send size={14} /> Confirmar envio para {fmt(total)} usuário(s)
+            </button>
+            <button className="btn-secondary text-xs" disabled={send.isPending} onClick={() => setArmed(false)} type="button">
+              Cancelar
+            </button>
+          </>
+        )}
+      </div>
+      {notice && <p className="text-xs text-fg-2" role="status">{notice}</p>}
+    </section>
+  );
+}
 
 function preview(text: string, value: number) {
   return text.replaceAll("{valor}", fmt(value)).replaceAll("{conta}", "@suaconta").replaceAll("{nome}", "Gui").replaceAll("{posts}", "230");
@@ -110,6 +209,8 @@ export function AdminNotificationsPage() {
           . Uma frase é sorteada a cada envio.
         </p>
       </div>
+
+      <BroadcastCard />
 
       <div className="flex flex-wrap gap-2">
         {data.data.kinds.map((item) => (

@@ -419,7 +419,7 @@ async def test_owner_can_disconnect_only_an_account_in_their_workspace(
     )
     await db_session.commit()
 
-    async def fake_revoke(_access_token: str) -> bool:
+    async def fake_revoke(_access_token: str, *, login_kind: str = "instagram_login") -> bool:
         return True
 
     monkeypatch.setattr(instagram_router, "revoke_instagram_permissions", fake_revoke)
@@ -692,7 +692,7 @@ async def test_owner_can_remove_an_errored_account(
     db_session.add(account)
     await db_session.commit()
 
-    async def fake_revoke(_access_token: str) -> bool:
+    async def fake_revoke(_access_token: str, *, login_kind: str = "instagram_login") -> bool:
         return True
 
     monkeypatch.setattr(instagram_router, "revoke_instagram_permissions", fake_revoke)
@@ -733,7 +733,7 @@ async def test_owner_can_remove_all_broken_accounts_at_once(
     await db_session.commit()
     healthy_id = healthy.id
 
-    async def fake_revoke(_access_token: str) -> bool:
+    async def fake_revoke(_access_token: str, *, login_kind: str = "instagram_login") -> bool:
         return True
 
     monkeypatch.setattr(instagram_router, "revoke_instagram_permissions", fake_revoke)
@@ -767,7 +767,7 @@ async def test_account_is_removed_locally_when_meta_revocation_cannot_be_confirm
     db_session.add(account)
     await db_session.commit()
 
-    async def failed_revoke(_access_token: str) -> bool:
+    async def failed_revoke(_access_token: str, *, login_kind: str = "instagram_login") -> bool:
         return False
 
     monkeypatch.setattr(instagram_router, "revoke_instagram_permissions", failed_revoke)
@@ -1637,14 +1637,14 @@ async def test_meta_apps_report_connected_accounts_and_keep_empty_apps(
 
 
 @pytest.mark.anyio
-async def test_platform_app_connects_everyone_and_the_super_admin_can_block_a_user(
+async def test_platform_app_does_not_hide_own_apps_from_regular_users(
     client: AsyncClient,
     db_session: AsyncSession,
     owner,
-    super_admin,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    user, _workspace = owner
+    # The platform app (IG_APP_ID/IG_APP_SECRET) is configured, but it no longer takes the
+    # "Apps Meta" page away from regular users: everyone registers and connects their own app.
     settings = Settings(
         public_base_url="http://testserver",
         master_encryption_key=SecretStr(os.environ["MASTER_ENCRYPTION_KEY"]),
@@ -1654,9 +1654,9 @@ async def test_platform_app_connects_everyone_and_the_super_admin_can_block_a_us
     )
 
     async def fake_exchange(code: str, _redirect_uri: str, app_id: str, app_secret: str):
-        # the platform credentials, never a workspace app
-        assert (app_id, app_secret) == ("1767450201069461", "platform-app-secret")
-        return ("17841000000000001", "via_plataforma", None, 10, 2, "platform-token",
+        # the workspace's own app, never the platform credentials
+        assert (app_id, app_secret) == ("5550000000000001", "owner-app-secret")
+        return ("17841000000000001", "com_app_proprio", None, 10, 2, "owner-token",
                 datetime.now(timezone.utc) + timedelta(days=59))
 
     monkeypatch.setattr(instagram_router, "get_settings", lambda: settings)
@@ -1664,54 +1664,81 @@ async def test_platform_app_connects_everyone_and_the_super_admin_can_block_a_us
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
 
-    # a regular user never sees the app's details and cannot add an app of their own
+    # a regular OWNER manages their own apps AND is offered the platform (FlashPost) app too,
+    # but never sees the platform app's raw id
     apps = (await client.get("/api/instagram/apps")).json()
-    assert apps["apps"] == [] and apps["platform"] == {"available": True, "blocked": False, "app_id": None}
-    refused = await client.post(
+    assert apps["can_manage"] is True
+    assert apps["platform"]["available"] is True
+    assert apps["platform"]["blocked"] is False
+    assert apps["platform"]["app_id"] is None
+    created = await client.post(
         "/api/instagram/apps", headers={"X-CSRF-Token": token},
-        json={"display_name": "Meu app", "app_id": "999", "app_secret": "s"},
+        json={"display_name": "Meu app", "app_id": "5550000000000001", "app_secret": "owner-app-secret"},
     )
-    assert refused.status_code == 403
+    assert created.status_code == 201, created.text
+    app = created.json()["app"]
+    assert app["app_id"] == "5550000000000001" and app["is_selected"] is True
 
-    # "Conectar" goes straight to Instagram Business Login with the platform app
-    start = await client.post("/api/instagram/connect", headers={"X-CSRF-Token": token})
+    # connecting uses their own app, not the platform credentials
+    start = await client.post(
+        "/api/instagram/connect", params={"app_id": app["id"]}, headers={"X-CSRF-Token": token}
+    )
     assert start.status_code == 200, start.text
     url = urlparse(start.json()["authorization_url"])
     query = parse_qs(url.query)
     assert url.netloc == "www.instagram.com" and url.path == "/oauth/authorize"
-    assert query["client_id"] == ["1767450201069461"]
-    assert query["redirect_uri"] == ["http://testserver/api/instagram/callback"]
-    assert "instagram_business_basic" in query["scope"][0] and "instagram_business_content_publish" in query["scope"][0]
-
-    # a forged state is refused (CSRF), the real one connects the account
-    forged = await client.get("/api/instagram/callback", params={"code": "c", "state": "forged"})
-    assert "instagram=error" in forged.headers["location"]
-    start = await client.post("/api/instagram/connect", headers={"X-CSRF-Token": token})
-    state = parse_qs(urlparse(start.json()["authorization_url"]).query)["state"][0]
+    assert query["client_id"] == ["5550000000000001"]
+    state = query["state"][0]
     callback = await client.get("/api/instagram/callback", params={"code": "c", "state": state})
     assert callback.status_code == 303 and "instagram=connected" in callback.headers["location"]
     account = await db_session.scalar(
         select(InstagramAccount).where(InstagramAccount.instagram_user_id == "17841000000000001")
     )
-    assert account is not None and account.app_credential_id is None
-    assert account.encrypted_access_token != "platform-token"
-    assert decrypt_value(account.encrypted_access_token) == "platform-token"
+    assert account is not None and account.app_credential_id is not None
+    assert decrypt_value(account.encrypted_access_token) == "owner-token"
 
-    # the Super Admin takes the app away from this user
-    await client.post("/api/auth/logout", headers={"X-CSRF-Token": await _csrf(client)})
-    await _login(client, "superadmin@example.com", "super admin password")
-    admin_token = await _csrf(client)
-    blocked = await client.put(
-        f"/api/admin/users/{user.id}/platform-app", headers={"X-CSRF-Token": admin_token}, json={"blocked": True}
+
+@pytest.mark.anyio
+async def test_regular_owner_can_connect_with_the_platform_app(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # With use_platform the FlashPost app connects the account for any owner, using the
+    # platform credentials (not a workspace app).
+    settings = Settings(
+        public_base_url="http://testserver",
+        master_encryption_key=SecretStr(os.environ["MASTER_ENCRYPTION_KEY"]),
+        ig_app_id="1767450201069461",
+        ig_app_secret=SecretStr("platform-app-secret"),
+        _env_file=None,
     )
-    assert blocked.status_code == 200 and blocked.json()["platform_app_blocked"] is True
 
-    # the blocked user no longer uses the platform app: back to their own Meta apps
-    await client.post("/api/auth/logout", headers={"X-CSRF-Token": admin_token})
+    async def fake_exchange(code: str, _redirect_uri: str, app_id: str, app_secret: str):
+        assert (app_id, app_secret) == ("1767450201069461", "platform-app-secret")
+        return ("17841000000000777", "via_flashpost", None, 10, 2, "platform-token",
+                datetime.now(timezone.utc) + timedelta(days=59))
+
+    monkeypatch.setattr(instagram_router, "get_settings", lambda: settings)
+    monkeypatch.setattr(instagram_router, "exchange_instagram_authorization_code", fake_exchange)
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
-    assert (await client.get("/api/instagram/apps")).json()["platform"]["available"] is False
-    assert (await client.post("/api/instagram/connect", headers={"X-CSRF-Token": token})).status_code == 403
+
+    start = await client.post(
+        "/api/instagram/connect", params={"use_platform": "true"}, headers={"X-CSRF-Token": token}
+    )
+    assert start.status_code == 200, start.text
+    query = parse_qs(urlparse(start.json()["authorization_url"]).query)
+    assert query["client_id"] == ["1767450201069461"]
+    state = query["state"][0]
+    callback = await client.get("/api/instagram/callback", params={"code": "c", "state": state})
+    assert callback.status_code == 303 and "instagram=connected" in callback.headers["location"]
+    account = await db_session.scalar(
+        select(InstagramAccount).where(InstagramAccount.instagram_user_id == "17841000000000777")
+    )
+    assert account is not None
+    assert decrypt_value(account.encrypted_access_token) == "platform-token"
 
 
 @pytest.mark.anyio
@@ -1734,14 +1761,21 @@ async def test_platform_connect_survives_a_repeated_callback_and_another_browser
         calls.append(code)
         if len(calls) > 1:
             raise RuntimeError("code already used")  # Meta refuses a reused code
-        return ("17841000000000009", "duas_vezes", None, 10, 2, "platform-token",
+        return ("17841000000000009", "duas_vezes", None, 10, 2, "owner-token",
                 datetime.now(timezone.utc) + timedelta(days=59))
 
     monkeypatch.setattr(instagram_router, "get_settings", lambda: settings)
     monkeypatch.setattr(instagram_router, "exchange_instagram_authorization_code", fake_exchange)
     await _login(client, "owner@example.com", "correct horse battery staple")
     token = await _csrf(client)
-    start = await client.post("/api/instagram/connect", headers={"X-CSRF-Token": token})
+    created = await client.post(
+        "/api/instagram/apps", headers={"X-CSRF-Token": token},
+        json={"display_name": "Meu app", "app_id": "5550000000000009", "app_secret": "owner-app-secret"},
+    )
+    assert created.status_code == 201, created.text
+    start = await client.post(
+        "/api/instagram/connect", params={"app_id": created.json()["app"]["id"]}, headers={"X-CSRF-Token": token}
+    )
     state = parse_qs(urlparse(start.json()["authorization_url"]).query)["state"][0]
 
     # the login comes back in another browser (no session cookie): still connected
@@ -1793,3 +1827,150 @@ async def test_folder_stats_views_and_best_account(client: AsyncClient, db_sessi
     stats = (await client.get("/api/instagram/folders/stats")).json()["folders"][str(folder.id)]
     assert stats["views_today"] == 150 and stats["views_7d"] == 550  # the 20-day-old day is out
     assert stats["top_account"]["username"] == "alice_b" and stats["top_account"]["views_7d"] == 450
+
+
+def test_unified_authorization_url_uses_facebook_dialog_with_config_id() -> None:
+    url = oauth.build_unified_authorization_url(
+        "900100100100100", "https://flashpost.tech/api/instagram/callback", "state-x", "778899"
+    )
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    assert parsed.netloc == "www.facebook.com"
+    assert parsed.path.endswith("/dialog/oauth")
+    assert query["client_id"] == ["900100100100100"]
+    assert query["config_id"] == ["778899"]
+    assert query["response_type"] == ["code"]
+    assert query["state"] == ["state-x"]
+    # The configuration carries the permissions; no scope list is sent.
+    assert "scope" not in query
+
+
+@pytest.mark.anyio
+async def test_owner_can_register_unified_login_app_with_config_id(
+    client: AsyncClient, db_session: AsyncSession, owner
+) -> None:
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+    # config_id is required for Unified Login.
+    missing = await client.post(
+        "/api/instagram/apps",
+        headers={"X-CSRF-Token": token},
+        json={
+            "display_name": "Unified app",
+            "app_id": "1234567890",
+            "app_secret": "meta-secret",
+            "credential_kind": "instagram_unified_login",
+        },
+    )
+    assert missing.status_code == 422, missing.text
+
+    created = await client.post(
+        "/api/instagram/apps",
+        headers={"X-CSRF-Token": token},
+        json={
+            "display_name": "Unified app",
+            "app_id": "1234567890",
+            "app_secret": "meta-secret",
+            "credential_kind": "instagram_unified_login",
+            "config_id": "778899",
+        },
+    )
+    assert created.status_code == 201, created.text
+    app = created.json()["app"]
+    assert app["credential_kind"] == "instagram_unified_login"
+    assert app["config_id"] == "778899"
+
+
+@pytest.mark.anyio
+async def test_unified_callback_connects_every_shared_account(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    owner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, workspace = owner
+    settings = Settings(
+        public_base_url="http://testserver",
+        master_encryption_key=SecretStr(os.environ["MASTER_ENCRYPTION_KEY"]),
+        _env_file=None,
+    )
+    monkeypatch.setattr(instagram_router, "get_settings", lambda: settings)
+
+    await _login(client, "owner@example.com", "correct horse battery staple")
+    token = await _csrf(client)
+    created = await client.post(
+        "/api/instagram/apps",
+        headers={"X-CSRF-Token": token},
+        json={
+            "display_name": "Unified app",
+            "app_id": "555000555",
+            "app_secret": "unified-secret",
+            "credential_kind": "instagram_unified_login",
+            "config_id": "4242",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    start = await client.post(
+        "/api/instagram/connect",
+        headers={"X-CSRF-Token": await _csrf(client)},
+    )
+    assert start.status_code == 200, start.text
+    authorization_url = start.json()["authorization_url"]
+    parsed = urlparse(authorization_url)
+    assert parsed.netloc == "www.facebook.com"
+    query = parse_qs(parsed.query)
+    assert query["client_id"] == ["555000555"]
+    assert query["config_id"] == ["4242"]
+    state = query["state"][0]
+
+    async def fake_unified_exchange(code, redirect_uri, meta_app_id, app_secret):
+        assert (meta_app_id, app_secret) == ("555000555", "unified-secret")
+        expires_at = datetime.now(timezone.utc) + timedelta(days=365 * 50)
+        return (
+            "system-user-token",
+            expires_at,
+            "biz-999",
+            [
+                {
+                    "instagram_user_id": "17800000000000001",
+                    "username": "conta_um",
+                    "profile_picture_url": "https://scontent.cdninstagram.com/a.jpg",
+                    "follower_count": 10,
+                    "media_count": 5,
+                },
+                {
+                    "instagram_user_id": "17800000000000002",
+                    "username": "conta_dois",
+                    "profile_picture_url": None,
+                    "follower_count": None,
+                    "media_count": None,
+                },
+            ],
+        )
+
+    monkeypatch.setattr(
+        instagram_router, "exchange_unified_authorization_code", fake_unified_exchange
+    )
+    callback = await client.get(
+        "/api/instagram/callback", params={"code": "the-code", "state": state}
+    )
+    assert callback.status_code == 303
+
+    accounts = (
+        await db_session.scalars(
+            select(InstagramAccount).where(
+                InstagramAccount.workspace_id == workspace.id
+            )
+        )
+    ).all()
+    assert len(accounts) == 2
+    for account in accounts:
+        assert account.login_kind == "unified_login"
+        assert account.client_business_id == "biz-999"
+        assert account.status == "connected"
+        assert decrypt_value(account.encrypted_access_token) == "system-user-token"
+    by_user = {a.instagram_user_id: a for a in accounts}
+    assert by_user["17800000000000001"].username == "conta_um"
+    assert by_user["17800000000000001"].follower_count == 10
+    assert by_user["17800000000000002"].username == "conta_dois"

@@ -2,7 +2,9 @@ import {
   BarChart3,
   Blocks,
   Bot,
+  Activity,
   Bug,
+  CalendarClock,
   ChartNoAxesCombined,
   CircleDollarSign,
   Clapperboard,
@@ -18,6 +20,7 @@ import {
   Link2,
   Megaphone,
   MessageCircle,
+  MessagesSquare,
   Puzzle,
   Receipt,
   Send,
@@ -58,11 +61,14 @@ export const PARTNER_FEATURE_BY_ROUTE: Record<string, ["post" | "bot", string]> 
   "/bot/pastas": ["bot", "flows"],
   "/bot/compartilhados-comigo": ["bot", "flows"],
   "/bot/robos": ["bot", "bots"],
+  "/bot/conversas": ["bot", "bots"],
   "/bot/remarketing": ["bot", "bots"],
   "/bot/gateways": ["bot", "bots"],
+  "/bot/parceiros": ["bot", "bots"],
+  "/bot/bots-compartilhados": ["bot", "bots"],
 };
 // Essential account pages a sócio can always reach.
-const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/feature/links"]);
+const PARTNER_ALWAYS_ALLOWED = new Set(["/profile", "/avisos", "/novidades", "/feature/links", "/feature/chat"]);
 
 function matchBase(path: string): string | null {
   const keys = [...Object.keys(PARTNER_FEATURE_BY_ROUTE), ...PARTNER_ALWAYS_ALLOWED];
@@ -87,6 +93,7 @@ export const adminLinks: NavItem[] = [
   { label: "Visão geral", short: "Início", to: "/admin", icon: Home },
   { label: "Usuários", to: "/admin/users", icon: Users },
   { label: "Gerenciamento de Taxas", short: "Taxas", to: "/admin/fees", icon: Receipt },
+  { label: "Assinaturas", to: "/admin/subscriptions", icon: CreditCard },
   { label: "Saques dos sócios", short: "Saques", to: "/admin/partner-wallets", icon: Wallet },
   { label: "Gateways de pagamento", short: "Gateways", to: "/bot/gateways", icon: CircleDollarSign },
   { label: "Operações", to: "/admin/operations", icon: BarChart3 },
@@ -127,6 +134,9 @@ const postGroups: NavGroup[] = [
       { label: "Contas conectadas", short: "Contas", to: "/feature/accounts", icon: Users },
       { label: "Pastas de perfis", short: "Pastas", to: "/feature/profile-folders", icon: Folder },
       { label: "Loops", to: "/feature/loops", icon: InfinityIcon },
+      { label: "Publicações", to: "/feature/publications", icon: CalendarClock },
+      { label: "Saúde dos bots", short: "Saúde", to: "/feature/health", icon: Activity },
+      { label: "Automações", to: "/feature/automations", icon: MessageCircle },
       { label: "Colaboradores", to: "/feature/collaborators", icon: UsersRound },
     ],
   },
@@ -167,26 +177,12 @@ const postGroups: NavGroup[] = [
     title: "Suporte",
     icon: LifeBuoy,
     items: [
+      { label: "Chat global", to: "/feature/chat", icon: MessagesSquare },
       { label: "Dúvidas e erros", to: "/feature/support", icon: LifeBuoy },
       { label: "Contatos", to: "/feature/contacts", icon: MessageCircle },
     ],
   },
 ];
-
-// A sócio (partner) sees a lean Flash: their accounts, the loops shared with them,
-// the posts ranking and their revenue. Route guards and the API still enforce permissions.
-const partnerPostRoutes = new Set([
-  "/dashboard",
-  "/feature/accounts",
-  "/feature/meta-apps", // their own Meta apps, to connect their own accounts (only they see them)
-  "/feature/loops",
-  "/feature/ranking",
-  "/feature/links",
-  "/configuracoes",
-  "/avisos",
-  "/feature/support",
-  "/feature/contacts",
-]);
 
 // Only hides what a collaborator cannot open; route guards and the API still
 // enforce permissions.
@@ -197,9 +193,11 @@ const collaboratorRoutes = new Set([
   "/feature/extensions",
   "/feature/support",
   "/feature/contacts",
+  "/feature/chat",
   "/feature/links",
   "/configuracoes",
   "/avisos",
+  "/novidades",
 ]);
 
 // ------------------------------------------------------------------ Flash
@@ -240,6 +238,7 @@ const botGroups: NavGroup[] = [
     icon: Bot,
     items: [
       { label: "Meus bots", to: "/bot/robos", icon: Bot },
+      { label: "Conversas", to: "/bot/conversas", icon: MessageCircle },
       { label: "Remarketing", to: "/bot/remarketing", icon: Megaphone },
     ],
   },
@@ -263,6 +262,15 @@ const botGroups: NavGroup[] = [
     title: "Sócios e comissões",
     icon: Handshake,
     items: [{ label: "Sócios, convites e comissões", short: "Sócios", to: "/feature/affiliates", icon: Handshake }],
+  },
+  {
+    id: "bot-parceiros-bot",
+    title: "Parceiros do bot",
+    icon: Handshake,
+    items: [
+      { label: "Parceiros do bot", short: "Parceiros", to: "/bot/parceiros", icon: Handshake },
+      { label: "Bots compartilhados comigo", short: "Compartilhados", to: "/bot/bots-compartilhados", icon: Share2 },
+    ],
   },
   {
     id: "bot-conta",
@@ -309,15 +317,13 @@ function buildNavigationFor(opts: {
       const direct = app === "bot" ? botDirect : postDirect;
       return { app, direct: direct.filter(({ to }) => keep(to)), flat: [], groups: only(groups, keep), admin };
     }
+    // Full-panel sócio: same panel as an independent owner. The only thing they still can't do
+    // as a partner is recruit sub-partners, so the bot app keeps the affiliates item hidden.
     if (app === "bot") {
       if (opts.isPartner) {
         return { app, direct: botDirect, flat: [], groups: only(botGroups, (to) => !partnerBotHidden.has(to)), admin };
       }
       return { app, direct: botDirect, flat: [], groups: botGroups, admin };
-    }
-    if (opts.isPartner) {
-      const keep = (to: string) => partnerPostRoutes.has(to);
-      return { app, direct: postDirect.filter(({ to }) => keep(to)), flat: [], groups: only(postGroups, keep), admin };
     }
     return { app, direct: postDirect, flat: [], groups: postGroups, admin };
   }
@@ -328,16 +334,14 @@ function buildNavigationFor(opts: {
   return { app, direct: [], flat: [], groups: [], admin };
 }
 
-// Shown only to the Super Admin (the platform's Meta app and the error log).
-export const SUPER_ADMIN_ONLY_ROUTES = new Set(["/feature/meta-apps", "/feature/error-logs"]);
+// Shown only to the Super Admin (the platform error log). Everyone manages their own Meta apps.
+export const SUPER_ADMIN_ONLY_ROUTES = new Set(["/feature/error-logs"]);
 
 export function buildNavigation(
   opts: Parameters<typeof buildNavigationFor>[0] & { platformAppBlocked?: boolean },
 ): NavModel {
   const model = buildNavigationFor(opts);
   if (opts.isSuperAdmin) return model;
-  // Users removed from the platform app manage their own Meta apps again.
-  const keep = (to: string) =>
-    !SUPER_ADMIN_ONLY_ROUTES.has(to) || (to === "/feature/meta-apps" && Boolean(opts.platformAppBlocked));
+  const keep = (to: string) => !SUPER_ADMIN_ONLY_ROUTES.has(to);
   return { ...model, direct: model.direct.filter(({ to }) => keep(to)), groups: only(model.groups, keep) };
 }

@@ -28,7 +28,8 @@ from app.partners.service import BillingRoute, active_share, owner_workspace, sh
 
 SNAKEPAY_ENABLED_KEY = "snakepay_enabled"
 ATENASPAY_ENABLED_KEY = "atenaspay_enabled"
-GATEWAYS = ("smokepay", "snakepay", "atenaspay")
+STRIPE_ENABLED_KEY = "stripe_enabled"
+GATEWAYS = ("smokepay", "snakepay", "atenaspay", "stripe")
 # The ShopID shown in SnakePay → Conta → Split ("snakepay_" + 32 hex); the docs' UUID form is accepted too.
 RECIPIENT_RE = re.compile(
     r"^(snakepay_[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
@@ -92,6 +93,17 @@ async def atenaspay_enabled(db: AsyncSession) -> bool:
 
 async def atenaspay_available(db: AsyncSession) -> bool:
     return atenaspay.configured() and await atenaspay_enabled(db)
+
+
+async def stripe_enabled(db: AsyncSession) -> bool:
+    row = await db.get(SystemSetting, STRIPE_ENABLED_KEY)
+    return bool(row and isinstance(row.value, dict) and row.value.get("enabled"))
+
+
+async def stripe_available(db: AsyncSession) -> bool:
+    from app.bots import stripe_gateway
+
+    return stripe_gateway.configured() and await stripe_enabled(db)
 
 
 @dataclass

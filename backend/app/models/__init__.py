@@ -18,7 +18,15 @@ from app.models.financial_expense import FinancialExpense
 from app.models.financial_withdrawal import FinancialWithdrawal
 from app.models.instagram_account import InstagramAccount
 from app.models.instagram_app_credential import InstagramAppCredential
+from app.models.instagram_automation import (
+    InstagramAutomationEvent,
+    InstagramCommentAutomation,
+)
 from app.models.instagram_profile_folder import InstagramProfileFolder
+from app.models.instagram_scheduled_post import (
+    InstagramScheduledPost,
+    InstagramScheduledPostTarget,
+)
 from app.models.instagram_loop import (
     InstagramLoop,
     InstagramLoopAccount,
@@ -34,7 +42,9 @@ from app.models.affiliation import Affiliation
 from app.models.app_notification import AppNotification
 from app.models.shark_account import SharkAccount
 from app.models.extension import Extension
+from app.models.ig_extension import IgExtensionConfig
 from app.models.support import SupportTicket
+from app.models.global_chat import GlobalChatMessage
 from app.models.daily_views import InstagramAccountDailyViews
 from app.models.sharkbot import SharkLead, SharkTransaction
 from app.models.media_insight import InstagramMediaInsight
@@ -47,20 +57,31 @@ from app.models.push import (
 )
 from app.models.workspace import Workspace, WorkspaceMember
 from app.models.fee_change_log import FeeChangeLog
+from app.models.bot_partner import BotPartner, BotPartnerSale, BotPartnerPayout
+from app.models.platform_subscription import (
+    PlatformLiberationCode,
+    PlatformPlan,
+    PlatformRetentionCoupon,
+    PlatformSubscription,
+    PlatformSubscriptionCharge,
+)
 from app.models.telegram_bot import (
     AuditEvent,
+    TgAbTest,
     TgBot,
     TgCampaign,
     TgCampaignRun,
     TgFlow,
     TgFlowFolder,
     TgFlowFolderItem,
+    TgFlowImportCode,
     TgFlowShare,
     TgGatewaySetting,
     TgGroup,
     TgJob,
     TgLead,
     TgMedia,
+    TgMessage,
     TgOrder,
     TgSubscription,
     TgUpdateSeen,
@@ -70,10 +91,12 @@ __all__ = [
     "AuditEvent",
     "TgFlowFolder",
     "TgFlowFolderItem",
+    "TgFlowImportCode",
     "TgFlowShare",
     "TgGatewaySetting",
     "AdminAuditLog",
     "AppNotification",
+    "TgAbTest",
     "TgBot",
     "TgCampaign",
     "TgCampaignRun",
@@ -82,13 +105,23 @@ __all__ = [
     "TgJob",
     "TgLead",
     "TgMedia",
+    "TgMessage",
     "TgOrder",
     "TgSubscription",
     "TgUpdateSeen",
     "Affiliation",
     "Base",
     "Extension",
+    "IgExtensionConfig",
     "FeeChangeLog",
+    "BotPartner",
+    "BotPartnerSale",
+    "BotPartnerPayout",
+    "PlatformPlan",
+    "PlatformSubscription",
+    "PlatformSubscriptionCharge",
+    "PlatformLiberationCode",
+    "PlatformRetentionCoupon",
     "InstagramAccountDailyViews",
     "SharkAccount",
     "SupportTicket",
@@ -101,8 +134,11 @@ __all__ = [
     "EmailAccount",
     "FinancialExpense",
     "FinancialWithdrawal",
+    "GlobalChatMessage",
     "InstagramAccount",
     "InstagramAppCredential",
+    "InstagramAutomationEvent",
+    "InstagramCommentAutomation",
     "InstagramLoop",
     "InstagramLoopAccount",
     "InstagramLoopAccountState",
@@ -110,6 +146,8 @@ __all__ = [
     "InstagramMediaInsight",
     "InstagramMedia",
     "InstagramProfileFolder",
+    "InstagramScheduledPost",
+    "InstagramScheduledPostTarget",
     "InstagramPublicationJob",
     "PushSubscription",
     "MilestoneNotification",

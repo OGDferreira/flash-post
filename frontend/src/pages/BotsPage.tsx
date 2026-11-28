@@ -9,14 +9,16 @@ import { ConversionOverview } from "@/features/bots/ConversionOverview";
 
 import { BotSalesPanel } from "@/features/bots/BotSalesPanel";
 import { AnalyticsPanel } from "@/features/bots/AnalyticsPanel";
-import { FlashFunnelPanel } from "@/features/bots/FlashFunnelPanel";
 import { BotsListPanel } from "@/features/bots/BotsListPanel";
+import { ConversationsPanel } from "@/features/bots/ConversationsPanel";
 import { FoldersPanel } from "@/features/bots/FoldersPanel";
 import { FlowsPanel } from "@/features/bots/FlowsPanel";
 import { GatewaysPanel } from "@/features/bots/GatewaysPanel";
 import { RemarketingPanel } from "@/features/bots/remarketing/RemarketingPanel";
 import { SharedByMePanel } from "@/features/partners/SharedByMePanel";
 import { SharedFlowsPanel } from "@/features/partners/SharedTemplates";
+import { BotPartnersPanel } from "@/features/bots/partners/BotPartnersPanel";
+import { SharedBotsPanel } from "@/features/bots/partners/SharedBotsPanel";
 
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
@@ -24,6 +26,7 @@ import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "
 export const BOT_SECTIONS = {
   home: { slug: "", title: "Painel", eyebrow: "Visão geral", hint: "Leads, starts, vendas e conversão dos seus bots no período." },
   bots: { slug: "robos", title: "Meus bots", eyebrow: "Bots e leads", hint: "Conecte bots do Telegram e escolha o funil (ou a pasta de funis) de cada um." },
+  conversations: { slug: "conversas", title: "Conversas", eyebrow: "Bots e leads", hint: "Veja a conversa de cada lead com o bot e responda com texto, áudio ou imagem." },
   flows: { slug: "funis", title: "Meus funis", eyebrow: "Funis", hint: "Funis criados por você: conteúdo, planos, entregas e o gateway de cada um." },
   folders: { slug: "pastas", title: "Pastas de funis", eyebrow: "Funis", hint: "Junte vários funis numa pasta: o bot sorteia um por lead no /start." },
   analises: { slug: "analises", title: "Análises", eyebrow: "Visão geral", hint: "O que vende e o que não: bots, fluxos, planos, ofertas e clientes, com filtros." },
@@ -32,6 +35,8 @@ export const BOT_SECTIONS = {
   shared: { slug: "compartilhados-comigo", title: "Compartilhados comigo", eyebrow: "Funis", hint: "Funis de outro proprietário que você pode usar nos seus bots. Gateway e comissão são definidos por quem compartilhou." },
   sales: { slug: "vendas", title: "Leads, starts e vendas", eyebrow: "Vendas e financeiro", hint: "Cada Pix gerado e pago, com taxas, comissões e o líquido de cada venda." },
   gateways: { slug: "gateways", title: "Gateways de pagamento", eyebrow: "Configuração", hint: "Configure os gateways dos seus funis próprios. Funis compartilhados com você usam o gateway de quem compartilhou." },
+  partners: { slug: "parceiros", title: "Parceiros do bot", eyebrow: "Parceiros", hint: "Compartilhe um bot e o funil dele com outro usuário independente, defina a porcentagem e acompanhe a divisão de cada venda." },
+  sharedBots: { slug: "bots-compartilhados", title: "Bots compartilhados comigo", eyebrow: "Parceiros", hint: "Bots que outro usuário compartilhou com você: edite o funil, veja as análises e o financeiro com a divisão dos lucros." },
 } as const;
 
 type Tab = keyof typeof BOT_SECTIONS;
@@ -80,7 +85,7 @@ export function BotsPage() {
           )}
           {/* Each section is its own screen: the dashboard lives in "Painel", the robots in "Meus bots". */}
           {tab === "home" && <ConversionOverview onPeriod={setPeriod} period={period} />}
-          {(tab === "flows" || tab === "bots" || tab === "analises") && (
+          {(tab === "flows" || tab === "bots") && (
             <div className="dashboard-card flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3">
               <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
                 <CalendarDays size={14} /> Período
@@ -91,6 +96,7 @@ export function BotsPage() {
         </>
       )}
       {tab === "bots" && <BotsListPanel period={period} />}
+      {tab === "conversations" && <ConversationsPanel />}
       {tab === "flows" && (
         <FlowsPanel
           onEditingChange={setEditing}
@@ -101,18 +107,15 @@ export function BotsPage() {
           period={period}
         />
       )}
-      {tab === "analises" && (
-        <div className="space-y-4">
-          <FlashFunnelPanel period={period} />
-          <AnalyticsPanel period={period} />
-        </div>
-      )}
+      {tab === "analises" && <AnalyticsPanel onPeriod={setPeriod} period={period} />}
       {tab === "folders" && <FoldersPanel />}
       {tab === "remarketing" && <RemarketingPanel flowId={remarketingFlow} onEditingChange={setEditing} onFlowChange={setRemarketingFlow} />}
       {tab === "shared" && <SharedFlowsPanel />}
       {tab === "sharedByMe" && <SharedByMePanel />}
       {tab === "sales" && <BotSalesPanel />}
       {tab === "gateways" && <GatewaysPanel />}
+      {tab === "partners" && <BotPartnersPanel />}
+      {tab === "sharedBots" && <SharedBotsPanel onEditingChange={setEditing} />}
     </div>
   );
 }

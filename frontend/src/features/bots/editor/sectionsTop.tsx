@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Bot as BotIcon, Crown, DollarSign, Link2, ListOrdered, MessageSquare, MousePointerClick, Plus, Trash2, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot as BotIcon, Crown, DollarSign, Globe, Languages, Link2, ListOrdered, MessageSquare, MousePointerClick, Plus, Trash2, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { ConnectBotModal } from "../BotsListPanel";
 import { ApiError, apiRequest } from "@/services/api";
-import { brl, type Block, type BlockType, type Bot, type Flow, type FlowDefinition, type FlowSummary } from "../types";
+import { brl, emptyInternational, type Block, type BlockType, type Bot, type Flow, type FlowDefinition, type FlowSummary, type International } from "../types";
 import { MediaGrid } from "./MediaGrid";
 import { RichTextEditor } from "./RichTextEditor";
 import { Collapsible, Field, Panel, StylePicker, Switch } from "./ui";
@@ -119,6 +119,16 @@ export function BotsSection({ flowId, draft, set }: SectionProps) {
           placeholder="@username"
           value={draft.support_username ? `@${draft.support_username.replace(/^@/, "")}` : ""}
           onChange={(event) => set({ support_username: event.target.value.replace(/[^A-Za-z0-9_]/g, "").slice(0, 32) || null })}
+        />
+      </Panel>
+
+      <Panel icon={<MessageSquare size={18} />} title="@ do bot (opcional)" description="Aparece como link no teste do funil e abre a conversa do bot no Telegram (t.me/).">
+        <input
+          className="field"
+          maxLength={33}
+          placeholder="@seu_bot"
+          value={draft.bot_handle ? `@${draft.bot_handle.replace(/^@/, "")}` : ""}
+          onChange={(event) => set({ bot_handle: event.target.value.replace(/[^A-Za-z0-9_]/g, "").slice(0, 32) || null })}
         />
       </Panel>
       <ConnectBotModal
@@ -281,10 +291,24 @@ export function WelcomeSection({ draft, set }: SectionProps) {
       </Panel>
 
       <Panel
-        title="Mensagens antes da boas-vindas (opcional)"
-        description="Sequência enviada antes, com espera entre cada uma, para simular uma conversa."
-        aside={<span className="text-xs text-muted">{draft.welcome.length}/30</span>}
+        title="Conversa humanizada (opcional)"
+        description="Sequência enviada antes da boas-vindas, com espera ou aguardando a resposta do lead entre cada mensagem."
+        aside={
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted">{draft.welcome.length}/30</span>
+            <Switch
+              checked={draft.welcome_enabled !== false}
+              label="Conversa humanizada"
+              onChange={(welcome_enabled) => set({ welcome_enabled })}
+            />
+          </div>
+        }
       >
+        {draft.welcome_enabled === false && draft.welcome.length > 0 && (
+          <p className="rounded-lg border border-line-soft bg-well px-3 py-2 text-xs text-muted">
+            Desligada: estas mensagens ficam salvas, mas o bot envia a boas-vindas direto. Ligue para usá-las.
+          </p>
+        )}
         <div className="space-y-2">
           {draft.welcome.map((block, index) => {
             const meta = blockTypes.find((item) => item.value === block.type)!;
@@ -294,7 +318,7 @@ export function WelcomeSection({ draft, set }: SectionProps) {
                 open={openBlock === index}
                 onToggle={() => setOpenBlock(openBlock === index ? null : index)}
                 title={`${index + 1}. ${meta.label}`}
-                subtitle={index === 0 ? "enviada na hora do /start" : block.delay_seconds ? `espera ${block.delay_seconds}s` : "sem espera"}
+                subtitle={index === 0 ? "enviada na hora do /start" : block.wait_for_reply ? "após o lead responder" : block.delay_seconds ? `espera ${block.delay_seconds}s` : "sem espera"}
                 actions={
                   <span className="flex gap-1">
                     <button aria-label="Subir" className="btn-ghost !min-h-8 !px-2" disabled={index === 0} onClick={() => set({ welcome: move(draft.welcome, index, -1) })} type="button"><ArrowUp size={14} /></button>
@@ -309,10 +333,19 @@ export function WelcomeSection({ draft, set }: SectionProps) {
                       {blockTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                     </select>
                   </Field>
-                  <Field label={index === 0 ? "Enviada na hora do /start" : "Esperar antes (segundos)"}>
-                    <input className="field" disabled={index === 0} min={0} max={86400} type="number" value={index === 0 ? 0 : block.delay_seconds} onChange={(event) => setBlock(index, { ...block, delay_seconds: Math.max(0, Number(event.target.value) || 0) })} />
+                  <Field label={index === 0 ? "Enviada na hora do /start" : block.wait_for_reply ? "Aguarda a resposta do lead" : "Esperar antes (segundos)"}>
+                    <input className="field" disabled={index === 0 || block.wait_for_reply} min={0} max={86400} type="number" value={index === 0 ? 0 : block.delay_seconds} onChange={(event) => setBlock(index, { ...block, delay_seconds: Math.max(0, Number(event.target.value) || 0) })} />
                   </Field>
                 </div>
+                {index > 0 && (
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
+                    <span>
+                      Aguardar a resposta do lead
+                      <span className="block text-xs text-muted">Em vez de esperar um tempo, só envia esta mensagem depois que o lead responder a anterior.</span>
+                    </span>
+                    <Switch checked={!!block.wait_for_reply} label="Aguardar resposta do lead" onChange={(wait_for_reply) => setBlock(index, { ...block, wait_for_reply })} />
+                  </label>
+                )}
                 {meta.max > 0 && (
                   <MediaGrid
                     kinds={block.type === "voice" ? ["audio"] : block.type === "photo" ? ["photo"] : block.type === "album" ? ["photo", "video"] : ["video"]}
@@ -331,13 +364,145 @@ export function WelcomeSection({ draft, set }: SectionProps) {
         <Button
           disabled={draft.welcome.length >= 30}
           onClick={() => {
-            set({ welcome: [...draft.welcome, { type: "text", text: "", media_ids: [], spoiler: false, delay_seconds: 0 }] });
+            set({ welcome: [...draft.welcome, { type: "text", text: "", media_ids: [], spoiler: false, delay_seconds: 0, wait_for_reply: false }] });
             setOpenBlock(draft.welcome.length);
           }}
           size="sm"
         >
           <Plus size={14} /> Adicionar mensagem
         </Button>
+      </Panel>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- International
+
+type GatewayStateLite = { gateways: { id: string; name: string; available: boolean }[] };
+
+/** Card/international sales (Stripe) and auto-translation, per funnel. The block can only be
+ *  turned on when the admin has released the "Vendas Internacionais" gateway. */
+export function InternationalSection({ draft, set }: SectionProps) {
+  const gateways = useQuery({
+    queryKey: ["payment-gateways"],
+    queryFn: () => apiRequest<GatewayStateLite>("/api/payment-gateways"),
+    retry: false,
+  });
+  const stripe = gateways.data?.gateways.find((item) => item.id === "stripe");
+  const stripeReady = Boolean(stripe?.available);
+  const intl = draft.international ?? emptyInternational();
+  const setIntl = (patch: Partial<International>) => set({ international: { ...intl, ...patch } });
+  // Enabling defaults to USD so the server (which needs a currency or translation on) accepts it.
+  const toggle = (on: boolean) =>
+    setIntl(on ? { enabled: true, currencies: intl.currencies.length ? intl.currencies : ["USD"] } : { enabled: false });
+  const setPriceUsd = (index: number, raw: string) =>
+    set({ plans: draft.plans.map((plan, i) => (i === index ? { ...plan, price_usd: raw.replace(/[^\d.,]/g, "") || null } : plan)) });
+
+  return (
+    <div className="space-y-4">
+      <Panel
+        icon={<Globe size={18} />}
+        title="Vendas Internacionais"
+        description="Venda no cartão (Stripe) em dólar e, se quiser, traduza a copy para o idioma do lead. O Pix em BRL continua funcionando igual."
+        aside={
+          stripeReady ? (
+            <Switch checked={intl.enabled} onChange={toggle} label="Ativar vendas internacionais" />
+          ) : (
+            <span className="rounded-full bg-well px-2 py-0.5 text-[11px] text-muted">Indisponível</span>
+          )
+        }
+      >
+        {!stripeReady && (
+          <p className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-warning">
+            Para usar, o administrador precisa liberar <b>Vendas Internacionais</b> em Gateways de pagamento. Enquanto não liberar, este bloco fica desativado.
+          </p>
+        )}
+
+        {stripeReady && intl.enabled && (
+          <div className="space-y-4">
+            <Field label="Moeda do cartão" hint="Além do Pix em BRL, o lead pode escolher pagar no cartão em dólar.">
+              <span className="inline-flex w-fit items-center rounded-full border border-brand bg-brand-soft px-4 py-2 text-xs font-medium text-accent">
+                USD · Dólar
+              </span>
+            </Field>
+
+            <Field label="Preço no cartão">
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(
+                  [
+                    ["variable", "Converter do BRL", "Usa o preço em reais e converte pela cotação."],
+                    ["fixed", "Preço fixo em US$", "Você define o valor em dólar de cada plano."],
+                  ] as const
+                ).map(([value, title, desc]) => (
+                  <button
+                    aria-checked={intl.pricing === value}
+                    className={`rounded-xl border p-3 text-left ${intl.pricing === value ? "border-brand bg-brand-soft" : "border-line hover:border-brand"}`}
+                    key={value}
+                    onClick={() => setIntl({ pricing: value })}
+                    role="radio"
+                    type="button"
+                  >
+                    <span className="block text-sm font-medium text-fg">{title}</span>
+                    <span className="mt-0.5 block text-xs text-muted">{desc}</span>
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            {intl.pricing === "variable" ? (
+              <Field label="Cotação (R$ por US$ 1)" hint="Ex.: 5,00 → um plano de R$ 50 sai por US$ 10 no cartão.">
+                <input
+                  className="field !w-40"
+                  inputMode="decimal"
+                  value={intl.usd_rate}
+                  onChange={(event) => setIntl({ usd_rate: event.target.value.replace(/[^\d.,]/g, "") })}
+                />
+              </Field>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-fg-2">Preço em dólar de cada plano</p>
+                {draft.plans.length === 0 ? (
+                  <p className="text-xs text-muted">Crie planos na seção Planos primeiro.</p>
+                ) : (
+                  draft.plans.map((plan, index) => (
+                    <div className="flex items-center gap-3 rounded-xl border border-line-soft p-2.5" key={plan.id}>
+                      <span className="min-w-0 flex-1 truncate text-sm text-fg">
+                        {plan.name || `Plano ${index + 1}`} <span className="text-muted">· {brl(plan.price)}</span>
+                      </span>
+                      <span className="flex items-center gap-1 text-sm text-muted">
+                        US$
+                        <input
+                          aria-label={`Preço em dólar de ${plan.name || `plano ${index + 1}`}`}
+                          className="field !w-24"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={plan.price_usd ?? ""}
+                          onChange={(event) => setPriceUsd(index, event.target.value)}
+                        />
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            <div className="flex items-start justify-between gap-3 rounded-xl border border-line-soft p-3">
+              <span className="min-w-0">
+                <span className="flex items-center gap-2 text-sm font-medium text-fg">
+                  <Languages size={15} /> Traduzir automaticamente
+                </span>
+                <span className="mt-0.5 block text-xs leading-5 text-muted">
+                  Traduz a copy do funil para o idioma do lead (pelo idioma do Telegram dele). Quem estiver em português recebe o texto original.
+                </span>
+              </span>
+              <Switch checked={intl.translate} onChange={(on) => setIntl({ translate: on })} label="Ativar tradução automática" />
+            </div>
+
+            <p className="rounded-xl border border-line-soft px-3 py-2 text-[11px] leading-5 text-muted">
+              Lembre de deixar <b>Vendas Internacionais</b> ligada na prioridade de gateways e <b>salvar o fluxo</b> para valer no bot.
+            </p>
+          </div>
+        )}
       </Panel>
     </div>
   );

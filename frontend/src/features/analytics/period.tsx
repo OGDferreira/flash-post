@@ -10,7 +10,7 @@ const options: { value: MetricsPeriod["period"]; label: string }[] = [
   { value: "7d", label: "7 dias" },
   { value: "30d", label: "30 dias" },
   { value: "all", label: "Total" },
-  { value: "custom", label: "Personalizado" },
+  { value: "custom", label: "Datas" },
 ];
 
 export function todayInput(timeZone = "America/Sao_Paulo") {

@@ -198,6 +198,7 @@ export function AppShell() {
       title: item.title,
       message: item.body,
       at: item.created_at,
+      url: item.url,
     })),
     ...(analyticsNotifications.data?.disconnected_today_accounts ?? []).slice(0, 10).map((item) => ({
       at: item.at,
@@ -436,7 +437,7 @@ export function AppShell() {
         <div className={index ? "mt-4 space-y-1 border-t border-line-soft pt-3" : "space-y-1"} key={index}>
           {links.map(({ label, to, icon: Icon }) => (
             <NavLink
-              end={to === "/admin" || to === "/dashboard"}
+              end={to === "/admin" || to === "/dashboard" || to === "/bot"}
               key={to}
               to={to}
               title={label}
@@ -464,7 +465,7 @@ export function AppShell() {
             </p>
             {group.items.map(({ label, to, icon: Icon }) => (
               <NavLink
-                end={to === "/dashboard"}
+                end={to === "/dashboard" || to === "/bot"}
                 key={to}
                 to={to}
                 title={label}
@@ -625,7 +626,7 @@ export function AppShell() {
         // Phones: the other tool is one tap away in the bottom-right corner (refresh sits on the left).
         <Link
           aria-label={`Ir para o ${APPS[other].name}`}
-          className="fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] right-4 z-30 shrink-0 rounded-full shadow-lg transition-transform active:scale-95 lg:hidden [body[data-bottom-tabs]_&]:hidden [body[data-flow-editor]_&]:hidden"
+          className="fixed bottom-[calc(env(safe-area-inset-bottom)+92px)] right-4 z-30 shrink-0 rounded-full shadow-lg transition-transform active:scale-95 lg:hidden [body[data-bottom-tabs]_&]:hidden [body[data-flow-editor]_&]:hidden [body[data-chat-open]_&]:hidden"
           title={`Ir para o ${APPS[other].name}`}
           to={lastPath(other)}
         >
@@ -638,7 +639,7 @@ export function AppShell() {
       >
         {mobileLinks.map(({ label, short, to, icon: Icon }) => (
           <NavLink
-            end={to === "/dashboard" || to === "/admin"}
+            end={to === "/dashboard" || to === "/admin" || to === "/bot"}
             key={to}
             to={to}
             onClick={() => setMobileOpen(false)}

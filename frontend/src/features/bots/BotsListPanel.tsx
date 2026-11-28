@@ -12,6 +12,7 @@ import { ApiError, apiRequest } from "@/services/api";
 import type { MetricsPeriod } from "@/features/analytics/period";
 import { AdminHideToggle } from "./AdminHideToggle";
 import { BotAvatar } from "./BotAvatar";
+import { BotSchedule } from "./BotSchedule";
 import { useBotStats } from "./ConversionOverview";
 import { brl, type Bot, type BotGroup, type Flow, type SharedFlowOption } from "./types";
 import { useChiefLabel } from "@/features/partners/api";
@@ -226,6 +227,7 @@ export function BotsListPanel({ period }: { period: MetricsPeriod }) {
                 </span>
                 <LinkGroup botId={bot.id} onLinked={() => void groups.refetch()} />
               </div>
+              <BotSchedule bot={bot} />
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => update.mutate({ id: bot.id, body: { is_active: !bot.is_active } })}>
                   {bot.is_active ? "Pausar" : "Ativar"}

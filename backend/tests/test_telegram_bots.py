@@ -110,6 +110,13 @@ class FakeApis:
         if "/api/pix/" in url:
             self.calls.append(("pix.get", {"id": url.rsplit("/", 1)[-1]}))
             return httpx.Response(200, json={"id": "tx-1", "status": self.pix_status, "amount": self.pix_amount, "payer_name": "Comprador"})
+        if "api.stripe.com" in url and "/v1/checkout/sessions" in url:
+            from urllib.parse import parse_qs
+            body = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
+            self.calls.append(("stripe.checkout", body))
+            assert request.headers["authorization"] == "Bearer stripe_test_key"
+            ref = body.get("client_reference_id", "cs")
+            return httpx.Response(200, json={"id": f"cs_{ref}", "url": f"https://checkout.stripe.com/pay/cs_{ref}"})
         raise AssertionError(f"unexpected request {url}")
 
 
@@ -603,3 +610,113 @@ async def test_folder_bot_draws_a_funnel_per_lead_and_keeps_it(client, db_sessio
     assert lead.flow_id == chosen
     refreshed = (await client.get("/api/bots")).json()["bots"][0]
     assert refreshed["folder_id"] is None and refreshed["flow_id"] is None
+
+
+def _text_message(body: str, msg_id: int = 50) -> dict:
+    user = {"id": 555, "is_bot": False, "first_name": "Lucas", "username": "lucas"}
+    return {"message": {"message_id": msg_id, "from": user, "chat": {"id": 555, "type": "private"}, "text": body}}
+
+
+@pytest.mark.anyio
+async def test_smart_dm_replies_keyword_fallback_and_off(client, db_session, owner, apis) -> None:
+    definition = _flow(smart_replies={
+        "enabled": True,
+        "rules": [{"keywords": ["preço", "quanto"], "reply": "Custa {valor}... aqui: ", "then": "plans"}],
+        "fallback_enabled": True,
+        "fallback_text": "Não entendi, toque num botão.",
+    })
+    bot, _ = await _setup(client, headers := await _login(client), definition)
+    await _send(client, db_session, bot["id"], _start())  # lead enters the funnel
+    before = len(apis.methods("sendMessage"))
+
+    # Keyword hit (accent/case-insensitive): answers, then re-sends the plans.
+    await _send(client, db_session, bot["id"], _text_message("Qual o PRECO disso?"))
+    msgs = apis.methods("sendMessage")[before:]
+    assert any("Custa" in m["text"] for m in msgs)
+    assert any(m.get("reply_markup") for m in msgs), "plans buttons re-sent"
+
+    # No keyword: fallback answers.
+    mark = len(apis.methods("sendMessage"))
+    await _send(client, db_session, bot["id"], _text_message("blablabla", msg_id=51))
+    assert any("Não entendi" in m["text"] for m in apis.methods("sendMessage")[mark:])
+
+    # A lead reply is logged either way (live-chat inbox keeps working).
+    assert await db_session.scalar(select(TgLead)) is not None
+
+
+@pytest.mark.anyio
+async def test_smart_dm_replies_stay_silent_when_disabled(client, db_session, owner, apis) -> None:
+    bot, _ = await _setup(client, headers := await _login(client))  # smart_replies off by default
+    await _send(client, db_session, bot["id"], _start())
+    before = len(apis.methods("sendMessage"))
+    await _send(client, db_session, bot["id"], _text_message("tem desconto?"))
+    assert len(apis.methods("sendMessage")) == before  # nothing sent, as before
+
+
+@pytest.mark.anyio
+async def test_followup_fires_chains_and_resets_on_activity(client, db_session, owner, apis) -> None:
+    definition = _flow(follow_up={
+        "enabled": True,
+        "steps": [
+            {"delay_minutes": 30, "text": "Oi {nome}, ainda tá aí? 👀"},
+            {"delay_minutes": 60, "text": "Última chance, {nome}!"},
+        ],
+    })
+    bot, _ = await _setup(client, await _login(client), definition)
+    await _send(client, db_session, bot["id"], _start())
+
+    # Entering the funnel arms the first attempt (pending, in the future).
+    jobs = list(await db_session.scalars(select(TgJob).where(TgJob.kind == "followup", TgJob.status == "pending")))
+    assert len(jobs) == 1 and jobs[0].payload["index"] == 0
+
+    # Time passes: make it due and run the worker. Step 0 goes out and step 1 is queued.
+    await db_session.execute(update(TgJob).where(TgJob.kind == "followup").values(run_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
+    await db_session.commit()
+    before = len(apis.methods("sendMessage"))
+    await engine.run_due_jobs(db_session)
+    assert any("ainda tá aí" in m["text"] for m in apis.methods("sendMessage")[before:])
+    pending = list(await db_session.scalars(select(TgJob).where(TgJob.kind == "followup", TgJob.status == "pending")))
+    assert len(pending) == 1 and pending[0].payload["index"] == 1
+
+    # The lead replies: the chain resets to attempt 0 (old pending one is cancelled).
+    await _send(client, db_session, bot["id"], _text_message("oi", msg_id=70))
+    pending = list(await db_session.scalars(select(TgJob).where(TgJob.kind == "followup", TgJob.status == "pending")))
+    assert len(pending) == 1 and pending[0].payload["index"] == 0
+
+
+@pytest.mark.anyio
+async def test_followup_disabled_schedules_nothing(client, db_session, owner, apis) -> None:
+    bot, _ = await _setup(client, await _login(client))  # follow_up off by default
+    await _send(client, db_session, bot["id"], _start())
+    assert not list(await db_session.scalars(select(TgJob).where(TgJob.kind == "followup")))
+
+
+async def _login_as(client: AsyncClient, email: str, password: str) -> dict:
+    token = await _csrf(client)
+    resp = await client.post("/api/auth/login", headers={"X-CSRF-Token": token}, json={"email": email, "password": password})
+    assert resp.status_code == 200, resp.text
+    return {"X-CSRF-Token": await _csrf(client)}
+
+
+@pytest.mark.anyio
+async def test_send_rate_setting_is_super_admin_only_and_applies(client, db_session, owner, super_admin, apis) -> None:
+    from app.bots import telegram
+
+    # An ordinary owner cannot read or change it.
+    owner_headers = await _login(client)
+    assert (await client.get("/api/bots/send-rate", headers=owner_headers)).status_code in (401, 403)
+
+    admin_headers = await _login_as(client, "superadmin@example.com", "super admin password")
+    got = await client.get("/api/bots/send-rate", headers=admin_headers)
+    assert got.status_code == 200, got.text
+    assert got.json()["default"] == 25.0  # config default
+
+    # Super Admin sets a new rate: stored and pushed into the live Telegram client.
+    put = await client.put("/api/bots/send-rate", headers=admin_headers, json={"rate": 8})
+    assert put.status_code == 200, put.text
+    assert put.json()["rate"] == 8.0
+    assert telegram.get_send_rate() == 8.0
+
+    # Out-of-range is rejected.
+    assert (await client.put("/api/bots/send-rate", headers=admin_headers, json={"rate": 999})).status_code == 422
+    telegram.set_send_rate(0.0)  # leave throttling off for other tests

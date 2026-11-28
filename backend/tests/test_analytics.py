@@ -161,7 +161,7 @@ async def test_fast_analytics_summary_skips_live_meta_requests(
     db_session.add(_account(workspace.id, "fast_summary_profile", 321, 24))
     await db_session.commit()
 
-    async def unexpected_meta_request(*_args):
+    async def unexpected_meta_request(*_args, **_kwargs):
         raise AssertionError("Fast analytics must not wait for Meta API requests.")
 
     monkeypatch.setattr(
@@ -198,10 +198,10 @@ async def test_analytics_reports_missing_meta_insights_permission(
     db_session.add(account)
     await db_session.commit()
 
-    async def permission_denied(*_args):
+    async def permission_denied(*_args, **_kwargs):
         raise InstagramInsightsPermissionError
 
-    async def profile_metrics(*_args):
+    async def profile_metrics(*_args, **_kwargs):
         return 10, 3, 2
 
     monkeypatch.setattr(
@@ -242,14 +242,14 @@ async def test_analytics_refreshes_profile_metrics_and_views_from_meta(
     db_session.add(account)
     await db_session.commit()
 
-    async def profile_metrics(access_token: str):
+    async def profile_metrics(access_token: str, **_kwargs):
         assert access_token == "token-live_meta_metrics"
         return 2_468, 805, 137
 
-    async def account_insights(*_args):
+    async def account_insights(*_args, **_kwargs):
         return {"views": 9_321, "reach": 7_654}, {}
 
-    async def media_views(*_args):
+    async def media_views(*_args, **_kwargs):
         return 9_321, 3, []
 
     monkeypatch.setattr(
@@ -299,13 +299,13 @@ async def test_analytics_uses_saved_profile_snapshot_when_meta_refresh_fails(
     db_session.add(account)
     await db_session.commit()
 
-    async def profile_metrics(*_args):
+    async def profile_metrics(*_args, **_kwargs):
         raise RuntimeError("Meta profile request failed")
 
-    async def account_insights(*_args):
+    async def account_insights(*_args, **_kwargs):
         return {"views": 0}, {}
 
-    async def media_views(*_args):
+    async def media_views(*_args, **_kwargs):
         return 0, 0, []
 
     monkeypatch.setattr(

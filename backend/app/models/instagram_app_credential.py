@@ -39,6 +39,9 @@ class InstagramAppCredential(Base):
         default="instagram_business_login",
         server_default=text("'legacy'"),
     )
+    # Facebook Login for Business configuration ID, only for Unified Login apps.
+    # Not a secret: it names the login configuration but grants no data access.
+    config_id: Mapped[str | None] = mapped_column(String(64))
     category: Mapped[str | None] = mapped_column(String(120))
     app_link: Mapped[str | None] = mapped_column(String(2048))
     encrypted_app_secret: Mapped[str] = mapped_column(String(2048), nullable=False)

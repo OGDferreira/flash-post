@@ -79,6 +79,9 @@ function bumpFor(flow: FlowDefinition, plan: Plan): OrderBump | null {
 const minutes = (value: number) =>
   value >= 60 && value % 60 === 0 ? `${value / 60} h` : `${value} min`;
 
+const seconds = (value: number) =>
+  value % 3600 === 0 ? `${value / 3600} h` : value % 60 === 0 ? `${value / 60} min` : `${value} s`;
+
 export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
   const messages: SimMessage[] = [];
   // One holder, so the inner helpers and the loop see the same state.
@@ -107,6 +110,12 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
     if (flow.previews?.enabled && flow.previews.media_ids.length) {
       keyboard = [...keyboard, [{ label: flow.previews.label, style: flow.previews.style, action: "prev" }]];
     }
+    if (flow.group_preview?.enabled && flow.group_preview.group_chat_id) {
+      keyboard = [...keyboard, [{ label: flow.group_preview.label, style: flow.group_preview.style, action: "gprev" }]];
+    }
+    if (flow.mimo?.enabled) {
+      keyboard = [...keyboard, [{ label: flow.mimo.label, style: flow.mimo.style, action: "mimo" }]];
+    }
     keyboard = [...keyboard, ...o.redirect_buttons.map((b) => [{ label: b.label, url: b.url }]), ...support()];
     const text = fill(o.text);
     if (o.secondary_enabled) {
@@ -119,9 +128,12 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
   };
 
   const welcome = () => {
-    for (const block of flow.welcome) {
-      if (block.delay_seconds > 0) note(`⏱ ${block.delay_seconds}s depois`);
-      bot({ text: fill(block.text), media: block.media_ids, spoiler: block.spoiler });
+    if (flow.welcome_enabled !== false) {
+      for (const block of flow.welcome) {
+        if (block.wait_for_reply) note("💬 aguarda o lead responder");
+        else if (block.delay_seconds > 0) note(`⏱ ${block.delay_seconds}s depois`);
+        bot({ text: fill(block.text), media: block.media_ids, spoiler: block.spoiler });
+      }
     }
     offer();
   };
@@ -132,15 +144,27 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
     st.generated = true;
     const vars = { "{plano}": next.name, "{valor}": brl(next.amount) };
     const p = flow.payment;
-    if (p.layout === "steps") {
+    // Optional warm-up message (media + text) before the Pix.
+    if (p.intro_enabled && (p.intro_text || (p.intro_media_ids?.length ?? 0) > 0)) {
+      bot({ text: fill(p.intro_text, vars), media: p.intro_media_ids ?? [], spoiler: p.intro_spoiler });
+    }
+    let showQr = p.qr_enabled ?? ((p.layout ?? "qr") === "qr");
+    const showSteps = p.steps_enabled ?? ((p.layout ?? "qr") === "steps");
+    if (!showQr && !showSteps) showQr = true;
+    if (showSteps) {
       const steps = fill(p.steps_text, vars);
       if (steps) bot({ text: steps });
-      bot({ text: p.code_intro || "", code: SIM_PIX_CODE });
-      bot({
-        text: fill(p.after_code_text, vars) || "👇",
-        buttons: [[{ label: p.check_button, action: "check" }], [{ label: p.copy_button, copy: true }], ...support()],
-      });
-    } else {
+      if (showQr) {
+        bot({ text: p.code_intro || "", code: SIM_PIX_CODE }); // QR message carries the buttons
+      } else {
+        bot({ text: p.code_intro || "", code: SIM_PIX_CODE });
+        bot({
+          text: fill(p.after_code_text, vars) || "👇",
+          buttons: [[{ label: p.check_button, action: "check" }], [{ label: p.copy_button, copy: true }], ...support()],
+        });
+      }
+    }
+    if (showQr) {
       bot({
         qr: true,
         text: fill(p.pix_text, vars),
@@ -192,7 +216,12 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
     const upsellNext = flow.upsells.length > 0 && (!delivery || delivery.type === "upsell" || delivery.start_upsell);
     const approved = flow.payment.approved_enabled;
     const sendApproved = Boolean(flow.payment.approved_text) && (approved === true || (approved == null && !upsellNext));
-    if (sendApproved) bot({ text: fill(flow.payment.approved_text, { "{plano}": current.name, "{valor}": brl(current.amount) }) });
+    if (sendApproved)
+      bot({
+        text: fill(flow.payment.approved_text, { "{plano}": current.name, "{valor}": brl(current.amount) }),
+        media: flow.payment.approved_media_ids ?? [],
+        spoiler: flow.payment.approved_spoiler,
+      });
     deliver(delivery, current.planName ?? current.name, current.amount);
     if (current.bump) {
       const bumpDelivery = current.bump.delivery ?? flow.default_delivery ?? null;
@@ -256,6 +285,23 @@ export function simulate(flow: FlowDefinition, actions: string[]): SimResult {
       if (pv) {
         bot({ media: pv.media_ids, spoiler: pv.spoiler, text: fill(pv.text, { "{tempo}": `${pv.delete_after_seconds}s` }) });
         note(`🗑️ As prévias somem sozinhas depois de ${pv.delete_after_seconds}s`);
+      }
+    } else if (action === "gprev") {
+      user(labelOf(action));
+      const gp = flow.group_preview;
+      if (gp) {
+        const tempo = seconds(gp.access_seconds);
+        bot({ text: fill(gp.grant_text, { "{tempo}": tempo }) || `Acesso liberado por ${tempo}.`, buttons: [[{ label: gp.join_label, url: "https://t.me/+convite-do-grupo" }]] });
+        note(`⏱ Depois de ${tempo} o bot remove o lead do grupo automaticamente`);
+        bot({ text: fill(gp.expired_text), buttons: planButtons() });
+      }
+    } else if (action === "mimo") {
+      user(labelOf(action));
+      const m = flow.mimo;
+      if (m) {
+        bot({ text: fill(m.prompt_text) });
+        note(`💬 o lead digita o valor (entre ${brl(money(m.min_amount))} e ${brl(money(m.max_amount))}) e recebe um Pix para pagar`);
+        bot({ text: fill(m.thanks_text, { "{valor}": brl(money(m.min_amount)) }) });
       }
     } else if (action.startsWith("plan:")) {
       user(labelOf(action));

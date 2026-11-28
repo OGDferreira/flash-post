@@ -13,7 +13,8 @@ type InstagramMetaApp = {
   display_name: string;
   meta_app_name: string;
   app_id: string;
-  credential_kind: "legacy" | "instagram_business_login";
+  credential_kind: "legacy" | "instagram_business_login" | "instagram_unified_login";
+  config_id: string | null;
   category: string | null;
   app_link: string | null;
   is_selected: boolean;
@@ -34,10 +35,22 @@ export function MetaAppsPage() {
   const [displayName, setDisplayName] = useState("");
   const [appId, setAppId] = useState("");
   const [appSecret, setAppSecret] = useState("");
+  const [credentialKind, setCredentialKind] = useState<
+    "instagram_business_login" | "instagram_unified_login"
+  >("instagram_business_login");
+  const [configId, setConfigId] = useState("");
   const [editingAppId, setEditingAppId] = useState<string | null>(null);
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editAppSecret, setEditAppSecret] = useState("");
   const [setupOpen, setSetupOpen] = useState(false);
+  const [platformPreferred, setPlatformPreferred] = useState(() => {
+    try { return localStorage.getItem('flashpost_platform_preferred') === 'true'; } catch { return false; }
+  });
+  const togglePlatformPreferred = () => {
+    const next = !platformPreferred;
+    try { if (next) localStorage.setItem('flashpost_platform_preferred', 'true'); else localStorage.removeItem('flashpost_platform_preferred'); } catch {}
+    setPlatformPreferred(next);
+  };
   const accounts = useQuery({
     queryKey: ["instagram", "accounts"],
     queryFn: () => apiRequest<{ can_manage: boolean }>("/api/instagram/accounts"),
@@ -56,12 +69,22 @@ export function MetaAppsPage() {
     mutationFn: () =>
       apiRequest<{ app: InstagramMetaApp }>("/api/instagram/apps", {
         method: "POST",
-        body: { display_name: displayName, app_id: appId, app_secret: appSecret },
+        body: {
+          display_name: displayName,
+          app_id: appId,
+          app_secret: appSecret,
+          credential_kind: credentialKind,
+          ...(credentialKind === "instagram_unified_login"
+            ? { config_id: configId }
+            : {}),
+        },
       }),
     onSuccess: () => {
       setDisplayName("");
       setAppId("");
       setAppSecret("");
+      setCredentialKind("instagram_business_login");
+      setConfigId("");
       invalidateApps();
     },
   });
@@ -154,17 +177,46 @@ export function MetaAppsPage() {
             value={metaApps.data.callback_url}
           />
         )}
-        {metaApps.data?.platform && (
-          <div
-            className={`rounded-xl border px-4 py-3 text-sm ${
-              metaApps.data.platform.available ? "border-success/30 bg-success-soft text-success" : "border-warning/30 bg-warning-soft text-warning"
-            }`}
-            role="status"
-          >
-            {metaApps.data.platform.available
-              ? `App da plataforma ativo (App ID ${metaApps.data.platform.app_id ?? "—"}): todos os usuários conectam por ele, exceto quem você bloquear em Usuários.`
-              : "App da plataforma não configurado: defina IG_APP_ID e IG_APP_SECRET no Render. Até lá, cada workspace usa o próprio app."}
+        {metaApps.data?.platform && !metaApps.data.platform.available && (
+          <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning" role="status">
+            App da plataforma não configurado: defina IG_APP_ID e IG_APP_SECRET no servidor. Até lá, cada workspace usa o próprio app.
           </div>
+        )}
+        {metaApps.data?.platform?.available && metaApps.data.platform.app_id && (
+          <div className="rounded-xl border border-success/30 bg-success-soft px-4 py-3 text-sm text-success" role="status">
+            {`App da plataforma ativo (App ID ${metaApps.data.platform.app_id}): todos conectam por ele ou pelo próprio app, exceto quem você bloquear em Usuários.`}
+          </div>
+        )}
+        {metaApps.data?.platform?.available && !metaApps.data.platform.blocked && (
+          <button
+            className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition ${
+              platformPreferred ? "border-brand bg-brand-soft" : "border-line bg-surface-inset hover:bg-surface-raised"
+            }`}
+            onClick={togglePlatformPreferred}
+            type="button"
+          >
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-brand/40 bg-brand/15 text-sm font-semibold text-accent">FP</span>
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-fg">Usar apenas o app da plataforma</span>
+                {platformPreferred && (
+                  <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-accent">Selecionado</span>
+                )}
+              </span>
+              <span className="mt-1 block text-sm text-muted">
+                {platformPreferred
+                  ? "Ativado — ao conectar uma conta você vai direto ao Instagram pelo app do FlashPost, sem picker. Clique para desativar."
+                  : "Ativar para ir direto ao Instagram ao conectar uma conta, sem escolher o app a cada vez."}
+              </span>
+            </span>
+            <span className={`relative ml-2 h-5 w-9 shrink-0 rounded-full border transition-colors ${
+              platformPreferred ? "border-brand bg-brand" : "border-line bg-surface"
+            }`}>
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                platformPreferred ? "left-4" : "left-0.5"
+              }`} />
+            </span>
+          </button>
         )}
         <MetaSetupModal callbackUrl={metaApps.data?.callback_url} onClose={() => setSetupOpen(false)} open={setupOpen} />
         {mutationMessage && <ErrorState message={mutationMessage} />}
@@ -202,12 +254,20 @@ export function MetaAppsPage() {
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-muted">
-                    Instagram App ID: {app.app_id}
+                    {app.credential_kind === "instagram_unified_login"
+                      ? "Meta App ID"
+                      : "Instagram App ID"}
+                    : {app.app_id}
+                    {app.credential_kind === "instagram_unified_login" && app.config_id
+                      ? ` · config_id: ${app.config_id}`
+                      : ""}
                   </p>
                   <p className="mt-1 text-xs text-muted">
                     {app.credential_kind === "legacy"
                       ? "App legado: credenciais e contas vinculadas preservadas."
-                      : "Credenciais de Instagram Business Login."}
+                      : app.credential_kind === "instagram_unified_login"
+                        ? "API do Instagram com Login Unificado (token de sistema)."
+                        : "API do Instagram com Login do Instagram."}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -338,11 +398,33 @@ export function MetaAppsPage() {
               placeholder="Ex.: App principal da marca"
             />
           </label>
-          <label className="grid gap-2 text-sm text-fg-2">
-            Instagram App ID
+          <label className="grid gap-2 text-sm text-fg-2 sm:col-span-2">
+            Tipo de login
             <span className="text-xs leading-5 text-muted">
-              No painel da Meta, use o Instagram App ID em Instagram → API setup with Instagram
-              login → Business login settings. Não use o App ID de Configurações Básicas.
+              Apps criados recentemente na Meta só oferecem o Login Unificado. Apps antigos usam
+              o Login do Instagram.
+            </span>
+            <select
+              className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
+              value={credentialKind}
+              onChange={(event) =>
+                setCredentialKind(
+                  event.target.value as
+                    | "instagram_business_login"
+                    | "instagram_unified_login",
+                )
+              }
+            >
+              <option value="instagram_business_login">API do Instagram com Login do Instagram</option>
+              <option value="instagram_unified_login">API do Instagram com Login Unificado</option>
+            </select>
+          </label>
+          <label className="grid gap-2 text-sm text-fg-2">
+            {credentialKind === "instagram_unified_login" ? "Meta App ID" : "Instagram App ID"}
+            <span className="text-xs leading-5 text-muted">
+              {credentialKind === "instagram_unified_login"
+                ? "No painel da Meta, use o App ID do app (Configurações → Básico)."
+                : "No painel da Meta, use o Instagram App ID em Instagram → API setup with Instagram login → Business login settings. Não use o App ID de Configurações Básicas."}
             </span>
             <input
               autoComplete="off"
@@ -356,10 +438,11 @@ export function MetaAppsPage() {
             />
           </label>
           <label className="grid gap-2 text-sm text-fg-2">
-            Instagram App Secret
+            {credentialKind === "instagram_unified_login" ? "Meta App Secret" : "Instagram App Secret"}
             <span className="text-xs leading-5 text-muted">
-              Use o Instagram App Secret na mesma tela Business login settings, não o App Secret
-              de Configurações Básicas.
+              {credentialKind === "instagram_unified_login"
+                ? "Use a Chave Secreta do app em Configurações → Básico."
+                : "Use o Instagram App Secret na mesma tela Business login settings, não o App Secret de Configurações Básicas."}
             </span>
             <input
               autoComplete="new-password"
@@ -369,13 +452,34 @@ export function MetaAppsPage() {
               required
               value={appSecret}
               onChange={(event) => setAppSecret(event.target.value)}
-              placeholder="Cole o Instagram App Secret"
+              placeholder="Cole o App Secret"
             />
           </label>
+          {credentialKind === "instagram_unified_login" && (
+            <label className="grid gap-2 text-sm text-fg-2 sm:col-span-2">
+              ID da configuração (config_id)
+              <span className="text-xs leading-5 text-muted">
+                No painel da Meta, em API setup with Unified login, crie a configuração e copie o
+                config_id. Cadastre o URI de callback do Flash como URL de redirecionamento nessa
+                mesma configuração.
+              </span>
+              <input
+                autoComplete="off"
+                className="min-h-10 rounded-lg border border-line bg-surface-inset px-3 text-fg outline-none focus:border-brand"
+                inputMode="numeric"
+                maxLength={64}
+                pattern="[0-9]+"
+                required
+                value={configId}
+                onChange={(event) => setConfigId(event.target.value)}
+                placeholder="Ex.: 123456789012345"
+              />
+            </label>
+          )}
           <p className="text-xs leading-5 text-muted sm:col-span-2">
-            O app Meta deve ser do tipo Business e ter o Instagram Business Login configurado.
-            Cadastre o URI de callback exibido pelo Flash entre os OAuth redirect URIs nessa
-            mesma configuração. O segredo não é retornado nem compartilhado com outros workspaces.
+            {credentialKind === "instagram_unified_login"
+              ? "O app Meta deve usar Login do Facebook para Empresas com uma configuração de ativos do Instagram. Cadastre o URI de callback exibido pelo Flash como URL de redirecionamento dessa configuração. O segredo não é retornado nem compartilhado com outros workspaces."
+              : "O app Meta deve ser do tipo Business e ter o Instagram Business Login configurado. Cadastre o URI de callback exibido pelo Flash entre os OAuth redirect URIs nessa mesma configuração. O segredo não é retornado nem compartilhado com outros workspaces."}
           </p>
           <div className="flex items-center gap-3 sm:col-span-2">
             <button
@@ -385,7 +489,9 @@ export function MetaAppsPage() {
                 createMetaApp.isPending ||
                 displayName.trim().length === 0 ||
                 appId.trim().length === 0 ||
-                appSecret.trim().length === 0
+                appSecret.trim().length === 0 ||
+                (credentialKind === "instagram_unified_login" &&
+                  configId.trim().length === 0)
               }
             >
               <Plus size={15} />
