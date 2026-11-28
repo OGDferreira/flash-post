@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import {
@@ -148,6 +148,8 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
   const [testing, setTesting] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches);
   const [bottomPicker, setBottomPicker] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
   const top = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -182,10 +184,28 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
       setDraft(updated.definition);
       setName(updated.name);
       setSavedJson(JSON.stringify([updated.name, updated.definition]));
+      setAutoSaveStatus("saved");
       setNotice("Fluxo salvo. Vale para os próximos leads.");
       window.setTimeout(() => setNotice(null), 2500);
+      window.setTimeout(() => setAutoSaveStatus("idle"), 3000);
     },
   });
+
+  const triggerSave = useCallback(() => {
+    if (draft && name.trim()) save.mutate();
+  }, [draft, name, save]);
+
+  // Autosave: 2.5s debounce after last change.
+  useEffect(() => {
+    if (!dirty) return;
+    setAutoSaveStatus("idle");
+    clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      setAutoSaveStatus("saving");
+      triggerSave();
+    }, 2500);
+    return () => clearTimeout(autoSaveTimer.current);
+  }, [dirty, name, draft]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (flow.isLoading || (flow.data && !draft)) return <LoadingState label="Abrindo fluxo" />;
   if (flow.error || !draft) {
@@ -227,8 +247,9 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
           />
           <p className="text-[11px] uppercase tracking-[0.18em] text-muted">Editor de fluxo</p>
         </div>
-        <span className={`hidden items-center gap-1.5 text-xs sm:flex ${dirty ? "text-warning" : "text-muted"}`}>
-          <span className={`size-2 rounded-full ${dirty ? "bg-warning" : "bg-success"}`} /> {dirty ? "Alterações não salvas" : "Tudo salvo"}
+        <span className={`hidden items-center gap-1.5 text-xs sm:flex ${dirty && autoSaveStatus !== "saving" ? "text-warning" : autoSaveStatus === "saving" || save.isPending ? "text-accent" : "text-muted"}`}>
+          <span className={`size-2 rounded-full ${dirty && autoSaveStatus !== "saving" ? "bg-warning" : autoSaveStatus === "saving" || save.isPending ? "bg-accent animate-pulse" : "bg-success"}`} />
+          {save.isPending || autoSaveStatus === "saving" ? "Salvando…" : dirty ? "Aguardando…" : "Tudo salvo"}
         </span>
         <button
           aria-pressed={testing}
@@ -239,8 +260,14 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack: () => v
         >
           <PlayCircle size={16} /> <span className="hidden sm:inline">Testar funil</span>
         </button>
-        <button className="btn-primary !min-h-11" disabled={save.isPending || !name.trim()} onClick={() => save.mutate()} type="button">
-          <Save size={16} /> {save.isPending ? "Salvando…" : "Salvar alterações"}
+        <button
+          className="btn-primary !min-h-11"
+          disabled={save.isPending || !name.trim() || (!dirty && autoSaveStatus === "idle")}
+          onClick={() => { clearTimeout(autoSaveTimer.current); save.mutate(); }}
+          type="button"
+          title="Salvar agora"
+        >
+          <Save size={16} /> {save.isPending ? "Salvando…" : "Salvar"}
         </button>
       </div>
 
