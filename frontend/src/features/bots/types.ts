@@ -52,6 +52,8 @@ export type Plan = {
   price_usd?: string | null;
   /** Own "payment approved" message; empty/null = use the funnel default. */
   approved_text?: string | null;
+  approved_media_ids?: string[];
+  approved_spoiler?: boolean;
 };
 
 /** Per-funnel card/international settings (Stripe). ``enabled`` only takes effect when the
@@ -96,6 +98,8 @@ export type UpsellStep = {
   delivery: Delivery | null;
   /** Own "payment approved" message; empty/null = use the funnel default. */
   approved_text?: string | null;
+  approved_media_ids?: string[];
+  approved_spoiler?: boolean;
 };
 
 export type CustomOffer = {
@@ -105,6 +109,8 @@ export type CustomOffer = {
   delivery: Delivery | null;
   /** Own "payment approved" message; empty/null = use the funnel default. */
   approved_text?: string | null;
+  approved_media_ids?: string[];
+  approved_spoiler?: boolean;
 };
 
 export type DownsellStep = {

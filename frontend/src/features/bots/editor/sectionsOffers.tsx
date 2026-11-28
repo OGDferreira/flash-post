@@ -39,10 +39,18 @@ function StepActions({ onCopy, onRemove, canCopy }: { onCopy: () => void; onRemo
 // (Pagamentos → "Mensagem de pagamento aprovado") is used for this offer.
 function ApprovedMessageField({
   value,
+  mediaIds,
+  spoiler,
   onChange,
+  onMediaChange,
+  onSpoilerChange,
 }: {
   value: string | null | undefined;
+  mediaIds?: string[];
+  spoiler?: boolean;
   onChange: (next: string | null) => void;
+  onMediaChange: (next: string[]) => void;
+  onSpoilerChange: (next: boolean) => void;
 }) {
   const custom = value != null;
   return (
@@ -61,8 +69,22 @@ function ApprovedMessageField({
             variables={BASE_VARIABLES}
             onChange={(text) => onChange(text)}
           />
+          <MediaGrid
+            kinds={["photo", "video"]}
+            max={3}
+            title="Imagem junto da mensagem (opcional)"
+            value={mediaIds ?? []}
+            onChange={onMediaChange}
+          />
+          {(mediaIds?.length ?? 0) > 0 && (
+            <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
+              <span>Borrar a mídia (spoiler)</span>
+              <Switch checked={!!spoiler} label="Borrar a mídia" onChange={onSpoilerChange} />
+            </label>
+          )}
           <p className="text-[11px] text-muted">
             Substitui a mensagem padrão do funil só para esta oferta.
+            {(mediaIds?.length ?? 0) > 0 && " A imagem vai junto do texto, na mesma mensagem."}
           </p>
         </>
       ) : (
@@ -128,7 +150,7 @@ function PlanEditor({ plan, onChange, hasDefaultBump }: { plan: Plan; onChange: 
         {plan.bump_mode === "custom" && plan.order_bump && <BumpEditor allowDefault value={plan.order_bump} onChange={(order_bump) => set({ order_bump })} />}
       </div>
       <div className="border-t border-line-soft pt-4">
-        <ApprovedMessageField value={plan.approved_text} onChange={(approved_text) => set({ approved_text })} />
+        <ApprovedMessageField value={plan.approved_text} mediaIds={plan.approved_media_ids} spoiler={plan.approved_spoiler} onChange={(approved_text) => set({ approved_text })} onMediaChange={(approved_media_ids) => set({ approved_media_ids })} onSpoilerChange={(approved_spoiler) => set({ approved_spoiler })} />
       </div>
     </>
   );
@@ -337,7 +359,7 @@ export function UpsellSection({ draft, set }: SectionProps) {
                 <DurationSelect value={step.duration_days} onChange={(duration_days) => setStep(index, { duration_days })} />
               )}
               <OfferDelivery value={step.delivery} onChange={(delivery) => setStep(index, { delivery })} />
-              <ApprovedMessageField value={step.approved_text} onChange={(approved_text) => setStep(index, { approved_text })} />
+              <ApprovedMessageField value={step.approved_text} mediaIds={step.approved_media_ids} spoiler={step.approved_spoiler} onChange={(approved_text) => setStep(index, { approved_text })} onMediaChange={(approved_media_ids) => setStep(index, { approved_media_ids })} onSpoilerChange={(approved_spoiler) => setStep(index, { approved_spoiler })} />
             </div>
           </Collapsible>
         ))}
@@ -455,7 +477,7 @@ function DownsellList({ sequence, steps, plans, onChange }: { sequence: Sequence
                 </div>
                 <DurationSelect value={step.custom_offer.duration_days} onChange={(duration_days) => setStep(index, { custom_offer: { ...step.custom_offer!, duration_days } })} />
                 <OfferDelivery allowUpsell value={step.custom_offer.delivery} onChange={(delivery) => setStep(index, { custom_offer: { ...step.custom_offer!, delivery } })} />
-                <ApprovedMessageField value={step.custom_offer.approved_text} onChange={(approved_text) => setStep(index, { custom_offer: { ...step.custom_offer!, approved_text } })} />
+                <ApprovedMessageField value={step.custom_offer.approved_text} mediaIds={step.custom_offer.approved_media_ids} spoiler={step.custom_offer.approved_spoiler} onChange={(approved_text) => setStep(index, { custom_offer: { ...step.custom_offer!, approved_text } })} onMediaChange={(approved_media_ids) => setStep(index, { custom_offer: { ...step.custom_offer!, approved_media_ids } })} onSpoilerChange={(approved_spoiler) => setStep(index, { custom_offer: { ...step.custom_offer!, approved_spoiler } })} />
               </div>
             ) : (
               <div className="grid grid-cols-[120px_1fr] gap-3">

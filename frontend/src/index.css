@@ -890,9 +890,13 @@ html:not([data-theme="light"]) .dashboard-date-range input { color-scheme: dark;
   }
 
   .dashboard-periods button {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    min-width: 0;
     padding: 0 8px;
     font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
