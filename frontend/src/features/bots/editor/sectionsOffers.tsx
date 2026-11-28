@@ -107,7 +107,7 @@ function PlanEditor({ plan, onChange, hasDefaultBump }: { plan: Plan; onChange: 
         <MoneyInput value={plan.price} onChange={(price) => set({ price })} />
         <DurationSelect value={plan.duration_days} onChange={(duration_days) => set({ duration_days })} />
       </div>
-      <Field label="Texto do botão (opcional)" hint="Vazio = “Nome · Preço”. Use o Aa para letras personalizadas.">
+      <Field label="Texto do botão (opcional)" hint="Vazio = &ldquo;Nome · Preço&rdquo;. Use o Aa para letras personalizadas.">
         <div className="flex gap-1">
           <input className="field" maxLength={64} value={plan.button_text ?? ""} onChange={(event) => set({ button_text: event.target.value })} />
           <FontMenu
@@ -221,7 +221,7 @@ export function BumpSection({ draft, set }: SectionProps) {
     <Panel
       icon={<ShoppingCart size={18} />}
       title="Order bump padrão"
-      description="Pergunta “Adicionar X por +R$ Y?” antes de gerar o Pix. Se aceitar, sai um Pix único com o total."
+      description="Pergunta &ldquo;Adicionar X por +R$ Y?&rdquo; antes de gerar o Pix. Se aceitar, sai um Pix único com o total."
       aside={<Switch checked={Boolean(draft.order_bump)} label="Order bump padrão" onChange={(on) => set({ order_bump: on ? draft.order_bump ?? emptyBump() : null })} />}
     >
       {draft.order_bump ? (
@@ -347,7 +347,7 @@ export function UpsellSection({ draft, set }: SectionProps) {
             <label className="flex items-center justify-between gap-3 rounded-xl border border-line-soft p-3 text-sm text-fg-2">
               <span>
                 Ocultar o botão de recusar
-                <span className="block text-xs text-muted">Sem o “não”, a próxima oferta só é liberada quando o cliente pagar esta.</span>
+                <span className="block text-xs text-muted">Sem o "não", a próxima oferta só é liberada quando o cliente pagar esta.</span>
               </span>
               <Switch checked={step.hide_decline} label="Ocultar o botão de recusar" onChange={(hide_decline) => setStep(index, { hide_decline })} />
             </label>
@@ -723,7 +723,7 @@ export function PreviewsSection({ draft, set }: SectionProps) {
           </label>
         </div>
       ) : (
-        <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão “{previews.label}” junto dos planos.</p>
+        <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão "{previews.label}" junto dos planos.</p>
       )}
     </Panel>
   );
@@ -826,7 +826,7 @@ export function GroupPreviewSection({ draft, set }: SectionProps) {
           <StylePicker value={gp.style} onChange={(style) => setGp({ style })} />
         </div>
       ) : (
-        <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão “{gp.label}” junto dos planos.</p>
+        <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão "{gp.label}" junto dos planos.</p>
       )}
     </Panel>
   );
@@ -877,7 +877,7 @@ export function MimoSection({ draft, set }: SectionProps) {
           <StylePicker value={mimo.style} onChange={(style) => setMimo({ style })} />
         </div>
       ) : (
-        <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão “{mimo.label}” junto dos planos.</p>
+        <p className="text-sm text-muted">Desligado. Ligue para mostrar o botão "{mimo.label}" junto dos planos.</p>
       )}
     </Panel>
   );
@@ -1061,7 +1061,7 @@ function DefaultDeliveryPanel({ draft, set }: Pick<SectionProps, "draft" | "set"
     <Panel
       icon={<Truck size={18} />}
       title="Entrega padrão"
-      description={`Usada quando o plano está em “Usar entrega padrão”${using ? ` (${using} plano(s) agora)` : ""}. Cada plano pode ter a própria.`}
+      description={`Usada quando o plano está em "Usar entrega padrão"${using ? ` (${using} plano(s) agora)` : ""}. Cada plano pode ter a própria.`}
       aside={<Switch checked={Boolean(draft.default_delivery)} label="Entrega padrão" onChange={(on) => set({ default_delivery: on ? draft.default_delivery ?? emptyDelivery("group") : null })} />}
     >
       {draft.default_delivery ? (
@@ -1134,7 +1134,7 @@ export function PaymentSection({ draft, set }: SectionProps) {
         <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Como mostrar o Pix">
           {([
             { value: "qr", label: "QR Code", hint: "Imagem com o QR, o texto e o código Pix." },
-            { value: "steps", label: "Passo a passo", hint: "Instruções, o código numa caixa “copy” e os botões." },
+            { value: "steps", label: "Passo a passo", hint: 'Instruções, o código numa caixa "copy" e os botões.' },
             { value: "both", label: "Ambos", hint: "Envia o QR Code, o passo a passo e o Pix copia e cola." },
           ] as const).map((item) => {
             const active = pixMode === item.value;
@@ -1159,7 +1159,7 @@ export function PaymentSection({ draft, set }: SectionProps) {
             ? "Envia o QR Code, o passo a passo e o Pix copia e cola, tudo junto."
             : pixMode === "qr"
               ? "Imagem com o QR, o texto e o código Pix."
-              : "Instruções, o código numa caixa “copy” e os botões."}
+              : 'Instruções, o código numa caixa "copy" e os botões.'}
         </p>
       </div>
       {qrOn && (
@@ -1258,7 +1258,7 @@ export function PaymentSection({ draft, set }: SectionProps) {
               variables={vars}
               onChange={(reactivation_text) => setPayment({ reactivation_text })}
             />
-            <p className="text-[11px] text-muted">Atingido o limite, o lead recebe a mensagem de “Pix expirado” acima com o botão manual.</p>
+            <p className="text-[11px] text-muted">Atingido o limite, o lead recebe a mensagem de "Pix expirado" acima com o botão manual.</p>
           </div>
         )}
       </div>
@@ -1270,20 +1270,20 @@ export function PaymentSection({ draft, set }: SectionProps) {
           <input className="field" maxLength={64} value={payment.check_button} onChange={(event) => setPayment({ check_button: event.target.value })} />
         </Field>
       </div>
-      <Field label=”Resposta ao “Já paguei” sem pagamento”>
-        <input className=”field” maxLength={200} value={payment.pending_text} onChange={(event) => setPayment({ pending_text: event.target.value })} />
+      <Field label={`Resposta ao "Já paguei" sem pagamento`}>
+        <input className="field" maxLength={200} value={payment.pending_text} onChange={(event) => setPayment({ pending_text: event.target.value })} />
       </Field>
       <MediaGrid
-        kinds={[“photo”, “video”]}
+        kinds={["photo", "video"]}
         max={3}
-        title=”Imagem ao clicar em “Já paguei” (opcional)”
+        title={`Imagem ao clicar em "Já paguei" (opcional)`}
         value={payment.pending_media_ids ?? []}
         onChange={(pending_media_ids) => setPayment({ pending_media_ids })}
       />
       {(payment.pending_media_ids?.length ?? 0) > 0 && (
-        <label className=”flex items-center justify-between gap-3 text-sm text-fg-2”>
+        <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
           <span>Borrar a mídia (spoiler)</span>
-          <Switch checked={!!payment.pending_spoiler} label=”Borrar a mídia” onChange={(pending_spoiler) => setPayment({ pending_spoiler })} />
+          <Switch checked={!!payment.pending_spoiler} label="Borrar a mídia" onChange={(pending_spoiler) => setPayment({ pending_spoiler })} />
         </label>
       )}
       <PaymentRecoveryBlock draft={draft} set={set} vars={vars} />
@@ -1333,7 +1333,7 @@ function PaymentRecoveryBlock({ draft, set, vars }: Pick<SectionProps, "draft" |
           )}
           <RichTextEditor label="Mensagem de recuperação" rows={3} value={recovery.text} variables={vars} onChange={(text) => setRecovery({ text })} />
           <label className="flex items-center justify-between gap-3 text-sm text-fg-2">
-            <span>Botão “gerar novo Pix”</span>
+            <span>Botão "gerar novo Pix"</span>
             <Switch checked={!!recovery.new_pix_button} label="Botão gerar novo Pix" onChange={(new_pix_button) => setRecovery({ new_pix_button })} />
           </label>
           {recovery.new_pix_button && (
